@@ -1,0 +1,166 @@
+package model
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"local/rag-project/internal/framework/config"
+	fwlog "local/rag-project/internal/framework/log"
+)
+
+type modelTarget struct {
+	id        string
+	candidate config.ModelCandidate
+	provider  config.ProviderConfig
+}
+
+type modelSelector struct {
+	healthStore *ModelHealthStore
+}
+
+func newModelSelector(healthStore *ModelHealthStore) *modelSelector {
+	if healthStore == nil {
+		healthStore = NewModelHealthStore()
+	}
+	return &modelSelector{healthStore: healthStore}
+}
+
+func (ms *modelSelector) resolveFirstChoiceModel(group config.ModelGroup, deepThinking bool) string {
+	if deepThinking && group.DeepThinkingModel != "" {
+		return group.DeepThinkingModel
+	}
+	return group.DefaultModel
+}
+
+func (ms *modelSelector) selectEmbeddingCandidates() []modelTarget {
+	cfg := config.Get()
+	if cfg == nil {
+		return nil
+	}
+	return ms.selectCandidates(cfg.AI.Embedding, cfg.AI.Embedding.DefaultModel, false)
+}
+
+func (ms *modelSelector) selectRerankCandidates() []modelTarget {
+	cfg := config.Get()
+	if cfg == nil {
+		return nil
+	}
+	return ms.selectCandidates(cfg.AI.Rerank, cfg.AI.Rerank.DefaultModel, false)
+}
+
+func (ms *modelSelector) selectChatCandidates(deepThinking bool) []modelTarget {
+	cfg := config.Get()
+	if cfg == nil {
+		return nil
+	}
+	group := cfg.AI.Chat
+	firstChoiceModelID := ms.resolveFirstChoiceModel(group, deepThinking)
+	return ms.selectCandidates(group, firstChoiceModelID, deepThinking)
+}
+
+func (ms *modelSelector) selectCandidates(group config.ModelGroup, firstChoiceModelID string, deepThinking bool) []modelTarget {
+	if len(group.Candidates) == 0 {
+		return nil
+	}
+	orderedCandidates := ms.filterAndSortCandidates(group.Candidates, firstChoiceModelID, deepThinking)
+	return ms.buildAvailableTargets(orderedCandidates)
+}
+
+func (ms *modelSelector) filterAndSortCandidates(candidates []config.ModelCandidate, firstChoiceModelID string, deepThinking bool) []config.ModelCandidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	enabled := make([]config.ModelCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Enabled != nil && !*candidate.Enabled {
+			continue
+		}
+		if deepThinking && (candidate.SupportsThinking == nil || !*candidate.SupportsThinking) {
+			continue
+		}
+		enabled = append(enabled, candidate)
+	}
+
+	sort.SliceStable(enabled, func(i, j int) bool {
+		a := enabled[i]
+		b := enabled[j]
+
+		aID := resolveId(a)
+		bID := resolveId(b)
+
+		aIsFirst := aID == firstChoiceModelID
+		bIsFirst := bID == firstChoiceModelID
+		if aIsFirst != bIsFirst {
+			return aIsFirst
+		}
+
+		aPriority := normalizedPriority(a.Priority)
+		bPriority := normalizedPriority(b.Priority)
+		if aPriority != bPriority {
+			return aPriority < bPriority
+		}
+
+		return strings.Compare(aID, bID) < 0
+	})
+
+	return enabled
+}
+
+func normalizedPriority(priority int) int {
+	if priority == 0 {
+		return 100
+	}
+	return priority
+}
+
+func resolveId(candidate config.ModelCandidate) string {
+	if strings.TrimSpace(candidate.Id) != "" {
+		return candidate.Id
+	}
+	provider := strings.TrimSpace(candidate.Provider)
+	if provider == "" {
+		provider = "unknown"
+	}
+	model := strings.TrimSpace(candidate.Model)
+	if model == "" {
+		model = "unknown"
+	}
+	return fmt.Sprintf("%s::%s", provider, model)
+}
+
+func (ms *modelSelector) buildAvailableTargets(candidates []config.ModelCandidate) []modelTarget {
+	cfg := config.Get()
+	if cfg == nil {
+		return nil
+	}
+
+	targets := make([]modelTarget, 0, len(candidates))
+	for _, candidate := range candidates {
+		target := ms.buildModelTarget(candidate, cfg.AI.Providers)
+		if target != nil {
+			targets = append(targets, *target)
+		}
+	}
+	return targets
+}
+
+func (ms *modelSelector) buildModelTarget(candidate config.ModelCandidate, providers map[string]config.ProviderConfig) *modelTarget {
+	modelID := resolveId(candidate)
+	if ms.healthStore != nil && ms.healthStore.isUnavailable(modelID) {
+		return nil
+	}
+
+	provider, ok := providers[candidate.Provider]
+	if !ok && strings.ToLower(candidate.Provider) != "noop" {
+		fwlog.Warnf("provider config missing: provider=%s, modelId=%s", candidate.Provider, modelID)
+		return nil
+	}
+
+	return &modelTarget{
+		id:        modelID,
+		candidate: candidate,
+		provider:  provider,
+	}
+}
