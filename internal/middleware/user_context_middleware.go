@@ -6,19 +6,16 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"local/rag-project/internal/framework/contextx"
+	"local/rag-project/internal/framework/errorcode"
+	"local/rag-project/internal/framework/exception"
+	fwlog "local/rag-project/internal/framework/log"
 )
 
-// todo : 解决用户上下文的提取
+type UserLoaderFunc func(loginID string) (*contextx.LoginUser, error)
 
-// UserLoaderFunc 根据 loginId 加载用户信息（由调用方实现）
-type UserLoaderFunc func(loginId string) (*contextx.LoginUser, error)
+type LoginIDExtractor func(c *gin.Context) string
 
-// LoginIdExtractor 从请求中提取 loginId 的策略（可自定义）
-// 例如：从 Header、Cookie 或 JWT 中解析
-type LoginIdExtractor func(c *gin.Context) string
-
-// DefaultLoginIdExtractor 示例：优先从 Header `X-Login-Id` 读取
-func DefaultLoginIdExtractor(c *gin.Context) string {
+func DefaultLoginIDExtractor(c *gin.Context) string {
 	if c == nil {
 		return ""
 	}
@@ -31,32 +28,64 @@ func DefaultLoginIdExtractor(c *gin.Context) string {
 	return ""
 }
 
-// UserContextMiddleware 返回一个 Gin 中间件：
-// - 跳过 OPTIONS 预检
-// - 使用 extractor 获取 loginId
-// - 调用 loader 加载用户并注入到请求上下文（contextx.Set）
-// - 请求处理完成后清理上下文（contextx.Clear）
-func UserContextMiddleware(loader UserLoaderFunc, extractor LoginIdExtractor) gin.HandlerFunc {
+func UserContextMiddleware(loader UserLoaderFunc, extractor LoginIDExtractor) gin.HandlerFunc {
 	if extractor == nil {
-		extractor = DefaultLoginIdExtractor
+		extractor = DefaultLoginIDExtractor
 	}
 
 	return func(c *gin.Context) {
-		// 预检请求放行
 		if c.Request.Method == http.MethodOptions {
 			c.Next()
 			return
 		}
 
-		loginId := extractor(c)
-		if loginId != "" && loader != nil {
-			if user, err := loader(loginId); err == nil && user != nil {
-				contextx.Set(c, user)
-			}
+		defer contextx.Clear(c)
+
+		loginID := extractor(c)
+		if loginID == "" || loader == nil {
+			c.Next()
+			return
 		}
 
-		// 确保在请求结束时清理上下文
-		defer contextx.Clear(c)
+		user, err := loader(loginID)
+		if err != nil {
+			fwlog.Errorf("load login user failed: loginID=%s error=%v", loginID, err)
+			_ = c.Error(exception.NewServiceException("load login user failed", err))
+			c.Abort()
+			return
+		}
+		if user == nil {
+			_ = c.Error(exception.NewClientException("invalid login identity"))
+			c.Abort()
+			return
+		}
+
+		contextx.Set(c, user)
+		c.Next()
+	}
+}
+
+func RequireLogin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if contextx.Get(c) == nil {
+			abortWithError(c, http.StatusUnauthorized, errorcode.ClientError.Code(), "unauthorized")
+			return
+		}
+		c.Next()
+	}
+}
+
+func RequireRole(role string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := contextx.Get(c)
+		if user == nil {
+			abortWithError(c, http.StatusUnauthorized, errorcode.ClientError.Code(), "unauthorized")
+			return
+		}
+		if user.Role != role {
+			abortWithError(c, http.StatusForbidden, errorcode.ClientError.Code(), "forbidden")
+			return
+		}
 		c.Next()
 	}
 }

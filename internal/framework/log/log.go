@@ -34,3 +34,11 @@ func Infof(format string, args ...interface{}) {
 	}
 	fmt.Printf(format+"\n", args...)
 }
+
+func Errorf(format string, args ...interface{}) {
+	if sugar != nil {
+		sugar.Errorf(format, args...)
+		return
+	}
+	fmt.Printf(format+"\n", args...)
+}

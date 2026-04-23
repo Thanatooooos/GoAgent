@@ -32,13 +32,14 @@ func main() {
 	r := gin.New()
 
 	// 挂载全局异常处理
-	r.Use(umw.GlobalExceptionHandler())
+	r.Use(umw.RequestIDMiddleware())
+	r.Use(umw.ErrorHandlerMiddleware())
 
 	// 示例内存用户 loader
 	loader := func(loginId string) (*contextx.LoginUser, error) {
 		if loginId == "1" {
 			return &contextx.LoginUser{
-				UserId:   "1",
+				UserID:   "1",
 				Username: "alice",
 				Role:     "user",
 				Avatar:   "https://avatars.githubusercontent.com/u/583231?v=4",
