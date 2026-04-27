@@ -1,6 +1,7 @@
-package http
+package aihttp
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -39,13 +40,14 @@ func (e *ModelClientException) Unwrap() error {
 
 // IsModelClientException 检查是否为模型客户端异常
 func IsModelClientException(err error) bool {
-	_, ok := err.(*ModelClientException)
-	return ok
+	var e *ModelClientException
+	return errors.As(err, &e)
 }
 
 // AsModelClientException 将错误转换为模型客户端异常
 func AsModelClientException(err error) (*ModelClientException, bool) {
-	if e, ok := err.(*ModelClientException); ok {
+	var e *ModelClientException
+	if errors.As(err, &e) {
 		return e, true
 	}
 	return nil, false

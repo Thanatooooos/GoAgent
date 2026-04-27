@@ -67,7 +67,7 @@ func TestErrorHandlerWritesContextError(t *testing.T) {
 func TestErrorHandlerClassifiesAppError(t *testing.T) {
 	router := newTestRouter()
 	router.GET("/client-err", func(c *gin.Context) {
-		_ = c.Error(exception.NewClientException("bad request"))
+		_ = c.Error(exception.NewClientException("bad request", nil))
 		c.Abort()
 	})
 

@@ -1,4 +1,4 @@
-package http
+package aihttp
 
 import (
 	"fmt"

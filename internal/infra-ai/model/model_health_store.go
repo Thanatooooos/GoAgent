@@ -69,6 +69,10 @@ func (m *ModelHealthStore) allowCall(id string) bool {
 	}
 }
 
+func (m *ModelHealthStore) AllowCall(id string) bool {
+	return m.allowCall(id)
+}
+
 func (m *ModelHealthStore) markSuccess(id string) {
 	if id == "" {
 		return
@@ -82,6 +86,10 @@ func (m *ModelHealthStore) markSuccess(id string) {
 	health.halfOpenInFlight = false
 	health.openUntil = time.Time{}
 	health.state = Closed
+}
+
+func (m *ModelHealthStore) MarkSuccess(id string) {
+	m.markSuccess(id)
 }
 
 func (m *ModelHealthStore) markFailure(id string) {
@@ -110,6 +118,10 @@ func (m *ModelHealthStore) markFailure(id string) {
 	}
 }
 
+func (m *ModelHealthStore) MarkFailure(id string) {
+	m.markFailure(id)
+}
+
 func (m *ModelHealthStore) isUnavailable(id string) bool {
 	val, ok := m.healthByID.Load(id)
 	if !ok {
@@ -124,6 +136,10 @@ func (m *ModelHealthStore) isUnavailable(id string) bool {
 		return true
 	}
 	return health.state == HalfOpen && health.halfOpenInFlight
+}
+
+func (m *ModelHealthStore) IsUnavailable(id string) bool {
+	return m.isUnavailable(id)
 }
 
 func failureThreshold() int {

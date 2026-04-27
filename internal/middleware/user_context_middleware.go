@@ -55,7 +55,7 @@ func UserContextMiddleware(loader UserLoaderFunc, extractor LoginIDExtractor) gi
 			return
 		}
 		if user == nil {
-			_ = c.Error(exception.NewClientException("invalid login identity"))
+			_ = c.Error(exception.NewClientException("invalid login identity", nil))
 			c.Abort()
 			return
 		}

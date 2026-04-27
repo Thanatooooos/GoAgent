@@ -1,0 +1,12 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema:
+      - "./schema/knowledge.sql"
+    queries:
+      - "./queries/knowledge_document.sql"
+    gen:
+      go:
+        package: "sqlc"
+        out: "."
+        sql_package: "pgx/v5"

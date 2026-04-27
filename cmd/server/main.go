@@ -9,6 +9,7 @@ import (
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/contextx"
 	fwlog "local/rag-project/internal/framework/log"
+	infraai "local/rag-project/internal/infra-ai"
 
 	umw "local/rag-project/internal/middleware"
 )
@@ -28,6 +29,8 @@ func main() {
 	if cfg != nil && cfg.Server.Port != 0 {
 		port = cfg.Server.Port
 	}
+
+	runtime := infraai.NewRuntime()
 
 	r := gin.New()
 
@@ -58,6 +61,8 @@ func main() {
 		}
 		c.JSON(200, gin.H{"message": "pong"})
 	})
+
+	registerDebugAIRoutes(r, runtime)
 
 	addr := fmt.Sprintf(":%d", port)
 	fmt.Printf("starting server at %s\n", addr)

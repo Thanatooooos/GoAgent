@@ -41,6 +41,7 @@ type Config struct {
 	Milvus   MilvusConfig   `mapstructure:"milvus"`
 	Rag      RagConfig      `mapstructure:"rag"`
 	AI       AIConfig       `mapstructure:"ai"`
+	Parser   ParserConfig   `mapstructure:"parser"`
 	RustFS   RustFSConfig   `mapstructure:"rustfs"`
 	SaToken  SaTokenConfig  `mapstructure:"sa-token"`
 	App      AppConfig      `mapstructure:"app"`
@@ -289,6 +290,15 @@ type Selection struct {
 
 type Stream struct {
 	MessageChunkSize int `mapstructure:"message-chunk-size"`
+}
+
+type ParserConfig struct {
+	Tika ParserTikaConfig `mapstructure:"tika"`
+}
+
+type ParserTikaConfig struct {
+	URL       string `mapstructure:"url"`
+	TimeoutMs int    `mapstructure:"timeout-ms"`
 }
 
 type RustFSConfig struct {

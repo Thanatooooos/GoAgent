@@ -1,4 +1,4 @@
-package http
+package aihttp
 
 // ModelClientErrorType 模型客户端错误类型
 type ModelClientErrorType int

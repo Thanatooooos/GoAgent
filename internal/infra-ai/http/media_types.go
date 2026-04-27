@@ -1,4 +1,4 @@
-package http
+package aihttp
 
 // HTTP 媒体类型常量
 const (
