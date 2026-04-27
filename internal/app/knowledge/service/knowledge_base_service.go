@@ -22,7 +22,6 @@ var nonCollectionChars = regexp.MustCompile(`[^a-z0-9_]+`)
 
 type CreateKnowledgeBaseInput struct {
 	Name           string
-	Description    string
 	EmbeddingModel string
 	OperatorID     string
 }
@@ -34,9 +33,7 @@ type GetKnowledgeBaseInput struct {
 type UpdateKnowledgeBaseInput struct {
 	ID             string
 	Name           string
-	Description    string
 	EmbeddingModel string
-	Status         string
 	OperatorID     string
 }
 
@@ -48,7 +45,6 @@ type PageKnowledgeBaseInput struct {
 	Page     int
 	PageSize int
 	Query    string
-	Status   string
 }
 
 type KnowledgeBasePageResult struct {
@@ -177,15 +173,27 @@ func (s *KnowledgeBaseService) Update(ctx context.Context, input UpdateKnowledge
 		knowledgeBase.EmbeddingModel = embeddingModel
 	}
 
-	knowledgeBase.UpdatedBy = operatorID
-	knowledgeBase.UpdatedAt = time.Now()
-
-	updated, err := s.baseRepo.Update(ctx, knowledgeBase)
+	now := time.Now()
+	rows, err := s.baseRepo.UpdateWhere(ctx, port.KnowledgeBaseConditions{
+		ID:      knowledgeBase.ID,
+		Deleted: boolPointer(false),
+	}, port.KnowledgeBasePatch{
+		Name:           port.ValueOf(knowledgeBase.Name),
+		EmbeddingModel: port.ValueOf(knowledgeBase.EmbeddingModel),
+		CollectionName: port.ValueOf(knowledgeBase.CollectionName),
+		UpdatedBy:      port.ValueOf(operatorID),
+		UpdatedAt:      port.ValueOf(now),
+	})
 	if err != nil {
 		return domain.KnowledgeBase{}, err
 	}
+	if rows == 0 {
+		return domain.KnowledgeBase{}, exception.NewClientException("knowledge base not found", nil)
+	}
 
-	return updated, nil
+	knowledgeBase.UpdatedBy = operatorID
+	knowledgeBase.UpdatedAt = now
+	return knowledgeBase, nil
 }
 
 func (s *KnowledgeBaseService) Delete(ctx context.Context, input DeleteKnowledgeBaseInput) error {
@@ -288,4 +296,8 @@ func buildCollectionName(name string, id int64) string {
 		normalized = "kb"
 	}
 	return fmt.Sprintf("%s_%d", normalized, id)
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }

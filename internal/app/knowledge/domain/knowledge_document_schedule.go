@@ -2,6 +2,13 @@ package domain
 
 import "time"
 
+const (
+	KnowledgeDocumentScheduleRunStatusRunning = "running"
+	KnowledgeDocumentScheduleRunStatusSuccess = "success"
+	KnowledgeDocumentScheduleRunStatusFailed  = "failed"
+	KnowledgeDocumentScheduleRunStatusSkipped = "skipped"
+)
+
 type KnowledgeDocumentSchedule struct {
 	ID              string
 	DocumentID      string
@@ -37,4 +44,8 @@ func NewKnowledgeDocumentSchedule(id, documentID, knowledgeBaseID, cronExpr stri
 
 func (s KnowledgeDocumentSchedule) IsEnabled() bool {
 	return s.Enabled
+}
+
+func (s KnowledgeDocumentSchedule) IsLockedBy(lockOwner string) bool {
+	return s.LockOwner != "" && s.LockOwner == lockOwner
 }

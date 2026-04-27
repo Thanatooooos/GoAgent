@@ -98,3 +98,92 @@ func toKnowledgeDocumentDomain(model models.KnowledgeDocumentModel) domain.Knowl
 		UpdatedAt:       model.UpdateTime,
 	}
 }
+
+func toKnowledgeDocumentScheduleModel(schedule domain.KnowledgeDocumentSchedule) models.KnowledgeDocumentScheduleModel {
+	enabled := int16(0)
+	if schedule.Enabled {
+		enabled = 1
+	}
+
+	return models.KnowledgeDocumentScheduleModel{
+		ID:              schedule.ID,
+		DocumentID:      schedule.DocumentID,
+		KnowledgeBaseID: schedule.KnowledgeBaseID,
+		CronExpr:        schedule.CronExpr,
+		Enabled:         enabled,
+		NextRunTime:     schedule.NextRunTime,
+		LastRunTime:     schedule.LastRunTime,
+		LastSuccessTime: schedule.LastSuccessTime,
+		LastStatus:      schedule.LastStatus,
+		LastError:       schedule.LastError,
+		LastETag:        schedule.LastETag,
+		LastModified:    schedule.LastModified,
+		LastContentHash: schedule.LastContentHash,
+		LockOwner:       schedule.LockOwner,
+		LockUntil:       schedule.LockUntil,
+		CreateTime:      schedule.CreatedAt,
+		UpdateTime:      schedule.UpdatedAt,
+	}
+}
+
+func toKnowledgeDocumentScheduleDomain(model models.KnowledgeDocumentScheduleModel) domain.KnowledgeDocumentSchedule {
+	return domain.KnowledgeDocumentSchedule{
+		ID:              model.ID,
+		DocumentID:      model.DocumentID,
+		KnowledgeBaseID: model.KnowledgeBaseID,
+		CronExpr:        model.CronExpr,
+		Enabled:         model.Enabled == 1,
+		NextRunTime:     model.NextRunTime,
+		LastRunTime:     model.LastRunTime,
+		LastSuccessTime: model.LastSuccessTime,
+		LastStatus:      model.LastStatus,
+		LastError:       model.LastError,
+		LastETag:        model.LastETag,
+		LastModified:    model.LastModified,
+		LastContentHash: model.LastContentHash,
+		LockOwner:       model.LockOwner,
+		LockUntil:       model.LockUntil,
+		CreatedAt:       model.CreateTime,
+		UpdatedAt:       model.UpdateTime,
+	}
+}
+
+func toKnowledgeDocumentScheduleExecModel(exec domain.KnowledgeDocumentScheduleExec) models.KnowledgeDocumentScheduleExecModel {
+	return models.KnowledgeDocumentScheduleExecModel{
+		ID:              exec.ID,
+		ScheduleID:      exec.ScheduleID,
+		DocumentID:      exec.DocumentID,
+		KnowledgeBaseID: exec.KnowledgeBaseID,
+		Status:          exec.Status,
+		Message:         exec.Message,
+		StartTime:       exec.StartTime,
+		EndTime:         exec.EndTime,
+		FileName:        exec.FileName,
+		FileSize:        exec.FileSize,
+		ContentHash:     exec.ContentHash,
+		ETag:            exec.ETag,
+		LastModified:    exec.LastModified,
+		CreateTime:      exec.CreatedAt,
+		UpdateTime:      exec.UpdatedAt,
+	}
+}
+
+func toKnowledgeDocumentScheduleExecDomain(model models.KnowledgeDocumentScheduleExecModel) domain.KnowledgeDocumentScheduleExec {
+	return domain.KnowledgeDocumentScheduleExec{
+		ID:              model.ID,
+		ScheduleID:      model.ScheduleID,
+		DocumentID:      model.DocumentID,
+		KnowledgeBaseID: model.KnowledgeBaseID,
+		Status:          model.Status,
+		Message:         model.Message,
+		StartTime:       model.StartTime,
+		EndTime:         model.EndTime,
+		FileName:        model.FileName,
+		FileSize:        model.FileSize,
+		ContentHash:     model.ContentHash,
+		ETag:            model.ETag,
+		LastModified:    model.LastModified,
+		CreatedAt:       model.CreateTime,
+		UpdatedAt:       model.UpdateTime,
+	}
+}

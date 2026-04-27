@@ -13,7 +13,6 @@ type ListOptions struct {
 }
 
 type KnowledgeBaseListFilter struct {
-	Status string
 	Query  string
 	ListOptions
 }
@@ -33,9 +32,17 @@ type KnowledgeChunkListFilter struct {
 	ListOptions
 }
 
+type KnowledgeDocumentScheduleExecListFilter struct {
+	ScheduleID string
+	DocumentID string
+	Status     string
+	ListOptions
+}
+
 type KnowledgeBaseRepository interface {
 	Create(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error)
 	Update(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error)
+	UpdateWhere(ctx context.Context, cond KnowledgeBaseConditions, patch KnowledgeBasePatch) (int64, error)
 	Delete(ctx context.Context, id string) error
 	GetByID(ctx context.Context, id string) (domain.KnowledgeBase, error)
 	GetByName(ctx context.Context, name string) (int, error)
@@ -46,6 +53,7 @@ type KnowledgeBaseRepository interface {
 type KnowledgeDocumentRepository interface {
 	Create(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error)
 	Update(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error)
+	UpdateWhere(ctx context.Context, cond KnowledgeDocumentConditions, patch KnowledgeDocumentPatch) (int64, error)
 	Delete(ctx context.Context, id string) error
 	GetByID(ctx context.Context, id string) (domain.KnowledgeDocument, error)
 	CountByKnowledgeBaseID(ctx context.Context, knowledgeBaseID string) (int, error)
@@ -72,7 +80,22 @@ type KnowledgeDocumentChunkLogRepository interface {
 type KnowledgeDocumentScheduleRepository interface {
 	Create(ctx context.Context, schedule domain.KnowledgeDocumentSchedule) (domain.KnowledgeDocumentSchedule, error)
 	Update(ctx context.Context, schedule domain.KnowledgeDocumentSchedule) (domain.KnowledgeDocumentSchedule, error)
+	UpdateWhere(ctx context.Context, cond KnowledgeDocumentScheduleConditions, patch KnowledgeDocumentSchedulePatch) (int64, error)
 	Delete(ctx context.Context, id string) error
+	DeleteByDocumentID(ctx context.Context, documentID string) error
 	GetByID(ctx context.Context, id string) (domain.KnowledgeDocumentSchedule, error)
+	GetByDocumentID(ctx context.Context, documentID string) (domain.KnowledgeDocumentSchedule, error)
 	ListDue(ctx context.Context, before time.Time, limit int) ([]domain.KnowledgeDocumentSchedule, error)
+	TryAcquireLock(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time, now time.Time) (bool, error)
+	RenewLock(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time) (bool, error)
+	ReleaseLock(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease) (bool, error)
+}
+
+type KnowledgeDocumentScheduleExecRepository interface {
+	Create(ctx context.Context, exec domain.KnowledgeDocumentScheduleExec) (domain.KnowledgeDocumentScheduleExec, error)
+	Update(ctx context.Context, exec domain.KnowledgeDocumentScheduleExec) (domain.KnowledgeDocumentScheduleExec, error)
+	UpdateWhere(ctx context.Context, cond KnowledgeDocumentScheduleExecConditions, patch KnowledgeDocumentScheduleExecPatch) (int64, error)
+	GetByID(ctx context.Context, id string) (domain.KnowledgeDocumentScheduleExec, error)
+	DeleteByDocumentID(ctx context.Context, documentID string) error
+	List(ctx context.Context, filter KnowledgeDocumentScheduleExecListFilter) ([]domain.KnowledgeDocumentScheduleExec, error)
 }

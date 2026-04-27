@@ -29,15 +29,34 @@ func (r *KnowledgeBaseRepository) Create(ctx context.Context, knowledgeBase doma
 }
 
 func (r *KnowledgeBaseRepository) Update(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error) {
-	model := toKnowledgeBaseModel(knowledgeBase)
-	if err := r.db.WithContext(ctx).
-		Model(&models.KnowledgeBaseModel{}).
-		Where("id = ?", model.ID).
-		Updates(model).
-		Error; err != nil {
-		return domain.KnowledgeBase{}, fmt.Errorf("update knowledge base: %w", err)
+	rows, err := r.UpdateWhere(ctx, port.KnowledgeBaseConditions{ID: knowledgeBase.ID}, port.KnowledgeBasePatch{
+		Name:           port.ValueOf(knowledgeBase.Name),
+		EmbeddingModel: port.ValueOf(knowledgeBase.EmbeddingModel),
+		CollectionName: port.ValueOf(knowledgeBase.CollectionName),
+		UpdatedBy:      port.ValueOf(knowledgeBase.UpdatedBy),
+		UpdatedAt:      port.ValueOf(knowledgeBase.UpdatedAt),
+	})
+	if err != nil {
+		return domain.KnowledgeBase{}, err
+	}
+	if rows == 0 {
+		return domain.KnowledgeBase{}, fmt.Errorf("update knowledge base: no rows affected")
 	}
 	return knowledgeBase, nil
+}
+
+func (r *KnowledgeBaseRepository) UpdateWhere(ctx context.Context, cond port.KnowledgeBaseConditions, patch port.KnowledgeBasePatch) (int64, error) {
+	updates := buildKnowledgeBaseUpdates(patch)
+	if len(updates) == 0 {
+		return 0, nil
+	}
+
+	query := r.applyKnowledgeBaseConditions(r.db.WithContext(ctx).Model(&models.KnowledgeBaseModel{}), cond)
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return 0, fmt.Errorf("update knowledge base with conditions: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 func (r *KnowledgeBaseRepository) Delete(ctx context.Context, id string) error {
@@ -111,4 +130,43 @@ func (r *KnowledgeBaseRepository) applyKnowledgeBaseListFilter(query *gorm.DB, f
 		query = query.Where("name ILIKE ?", like)
 	}
 	return query
+}
+
+func (r *KnowledgeBaseRepository) applyKnowledgeBaseConditions(query *gorm.DB, cond port.KnowledgeBaseConditions) *gorm.DB {
+	if cond.ID != "" {
+		query = query.Where("id = ?", cond.ID)
+	}
+	if cond.NameEQ != "" {
+		query = query.Where("name = ?", cond.NameEQ)
+	}
+	if cond.NameNE != "" {
+		query = query.Where("name <> ?", cond.NameNE)
+	}
+	if cond.CollectionEQ != "" {
+		query = query.Where("collection_name = ?", cond.CollectionEQ)
+	}
+	if cond.Deleted != nil {
+		query = query.Where("deleted = ?", boolToDeletedFlag(*cond.Deleted))
+	}
+	return query
+}
+
+func buildKnowledgeBaseUpdates(patch port.KnowledgeBasePatch) map[string]any {
+	updates := map[string]any{}
+	if patch.Name.Set {
+		updates["name"] = patch.Name.Value
+	}
+	if patch.EmbeddingModel.Set {
+		updates["embedding_model"] = patch.EmbeddingModel.Value
+	}
+	if patch.CollectionName.Set {
+		updates["collection_name"] = patch.CollectionName.Value
+	}
+	if patch.UpdatedBy.Set {
+		updates["updated_by"] = patch.UpdatedBy.Value
+	}
+	if patch.UpdatedAt.Set {
+		updates["update_time"] = patch.UpdatedAt.Value
+	}
+	return updates
 }
