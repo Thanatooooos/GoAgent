@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"sync"
 
 	"local/rag-project/internal/framework/convention"
 	aihttp "local/rag-project/internal/infra-ai/http"
@@ -223,11 +225,12 @@ func (op *OpenAIStyleChatClient) StreamChat(req convention.ChatRequest, callback
 }
 
 func (op *OpenAIStyleChatClient) doStream(httpReq *http.Request, callback StreamCallback, req convention.ChatRequest) {
+	dispatcher := newSafeStreamCallbackDispatcher(op.provider, callback)
 	client := op.effectiveHTTPClient(true)
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		if httpReq.Context().Err() == nil {
-			callback.OnError(aihttp.NewModelClientException(
+			dispatcher.OnError(aihttp.NewModelClientException(
 				fmt.Sprintf("%s stream request failed", op.provider),
 				aihttp.ErrorTypeNetworkError,
 				0,
@@ -239,7 +242,7 @@ func (op *OpenAIStyleChatClient) doStream(httpReq *http.Request, callback Stream
 	defer resp.Body.Close()
 
 	if err := op.respHelper.CheckResponse(resp, op.provider); err != nil {
-		callback.OnError(err)
+		dispatcher.OnError(err)
 		return
 	}
 
@@ -253,7 +256,7 @@ func (op *OpenAIStyleChatClient) doStream(httpReq *http.Request, callback Stream
 
 		event, parseErr := op.parseStreamLine(line, op.isReasoningEnabledForStream(req))
 		if parseErr != nil {
-			callback.OnError(aihttp.NewModelClientException(
+			dispatcher.OnError(aihttp.NewModelClientException(
 				fmt.Sprintf("%s stream parse failed", op.provider),
 				aihttp.ErrorTypeInvalidResponse,
 				0,
@@ -263,20 +266,24 @@ func (op *OpenAIStyleChatClient) doStream(httpReq *http.Request, callback Stream
 		}
 
 		if event.HasReasoning() {
-			callback.OnThinking(event.Reasoning)
+			if !dispatcher.OnThinking(event.Reasoning) {
+				return
+			}
 		}
 		if event.HasContent() {
-			callback.OnContent(event.Content)
+			if !dispatcher.OnContent(event.Content) {
+				return
+			}
 		}
 		if event.Completed {
-			callback.OnComplete()
+			dispatcher.OnComplete()
 			completed = true
 			return
 		}
 	}
 
 	if !completed && httpReq.Context().Err() == nil {
-		callback.OnError(aihttp.NewModelClientException(
+		dispatcher.OnError(aihttp.NewModelClientException(
 			fmt.Sprintf("%s stream response ended before completion", op.provider),
 			aihttp.ErrorTypeInvalidResponse,
 			0,
@@ -376,4 +383,79 @@ func (op *OpenAIStyleChatClient) parseStreamLine(line string, reasoningEnabled b
 		return op.parseStream(line, reasoningEnabled)
 	}
 	return ParseOpenAIStyleSseLine(line, reasoningEnabled)
+}
+
+type safeStreamCallbackDispatcher struct {
+	provider string
+	callback StreamCallback
+	terminal sync.Once
+}
+
+func newSafeStreamCallbackDispatcher(provider string, callback StreamCallback) *safeStreamCallbackDispatcher {
+	return &safeStreamCallbackDispatcher{
+		provider: provider,
+		callback: callback,
+	}
+}
+
+func (d *safeStreamCallbackDispatcher) OnThinking(content string) bool {
+	if err := d.call("thinking", func() {
+		d.callback.OnThinking(content)
+	}); err != nil {
+		d.OnError(err)
+		return false
+	}
+	return true
+}
+
+func (d *safeStreamCallbackDispatcher) OnContent(content string) bool {
+	if err := d.call("content", func() {
+		d.callback.OnContent(content)
+	}); err != nil {
+		d.OnError(err)
+		return false
+	}
+	return true
+}
+
+func (d *safeStreamCallbackDispatcher) OnComplete() {
+	d.terminal.Do(func() {
+		if err := d.call("complete", func() {
+			d.callback.OnComplete()
+		}); err != nil {
+			d.logCallbackPanic(err)
+		}
+	})
+}
+
+func (d *safeStreamCallbackDispatcher) OnError(err error) {
+	if err == nil {
+		return
+	}
+	d.terminal.Do(func() {
+		if callbackErr := d.call("error", func() {
+			d.callback.OnError(err)
+		}); callbackErr != nil {
+			d.logCallbackPanic(callbackErr)
+		}
+	})
+}
+
+func (d *safeStreamCallbackDispatcher) call(name string, fn func()) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = aihttp.NewModelClientException(
+				fmt.Sprintf("%s stream callback panic: %s", d.provider, name),
+				aihttp.ErrorTypeClientError,
+				0,
+				fmt.Errorf("%v", recovered),
+			)
+		}
+	}()
+	fn()
+	return nil
+}
+
+func (d *safeStreamCallbackDispatcher) logCallbackPanic(err error) {
+	log.Printf("stream callback failed after terminal dispatch: provider=%s err=%v", d.provider, err)
 }

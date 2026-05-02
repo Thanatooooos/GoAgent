@@ -1,0 +1,364 @@
+package rag
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"local/rag-project/internal/app/rag/domain"
+	"local/rag-project/internal/app/rag/port"
+	ragservice "local/rag-project/internal/app/rag/service"
+	"local/rag-project/internal/framework/contextx"
+	"local/rag-project/internal/framework/convention"
+	"local/rag-project/internal/framework/exception"
+	fwweb "local/rag-project/internal/framework/web"
+	"local/rag-project/internal/middleware"
+)
+
+// Handler 负责承接最小 RAG 闭环的 HTTP 请求。
+type Handler struct {
+	conversationService *ragservice.ConversationService
+	messageService      *ragservice.ConversationMessageService
+	feedbackService     *ragservice.MessageFeedbackService
+	chatService         *ragservice.RagChatService
+}
+
+// NewHandler 创建 RAG HTTP 处理器。
+func NewHandler(
+	conversationService *ragservice.ConversationService,
+	messageService *ragservice.ConversationMessageService,
+	feedbackService *ragservice.MessageFeedbackService,
+	chatService *ragservice.RagChatService,
+) *Handler {
+	return &Handler{
+		conversationService: conversationService,
+		messageService:      messageService,
+		feedbackService:     feedbackService,
+		chatService:         chatService,
+	}
+}
+
+// RegisterRoutes 注册最小 RAG 闭环相关路由。
+func RegisterRoutes(
+	r gin.IRouter,
+	conversationService *ragservice.ConversationService,
+	messageService *ragservice.ConversationMessageService,
+	feedbackService *ragservice.MessageFeedbackService,
+	chatService *ragservice.RagChatService,
+	traceService *ragservice.TraceService,
+) {
+	handler := NewHandler(conversationService, messageService, feedbackService, chatService)
+	r.GET("/conversations", handler.ListConversations)
+	r.GET("/conversations/:conversationId/messages", handler.ListMessages)
+	r.PUT("/conversations/:conversationId", handler.RenameConversation)
+	r.DELETE("/conversations/:conversationId", handler.DeleteConversation)
+	r.POST("/conversations/messages/:messageId/feedback", handler.SubmitFeedback)
+	r.GET("/rag/v3/chat", handler.Chat)
+	r.POST("/rag/v3/stop", handler.StopChat)
+
+	admin := r.Group("/")
+	admin.Use(middleware.RequireRole("admin"))
+	RegisterTraceRoutes(admin, traceService)
+}
+
+type renameConversationRequest struct {
+	Title string `json:"title"`
+}
+
+type feedbackRequest struct {
+	Vote int `json:"vote"`
+}
+
+type conversationVO struct {
+	ConversationID string     `json:"conversationId"`
+	Title          string     `json:"title"`
+	LastTime       *time.Time `json:"lastTime,omitempty"`
+}
+
+type messageVO struct {
+	ID               string     `json:"id"`
+	ConversationID   string     `json:"conversationId"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ThinkingContent  string     `json:"thinkingContent,omitempty"`
+	ThinkingDuration *int       `json:"thinkingDuration,omitempty"`
+	Vote             *int       `json:"vote"`
+	CreateTime       *time.Time `json:"createTime,omitempty"`
+}
+
+// ListConversations 返回当前登录用户的会话列表。
+func (h *Handler) ListConversations(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	items, err := h.conversationService.List(c.Request.Context(), ragservice.ListConversationsInput{
+		UserID: user.UserID,
+	})
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	result := make([]conversationVO, 0, len(items))
+	for _, item := range items {
+		result = append(result, toConversationVO(item))
+	}
+	writeSuccess(c, result)
+}
+
+// ListMessages 返回当前会话的消息列表。
+func (h *Handler) ListMessages(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	items, err := h.messageService.ListMessages(c.Request.Context(), ragservice.ListConversationMessagesInput{
+		ConversationID: c.Param("conversationId"),
+		UserID:         user.UserID,
+		Order:          port.ConversationMessageOrderAsc,
+	})
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	result := make([]messageVO, 0, len(items))
+	for _, item := range items {
+		result = append(result, toMessageVO(item))
+	}
+	writeSuccess(c, result)
+}
+
+// RenameConversation 修改会话标题。
+func (h *Handler) RenameConversation(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	var req renameConversationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	if err := h.conversationService.Rename(c.Request.Context(), ragservice.RenameConversationInput{
+		ConversationID: c.Param("conversationId"),
+		UserID:         user.UserID,
+		Title:          req.Title,
+	}); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	writeSuccess[any](c, nil)
+}
+
+// DeleteConversation 删除一个会话及其消息。
+func (h *Handler) DeleteConversation(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	if err := h.conversationService.Delete(c.Request.Context(), ragservice.DeleteConversationInput{
+		ConversationID: c.Param("conversationId"),
+		UserID:         user.UserID,
+	}); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	writeSuccess[any](c, nil)
+}
+
+// SubmitFeedback 保存一条 assistant 消息反馈。
+func (h *Handler) SubmitFeedback(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	var req feedbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	if err := h.feedbackService.Submit(c.Request.Context(), ragservice.SubmitMessageFeedbackInput{
+		MessageID: c.Param("messageId"),
+		UserID:    user.UserID,
+		Vote:      req.Vote,
+	}); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	writeSuccess[any](c, nil)
+}
+
+// Chat 通过 SSE 输出最小聊天闭环的流式结果。
+func (h *Handler) Chat(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+
+	sender := fwweb.NewSseEmitterSender(c)
+	sink := &sseChatSink{sender: sender}
+	if err := h.chatService.Chat(c.Request.Context(), ragservice.RagChatInput{
+		ConversationID:   strings.TrimSpace(c.Query("conversationId")),
+		UserID:           user.UserID,
+		Question:         strings.TrimSpace(c.Query("question")),
+		KnowledgeBaseIDs: splitCommaValues(c.Query("knowledgeBaseId")),
+		DeepThinking:     parseBool(c.Query("deepThinking")),
+	}, sink); err != nil {
+		return
+	}
+}
+
+// StopChat 取消一个正在执行的聊天任务。
+func (h *Handler) StopChat(c *gin.Context) {
+	taskID := strings.TrimSpace(c.Query("taskId"))
+	if taskID == "" {
+		_ = c.Error(exception.NewClientException("task id is required", nil))
+		return
+	}
+	if !h.chatService.CancelTask(taskID) {
+		_ = c.Error(exception.NewClientException("chat task not found", nil))
+		return
+	}
+	writeSuccess[any](c, nil)
+}
+
+type sseChatSink struct {
+	sender *fwweb.SseEmitterSender
+}
+
+// SendMeta 发送 SSE meta 事件。
+func (s *sseChatSink) SendMeta(meta ragservice.RagChatMeta) error {
+	return s.sender.SendEvent("meta", meta)
+}
+
+// SendThinking 发送 SSE thinking 事件。
+func (s *sseChatSink) SendThinking(delta string) error {
+	return s.sender.SendEvent("message", gin.H{
+		"type":  "think",
+		"delta": delta,
+	})
+}
+
+// SendMessage 发送 SSE response 事件。
+func (s *sseChatSink) SendMessage(delta string) error {
+	return s.sender.SendEvent("message", gin.H{
+		"type":  "response",
+		"delta": delta,
+	})
+}
+
+// SendTitle 发送会话标题事件。
+func (s *sseChatSink) SendTitle(title string) error {
+	if strings.TrimSpace(title) == "" {
+		return nil
+	}
+	return s.sender.SendEvent("title", gin.H{"title": title})
+}
+
+// SendFinish 发送完成事件。
+func (s *sseChatSink) SendFinish(payload ragservice.RagChatFinishPayload) error {
+	return s.sender.SendEvent("finish", gin.H{
+		"messageId": payload.MessageID,
+		"title":     payload.Title,
+	})
+}
+
+// SendCancel 发送取消事件。
+func (s *sseChatSink) SendCancel(payload ragservice.RagChatFinishPayload) error {
+	return s.sender.SendEvent("cancel", gin.H{
+		"messageId": payload.MessageID,
+		"title":     payload.Title,
+	})
+}
+
+// SendError 发送错误事件。
+func (s *sseChatSink) SendError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return s.sender.SendEvent("error", gin.H{"error": err.Error()})
+}
+
+// SendDone 发送 done 事件并关闭 SSE。
+func (s *sseChatSink) SendDone() error {
+	if err := s.sender.SendEvent("done", gin.H{}); err != nil {
+		return err
+	}
+	s.sender.Complete()
+	return nil
+}
+
+// requireLoginUser 提取当前登录用户。
+func requireLoginUser(c *gin.Context) *contextx.LoginUser {
+	user := contextx.Get(c)
+	if user == nil || strings.TrimSpace(user.UserID) == "" {
+		_ = c.Error(exception.NewClientException("unauthorized", nil))
+		return nil
+	}
+	return user
+}
+
+// splitCommaValues 按逗号拆分查询参数。
+func splitCommaValues(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+// parseBool 解析查询参数中的布尔值。
+func parseBool(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return value == "1" || value == "true" || value == "yes"
+}
+
+// toConversationVO 转换会话出参。
+func toConversationVO(item domain.Conversation) conversationVO {
+	return conversationVO{
+		ConversationID: item.ConversationID,
+		Title:          item.Title,
+		LastTime:       item.LastTime,
+	}
+}
+
+// toMessageVO 转换消息出参。
+func toMessageVO(item ragservice.ConversationMessageView) messageVO {
+	return messageVO{
+		ID:               item.ID,
+		ConversationID:   item.ConversationID,
+		Role:             string(item.Role),
+		Content:          item.Content,
+		ThinkingContent:  item.ThinkingContent,
+		ThinkingDuration: item.ThinkingDuration,
+		Vote:             item.Vote,
+		CreateTime:       timePointer(item.CreateTime),
+	}
+}
+
+// timePointer 把零值时间过滤为空。
+func timePointer(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	return &value
+}
+
+// writeSuccess 输出统一成功响应。
+func writeSuccess[T any](c *gin.Context, data T) {
+	c.JSON(http.StatusOK, convention.Result[T]{
+		Code:      "0",
+		RequestID: middleware.RequestID(c),
+		Data:      data,
+	})
+}

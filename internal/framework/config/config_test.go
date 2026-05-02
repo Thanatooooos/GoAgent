@@ -18,6 +18,12 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Server.Port != 9090 {
 		t.Fatalf("unexpected server.port: %d", cfg.Server.Port)
 	}
+	if cfg.Spring.Datasource.Username != "postgres" {
+		t.Fatalf("expected datasource username from .env, got %q", cfg.Spring.Datasource.Username)
+	}
+	if cfg.Spring.Datasource.Password != "postgres" {
+		t.Fatalf("expected datasource password from .env, got %q", cfg.Spring.Datasource.Password)
+	}
 	if cfg.Parser.Tika.URL == "" {
 		t.Fatal("expected parser.tika.url to be configured")
 	}

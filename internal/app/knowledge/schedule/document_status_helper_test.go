@@ -10,7 +10,8 @@ import (
 )
 
 type stubKnowledgeDocumentRepository struct {
-	updateWhereFn func(ctx context.Context, cond port.KnowledgeDocumentConditions, patch port.KnowledgeDocumentPatch) (int64, error)
+	updateWhereFn  func(ctx context.Context, cond port.KnowledgeDocumentConditions, patch port.KnowledgeDocumentPatch) (int64, error)
+	updateFieldsFn func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error)
 }
 
 func (s stubKnowledgeDocumentRepository) Create(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
@@ -24,6 +25,13 @@ func (s stubKnowledgeDocumentRepository) Update(ctx context.Context, document do
 func (s stubKnowledgeDocumentRepository) UpdateWhere(ctx context.Context, cond port.KnowledgeDocumentConditions, patch port.KnowledgeDocumentPatch) (int64, error) {
 	if s.updateWhereFn != nil {
 		return s.updateWhereFn(ctx, cond, patch)
+	}
+	return 0, nil
+}
+
+func (s stubKnowledgeDocumentRepository) UpdateFields(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+	if s.updateFieldsFn != nil {
+		return s.updateFieldsFn(ctx, where, set)
 	}
 	return 0, nil
 }
@@ -52,27 +60,15 @@ func TestDocumentStatusHelperTryMarkRunning(t *testing.T) {
 	t.Parallel()
 
 	helper := NewDocumentStatusHelper(stubKnowledgeDocumentRepository{
-		updateWhereFn: func(ctx context.Context, cond port.KnowledgeDocumentConditions, patch port.KnowledgeDocumentPatch) (int64, error) {
-			if cond.ID != "doc-1" {
-				t.Fatalf("unexpected doc id: %q", cond.ID)
-			}
-			if cond.Enabled == nil || !*cond.Enabled {
-				t.Fatalf("expected enabled condition, got %+v", cond.Enabled)
-			}
-			if cond.Deleted == nil || *cond.Deleted {
-				t.Fatalf("expected deleted=false condition, got %+v", cond.Deleted)
-			}
-			if cond.StatusNE != domain.KnowledgeDocumentStatusRunning {
-				t.Fatalf("unexpected status condition: %q", cond.StatusNE)
-			}
-			if !patch.Status.Set || patch.Status.Value != domain.KnowledgeDocumentStatusRunning {
-				t.Fatalf("unexpected status patch: %+v", patch.Status)
-			}
-			if !patch.UpdatedBy.Set || patch.UpdatedBy.Value != systemUser {
-				t.Fatalf("unexpected updated_by patch: %+v", patch.UpdatedBy)
-			}
-			if !patch.UpdatedAt.Set {
-				t.Fatal("expected updated_at patch to be set")
+		updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+			assertPredicate(t, where, port.KnowledgeDocument.ID.Key, port.OperatorEQ, "doc-1")
+			assertPredicate(t, where, port.KnowledgeDocument.Enabled.Key, port.OperatorEQ, true)
+			assertPredicate(t, where, port.KnowledgeDocument.Deleted.Key, port.OperatorEQ, false)
+			assertInPredicate(t, where, port.KnowledgeDocument.Status.Key, domain.KnowledgeDocumentStatusPending, domain.KnowledgeDocumentStatusFailed, domain.KnowledgeDocumentStatusSuccess)
+			assertAssignment(t, set, port.KnowledgeDocument.Status.Key, domain.KnowledgeDocumentStatusRunning)
+			assertAssignment(t, set, port.KnowledgeDocument.UpdatedBy.Key, systemUser)
+			if !hasAssignment(set, port.KnowledgeDocument.UpdatedAt.Key) {
+				t.Fatal("expected updated_at assignment to be set")
 			}
 			return 1, nil
 		},
@@ -91,7 +87,7 @@ func TestDocumentStatusHelperTryMarkRunningReturnsFalseWhenNoRowsUpdated(t *test
 	t.Parallel()
 
 	helper := NewDocumentStatusHelper(stubKnowledgeDocumentRepository{
-		updateWhereFn: func(ctx context.Context, cond port.KnowledgeDocumentConditions, patch port.KnowledgeDocumentPatch) (int64, error) {
+		updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
 			return 0, nil
 		},
 	})
@@ -110,7 +106,7 @@ func TestDocumentStatusHelperTryMarkRunningWrapsRepositoryError(t *testing.T) {
 
 	repoErr := errors.New("boom")
 	helper := NewDocumentStatusHelper(stubKnowledgeDocumentRepository{
-		updateWhereFn: func(ctx context.Context, cond port.KnowledgeDocumentConditions, patch port.KnowledgeDocumentPatch) (int64, error) {
+		updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
 			return 0, repoErr
 		},
 	})
@@ -122,4 +118,56 @@ func TestDocumentStatusHelperTryMarkRunningWrapsRepositoryError(t *testing.T) {
 	if ok {
 		t.Fatal("TryMarkRunning() should return false on error")
 	}
+}
+
+func assertPredicate(t *testing.T, predicates port.UpdatePredicates, field port.FieldKey, operator port.PredicateOperator, value any) {
+	t.Helper()
+	for _, predicate := range predicates {
+		if predicate.Field == field && predicate.Operator == operator && predicate.Value == value {
+			return
+		}
+	}
+	t.Fatalf("missing predicate field=%s operator=%s value=%v in %+v", field, operator, value, predicates)
+}
+
+func assertAssignment(t *testing.T, assignments port.UpdateAssignments, field port.FieldKey, value any) {
+	t.Helper()
+	for _, assignment := range assignments {
+		if assignment.Field == field && assignment.Value == value {
+			return
+		}
+	}
+	t.Fatalf("missing assignment field=%s value=%v in %+v", field, value, assignments)
+}
+
+func assertInPredicate(t *testing.T, predicates port.UpdatePredicates, field port.FieldKey, values ...string) {
+	t.Helper()
+	for _, predicate := range predicates {
+		if predicate.Field != field || predicate.Operator != port.OperatorIn {
+			continue
+		}
+		if len(predicate.Values) != len(values) {
+			continue
+		}
+		matched := true
+		for i, value := range values {
+			if predicate.Values[i] != value {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return
+		}
+	}
+	t.Fatalf("missing in predicate field=%s values=%v in %+v", field, values, predicates)
+}
+
+func hasAssignment(assignments port.UpdateAssignments, field port.FieldKey) bool {
+	for _, assignment := range assignments {
+		if assignment.Field == field {
+			return true
+		}
+	}
+	return false
 }

@@ -1,447 +1,395 @@
 # Project Progress Context
 
-更新时间：2026-04-26
+更新时间：2026-05-02
 
-## 1. 文档用途
+这份文档用于维护 `goagent` 当前项目进度，帮助后续继续开发时快速对齐：
 
-这份文档是 `goagent` 当前阶段的长期进度文档，目标是：
+- 当前阶段
+- 已完成能力
+- 今日新增进展
+- 当前验证状态
+- 当前已知问题与风险
+- 下一步计划
 
-- 让下次对话开始时只需要读取这一份文件，就能快速掌握项目状态
-- 记录“代码已经落地了什么”，而不是只记录设想
-- 明确当前主线、技术约束、未完成项和下一步任务顺序
-- 避免后续推进时重复做已经定过的架构决策
+## 开发约定
 
-后续如果继续推进 `knowledge` 相关能力，优先先读：
+- 从 2026-04-30 开始，新增代码需要补充必要的中文注释。
+- 在函数声明上，使用简短中文注释说明这个函数的功能。
+- 在关键步骤或相对复杂的步骤上，使用简短中文注释说明这一步是在做什么。
+- 注释以“必要、准确、易读”为原则，避免无信息量的逐行翻译式注释。
 
-- `docs/project_progress_context.md`
+## 当前阶段
 
-然后再按这里给出的“下一步任务清单”继续往下做。
+项目已经从“基础设施搭建期”进入“业务模块联调与质量收口期”。
 
-## 2. 当前阶段结论
+当前可以分成三条主线来看：
 
-项目当前已经从“基础设施准备阶段”进入“knowledge 业务骨架已落地，正在补主链路”的阶段。
+### 1. Knowledge 主链路已进入稳定化阶段
 
-更具体地说：
+- `knowledge` 已形成完整的 `domain / port / service / schedule / adapter / http` 结构
+- 后台已能完成登录、知识库管理、文档上传、文档分块、chunk 管理、调度相关联调
+- 当前重点已从“继续铺功能”转向：
+  - 主链路一致性
+  - 状态流转
+  - 排障与日志
+  - chunk 质量基线
 
-- `infra-ai` 已经具备可用的 `chat / embedding / rerank` 基础能力
-- `internal/app/core/parser` 和 `internal/app/core/chunk` 已完成第一版
-- `knowledge` 模块的 `domain / port / 部分 service / 部分 repository / migration` 已开始落地
-- 业务主线已经明确从继续扩 `infra-ai`，切换到补齐 `knowledge` 主链路
+### 2. RAG 一期最小 chat 闭环已打通
 
-当前主线不是继续扩基础设施，而是：
+- `conversation / message / summary / feedback / trace` 已落地
+- `RagChatService`、HTTP handler、runtime、trace 查询接口都已接通
+- 当前重点不再是“能不能跑”，而是：
+  - 稳定性
+  - 观测
+  - 多轮对话一致性
+  - 后续增强能力的演进空间
 
-1. 把 `knowledge` 的业务模型、存储模型、数据库结构彻底对齐
-2. 补齐文档上传、解析、切块、向量化、持久化主链路
-3. 再接 RocketMQ 异步处理与 URL 定时刷新
+### 3. Ingestion 已从“方向澄清”进入“模块落地期”
 
-## 3. 当前已完成项
+- 已明确 `ingestion` 是独立业务模块，而不是继续塞进 `knowledge`
+- 已明确交互模型是：
+  - `配置 pipeline`
+  - `发起 task`
+  - `查看 task / task_node 日志`
+- 已完成第一轮模块骨架、落表、repository、最小执行链路和路由接入
+- 当前重点已转为：
+  - 接入 EINO 作为执行编排层
+  - 把最小占位链路升级为真实可消费链路
+  - 最终接回 `knowledge processMode = pipeline`
 
-### 3.1 核心基础能力
+## 已完成能力
 
-已经完成并可复用：
+### 基础层
 
-- `infra-ai`
-  - `chat`
-  - `embedding`
-  - `rerank`
-  - provider 路由与选择逻辑
-- `parser`
-  - `DocumentParser`
-  - `MarkdownDocumentParser`
-  - `TikaDocumentParser`
-- `chunk`
-  - `Chunk`
-  - `fixed_size`
-  - `markdown`
-  - `Embedder`
-- `server / middleware / config`
-  - Gin 启动骨架
-  - request-id
-  - error handler
+- `internal/infra-ai`
+  - chat
+  - embedding
+  - rerank
+  - provider 路由与候选选择
+- `internal/app/core/parser`
+  - Markdown parser
+  - Tika parser
+- `internal/app/core/chunk`
+  - fixed size chunker
+  - markdown chunker
+  - chunk selector
+- Web 基础设施
+  - Gin
+  - request id
+  - global error handler
   - user context middleware
   - Viper 配置加载
 
-已验证：
+### Knowledge 业务层
 
-- `go test ./internal/app/core/parser ./internal/app/core/parser/test`
-- `go test ./internal/app/core/chunk ./internal/app/core/chunk/test ./internal/framework/distributedid`
-
-### 3.2 knowledge 业务层骨架
-
-已经落地目录：
+核心目录：
 
 ```text
 internal/app/knowledge/
   domain/
   port/
   service/
+  schedule/
 ```
 
-已经落地的内容：
+当前已完成：
 
-- `domain`
-  - `KnowledgeBase`
-  - `KnowledgeDocument`
-  - `KnowledgeChunk`
-  - `KnowledgeDocumentChunkLog`
-  - `KnowledgeDocumentSchedule`
-- `port`
-  - repository 接口
-  - storage 接口
-  - task_queue 接口
-  - vector_store 接口
-- `service`
-  - `knowledge_base_service.go` 已有可用实现
-  - `knowledge_document_service.go` 目前只有空骨架，尚未实现业务逻辑
+- `KnowledgeBaseService`
+  - create / get / update / delete / page
+  - chunk strategies 查询
+  - embedding model 更新校验
+- `KnowledgeDocumentService`
+  - upload
+  - get
+  - page
+  - search
+  - update
+  - enable
+  - delete
+  - start chunk
+  - chunk log page
+  - schedule exec page
+  - 支持 `sourceType=file`
+  - 支持 `sourceType=url`
+- `KnowledgeChunkService`
+  - page
+  - create
+  - update
+  - delete
+  - enable
+  - batch toggle enabled
+  - 支持 chunk/vector 同步
+- `DocumentProcessService`
+  - 文件读取
+  - 文本解析
+  - chunk 切分
+  - embedding
+  - chunk 持久化
+  - vector 持久化
+  - chunk log 写入
+  - 文档状态流转
+- `KnowledgeDocumentScheduleService`
+  - schedule 同步
+  - 按文档删除 schedule / exec
+- `KnowledgeDocumentScheduleJob`
+  - 扫描到期任务
+  - 恢复 stuck running document
 
-### 3.3 knowledge base service
+### Repository / Adapter
 
-[`internal/app/knowledge/service/knowledge_base_service.go`](d:\goagent\internal\app\knowledge\service\knowledge_base_service.go) 当前已经具备：
+当前已完成：
 
-- 创建知识库
-- 查询知识库详情
-- 更新知识库
-- 删除知识库
-- 分页查询知识库
+- PostgreSQL repository
+  - knowledge
+  - rag
+  - user
+  - ingestion
+- 条件更新 DSL
+  - 已沉淀为公共 helper，供 `knowledge` 与 `rag` 仓储更新复用
+- FileStorage
+  - `internal/adapter/storage/s3`
+  - `Upload / Open / Delete`
+- VectorStore
+  - `internal/adapter/vectorstore/pgvector`
+  - chunk upsert / delete / batch delete
+  - 已补充检索能力，供 `rag` 一期复用
+- TaskQueue
+  - `internal/adapter/taskqueue/rocketmq`
+  - chunk document task
+  - refresh remote document task
+  - chunk document consumer
 
-当前行为特点：
+### RAG 一期能力
 
-- 创建时会生成 `collection_name`
-- 更新 `embedding_model` 时，会检查该知识库下是否已有“已分块文档”
-- 删除知识库前，会检查是否仍存在文档
+#### Domain / Repository
 
-说明：
+- 已落地 `conversation`
+- 已落地 `conversation_message`
+- 已落地 `conversation_summary`
+- 已落地 `message_feedback`
+- 已落地 `rag_trace_run`
+- 已落地 `rag_trace_node`
+- `rag` repo 更新操作已适配 `UpdateWhere` 风格
 
-- 这层逻辑已经调整为和 `ragent` 的表结构方向一致
-- 但部分 service 输入结构仍保留了旧字段名痕迹，例如 `Description`、`Status`
-- 这些字段目前不会映射到最终 `t_knowledge_base` 表结构中，属于下一步要清理的技术债
+#### Core
 
-### 3.4 PostgreSQL repository 与 migration
+- `core/rewrite`
+  - 最小可用 query rewrite 抽象与默认实现
+- `core/prompt`
+  - 中文默认提示词
+  - prompt template loader
+  - prompt service
+- `core/retrieve`
+  - embedding + vector search + 可选 rerank 插槽
+- `core/vector`
+  - 面向未来扩展的向量抽象
+- `core/memory`
+  - `Store / SummaryService / Service` 三层抽象
+  - `DefaultService`
+  - `RepositoryStore + RepositorySummaryService`
+  - `MessageServiceStore + SummaryServiceAdapter`
 
-已经落地目录：
+#### Service / HTTP
+
+- `ConversationService`
+  - 列会话
+  - 创建或更新时间
+  - 重命名
+  - 删除会话并级联删消息/摘要
+- `ConversationMessageService`
+  - 新增消息
+  - 查询消息列表
+  - 写入摘要
+  - 读取最新摘要
+  - 聚合 assistant 消息 vote 信息
+- `RagChatService`
+  - 最小 chat 闭环
+  - 多轮对话落同一会话
+  - stop 能力
+  - trace run / trace node 收口
+- Trace 查询接口
+  - `GET /rag/traces/runs`
+  - `GET /rag/traces/runs/:traceId`
+  - `GET /rag/traces/runs/:traceId/nodes`
+
+### Ingestion 第一阶段已完成能力
+
+核心目录：
 
 ```text
-internal/adapter/repository/postgres/
-  migrations/
-  models/
-  sqlc/
-  conn.go
-  knowledge_base_repo.go
-  knowledge_document_repo.go
-  mapper.go
+internal/app/ingestion/
+  domain/
+  port/
+  service/
 ```
 
-已经落地的内容：
+当前已完成：
+
+- 目标与实施设计文档
+  - `docs/ingestion_module_goal.md`
+  - `docs/ingestion_execution_design.md`
+- 领域模型
+  - `Pipeline`
+  - `PipelineNode`
+  - `Task`
+  - `TaskNode`
+- PostgreSQL 持久化
+  - `pipeline / task / task_node` 三张表
+  - GORM model
+  - repository 实现
+- HTTP 接口骨架
+  - pipeline CRUD
+  - task 创建 / 分页 / 详情 / 节点日志
+- Runtime 装配
+  - 独立 ingestion runtime
+  - 已接入主程序路由
+- 执行层最小骨架
+  - `ExecutionState`
+  - `WorkflowBuilder`
+  - `NodeRunnerRegistry`
+  - `TaskObserver`
+  - `ExecutorService`
+- 最小顺序执行链路
+  - `fetcher`
+  - `parser`
+  - `chunker`
+  - `indexer`
 
-- `knowledge_base_repo.go`
-  - GORM 实现
-  - 支持 `Create / Update / Delete / GetByID / GetByName / Count / List`
-- `knowledge_document_repo.go`
-  - GORM 实现简单 CRUD 与列表
-  - `CountChunkedByKnowledgeBaseID` 使用 `pgx + sqlc` 风格查询
-- `conn.go`
-  - PostgreSQL DSN 解析
-  - `gorm.DB`
-  - `pgxpool.Pool`
-- `mapper.go`
-  - domain 与 postgres model 转换
+## 今日新增进展
 
-### 3.5 数据库结构已开始对齐 ragent
+### 1. ingestion 模块从设计阶段推进到可运行骨架
 
-已读取并参考：
+- 新增 `docs/ingestion_execution_design.md`
+- 明确 ingestion 的模块定位、用户交互、与 `knowledge / rag` 的关系
+- 确认 EINO 适合作为执行编排层，而不是替代整个 ingestion 模块
 
-- `D:\Git\ragent\resources\database\schema_pg.sql`
+### 2. ingestion 落表与 repository 已完成
 
-当前 migration 已调整为和上游 knowledge 表结构一致的方向：
+- 新增 migration：
+  - `t_ingestion_pipeline`
+  - `t_ingestion_task`
+  - `t_ingestion_task_node`
+- 完成 ingestion 的 GORM model、JSON 映射与 PostgreSQL repository
+- ingestion runtime 已接入这些 repository
 
-- 表名采用 `t_knowledge_*`
-- 时间字段采用 `create_time / update_time`
-- 逻辑删除采用 `deleted SMALLINT`
-- `knowledge_base` 包含：
-  - `embedding_model`
-  - `collection_name`
-  - `created_by`
-  - `updated_by`
+### 3. ingestion 最小执行链路已打通
 
-当前 migration 文件：
+- 建立 `ExecutionState / WorkflowSpec / NodeRunner / TaskObserver` 骨架
+- 完成四个节点的第一版占位实现：
+  - `fetcher`
+  - `parser`
+  - `chunker`
+  - `indexer`
+- `ExecutorService` 已能按顺序执行 workflow 并回写 `task / task_node`
 
-- [`internal/adapter/repository/postgres/migrations/20260426212000_create_knowledge_tables.sql`](d:\goagent\internal\adapter\repository\postgres\migrations\20260426212000_create_knowledge_tables.sql)
+### 4. ingestion 已接入主程序后台路由
 
-## 4. 当前真实状态评估
+- 在 `cmd/server/main.go` 中完成 ingestion runtime 初始化
+- ingestion 路由已注册到后台管理员路由组
+- 当前可通过后台接口真实创建和执行最小 ingestion task
 
-如果从“是否已经能跑完整知识库主链路”这个角度评估，项目当前大约处在：
+### 5. 已顺手修复若干 ingestion 基础问题
 
-- 已完成基础设施：`80%+`
-- 已完成 knowledge 骨架：`45%`
-- 已完成 knowledge 主链路：`15%-20%`
+- `pipeline / task / task_node` 创建时改为生成真实 ID
+- `task_node` 不再依赖拼接主键，而是使用独立主键与 `(task_id, node_id)` 查询更新
+- 避免了“task 显示 running 但实际上未执行”的错误状态设计
 
-原因：
+## 当前验证状态
 
-- 数据结构、目录结构、接口边界已经开始成形
-- `knowledge_base` 这一块已经有 service + repository + migration
-- 但真正的主链路还没打通：
-  - 文件上传未落地
-  - `KnowledgeDocumentService` 未实现
-  - `KnowledgeChunkRepository` 未实现
-  - `DocumentProcessService` 未实现
-  - 向量存储未实现
-  - RocketMQ 任务未实现
-  - HTTP handler 未实现
+最近已通过：
 
-所以当前不是“从 0 到 1 的设计阶段”，而是“从 1 到可跑闭环的实现阶段”。
+```powershell
+$env:GOCACHE='D:\goagent\.gocache'; go test ./...
+```
 
-## 5. 当前存在的未对齐项
+本轮验证重点包括：
 
-这些不是阻塞当前编译的问题，但会影响后续可维护性，应该优先清理：
+- `internal/app/ingestion/service`
+- `internal/bootstrap/ingestion`
+- `cmd/server`
+- 以及全仓关键模块回归编译
 
-### 5.1 knowledge base service 输入结构仍有旧字段
+当前人工确认的事实：
 
-当前 `CreateKnowledgeBaseInput / UpdateKnowledgeBaseInput / PageKnowledgeBaseInput` 中仍有一些字段来自旧设计：
+- ingestion 已能从主程序完成 runtime 装配
+- ingestion 后台路由已可注册
+- 最小 task 提交后会进入执行流程并回写状态
+- 但 fetcher 仍是占位能力，当前要跑通最小链路，需要通过 metadata 或节点 settings 提供 inline content
 
-- `Description`
-- `Status`
+## 当前已知问题与风险
 
-问题：
+### 1. ingestion 已可运行，但仍是“最小占位执行链路”
 
-- 这些字段不在 `t_knowledge_base` 当前上游表结构中
-- service 入参与 domain / migration / repository 已经不是完全同一语义
+- `fetcher` 还不做真实远程读取
+- `indexer` 还不写真实下游
+- 当前链路更适合用于验证编排、状态流转和观测，而不是生产可用 ingestion
 
-建议：
+### 2. EINO 还未真正接入执行层
 
-- 下一步清理这些不再落库的字段
-- service 输入只保留真正存在于业务和表结构里的字段
+- 当前 `WorkflowBuilder + NodeRunner + ExecutorService` 是为 EINO 预留的本地骨架
+- 还没有把 workflow 转成 EINO graph/workflow
+- callback 还没有用 EINO 的标准机制来驱动 `task_node` 观测
 
-### 5.2 repository 已对齐上游，service 和未来 handler 也要跟着统一
+### 3. `knowledge processMode = pipeline` 仍未接回 ingestion
 
-当前 repository 和 migration 已经按 `t_knowledge_*` 命名：
+- `knowledge document` 已允许配置 `processMode = pipeline`
+- ingestion 已有独立模块和最小执行能力
+- 但两者尚未真正闭环
 
-- `kb_id`
-- `doc_name`
-- `file_url`
-- `deleted`
+### 4. chunk 质量仍停留在“工程可用”阶段
 
-因此后续任何新写的业务层、handler、DTO、task message，都应统一使用与上游一致的语义，不要再回到：
+- `markdown` chunker 虽比固定大小更好，但离更接近语义级切分仍有差距
+- 缺少真实问答样本下的召回和上下文完整性评测基线
 
-- `knowledge_base_id`
-- `storage_key`
-- `mime_type`
-- `deleted_at`
+### 5. 异步链路与资源稳定性仍需继续验证
 
-### 5.3 目前只有 knowledge base 基本可用
+- `knowledge` 的 MQ 路径仍依赖 RocketMQ 端到端稳定性
+- ingestion 目前是单进程最小执行模式，后续如果演进到 MQ / worker，需要重新验证状态一致性与恢复机制
 
-当前只有 `KnowledgeBaseService` 进入了“可用雏形”状态。
+## 下一步计划
 
-以下模块仍属于骨架或未实现：
+### P0：把 EINO 接入 ingestion 执行编排层
 
-- `KnowledgeDocumentService`
-- `KnowledgeChunkService`
-- `DocumentProcessService`
-- `ScheduleService`
-- `KnowledgeChunkRepository`
-- `KnowledgeDocumentChunkLogRepository`
-- `KnowledgeDocumentScheduleRepository`
+目标：
 
-## 6. 已确认的技术约束
+- 设计并落地 ingestion 的 EINO adapter
+- 将 `WorkflowSpec` 转为 EINO workflow / graph
+- 将 callback 事件接到 `TaskObserver / task_node`
 
-这些决策已经比较稳定，后续默认继续沿用：
+### P0：把最小占位执行链路升级成真实可消费链路
 
-### 6.1 Web
+目标：
 
-- 继续使用 `Gin`
-- 当前阶段不更换为 `Echo / Fiber / Chi`
+- 让 `fetcher` 支持真实来源读取
+- 让 `indexer` 接入真实下游目标
+- 让最小 ingestion task 不再依赖 inline content 占位
 
-### 6.2 数据库访问层
+### P1：把 pipeline 真正接回 knowledge
 
-- `PostgreSQL`
-- 简单 CRUD 用 `GORM`
-- 复杂统计、扫描、批处理、调度相关查询用 `pgx + sqlc` 或手写 SQL
+目标：
 
-### 6.3 对象存储
+- 让 `knowledge document processMode = pipeline` 有真实执行入口
+- 避免继续停留在“只保存配置”的状态
 
-- 使用 `S3-compatible`
-- 第一阶段兼容当前 `rustfs` 配置
+### P1：继续完善观测与排障
 
-### 6.4 向量存储
+目标：
 
-- 第一阶段优先 `pgvector`
-- 不同时推进 `pgvector + milvus`
+- 保持 ingestion task 从第一天起就具备最小排障能力
+- 评估后续是否抽象通用 trace / task 观测模型
 
-### 6.5 消息队列
+### P1：建立 chunk 质量评测样本
 
-- 第一阶段统一使用 `RocketMQ`
-- 不再回到 `Redis + Asynq`
+目标：
 
-### 6.6 数据库结构来源
+- 选取 Markdown 文档、说明文档、FAQ 文档做基准样本
+- 评估不同 chunk 策略下的召回和上下文完整性
 
-- `knowledge` 相关表结构以 `D:\Git\ragent\resources\database\schema_pg.sql` 为准
-- `goagent` 内的 migration、model、repository、domain 应尽量对齐该 schema
+## 维护建议
 
-这是当前非常重要的约束。
+后续每完成一类能力后，建议同步更新这份文档的几个部分：
 
-## 7. 下一步任务清单
-
-下面按优先级排序，尽量保证每一步都能形成清晰的增量成果。
-
-### P0：先把 knowledge base 这一层彻底收口
-
-1. 清理 `KnowledgeBaseService` 中已经不再需要的旧字段
-   - 去掉或停用 `Description`
-   - 去掉或停用 `Status`
-2. 检查 `KnowledgeBaseRepository` 与 `t_knowledge_base` 的约束是否完整一致
-   - `collection_name` 唯一
-   - `deleted` 逻辑删除过滤
-3. 补 `knowledge_base` 相关测试
-   - service 单测
-   - repository 最小行为测试
-
-### P1：实现 KnowledgeDocumentService
-
-这是下一阶段最重要的业务工作。
-
-建议优先补这些能力：
-
-1. 创建 / 上传登记文档
-   - 创建 `t_knowledge_document` 记录
-   - 补齐 `created_by / updated_by`
-   - 设定 `process_mode / source_type / status`
-2. 查询文档详情
-3. 分页查询文档
-4. 启用 / 禁用文档
-5. 启动文档处理
-   - 当前可以先只做“登记任务意图”或直接调用后续 process service
-
-### P2：补齐 KnowledgeChunk 相关层
-
-1. 补 `KnowledgeChunkRepository`
-   - `CreateBatch`
-   - `DeleteByDocumentID`
-   - `GetByID`
-   - `List`
-   - `Update`
-2. 必要时补 chunk model / mapper 的进一步细化
-3. 明确 chunk 与上游 `t_knowledge_chunk` 的字段映射是否还缺：
-   - `content_hash`
-   - `char_count`
-   - `token_count`
-   - `created_by / updated_by`
-
-### P3：打通 document 处理主链路
-
-目标是先做同步闭环，不急着先上 MQ。
-
-建议顺序：
-
-1. 新建 `DocumentProcessService`
-2. 串起：
-   - 读取文件
-   - parser
-   - chunk
-   - embedding
-   - chunk 持久化
-   - 向量写入
-3. 第一阶段只支持本地上传文档
-4. 暂不做 URL refresh
-
-### P4：接对象存储
-
-1. 落 `internal/adapter/storage/s3/`
-2. 实现：
-   - `Upload`
-   - `Delete`
-   - `Open`
-3. 让 `KnowledgeDocumentService` 真的能接上传链路，而不是只创建数据库记录
-
-### P5：接 pgvector
-
-1. 定义统一 `vector_store` 实现
-2. 优先做 `pgvector`
-3. 支持：
-   - 按 document 写入 chunks
-   - 按 document 删除 vectors
-   - 按 chunk 更新 vector
-
-### P6：接 RocketMQ 异步任务
-
-在同步链路跑通后再做。
-
-1. 定义 RocketMQ producer / consumer
-2. 把“文档切块 + 向量化”从同步改为异步
-3. 补任务日志流转
-   - `pending`
-   - `running`
-   - `success`
-   - `failed`
-
-### P7：补 schedule 与 URL refresh
-
-1. 实现远程 URL 抓取
-2. 实现内容变化检测
-3. 接 `t_knowledge_document_schedule`
-4. 接 `t_knowledge_document_schedule_exec`
-5. 用轻量调度器 + RocketMQ 投递刷新任务
-
-### P8：补 HTTP 接口
-
-建议顺序：
-
-1. `knowledge base`
-   - create
-   - get
-   - update
-   - delete
-   - page/list
-2. `knowledge document`
-   - upload
-   - get
-   - page/list
-   - enable/disable
-   - start process
-3. `knowledge chunk`
-   - get
-   - page/list
-   - enable/disable
-
-### P9：补测试与联调
-
-至少补：
-
-1. `knowledge base` service 测试
-2. document repository / service 测试
-3. 文档处理链路测试
-4. 已分块文档计数 SQL 的行为测试
-5. migration 执行验证
-
-## 8. 当前不做的事情
-
-为了保持推进节奏，当前阶段不优先展开：
-
-- 重写 Web 框架
-- 同时推进多种消息队列
-- 同时推进 `pgvector` 和 `milvus`
-- 提前做复杂多租户
-- 提前做 MCP / 搜索 / 意图树业务接入
-- 提前做 ingestion pipeline 全量实现
-
-这些内容都排在 knowledge 主链稳定之后。
-
-## 9. 下次对话建议工作流
-
-下次如果继续推进，建议按这个顺序开始：
-
-1. 先读取 `docs/project_progress_context.md`
-2. 明确这次是继续哪个优先级任务
-3. 优先从下面几项里选择一个切入：
-   - 清理 `KnowledgeBaseService` 的旧字段
-   - 开始实现 `KnowledgeDocumentService`
-   - 开始实现 `KnowledgeChunkRepository`
-   - 开始实现 `DocumentProcessService`
-
-如果没有特别说明，默认下一步优先做：
-
-- `KnowledgeDocumentService`
-
-因为它是把“知识库定义完成”推进到“文档主链可落地”的关键桥梁。
-
-## 10. 一句话总结
-
-`goagent` 当前已经完成 `infra-ai + parser + chunk` 基础层，并开始落地 `knowledge` 模块；`knowledge base`、PostgreSQL repository、migration 已具备雏形，且数据库结构已开始对齐 `ragent` 的 `schema_pg.sql`；下一步的核心任务是补齐 `KnowledgeDocumentService`、`KnowledgeChunkRepository` 和文档处理主链，使项目从“骨架已成形”进入“主链可运行”阶段。
+1. `今日新增进展`
+2. `当前验证状态`
+3. `当前已知问题与风险`
+4. `下一步计划`

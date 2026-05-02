@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -18,6 +19,9 @@ type LoginIDExtractor func(c *gin.Context) string
 func DefaultLoginIDExtractor(c *gin.Context) string {
 	if c == nil {
 		return ""
+	}
+	if token := strings.TrimSpace(c.GetHeader("Authorization")); token != "" {
+		return strings.TrimSpace(strings.TrimPrefix(token, "Bearer "))
 	}
 	if id := c.GetHeader("X-Login-Id"); id != "" {
 		return id
@@ -55,8 +59,7 @@ func UserContextMiddleware(loader UserLoaderFunc, extractor LoginIDExtractor) gi
 			return
 		}
 		if user == nil {
-			_ = c.Error(exception.NewClientException("invalid login identity", nil))
-			c.Abort()
+			c.Next()
 			return
 		}
 

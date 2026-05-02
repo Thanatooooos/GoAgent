@@ -11,14 +11,14 @@ import (
 )
 
 type stubKnowledgeBaseRepository struct {
-	createFn    func(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error)
-	updateFn    func(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error)
+	createFn      func(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error)
+	updateFn      func(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error)
 	updateWhereFn func(ctx context.Context, cond port.KnowledgeBaseConditions, patch port.KnowledgeBasePatch) (int64, error)
-	deleteFn    func(ctx context.Context, id string) error
-	getByIDFn   func(ctx context.Context, id string) (domain.KnowledgeBase, error)
-	getByNameFn func(ctx context.Context, name string) (int, error)
-	countFn     func(ctx context.Context, filter port.KnowledgeBaseListFilter) (int, error)
-	listFn      func(ctx context.Context, filter port.KnowledgeBaseListFilter) ([]domain.KnowledgeBase, error)
+	deleteFn      func(ctx context.Context, id string) error
+	getByIDFn     func(ctx context.Context, id string) (domain.KnowledgeBase, error)
+	getByNameFn   func(ctx context.Context, name string) (int, error)
+	countFn       func(ctx context.Context, filter port.KnowledgeBaseListFilter) (int, error)
+	listFn        func(ctx context.Context, filter port.KnowledgeBaseListFilter) ([]domain.KnowledgeBase, error)
 }
 
 func (s stubKnowledgeBaseRepository) Create(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error) {
@@ -94,6 +94,10 @@ func (s stubKnowledgeDocumentRepository) UpdateWhere(ctx context.Context, cond p
 	return 0, nil
 }
 
+func (s stubKnowledgeDocumentRepository) UpdateFields(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+	return 0, nil
+}
+
 func (s stubKnowledgeDocumentRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
@@ -154,6 +158,32 @@ func TestKnowledgeBaseServiceCreateGeneratesCollectionName(t *testing.T) {
 	}
 	if created.ID == "" {
 		t.Fatal("Create() returned empty id")
+	}
+}
+
+func TestKnowledgeBaseServiceCreateUsesProvidedCollectionName(t *testing.T) {
+	t.Parallel()
+
+	svc := NewKnowledgeBaseService(
+		stubKnowledgeBaseRepository{
+			createFn: func(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error) {
+				if knowledgeBase.CollectionName != "productdocs" {
+					t.Fatalf("unexpected collection name: %q", knowledgeBase.CollectionName)
+				}
+				return knowledgeBase, nil
+			},
+		},
+		stubKnowledgeDocumentRepository{},
+	)
+
+	_, err := svc.Create(context.Background(), CreateKnowledgeBaseInput{
+		Name:           "Product Docs",
+		EmbeddingModel: "model",
+		CollectionName: "productdocs",
+		OperatorID:     "u-1",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
 	}
 }
 

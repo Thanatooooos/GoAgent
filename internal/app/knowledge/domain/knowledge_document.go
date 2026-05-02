@@ -17,6 +17,7 @@ const (
 	KnowledgeDocumentStatusRunning = "running"
 	KnowledgeDocumentStatusSuccess = "success"
 	KnowledgeDocumentStatusFailed  = "failed"
+	KnowledgeDocumentStatusDeleting = "deleting"
 )
 
 type KnowledgeDocument struct {
@@ -70,14 +71,30 @@ func (d KnowledgeDocument) IsEnabled() bool {
 }
 
 func (d KnowledgeDocument) CanStartProcessing() bool {
-	if !d.IsEnabled() {
-		return false
-	}
-	return d.Status == KnowledgeDocumentStatusPending ||
-		d.Status == KnowledgeDocumentStatusFailed ||
-		d.Status == KnowledgeDocumentStatusSuccess
+	return d.IsEnabled() && CanKnowledgeDocumentTransition(d.Status, KnowledgeDocumentStatusRunning)
 }
 
 func (d KnowledgeDocument) IsRemote() bool {
 	return d.SourceType == KnowledgeDocumentSourceURL
+}
+
+func (d KnowledgeDocument) CanDelete() bool {
+	return CanKnowledgeDocumentTransition(d.Status, KnowledgeDocumentStatusDeleting)
+}
+
+func CanKnowledgeDocumentTransition(fromStatus string, toStatus string) bool {
+	switch toStatus {
+	case KnowledgeDocumentStatusRunning:
+		return fromStatus == KnowledgeDocumentStatusPending ||
+			fromStatus == KnowledgeDocumentStatusFailed ||
+			fromStatus == KnowledgeDocumentStatusSuccess
+	case KnowledgeDocumentStatusSuccess, KnowledgeDocumentStatusFailed:
+		return fromStatus == KnowledgeDocumentStatusRunning
+	case KnowledgeDocumentStatusDeleting:
+		return fromStatus == KnowledgeDocumentStatusPending ||
+			fromStatus == KnowledgeDocumentStatusFailed ||
+			fromStatus == KnowledgeDocumentStatusSuccess
+	default:
+		return false
+	}
 }

@@ -1,0 +1,193 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: goagent-postgres
+    environment:
+      POSTGRES_DB: ragent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ragent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: goagent-redis
+    command: ["redis-server", "--requirepass", "123456"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  object-storage:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: goagent-object-storage
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: rustfsadmin
+      MINIO_ROOT_PASSWORD: rustfsadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - object-storage-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  object-storage-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: goagent-object-storage-init
+    depends_on:
+      object-storage:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mc alias set local http://object-storage:9000 rustfsadmin rustfsadmin &&
+        mc mb --ignore-existing local/knowledge
+    restart: "no"
+
+  tika:
+    image: apache/tika:2.9.2.1
+    container_name: goagent-tika
+    ports:
+      - "9998:9998"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          bash -lc "exec 3<>/dev/tcp/127.0.0.1/9998;
+          printf 'GET /version HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3;
+          head -n 1 <&3 | grep -q '200'"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.2.0
+    container_name: goagent-rocketmq-namesrv
+    user: root
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /home/rocketmq/logs/rocketmqlogs
+        sh mqnamesrv
+    ports:
+      - "9876:9876"
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx400m"
+    healthcheck:
+      test: ["CMD-SHELL", "sh mqadmin clusterList -n 127.0.0.1:9876 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.2.0
+    container_name: goagent-rocketmq-broker
+    user: root
+    depends_on:
+      rocketmq-namesrv:
+        condition: service_healthy
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+      - "8081:8081"
+    environment:
+      NAMESRV_ADDR: "goagent-rocketmq-namesrv:9876"
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m"
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /home/rocketmq/logs/rocketmqlogs
+        mkdir -p /home/rocketmq/store/config
+        mkdir -p /home/rocketmq/store/commitlog
+        mkdir -p /home/rocketmq/store/consumequeue
+        mkdir -p /home/rocketmq/store/index
+
+        cat > /home/rocketmq/rocketmq-5.2.0/conf/broker.conf << EOF
+        brokerClusterName = DefaultCluster
+        brokerName = broker-a
+        brokerId = 0
+        deleteWhen = 04
+        fileReservedTime = 48
+        brokerRole = ASYNC_MASTER
+        flushDiskType = ASYNC_FLUSH
+        autoCreateTopicEnable = true
+        brokerIP1 = 127.0.0.1
+        listenPort = 10911
+        timerMaxDelaySec = 31622400
+        EOF
+
+        sh mqbroker --enable-proxy \
+          -n goagent-rocketmq-namesrv:9876 \
+          -c /home/rocketmq/rocketmq-5.2.0/conf/broker.conf
+    volumes:
+      - rocketmq-broker-store:/home/rocketmq/store
+    restart: unless-stopped
+
+  rocketmq-init:
+    image: apache/rocketmq:5.2.0
+    container_name: goagent-rocketmq-init
+    depends_on:
+      rocketmq-broker:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for i in $(seq 1 90); do
+          sh mqadmin clusterList -n goagent-rocketmq-namesrv:9876 | grep -q DefaultCluster && break
+          echo "waiting rocketmq broker..."
+          sleep 2
+        done
+
+        sh mqadmin updateTopic -n goagent-rocketmq-namesrv:9876 -c DefaultCluster -t knowledge-document-chunk_topic -r 8 -w 8
+        sh mqadmin updateTopic -n goagent-rocketmq-namesrv:9876 -c DefaultCluster -t knowledge-document-refresh_topic -r 8 -w 8
+        sh mqadmin updateTopic -n goagent-rocketmq-namesrv:9876 -c DefaultCluster -t "%RETRY%ragent-document-chunk-consumer_pg" -r 8 -w 8
+    restart: "no"
+
+  rocketmq-dashboard:
+    image: apacherocketmq/rocketmq-dashboard:2.1.0
+    container_name: goagent-rocketmq-dashboard
+    depends_on:
+      rocketmq-broker:
+        condition: service_started
+    ports:
+      - "8082:8082"
+    environment:
+      JAVA_OPTS: >-
+        -Xms256m -Xmx512m
+        -XX:MaxMetaspaceSize=256m
+        -Drocketmq.config.enableDashBoardCollect=false
+        -Drocketmq.namesrv.addr=goagent-rocketmq-namesrv:9876
+        -Dserver.port=8082
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  object-storage-data:
+  rocketmq-broker-store:

@@ -23,6 +23,7 @@ var nonCollectionChars = regexp.MustCompile(`[^a-z0-9_]+`)
 type CreateKnowledgeBaseInput struct {
 	Name           string
 	EmbeddingModel string
+	CollectionName string
 	OperatorID     string
 }
 
@@ -48,15 +49,20 @@ type PageKnowledgeBaseInput struct {
 }
 
 type KnowledgeBasePageResult struct {
-	Items    []domain.KnowledgeBase
-	Total    int
-	Page     int
-	PageSize int
+	Items          []domain.KnowledgeBase
+	DocumentCounts map[string]int
+	Total          int
+	Page           int
+	PageSize       int
 }
 
 type KnowledgeBaseService struct {
 	baseRepo     port.KnowledgeBaseRepository
 	documentRepo port.KnowledgeDocumentRepository
+}
+
+type knowledgeBaseDocumentBatchCounter interface {
+	CountByKnowledgeBaseIDs(ctx context.Context, knowledgeBaseIDs []string) (map[string]int, error)
 }
 
 func NewKnowledgeBaseService(
@@ -98,7 +104,7 @@ func (s *KnowledgeBaseService) Create(ctx context.Context, input CreateKnowledge
 		return domain.KnowledgeBase{}, exception.NewServiceException("failed to generate knowledge base id", err)
 	}
 
-	collectionName := buildCollectionName(name, id)
+	collectionName := resolveCollectionName(input.CollectionName, name, id)
 	knowledgeBase := domain.NewKnowledgeBase(
 		fmt.Sprintf("%d", id),
 		name,
@@ -254,11 +260,44 @@ func (s *KnowledgeBaseService) Page(ctx context.Context, input PageKnowledgeBase
 	}
 
 	return KnowledgeBasePageResult{
-		Items:    items,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
+		Items:          items,
+		DocumentCounts: s.countDocumentsByKnowledgeBaseIDs(ctx, items),
+		Total:          total,
+		Page:           page,
+		PageSize:       pageSize,
 	}, nil
+}
+
+func (s *KnowledgeBaseService) countDocumentsByKnowledgeBaseIDs(ctx context.Context, items []domain.KnowledgeBase) map[string]int {
+	counts := make(map[string]int, len(items))
+	if s.documentRepo == nil {
+		return counts
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.ID != "" {
+			ids = append(ids, item.ID)
+		}
+	}
+	if batchCounter, ok := s.documentRepo.(knowledgeBaseDocumentBatchCounter); ok {
+		batchCounts, err := batchCounter.CountByKnowledgeBaseIDs(ctx, ids)
+		if err == nil {
+			for id, count := range batchCounts {
+				counts[id] = count
+			}
+			return counts
+		}
+	}
+	for _, item := range items {
+		if item.ID == "" {
+			continue
+		}
+		count, err := s.documentRepo.CountByKnowledgeBaseID(ctx, item.ID)
+		if err == nil {
+			counts[item.ID] = count
+		}
+	}
+	return counts
 }
 
 func (s *KnowledgeBaseService) countKnowledgeBaseDocuments(ctx context.Context, knowledgeBaseID string) (int, error) {
@@ -296,6 +335,14 @@ func buildCollectionName(name string, id int64) string {
 		normalized = "kb"
 	}
 	return fmt.Sprintf("%s_%d", normalized, id)
+}
+
+func resolveCollectionName(collectionName, name string, id int64) string {
+	collectionName = strings.TrimSpace(collectionName)
+	if collectionName != "" {
+		return collectionName
+	}
+	return buildCollectionName(name, id)
 }
 
 func boolPointer(value bool) *bool {

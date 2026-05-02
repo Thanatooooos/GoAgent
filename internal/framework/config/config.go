@@ -103,11 +103,22 @@ type RedisConfig struct {
 type RocketMQConfig struct {
 	NameServer string         `mapstructure:"name-server"`
 	Producer   RocketProducer `mapstructure:"producer"`
+	Consumer   RocketConsumer `mapstructure:"consumer"`
+	Topics     RocketTopics   `mapstructure:"topics"`
 }
 
 type RocketProducer struct {
 	Group              string `mapstructure:"group"`
 	SendMessageTimeout int    `mapstructure:"send-message-timeout"`
+}
+
+type RocketConsumer struct {
+	ChunkDocumentGroup string `mapstructure:"chunk-document-group"`
+}
+
+type RocketTopics struct {
+	ChunkDocument         string `mapstructure:"chunk-document"`
+	RefreshRemoteDocument string `mapstructure:"refresh-remote-document"`
 }
 
 type MilvusConfig struct {
@@ -305,6 +316,7 @@ type RustFSConfig struct {
 	Url             string `mapstructure:"url"`
 	AccessKeyId     string `mapstructure:"access-key-id"`
 	SecretAccessKey string `mapstructure:"secret-access-key"`
+	Bucket          string `mapstructure:"bucket"`
 }
 
 type SaTokenConfig struct {

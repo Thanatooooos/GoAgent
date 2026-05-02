@@ -15,8 +15,8 @@ spring:
   datasource:
     driver-class-name: org.postgresql.Driver
     type: com.zaxxer.hikari.HikariDataSource
-    username: postgres
-    password: postgres
+    username: ""
+    password: ""
     url: jdbc:postgresql://127.0.0.1:5432/ragent?client_encoding=UTF8
     hikari:
       connection-timeout: 5000
@@ -30,13 +30,18 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
-      password: 123456
+      password: ""
 
 rocketmq:
   name-server: 127.0.0.1:9876
   producer:
     group: ragent-producer${unique-name:}_pg
     send-message-timeout: 2000
+  consumer:
+    chunk-document-group: ragent-document-chunk-consumer${unique-name:}_pg
+  topics:
+    chunk-document: knowledge-document-chunk_topic${unique-name:}
+    refresh-remote-document: knowledge-document-refresh_topic${unique-name:}
 
 milvus:
   uri: http://localhost:19530
@@ -113,13 +118,13 @@ ai:
         embedding: /v1/embeddings
     bailian:
       url: https://dashscope.aliyuncs.com
-      api-key: sk-a30df46fc0d94b40b340c8c54f86b4c8 
+      api-key: ""
       endpoints:
         chat: /compatible-mode/v1/chat/completions
         rerank: /api/v1/services/rerank/text-rerank/text-rerank
     siliconflow:
       url: https://api.siliconflow.cn
-      api-key: sk-hnmxugynmnjvwmrpmhkaegmrzjnjhqbetgveeqjpniuiehmt
+      api-key: ""
       endpoints:
         chat: /v1/chat/completions
         embedding: /v1/embeddings
@@ -187,8 +192,9 @@ parser:
 
 rustfs:
   url: http://localhost:9000
-  access-key-id: rustfsadmin
-  secret-access-key: rustfsadmin
+  access-key-id: ""
+  secret-access-key: ""
+  bucket: knowledge
 
 sa-token:
   token-name: Authorization

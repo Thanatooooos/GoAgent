@@ -2,11 +2,17 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
+
+	frameworkconfig "local/rag-project/internal/framework/config"
 )
 
 // EventData 事件数据
@@ -15,11 +21,15 @@ type EventData struct {
 	Data  interface{} `json:"data"`
 }
 
+const defaultSSEWriteTimeout = 15 * time.Second
+
 // SseEmitterSender SSE 发送器封装类
 // 提供线程安全的事件发送功能，统一处理连接关闭状态和异常情况
 type SseEmitterSender struct {
-	context *gin.Context
-	closed  atomic.Bool
+	context      *gin.Context
+	closed       atomic.Bool
+	mu           sync.Mutex
+	writeTimeout time.Duration
 }
 
 // NewSseEmitterSender 创建 SSE 发送器
@@ -31,7 +41,8 @@ func NewSseEmitterSender(c *gin.Context) *SseEmitterSender {
 	c.Header("X-Accel-Buffering", "no")
 
 	emitter := &SseEmitterSender{
-		context: c,
+		context:      c,
+		writeTimeout: resolveSSEWriteTimeout(),
 	}
 
 	// 监听客户端断开连接
@@ -50,51 +61,18 @@ func NewSseEmitterSender(c *gin.Context) *SseEmitterSender {
 // - eventName 为空时，使用默认事件格式发送数据
 // - eventName 不为空时，发送带命名的事件
 func (s *SseEmitterSender) SendEvent(eventName string, data interface{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.closed.Load() {
 		return nil
 	}
-
-	var err error
-	if eventName == "" {
-		// 默认事件
-		switch v := data.(type) {
-		case string:
-			_, err = s.context.Writer.WriteString(fmt.Sprintf("data: %s\n\n", v))
-		default:
-			jsonData, jsonErr := json.Marshal(v)
-			if jsonErr != nil {
-				return jsonErr
-			}
-			_, err = s.context.Writer.WriteString(fmt.Sprintf("data: %s\n\n", jsonData))
-		}
-	} else {
-		// 命名事件
-		eventLine := fmt.Sprintf("event: %s\n", eventName)
-		_, err = s.context.Writer.WriteString(eventLine)
-		if err != nil {
-			return err
-		}
-
-		switch v := data.(type) {
-		case string:
-			_, err = s.context.Writer.WriteString(fmt.Sprintf("data: %s\n\n", v))
-		default:
-			jsonData, jsonErr := json.Marshal(v)
-			if jsonErr != nil {
-				return jsonErr
-			}
-			_, err = s.context.Writer.WriteString(fmt.Sprintf("data: %s\n\n", jsonData))
-		}
-	}
-
+	err := s.writeEventLocked(eventName, data)
 	if err != nil {
-		s.Fail(err)
+		s.closed.Store(true)
+		log.Printf("SSE 发送失败: %v", err)
 		return err
 	}
-
-	// 刷新缓冲区，发送给客户端
-	s.context.Writer.Flush()
-
 	return nil
 }
 
@@ -118,18 +96,102 @@ func (s *SseEmitterSender) Fail(err error) {
 // closeWithError 以异常方式关闭连接
 // 使用 CAS 操作确保连接只被关闭一次
 func (s *SseEmitterSender) closeWithError(err error) {
-	if s.closed.CompareAndSwap(false, true) {
-		// 在实际实现中，可能需要发送一个错误事件
-		if err != nil {
-			s.SendEvent("error", gin.H{
-				"message": err.Error(),
-			})
-		}
-		log.Printf("SSE 连接异常关闭: %v", err)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed.Load() {
+		return
 	}
+	if err != nil {
+		_ = s.writeEventLocked("error", gin.H{
+			"message": err.Error(),
+		})
+	}
+	s.closed.Store(true)
+	log.Printf("SSE 连接异常关闭: %v", err)
 }
 
 // IsClosed 检查连接是否已关闭
 func (s *SseEmitterSender) IsClosed() bool {
 	return s.closed.Load()
+}
+
+func (s *SseEmitterSender) writeEventLocked(eventName string, data interface{}) error {
+	if s == nil || s.context == nil {
+		return errors.New("sse emitter is required")
+	}
+	if err := s.context.Request.Context().Err(); err != nil {
+		return err
+	}
+
+	payload, err := buildSSEPayload(eventName, data)
+	if err != nil {
+		return err
+	}
+	resetWriteDeadline, err := s.applyWriteDeadlineLocked()
+	if err != nil {
+		return err
+	}
+	defer resetWriteDeadline()
+	if _, err := s.context.Writer.WriteString(payload); err != nil {
+		return err
+	}
+
+	flusher, ok := s.context.Writer.(http.Flusher)
+	if !ok {
+		return errors.New("sse writer does not support flush")
+	}
+	flusher.Flush()
+	return nil
+}
+
+func (s *SseEmitterSender) applyWriteDeadlineLocked() (func(), error) {
+	if s.writeTimeout <= 0 {
+		return func() {}, nil
+	}
+	controller := http.NewResponseController(s.context.Writer)
+	if err := controller.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
+		// 非所有 writer 都支持 deadline，保持降级兼容。
+		if !errors.Is(err, http.ErrNotSupported) {
+			return nil, err
+		}
+		return func() {}, nil
+	}
+	return func() {
+		_ = controller.SetWriteDeadline(time.Time{})
+	}, nil
+}
+
+func buildSSEPayload(eventName string, data interface{}) (string, error) {
+	if eventName == "" {
+		switch v := data.(type) {
+		case string:
+			return fmt.Sprintf("data: %s\n\n", v), nil
+		default:
+			jsonData, err := json.Marshal(v)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("data: %s\n\n", jsonData), nil
+		}
+	}
+
+	switch v := data.(type) {
+	case string:
+		return fmt.Sprintf("event: %s\ndata: %s\n\n", eventName, v), nil
+	default:
+		jsonData, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("event: %s\ndata: %s\n\n", eventName, jsonData), nil
+	}
+}
+
+func resolveSSEWriteTimeout() time.Duration {
+	cfg := frameworkconfig.Get()
+	if cfg != nil && cfg.Rag.Default.SseTimeoutMs > 0 {
+		return time.Duration(cfg.Rag.Default.SseTimeoutMs) * time.Millisecond
+	}
+	return defaultSSEWriteTimeout
 }

@@ -29,3 +29,15 @@ func TestSelectorChunkReturnsErrorWhenStrategyMissing(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestSelectorChunkSupportsStructureAwareAlias(t *testing.T) {
+	selector := chunk.NewDefaultSelector()
+
+	chunks, err := selector.Chunk("# title\n\nhello world", chunk.Options{Strategy: "structure_aware"})
+	if err != nil {
+		t.Fatalf("expected structure_aware alias to work, got error: %v", err)
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected chunks")
+	}
+}

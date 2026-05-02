@@ -66,5 +66,10 @@ func (s *Selector) AvailableStrategies() []Strategy {
 }
 
 func normalizeStrategy(strategy Strategy) Strategy {
-	return Strategy(strings.TrimSpace(strings.ToLower(string(strategy))))
+	switch Strategy(strings.TrimSpace(strings.ToLower(string(strategy)))) {
+	case "structure_aware":
+		return StrategyMarkdown
+	default:
+		return Strategy(strings.TrimSpace(strings.ToLower(string(strategy))))
+	}
 }

@@ -13,7 +13,7 @@ type ListOptions struct {
 }
 
 type KnowledgeBaseListFilter struct {
-	Query  string
+	Query string
 	ListOptions
 }
 
@@ -28,7 +28,7 @@ type KnowledgeDocumentListFilter struct {
 
 type KnowledgeChunkListFilter struct {
 	DocumentID string
-	Status     string
+	Enabled    *bool
 	ListOptions
 }
 
@@ -54,6 +54,7 @@ type KnowledgeDocumentRepository interface {
 	Create(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error)
 	Update(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error)
 	UpdateWhere(ctx context.Context, cond KnowledgeDocumentConditions, patch KnowledgeDocumentPatch) (int64, error)
+	UpdateFields(ctx context.Context, where UpdatePredicates, set UpdateAssignments) (int64, error)
 	Delete(ctx context.Context, id string) error
 	GetByID(ctx context.Context, id string) (domain.KnowledgeDocument, error)
 	CountByKnowledgeBaseID(ctx context.Context, knowledgeBaseID string) (int, error)
@@ -62,10 +63,15 @@ type KnowledgeDocumentRepository interface {
 }
 
 type KnowledgeChunkRepository interface {
+	Create(ctx context.Context, chunk domain.KnowledgeChunk) (domain.KnowledgeChunk, error)
 	CreateBatch(ctx context.Context, chunks []domain.KnowledgeChunk) error
 	Update(ctx context.Context, chunk domain.KnowledgeChunk) (domain.KnowledgeChunk, error)
+	Delete(ctx context.Context, id string) error
 	DeleteByDocumentID(ctx context.Context, documentID string) error
+	UpdateEnabledByDocumentID(ctx context.Context, documentID string, enabled bool, updatedBy string, updatedAt time.Time) (int64, error)
+	UpdateEnabledByIDs(ctx context.Context, documentID string, chunkIDs []string, enabled bool, updatedBy string, updatedAt time.Time) (int64, error)
 	GetByID(ctx context.Context, id string) (domain.KnowledgeChunk, error)
+	CountByDocumentID(ctx context.Context, documentID string, enabled *bool) (int, error)
 	List(ctx context.Context, filter KnowledgeChunkListFilter) ([]domain.KnowledgeChunk, error)
 }
 
