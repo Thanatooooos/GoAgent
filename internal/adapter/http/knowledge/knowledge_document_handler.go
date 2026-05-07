@@ -108,6 +108,39 @@ type knowledgeDocumentChunkLogVO struct {
 	StartTime       *time.Time `json:"startTime,omitempty"`
 	EndTime         *time.Time `json:"endTime,omitempty"`
 	CreateTime      *time.Time `json:"createTime,omitempty"`
+	IngestionTask   *knowledgeDocumentIngestionTaskVO   `json:"ingestionTask,omitempty"`
+	IngestionNodes  []knowledgeDocumentIngestionNodeVO  `json:"ingestionNodes,omitempty"`
+}
+
+type knowledgeDocumentIngestionTaskVO struct {
+	ID             string         `json:"id"`
+	PipelineID     string         `json:"pipelineId"`
+	SourceType     string         `json:"sourceType,omitempty"`
+	SourceLocation string         `json:"sourceLocation,omitempty"`
+	SourceFileName string         `json:"sourceFileName,omitempty"`
+	Status         string         `json:"status,omitempty"`
+	ChunkCount     int            `json:"chunkCount"`
+	ErrorMessage   string         `json:"errorMessage,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	StartedAt      *time.Time     `json:"startedAt,omitempty"`
+	CompletedAt    *time.Time     `json:"completedAt,omitempty"`
+	CreateTime     *time.Time     `json:"createTime,omitempty"`
+	UpdateTime     *time.Time     `json:"updateTime,omitempty"`
+}
+
+type knowledgeDocumentIngestionNodeVO struct {
+	ID           string         `json:"id"`
+	TaskID       string         `json:"taskId"`
+	NodeID       string         `json:"nodeId"`
+	NodeType     string         `json:"nodeType"`
+	NodeOrder    int            `json:"nodeOrder"`
+	Status       string         `json:"status,omitempty"`
+	DurationMs   int64          `json:"durationMs"`
+	Message      string         `json:"message,omitempty"`
+	ErrorMessage string         `json:"errorMessage,omitempty"`
+	Output       map[string]any `json:"output,omitempty"`
+	CreateTime   *time.Time     `json:"createTime,omitempty"`
+	UpdateTime   *time.Time     `json:"updateTime,omitempty"`
 }
 
 type knowledgeDocumentScheduleExecVO struct {
@@ -380,24 +413,62 @@ func toKnowledgeDocumentVO(item domain.KnowledgeDocument) knowledgeDocumentVO {
 	}
 }
 
-func toKnowledgeDocumentChunkLogVO(item domain.KnowledgeDocumentChunkLog) knowledgeDocumentChunkLogVO {
+func toKnowledgeDocumentChunkLogVO(item service.KnowledgeDocumentChunkLogItem) knowledgeDocumentChunkLogVO {
+	logItem := item.Log
+	var ingestionTask *knowledgeDocumentIngestionTaskVO
+	if item.IngestionTask != nil {
+		ingestionTask = &knowledgeDocumentIngestionTaskVO{
+			ID:             item.IngestionTask.ID,
+			PipelineID:     item.IngestionTask.PipelineID,
+			SourceType:     item.IngestionTask.SourceType,
+			SourceLocation: item.IngestionTask.SourceLocation,
+			SourceFileName: item.IngestionTask.SourceFileName,
+			Status:         item.IngestionTask.Status,
+			ChunkCount:     item.IngestionTask.ChunkCount,
+			ErrorMessage:   item.IngestionTask.ErrorMessage,
+			Metadata:       item.IngestionTask.Metadata,
+			StartedAt:      item.IngestionTask.StartedAt,
+			CompletedAt:    item.IngestionTask.CompletedAt,
+			CreateTime:     timePointer(item.IngestionTask.CreatedAt),
+			UpdateTime:     timePointer(item.IngestionTask.UpdatedAt),
+		}
+	}
+	nodes := make([]knowledgeDocumentIngestionNodeVO, 0, len(item.IngestionNodes))
+	for _, node := range item.IngestionNodes {
+		nodes = append(nodes, knowledgeDocumentIngestionNodeVO{
+			ID:           node.ID,
+			TaskID:       node.TaskID,
+			NodeID:       node.NodeID,
+			NodeType:     node.NodeType,
+			NodeOrder:    node.NodeOrder,
+			Status:       node.Status,
+			DurationMs:   node.DurationMs,
+			Message:      node.Message,
+			ErrorMessage: node.ErrorMessage,
+			Output:       node.Output,
+			CreateTime:   timePointer(node.CreatedAt),
+			UpdateTime:   timePointer(node.UpdatedAt),
+		})
+	}
 	return knowledgeDocumentChunkLogVO{
-		ID:              item.ID,
-		DocumentID:      item.DocumentID,
-		Status:          item.Status,
-		ProcessMode:     item.ProcessMode,
-		ChunkStrategy:   item.ChunkStrategy,
-		PipelineID:      item.PipelineID,
-		ExtractDuration: item.ExtractDuration,
-		ChunkDuration:   item.ChunkDuration,
-		EmbedDuration:   item.EmbedDuration,
-		PersistDuration: item.PersistDuration,
-		TotalDuration:   item.TotalDuration,
-		ChunkCount:      item.ChunkCount,
-		ErrorMessage:    item.ErrorMessage,
-		StartTime:       item.StartTime,
-		EndTime:         item.EndTime,
-		CreateTime:      timePointer(item.CreatedAt),
+		ID:              logItem.ID,
+		DocumentID:      logItem.DocumentID,
+		Status:          logItem.Status,
+		ProcessMode:     logItem.ProcessMode,
+		ChunkStrategy:   logItem.ChunkStrategy,
+		PipelineID:      logItem.PipelineID,
+		ExtractDuration: logItem.ExtractDuration,
+		ChunkDuration:   logItem.ChunkDuration,
+		EmbedDuration:   logItem.EmbedDuration,
+		PersistDuration: logItem.PersistDuration,
+		TotalDuration:   logItem.TotalDuration,
+		ChunkCount:      logItem.ChunkCount,
+		ErrorMessage:    logItem.ErrorMessage,
+		StartTime:       logItem.StartTime,
+		EndTime:         logItem.EndTime,
+		CreateTime:      timePointer(logItem.CreatedAt),
+		IngestionTask:   ingestionTask,
+		IngestionNodes:  nodes,
 	}
 }
 

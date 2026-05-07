@@ -88,6 +88,35 @@ export interface IngestionResult {
   message?: string | null;
 }
 
+export interface IngestionNodeMetrics {
+  nodeType: string;
+  runs: number;
+  successes: number;
+  failures: number;
+  retries: number;
+  avgDurationMs: number;
+  maxDurationMs: number;
+}
+
+export interface IngestionMetricsSnapshot {
+  runningTasks: number;
+  maxConcurrent: number;
+  usedSlots: number;
+  totals: {
+    submitted: number;
+    started: number;
+    succeeded: number;
+    failed: number;
+    canceled: number;
+    retries: number;
+  };
+  rates: {
+    successRate: number;
+    failureRate: number;
+  };
+  nodes: IngestionNodeMetrics[];
+}
+
 export interface IngestionTaskCreatePayload {
   pipelineId: string;
   source: {
@@ -141,6 +170,10 @@ export async function getIngestionTaskNodes(id: string) {
 
 export async function createIngestionTask(payload: IngestionTaskCreatePayload) {
   return api.post<IngestionResult, IngestionResult>("/ingestion/tasks", payload);
+}
+
+export async function getIngestionMetrics() {
+  return api.get<IngestionMetricsSnapshot, IngestionMetricsSnapshot>("/ingestion/metrics");
 }
 
 export async function uploadIngestionTask(pipelineId: string, file: File) {

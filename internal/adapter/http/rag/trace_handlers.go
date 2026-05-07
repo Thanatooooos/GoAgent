@@ -56,10 +56,11 @@ type ragTraceNodeVO struct {
 	DurationMs   *int64     `json:"durationMs,omitempty"`
 	StartTime    *time.Time `json:"startTime,omitempty"`
 	EndTime      *time.Time `json:"endTime,omitempty"`
+	ExtraData    string     `json:"extraData,omitempty"`
 }
 
 type ragTraceDetailVO struct {
-	Run   ragTraceRunVO   `json:"run"`
+	Run   ragTraceRunVO    `json:"run"`
 	Nodes []ragTraceNodeVO `json:"nodes"`
 }
 
@@ -247,6 +248,7 @@ func toRagTraceNodeVO(item domain.RagTraceNode) ragTraceNodeVO {
 		DurationMs:   item.DurationMs,
 		StartTime:    item.StartTime,
 		EndTime:      item.EndTime,
+		ExtraData:    item.ExtraData,
 	}
 }
 

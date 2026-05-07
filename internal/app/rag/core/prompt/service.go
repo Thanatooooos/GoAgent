@@ -10,6 +10,8 @@ import (
 type Context struct {
 	Question         string
 	KnowledgeContext string
+	ToolContext      string
+	AnswerGuidance   string
 	History          []convention.ChatMessage
 	SystemPromptKey  string
 	SystemPrompt     string
@@ -44,12 +46,18 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 		return nil, fmt.Errorf("build system prompt: %w", err)
 	}
 
-	messages := make([]convention.ChatMessage, 0, len(ctx.History)+3)
+	messages := make([]convention.ChatMessage, 0, len(ctx.History)+5)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, convention.SystemMessage(systemPrompt))
 	}
 	if strings.TrimSpace(ctx.KnowledgeContext) != "" {
 		messages = append(messages, convention.SystemMessage(formatKnowledgeContext(ctx.KnowledgeContext)))
+	}
+	if strings.TrimSpace(ctx.ToolContext) != "" {
+		messages = append(messages, convention.SystemMessage(formatToolContext(ctx.ToolContext)))
+	}
+	if strings.TrimSpace(ctx.AnswerGuidance) != "" {
+		messages = append(messages, convention.SystemMessage(formatAnswerGuidance(ctx.AnswerGuidance)))
 	}
 	if len(ctx.History) > 0 {
 		messages = append(messages, ctx.History...)
@@ -62,4 +70,12 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 
 func formatKnowledgeContext(context string) string {
 	return "## 知识上下文\n" + strings.TrimSpace(context)
+}
+
+func formatToolContext(context string) string {
+	return "## 工具上下文\n" + strings.TrimSpace(context)
+}
+
+func formatAnswerGuidance(guidance string) string {
+	return "## 回答要求\n" + strings.TrimSpace(guidance)
 }

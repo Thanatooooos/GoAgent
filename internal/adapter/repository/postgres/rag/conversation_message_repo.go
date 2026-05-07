@@ -77,6 +77,8 @@ func (r *ConversationMessageRepository) List(ctx context.Context, filter port.Co
 	}
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
+	} else {
+		query = query.Limit(500)
 	}
 
 	var items []models.ConversationMessageModel

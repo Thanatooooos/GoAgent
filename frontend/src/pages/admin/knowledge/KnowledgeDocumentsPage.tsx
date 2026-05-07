@@ -355,6 +355,90 @@ export function KnowledgeDocumentsPage() {
     return status || "-";
   };
 
+  const formatNodeOutput = (output?: Record<string, unknown> | null) => {
+    if (!output || Object.keys(output).length === 0) return "-";
+    try {
+      return JSON.stringify(output, null, 2);
+    } catch {
+      return String(output);
+    }
+  };
+
+  const readOutputString = (output: Record<string, unknown> | null | undefined, key: string) => {
+    const value = output?.[key];
+    return typeof value === "string" ? value : value != null ? String(value) : "";
+  };
+
+  const readOutputNumber = (output: Record<string, unknown> | null | undefined, key: string) => {
+    const value = output?.[key];
+    return typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : null;
+  };
+
+  const renderIngestionNodeOutput = (node: NonNullable<KnowledgeDocumentChunkLog["ingestionNodes"]>[number]) => {
+    const output = node.output;
+    if (!output || Object.keys(output).length === 0) {
+      return <span className="text-xs text-muted-foreground">-</span>;
+    }
+
+    if (node.nodeType === "indexer") {
+      const compensation = output.compensation as { attempted?: boolean; errors?: string[] } | undefined;
+      const compensationErrors = Array.isArray(compensation?.errors) ? compensation?.errors : [];
+      return (
+        <div className="space-y-2">
+          <div className="grid gap-2 md:grid-cols-2">
+            <div className="rounded border bg-slate-50/70 p-2">
+              <div className="text-[11px] text-muted-foreground">Write Mode</div>
+              <div className="text-xs font-medium">
+                chunk: {readOutputString(output, "chunkWriteMode") || "-"}
+                <br />
+                vector: {readOutputString(output, "vectorWriteMode") || "-"}
+              </div>
+            </div>
+            <div className="rounded border bg-slate-50/70 p-2">
+              <div className="text-[11px] text-muted-foreground">Chunk Result</div>
+              <div className="text-xs font-medium">
+                count: {readOutputNumber(output, "chunkCount") ?? "-"}
+                <br />
+                model: {readOutputString(output, "embeddingModel") || "-"}
+              </div>
+            </div>
+            <div className="rounded border bg-slate-50/70 p-2 md:col-span-2">
+              <div className="text-[11px] text-muted-foreground">Fingerprint</div>
+              <div className="break-all font-mono text-[11px] text-slate-700">
+                {readOutputString(output, "contentFingerprint") || "-"}
+              </div>
+            </div>
+            <div className="rounded border bg-slate-50/70 p-2 md:col-span-2">
+              <div className="text-[11px] text-muted-foreground">Compensation</div>
+              <div className="text-xs font-medium">
+                attempted: {compensation?.attempted ? "yes" : "no"}
+              </div>
+              {compensationErrors.length > 0 ? (
+                <div className="mt-1 space-y-1 text-[11px] text-red-600">
+                  {compensationErrors.map((item, index) => (
+                    <div key={`${item}-${index}`}>{item}</div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <details className="rounded border bg-white/70 p-2">
+            <summary className="cursor-pointer text-[11px] text-muted-foreground">Raw Output</summary>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+              {formatNodeOutput(output)}
+            </pre>
+          </details>
+        </div>
+      );
+    }
+
+    return (
+      <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">
+        {formatNodeOutput(output)}
+      </pre>
+    );
+  };
+
   const detailSourceType = detailTarget?.sourceType?.toLowerCase();
   const detailIsUrlSource = detailSourceType === "url";
   const detailNameLabel = detailIsUrlSource ? "文档名称" : "本地文件";
@@ -938,6 +1022,89 @@ export function KnowledgeDocumentsPage() {
                       <div className="text-xs">{log.errorMessage}</div>
                     </div>
                   )}
+
+                  {isPipelineLog && log.ingestionTask ? (
+                    <div className="space-y-3 rounded-lg border p-4">
+                      <div className="text-sm font-medium">Ingestion Task</div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg border bg-slate-50/50 p-3">
+                          <div className="text-xs text-muted-foreground mb-1">Task ID</div>
+                          <div className="break-all text-sm font-medium">{log.ingestionTask.id}</div>
+                        </div>
+                        <div className="rounded-lg border bg-slate-50/50 p-3">
+                          <div className="text-xs text-muted-foreground mb-1">状态</div>
+                          <div className="text-sm font-medium">{formatLogStatus(log.ingestionTask.status)}</div>
+                        </div>
+                        <div className="rounded-lg border bg-slate-50/50 p-3">
+                          <div className="text-xs text-muted-foreground mb-1">来源类型</div>
+                          <div className="text-sm font-medium">{formatSourceLabel(log.ingestionTask.sourceType)}</div>
+                        </div>
+                        <div className="rounded-lg border bg-slate-50/50 p-3">
+                          <div className="text-xs text-muted-foreground mb-1">来源文件</div>
+                          <div className="break-all text-sm font-medium">{log.ingestionTask.sourceFileName || "-"}</div>
+                        </div>
+                        <div className="rounded-lg border bg-slate-50/50 p-3 md:col-span-2">
+                          <div className="text-xs text-muted-foreground mb-1">来源位置</div>
+                          <div className="break-all text-sm font-medium">{log.ingestionTask.sourceLocation || "-"}</div>
+                        </div>
+                        <div className="rounded-lg border bg-slate-50/50 p-3">
+                          <div className="text-xs text-muted-foreground mb-1">开始时间</div>
+                          <div className="text-sm font-medium">{formatDate(log.ingestionTask.startedAt)}</div>
+                        </div>
+                        <div className="rounded-lg border bg-slate-50/50 p-3">
+                          <div className="text-xs text-muted-foreground mb-1">结束时间</div>
+                          <div className="text-sm font-medium">{formatDate(log.ingestionTask.completedAt)}</div>
+                        </div>
+                      </div>
+
+                      {log.ingestionTask.errorMessage ? (
+                        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+                          <div className="font-medium mb-1">Task 错误</div>
+                          <div className="text-xs">{log.ingestionTask.errorMessage}</div>
+                        </div>
+                      ) : null}
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Task Nodes</div>
+                        {log.ingestionNodes && log.ingestionNodes.length > 0 ? (
+                          <div className="overflow-hidden rounded-lg border">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>顺序</TableHead>
+                                  <TableHead>节点</TableHead>
+                                  <TableHead>类型</TableHead>
+                                  <TableHead>状态</TableHead>
+                                  <TableHead>耗时</TableHead>
+                                  <TableHead>消息</TableHead>
+                                  <TableHead>输出</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {log.ingestionNodes.map((node) => (
+                                  <TableRow key={node.id}>
+                                    <TableCell>{node.nodeOrder}</TableCell>
+                                    <TableCell className="font-medium">{node.nodeId}</TableCell>
+                                    <TableCell>{node.nodeType || "-"}</TableCell>
+                                    <TableCell>{formatLogStatus(node.status)}</TableCell>
+                                    <TableCell>{formatDuration(node.durationMs)}</TableCell>
+                                    <TableCell className="max-w-[220px] break-words text-xs text-muted-foreground">
+                                      {node.errorMessage || node.message || "-"}
+                                    </TableCell>
+                                    <TableCell className="max-w-[320px] align-top">
+                                      {renderIngestionNodeOutput(node)}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">暂无 task node 详情</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )})}
 

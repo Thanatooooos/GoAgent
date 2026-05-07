@@ -10,6 +10,7 @@ type ChatRequest struct {
 	MaxTokens   *int          `json:"max_tokens,omitempty"`
 	Thinking    *bool         `json:"thinking,omitempty"`
 	EnableTools *bool         `json:"enable_tools,omitempty"`
+	JSONMode    *bool         `json:"json_mode,omitempty"`
 }
 
 func (r ChatRequest) Validate() error {
@@ -53,4 +54,9 @@ func (r ChatRequest) HasTopK() bool {
 
 func (r ChatRequest) HasMaxTokens() bool {
 	return r.MaxTokens != nil
+}
+
+// JSONModeEnabled 表示是否请求 LLM 以 JSON 格式输出。
+func (r ChatRequest) JSONModeEnabled() bool {
+	return r.JSONMode != nil && *r.JSONMode
 }

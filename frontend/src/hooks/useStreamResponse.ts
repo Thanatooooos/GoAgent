@@ -1,4 +1,4 @@
-import type { CompletionPayload, MessageDeltaPayload, StreamMetaPayload } from "@/types";
+import type { CompletionPayload, MessageDeltaPayload, StreamMetaPayload, ToolCallPayload } from "@/types";
 
 export interface StreamHandlers {
   onMeta?: (payload: StreamMetaPayload) => void;
@@ -9,6 +9,7 @@ export interface StreamHandlers {
   onCancel?: (payload: CompletionPayload) => void;
   onReject?: (payload: MessageDeltaPayload) => void;
   onTitle?: (payload: { title: string }) => void;
+  onTool?: (payload: ToolCallPayload) => void;
   onError?: (error: Error) => void;
   onEvent?: (event: string, payload: unknown) => void;
 }
@@ -77,6 +78,9 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         break;
       case "title":
         handlers.onTitle?.(payload as { title: string });
+        break;
+      case "tool":
+        handlers.onTool?.(payload as ToolCallPayload);
         break;
       case "error":
         handlers.onError?.(new Error(String((payload as { error?: string })?.error || payload)));

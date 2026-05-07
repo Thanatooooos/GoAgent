@@ -129,9 +129,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	runtime.DocumentService = service.NewKnowledgeDocumentService(
 		baseRepo,
 		documentRepo,
-		chunkRepo,
+		nil,
 		chunkLogRepo,
-		vectorStore,
+		nil,
 		storage,
 		taskQueue,
 		runtime.ScheduleService,
@@ -250,11 +250,21 @@ func (r *Runtime) startScheduleLoop(cfg *config.Config) {
 
 	go func() {
 		defer r.scheduleLoopWG.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Errorf("knowledge schedule loop panic recovered: %v", recovered)
+			}
+		}()
 
 		ticker := time.NewTicker(delay)
 		defer ticker.Stop()
 
 		run := func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.Errorf("knowledge schedule loop tick panic recovered: %v", recovered)
+				}
+			}()
 			if err := r.ScheduleJob.RecoverStuckRunningDocuments(ctx); err != nil {
 				log.Warnf("knowledge schedule recover stuck running documents failed: %v", err)
 			}

@@ -100,6 +100,7 @@ func (r *ConversationRepository) ListByUserID(ctx context.Context, userID string
 	if err := r.db.WithContext(ctx).
 		Where("user_id = ?", userID).
 		Order("last_time desc").
+		Limit(1000).
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("list conversations by user id: %w", err)
 	}

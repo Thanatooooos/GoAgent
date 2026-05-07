@@ -43,8 +43,15 @@ type Config struct {
 	AI       AIConfig       `mapstructure:"ai"`
 	Parser   ParserConfig   `mapstructure:"parser"`
 	RustFS   RustFSConfig   `mapstructure:"rustfs"`
+	Feishu   FeishuConfig   `mapstructure:"feishu"`
 	SaToken  SaTokenConfig  `mapstructure:"sa-token"`
 	App      AppConfig      `mapstructure:"app"`
+}
+
+// FeishuConfig 飞书开放平台配置。
+type FeishuConfig struct {
+	AppID     string `mapstructure:"app-id"`
+	AppSecret string `mapstructure:"app-secret"`
 }
 
 // AICandidate 统一的候选模型配置结构，允许字段冗余以适配 chat/embedding/rerank 场景
@@ -188,7 +195,8 @@ type RagSemaphoreItem struct {
 }
 
 type RagKnowledgeConfig struct {
-	Schedule RagKnowledgeSchedule `mapstructure:"schedule"`
+	Schedule  RagKnowledgeSchedule  `mapstructure:"schedule"`
+	Ingestion RagKnowledgeIngestion `mapstructure:"ingestion"`
 }
 
 type RagKnowledgeSchedule struct {
@@ -196,6 +204,12 @@ type RagKnowledgeSchedule struct {
 	LockSeconds        int `mapstructure:"lock-seconds"`
 	BatchSize          int `mapstructure:"batch-size"`
 	MinIntervalSeconds int `mapstructure:"min-interval-seconds"`
+}
+
+type RagKnowledgeIngestion struct {
+	MaxConcurrent  int `mapstructure:"max-concurrent"`
+	MaxRetries     int `mapstructure:"max-retries"`
+	RetryBackoffMs int `mapstructure:"retry-backoff-ms"`
 }
 
 type RagMcpConfig struct {

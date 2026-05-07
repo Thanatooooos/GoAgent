@@ -123,6 +123,9 @@ func (op *OpenAIStyleChatClient) buildRequestBody(req convention.ChatRequest, ta
 	if req.HasMaxTokens() {
 		body["max_tokens"] = *req.MaxTokens
 	}
+	if req.JSONModeEnabled() {
+		body["response_format"] = map[string]string{"type": "json_object"}
+	}
 
 	if op != nil && op.customizeBody != nil {
 		op.customizeBody(body, req, target)
@@ -225,6 +228,12 @@ func (op *OpenAIStyleChatClient) StreamChat(req convention.ChatRequest, callback
 }
 
 func (op *OpenAIStyleChatClient) doStream(httpReq *http.Request, callback StreamCallback, req convention.ChatRequest) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("stream goroutine panic recovered: provider=%s panic=%v", op.provider, recovered)
+		}
+	}()
+
 	dispatcher := newSafeStreamCallbackDispatcher(op.provider, callback)
 	client := op.effectiveHTTPClient(true)
 	resp, err := client.Do(httpReq)

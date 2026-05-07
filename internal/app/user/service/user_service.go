@@ -22,10 +22,16 @@ const (
 	defaultUserRole     = "user"
 	adminRole           = "admin"
 	builtinAdminName    = "admin"
-	minPasswordLength   = 6
+	minPasswordLength   = 8
 )
 
-var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{3,32}$`)
+var (
+	usernamePattern    = regexp.MustCompile(`^[A-Za-z0-9._-]{3,32}$`)
+	passwordUpper      = regexp.MustCompile(`[A-Z]`)
+	passwordLower      = regexp.MustCompile(`[a-z]`)
+	passwordDigit      = regexp.MustCompile(`[0-9]`)
+	passwordSpecial    = regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]`)
+)
 
 type CreateUserInput struct {
 	Username   string
@@ -261,8 +267,21 @@ func normalizeRole(value string) (string, error) {
 }
 
 func validatePassword(value string) error {
-	if len(strings.TrimSpace(value)) < minPasswordLength {
-		return exception.NewClientException(fmt.Sprintf("password must be at least %d characters", minPasswordLength), nil)
+	password := strings.TrimSpace(value)
+	if len(password) < minPasswordLength {
+		return exception.NewClientException(fmt.Sprintf("密码至少需要%d个字符", minPasswordLength), nil)
+	}
+	if !passwordUpper.MatchString(password) {
+		return exception.NewClientException("密码必须包含至少一个大写字母", nil)
+	}
+	if !passwordLower.MatchString(password) {
+		return exception.NewClientException("密码必须包含至少一个小写字母", nil)
+	}
+	if !passwordDigit.MatchString(password) {
+		return exception.NewClientException("密码必须包含至少一个数字", nil)
+	}
+	if !passwordSpecial.MatchString(password) {
+		return exception.NewClientException("密码必须包含至少一个特殊字符", nil)
 	}
 	return nil
 }

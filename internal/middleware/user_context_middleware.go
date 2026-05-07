@@ -23,6 +23,20 @@ func DefaultLoginIDExtractor(c *gin.Context) string {
 	if token := strings.TrimSpace(c.GetHeader("Authorization")); token != "" {
 		return strings.TrimSpace(strings.TrimPrefix(token, "Bearer "))
 	}
+	if cookie, err := c.Cookie("login_id"); err == nil {
+		return cookie
+	}
+	return ""
+}
+
+// DefaultLoginIDExtractorWithDemo 在 demo 模式下额外支持 X-Login-Id 头。
+func DefaultLoginIDExtractorWithDemo(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if token := strings.TrimSpace(c.GetHeader("Authorization")); token != "" {
+		return strings.TrimSpace(strings.TrimPrefix(token, "Bearer "))
+	}
 	if id := c.GetHeader("X-Login-Id"); id != "" {
 		return id
 	}

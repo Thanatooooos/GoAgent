@@ -100,6 +100,12 @@ func (m *ScheduleLockManager) StartHeartbeat(ctx context.Context, lease domain.K
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				heartbeat.markLost()
+			}
+		}()
+
 		ticker := time.NewTicker(m.heartbeatInterval())
 		defer ticker.Stop()
 

@@ -13,4 +13,7 @@ func TestDefaultServiceRewriteWithSplit(t *testing.T) {
 	if len(result.SubQuestions) != 1 || result.SubQuestions[0] != "hello world" {
 		t.Fatalf("unexpected sub questions: %#v", result.SubQuestions)
 	}
+	if result.PreferredSearchMode == "" {
+		t.Fatal("expected preferred search mode")
+	}
 }

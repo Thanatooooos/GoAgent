@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -11,8 +11,9 @@ import (
 	ragmemory "local/rag-project/internal/app/rag/core/memory"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/domain"
-	"local/rag-project/internal/app/rag/port"
+	ragtool "local/rag-project/internal/app/rag/tool"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/distributedid"
 	"local/rag-project/internal/framework/exception"
@@ -26,90 +27,67 @@ const (
 	ragTraceStatusCancelled = "cancelled"
 )
 
-// RagChatInput 描述最小聊天闭环的入参。
 type RagChatInput struct {
 	ConversationID   string
 	UserID           string
 	Question         string
 	KnowledgeBaseIDs []string
 	DeepThinking     bool
+	SearchMode       string
 }
 
-// RagChatMeta 表示聊天建立后的基础元数据。
 type RagChatMeta struct {
 	ConversationID string `json:"conversationId"`
 	TaskID         string `json:"taskId"`
+	SearchMode     string `json:"searchMode,omitempty"`
 }
 
-// RagChatFinishPayload 表示聊天完成时的最终元数据。
 type RagChatFinishPayload struct {
 	MessageID string
 	Title     string
 }
 
-// RagChatEventSink 负责接收聊天过程中的事件。
 type RagChatEventSink interface {
-	// SendMeta 发送会话和任务元数据。
 	SendMeta(meta RagChatMeta) error
-	// SendThinking 发送思考流。
+	SendFallback(reason string) error
 	SendThinking(delta string) error
-	// SendMessage 发送回答流。
 	SendMessage(delta string) error
-	// SendTitle 发送标题更新事件。
 	SendTitle(title string) error
-	// SendFinish 发送完成事件。
+	SendTool(name string, status string, summary string) error
 	SendFinish(payload RagChatFinishPayload) error
-	// SendCancel 发送取消事件。
 	SendCancel(payload RagChatFinishPayload) error
-	// SendError 发送错误事件。
 	SendError(err error) error
-	// SendDone 发送流结束事件。
 	SendDone() error
 }
 
-// RagChatService 负责编排最小 RAG 聊天闭环。
 type RagChatService struct {
 	conversationService *ConversationService
 	messageService      *ConversationMessageService
 	memoryService       ragmemory.Service
+	rewriteService      ragrewrite.Service
 	retrieveService     ragretrieve.Service
 	promptService       *ragprompt.Service
 	chatService         aichat.LLMService
-	traceRunRepo        port.RagTraceRunRepository
-	traceNodeRepo       port.RagTraceNodeRepository
-	now                 func() time.Time
-
-	taskMu sync.Mutex
-	tasks  map[string]*ragChatTask
-}
-
-type ragChatTask struct {
-	handle aichat.StreamCancellationHandle
-
-	cancelOnce sync.Once
-	cancelCh   chan struct{}
-	doneCh     chan ragChatTaskResult
-}
-
-type ragChatTaskResult struct {
-	cancelled bool
-	content   string
-	thinking  string
-	err       error
+	tracer              *ChatTracer
+	toolWorkflow        ragtool.Workflow
+	confidenceThreshold float64
+	taskRegistry        *TaskRegistry
 }
 
 type ragChatRuntimeState struct {
-	meta         RagChatMeta
-	title        string
+	meta          RagChatMeta
+	title         string
 	userMessageID string
-	traceID      string
-	startTime    time.Time
+	traceID       string
+	startTime     time.Time
 }
 
 type ragChatTraceNode struct {
-	NodeID   string
-	NodeType string
-	NodeName string
+	NodeID       string
+	ParentNodeID string
+	Depth        int
+	NodeType     string
+	NodeName     string
 }
 
 type ragChatConversationStageResult struct {
@@ -129,12 +107,29 @@ type ragChatRuntimeStageResult struct {
 	state ragChatRuntimeState
 }
 
+type ragChatRewriteStageResult struct {
+	result ragrewrite.Result
+}
+
 type ragChatRetrieveStageResult struct {
-	result ragretrieve.Result
+	result     ragretrieve.Result
+	searchMode string
+}
+
+type ragChatToolStageResult struct {
+	result ragtool.WorkflowResult
 }
 
 type ragChatPromptStageResult struct {
 	messages []convention.ChatMessage
+}
+
+type ragChatPreparedState struct {
+	state          ragChatRuntimeState
+	history        []convention.ChatMessage
+	rewriteResult  ragrewrite.Result
+	retrieveResult ragretrieve.Result
+	searchMode     string
 }
 
 type ragChatStage[T any] struct {
@@ -143,32 +138,43 @@ type ragChatStage[T any] struct {
 	buildExtra func(T) map[string]any
 }
 
-// NewRagChatService 创建最小聊天闭环服务。
 func NewRagChatService(
 	conversationService *ConversationService,
 	messageService *ConversationMessageService,
 	memoryService ragmemory.Service,
+	rewriteService ragrewrite.Service,
 	retrieveService ragretrieve.Service,
 	promptService *ragprompt.Service,
 	chatService aichat.LLMService,
-	traceRunRepo port.RagTraceRunRepository,
-	traceNodeRepo port.RagTraceNodeRepository,
+	tracer *ChatTracer,
 ) *RagChatService {
 	return &RagChatService{
 		conversationService: conversationService,
 		messageService:      messageService,
 		memoryService:       memoryService,
+		rewriteService:      rewriteService,
 		retrieveService:     retrieveService,
 		promptService:       promptService,
 		chatService:         chatService,
-		traceRunRepo:        traceRunRepo,
-		traceNodeRepo:       traceNodeRepo,
-		now:                 time.Now,
-		tasks:               map[string]*ragChatTask{},
+		tracer:              tracer,
+		taskRegistry:        NewTaskRegistry(),
 	}
 }
 
-// Chat 执行一次最小 RAG 聊天闭环并持续输出流式事件。
+func (s *RagChatService) SetConfidenceThreshold(threshold float64) {
+	if s == nil {
+		return
+	}
+	s.confidenceThreshold = threshold
+}
+
+func (s *RagChatService) SetToolWorkflow(workflow ragtool.Workflow) {
+	if s == nil {
+		return
+	}
+	s.toolWorkflow = workflow
+}
+
 func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagChatEventSink) error {
 	if err := s.validateDependencies(); err != nil {
 		return err
@@ -186,33 +192,76 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		return exception.NewClientException("user id is required", nil)
 	}
 
-	// 先准备会话、用户消息和 trace，这样后续流式阶段只关注输出。
-	state, history, promptCtx, err := s.prepareChat(ctx, input)
+	prepared, err := s.prepareChat(ctx, input)
 	if err != nil {
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
 	}
 
-	if err := sink.SendMeta(state.meta); err != nil {
+	if err := sink.SendMeta(prepared.state.meta); err != nil {
 		return err
 	}
-	if strings.TrimSpace(state.title) != "" {
-		_ = sink.SendTitle(state.title)
+	if strings.TrimSpace(prepared.state.title) != "" {
+		_ = sink.SendTitle(prepared.state.title)
 	}
 
-	promptStage, err := s.runPromptStage(ctx, question, history, promptCtx, state.traceID)
+	fallbackPrompt := ""
+	retrieveResult := prepared.retrieveResult
+	if s.confidenceThreshold > 0 {
+		maxScore := topChunkScore(retrieveResult)
+		if maxScore < float32(s.confidenceThreshold) {
+			fallbackPrompt = buildFallbackPrompt(question)
+			retrieveResult.KnowledgeContext = ""
+			_ = sink.SendFallback("low confidence retrieval, fallback to general model")
+		}
+	}
+
+	toolStage, err := s.runToolWorkflowStage(
+		ctx,
+		input,
+		prepared.history,
+		prepared.rewriteResult,
+		retrieveResult,
+		prepared.searchMode,
+		prepared.state.traceID,
+	)
 	if err != nil {
-		s.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
+		toolStage = ragChatToolStageResult{
+			result: ragtool.WorkflowResult{
+				Degraded:      true,
+				DegradeReason: err.Error(),
+			},
+		}
+	}
+	for _, call := range toolStage.result.Calls {
+		_ = sink.SendTool(call.Name, call.Status, call.Summary)
+	}
+	if toolStage.result.Degraded {
+		_ = sink.SendTool("tool_workflow", ragtool.CallStatusFailed, toolStage.result.DegradeReason)
+	}
+	s.tracer.recordToolCallTraceNodes(ctx, prepared.state.traceID, toolStage.result.Calls)
+
+	promptStage, err := s.runPromptStage(
+		ctx,
+		question,
+		prepared.history,
+		retrieveResult,
+		toolStage.result.Context,
+		toolStage.result.AnswerGuidance,
+		fallbackPrompt,
+		prepared.state.traceID,
+	)
+	if err != nil {
+		s.tracer.finishTraceRun(ctx, prepared.state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
 	}
 
-	// 真正进入模型流式调用阶段，并把取消控制挂到任务表里。
-	task := s.newTask()
-	s.setTaskHandle(state.meta.TaskID, task, nil)
-	defer s.deleteTask(state.meta.TaskID)
+	task := s.taskRegistry.New()
+	s.taskRegistry.Set(prepared.state.meta.TaskID, task, nil)
+	defer s.taskRegistry.Delete(prepared.state.meta.TaskID)
 
 	request := convention.ChatRequest{
 		Messages: promptStage.messages,
@@ -224,77 +273,71 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	callback := newRagChatStreamCallback(task, sink)
 	handle, err := s.chatService.StreamChatWithRequest(request, callback)
 	if err != nil {
-		s.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
+		s.tracer.finishTraceRun(ctx, prepared.state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
 	}
-	s.setTaskHandle(state.meta.TaskID, task, handle)
+	s.taskRegistry.Set(prepared.state.meta.TaskID, task, handle)
 
 	result := <-task.doneCh
 	if result.cancelled {
-		return s.handleCancelledResult(ctx, input, state, result, sink)
+		return s.handleCancelledResult(ctx, input, prepared.state, result, sink)
 	}
 	if result.err != nil {
-		return s.handleFailedResult(ctx, state, result, sink)
+		return s.handleFailedResult(ctx, prepared.state, result, sink)
 	}
-	return s.handleSucceededResult(ctx, input, state, result, sink)
+	return s.handleSucceededResult(ctx, input, prepared.state, result, sink)
 }
 
-// CancelTask 取消一个正在执行的聊天任务。
 func (s *RagChatService) CancelTask(taskID string) bool {
-	taskID = strings.TrimSpace(taskID)
-	if taskID == "" {
+	if s == nil || s.taskRegistry == nil {
 		return false
 	}
-
-	s.taskMu.Lock()
-	task := s.tasks[taskID]
-	s.taskMu.Unlock()
-	if task == nil {
-		return false
-	}
-
-	task.cancelOnce.Do(func() {
-		close(task.cancelCh)
-		if task.handle != nil {
-			task.handle.Cancel()
-		}
-	})
-	return true
+	return s.taskRegistry.Cancel(taskID)
 }
 
-// prepareChat 先完成会话、记忆、检索和 prompt 前准备。
-func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (ragChatRuntimeState, []convention.ChatMessage, ragretrieve.Result, error) {
+func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (ragChatPreparedState, error) {
 	conversationStage, err := s.runConversationStage(ctx, input)
 	if err != nil {
-		return ragChatRuntimeState{}, nil, ragretrieve.Result{}, err
+		return ragChatPreparedState{}, err
 	}
 
 	memoryStage, err := s.runMemoryStage(ctx, conversationStage.conversationID, strings.TrimSpace(input.UserID))
 	if err != nil {
-		return ragChatRuntimeState{}, nil, ragretrieve.Result{}, err
+		return ragChatPreparedState{}, err
 	}
 
 	userMessageStage, err := s.runUserMessageStage(ctx, input, conversationStage.conversationID)
 	if err != nil {
-		return ragChatRuntimeState{}, nil, ragretrieve.Result{}, err
+		return ragChatPreparedState{}, err
 	}
 
 	runtimeStage, err := s.runRuntimeStage(ctx, input, conversationStage, userMessageStage)
 	if err != nil {
-		return ragChatRuntimeState{}, nil, ragretrieve.Result{}, err
+		return ragChatPreparedState{}, err
 	}
 
-	retrieveStage, err := s.runRetrieveStage(ctx, input, runtimeStage.state.traceID)
+	rewriteStage, err := s.runRewriteStage(ctx, input.Question, memoryStage.history, runtimeStage.state.traceID)
 	if err != nil {
-		return ragChatRuntimeState{}, nil, ragretrieve.Result{}, err
+		return ragChatPreparedState{}, err
 	}
 
-	return runtimeStage.state, memoryStage.history, retrieveStage.result, nil
+	retrieveStage, err := s.runRetrieveStage(ctx, input, rewriteStage.result, runtimeStage.state.traceID)
+	if err != nil {
+		return ragChatPreparedState{}, err
+	}
+	runtimeStage.state.meta.SearchMode = retrieveStage.searchMode
+
+	return ragChatPreparedState{
+		state:          runtimeStage.state,
+		history:        memoryStage.history,
+		rewriteResult:  rewriteStage.result,
+		retrieveResult: retrieveStage.result,
+		searchMode:     retrieveStage.searchMode,
+	}, nil
 }
 
-// persistAssistantMessage 在流式结束后保存 assistant 消息。
 func (s *RagChatService) persistAssistantMessage(
 	ctx context.Context,
 	state ragChatRuntimeState,
@@ -334,7 +377,7 @@ func (s *RagChatService) persistAssistantMessage(
 		ConversationID: state.meta.ConversationID,
 		UserID:         strings.TrimSpace(input.UserID),
 		Question:       strings.TrimSpace(input.Question),
-		LastTime:       timePointerValue(s.now()),
+		LastTime:       timePointerValue(s.tracer.now()),
 	}); err != nil {
 		return RagChatFinishPayload{}, err
 	}
@@ -345,7 +388,6 @@ func (s *RagChatService) persistAssistantMessage(
 	}, nil
 }
 
-// validateDependencies 确认聊天主链路依赖齐全。
 func (s *RagChatService) validateDependencies() error {
 	if s == nil {
 		return exception.NewServiceException("rag chat service is required", nil)
@@ -371,116 +413,6 @@ func (s *RagChatService) validateDependencies() error {
 	return nil
 }
 
-// newTask 创建一个新的聊天任务状态。
-func (s *RagChatService) newTask() *ragChatTask {
-	return &ragChatTask{
-		cancelCh: make(chan struct{}),
-		doneCh:   make(chan ragChatTaskResult, 1),
-	}
-}
-
-// setTaskHandle 把流式取消句柄挂到任务上。
-func (s *RagChatService) setTaskHandle(taskID string, task *ragChatTask, handle aichat.StreamCancellationHandle) {
-	s.taskMu.Lock()
-	defer s.taskMu.Unlock()
-	task.handle = handle
-	s.tasks[taskID] = task
-}
-
-// deleteTask 移除已结束的聊天任务。
-func (s *RagChatService) deleteTask(taskID string) {
-	s.taskMu.Lock()
-	defer s.taskMu.Unlock()
-	delete(s.tasks, taskID)
-}
-
-// startTraceRun 写入 trace run 起始记录。
-func (s *RagChatService) startTraceRun(ctx context.Context, traceID, conversationID, taskID, userID string) error {
-	return s.startTraceRunAt(ctx, traceID, conversationID, taskID, userID, s.now())
-}
-
-// startTraceRunAt 写入 trace run 起始记录，并显式指定开始时间。
-func (s *RagChatService) startTraceRunAt(ctx context.Context, traceID, conversationID, taskID, userID string, startedAt time.Time) error {
-	if s.traceRunRepo == nil {
-		return nil
-	}
-	_, err := s.traceRunRepo.Create(ctx, domain.RagTraceRun{
-		ID:             traceID,
-		TraceID:        traceID,
-		TraceName:      "rag_chat",
-		EntryMethod:    "rag.v3.chat",
-		ConversationID: conversationID,
-		TaskID:         taskID,
-		UserID:         userID,
-		Status:         ragTraceStatusRunning,
-		StartTime:      timePointerValue(startedAt),
-		CreateTime:     startedAt,
-		UpdateTime:     startedAt,
-	})
-	return err
-}
-
-// finishTraceRun 回写 trace run 最终状态。
-func (s *RagChatService) finishTraceRun(ctx context.Context, traceID string, status string, cause error) {
-	if s.traceRunRepo == nil || strings.TrimSpace(traceID) == "" {
-		return
-	}
-	now := s.now()
-	duration := int64(0)
-	run, err := s.traceRunRepo.GetByTraceID(ctx, traceID)
-	if err == nil && run.StartTime != nil {
-		duration = now.Sub(*run.StartTime).Milliseconds()
-	}
-	errorMessage := ""
-	if cause != nil {
-		errorMessage = cause.Error()
-	}
-	_ = s.traceRunRepo.UpdateByTraceID(ctx, traceID, domain.RagTraceRun{
-		TraceID:      traceID,
-		Status:       status,
-		ErrorMessage: errorMessage,
-		EndTime:      &now,
-		DurationMs:   &duration,
-		UpdateTime:   now,
-	})
-}
-
-// recordTraceNode 写入一个简单的阶段节点。
-func (s *RagChatService) recordTraceNode(ctx context.Context, traceID string, node ragChatTraceNode, status string, extra map[string]any) error {
-	if s.traceNodeRepo == nil || strings.TrimSpace(traceID) == "" {
-		return nil
-	}
-	nodeRecordID, err := nextRagTraceNodeID()
-	if err != nil {
-		return err
-	}
-	now := s.now()
-	duration := int64(0)
-	extraData := ""
-	if len(extra) > 0 {
-		raw, err := json.Marshal(extra)
-		if err == nil {
-			extraData = string(raw)
-		}
-	}
-	_, err = s.traceNodeRepo.Create(ctx, domain.RagTraceNode{
-		ID:         nodeRecordID,
-		TraceID:    traceID,
-		NodeID:     node.NodeID,
-		Depth:      1,
-		NodeType:   node.NodeType,
-		NodeName:   node.NodeName,
-		Status:     status,
-		StartTime:  &now,
-		EndTime:    &now,
-		DurationMs: &duration,
-		ExtraData:  extraData,
-		CreateTime: now,
-		UpdateTime: now,
-	})
-	return err
-}
-
 type ragChatStreamCallback struct {
 	task *ragChatTask
 	sink RagChatEventSink
@@ -490,7 +422,6 @@ type ragChatStreamCallback struct {
 	thinking strings.Builder
 }
 
-// newRagChatStreamCallback 创建模型流回调。
 func newRagChatStreamCallback(task *ragChatTask, sink RagChatEventSink) *ragChatStreamCallback {
 	callback := &ragChatStreamCallback{
 		task: task,
@@ -500,7 +431,6 @@ func newRagChatStreamCallback(task *ragChatTask, sink RagChatEventSink) *ragChat
 	return callback
 }
 
-// OnContent 转发回答增量并累积最终内容。
 func (c *ragChatStreamCallback) OnContent(content string) {
 	c.mu.Lock()
 	c.content.WriteString(content)
@@ -508,7 +438,6 @@ func (c *ragChatStreamCallback) OnContent(content string) {
 	_ = c.sink.SendMessage(content)
 }
 
-// OnThinking 转发思考增量并累积最终思考内容。
 func (c *ragChatStreamCallback) OnThinking(content string) {
 	c.mu.Lock()
 	c.thinking.WriteString(content)
@@ -516,7 +445,6 @@ func (c *ragChatStreamCallback) OnThinking(content string) {
 	_ = c.sink.SendThinking(content)
 }
 
-// OnComplete 标记模型正常完成。
 func (c *ragChatStreamCallback) OnComplete() {
 	c.task.doneCh <- ragChatTaskResult{
 		content:  c.currentContent(),
@@ -524,7 +452,6 @@ func (c *ragChatStreamCallback) OnComplete() {
 	}
 }
 
-// OnError 标记模型执行失败。
 func (c *ragChatStreamCallback) OnError(err error) {
 	c.task.doneCh <- ragChatTaskResult{
 		content:  c.currentContent(),
@@ -533,7 +460,6 @@ func (c *ragChatStreamCallback) OnError(err error) {
 	}
 }
 
-// watchCancel 在收到停止信号后回传取消结果。
 func (c *ragChatStreamCallback) watchCancel() {
 	<-c.task.cancelCh
 	c.task.doneCh <- ragChatTaskResult{
@@ -543,21 +469,18 @@ func (c *ragChatStreamCallback) watchCancel() {
 	}
 }
 
-// currentContent 读取当前已聚合的回答内容。
 func (c *ragChatStreamCallback) currentContent() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.content.String()
 }
 
-// currentThinking 读取当前已聚合的思考内容。
 func (c *ragChatStreamCallback) currentThinking() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.thinking.String()
 }
 
-// nextConversationExternalID 生成前端使用的会话 ID。
 func nextConversationExternalID() (string, error) {
 	id, err := distributedid.NextID()
 	if err != nil {
@@ -566,7 +489,6 @@ func nextConversationExternalID() (string, error) {
 	return fmt.Sprintf("%d", id), nil
 }
 
-// nextRagTaskID 生成新的聊天任务 ID。
 func nextRagTaskID() (string, error) {
 	id, err := distributedid.NextID()
 	if err != nil {
@@ -575,7 +497,6 @@ func nextRagTaskID() (string, error) {
 	return fmt.Sprintf("%d", id), nil
 }
 
-// nextRagTraceID 生成新的 trace ID。
 func nextRagTraceID() (string, error) {
 	id, err := distributedid.NextID()
 	if err != nil {
@@ -584,7 +505,6 @@ func nextRagTraceID() (string, error) {
 	return fmt.Sprintf("%d", id), nil
 }
 
-// nextRagTraceNodeID 生成新的 trace node 主键。
 func nextRagTraceNodeID() (string, error) {
 	id, err := distributedid.NextID()
 	if err != nil {
@@ -593,17 +513,28 @@ func nextRagTraceNodeID() (string, error) {
 	return fmt.Sprintf("%d", id), nil
 }
 
-// boolPointer 构造布尔指针。
 func boolPointer(value bool) *bool {
 	return &value
 }
 
-// timePointerValue 构造时间指针。
 func timePointerValue(value time.Time) *time.Time {
 	return &value
 }
 
-// firstNonEmptyString 返回第一个非空字符串。
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxInt64(a int64, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func firstNonEmptyString(values ...string) string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
@@ -614,29 +545,36 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
-// runRagChatStage 统一执行一个阶段，并在可用时写入阶段 trace。
-func runRagChatStage[T any](ctx context.Context, service *RagChatService, traceID string, stage ragChatStage[T]) (T, error) {
+func runRagChatStage[T any](ctx context.Context, tracer *ChatTracer, traceID string, stage ragChatStage[T]) (T, error) {
 	var zero T
+	if tracer != nil {
+		startedAt := tracer.now()
+		result, err := stage.run(ctx)
+		endedAt := tracer.now()
+		if err != nil {
+			if strings.TrimSpace(traceID) != "" && stage.node.NodeID != "" {
+				_ = tracer.recordTraceNodeAt(ctx, traceID, stage.node, ragTraceStatusFailed, startedAt, endedAt, map[string]any{
+					"error": err.Error(),
+				})
+			}
+			return zero, err
+		}
+		if strings.TrimSpace(traceID) != "" && stage.node.NodeID != "" {
+			extra := map[string]any{}
+			if stage.buildExtra != nil {
+				extra = stage.buildExtra(result)
+			}
+			_ = tracer.recordTraceNodeAt(ctx, traceID, stage.node, ragTraceStatusSuccess, startedAt, endedAt, extra)
+		}
+		return result, nil
+	}
 	result, err := stage.run(ctx)
 	if err != nil {
-		if strings.TrimSpace(traceID) != "" && stage.node.NodeID != "" {
-			_ = service.recordTraceNode(ctx, traceID, stage.node, ragTraceStatusFailed, map[string]any{
-				"error": err.Error(),
-			})
-		}
 		return zero, err
-	}
-	if strings.TrimSpace(traceID) != "" && stage.node.NodeID != "" {
-		extra := map[string]any{}
-		if stage.buildExtra != nil {
-			extra = stage.buildExtra(result)
-		}
-		_ = service.recordTraceNode(ctx, traceID, stage.node, ragTraceStatusSuccess, extra)
 	}
 	return result, nil
 }
 
-// handleCancelledResult 处理流式任务被取消后的统一收口。
 func (s *RagChatService) handleCancelledResult(
 	ctx context.Context,
 	input RagChatInput,
@@ -644,37 +582,35 @@ func (s *RagChatService) handleCancelledResult(
 	result ragChatTaskResult,
 	sink RagChatEventSink,
 ) error {
-	s.recordChatTraceNode(ctx, state.traceID, ragTraceStatusCancelled, result)
+	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusCancelled, result)
 
 	payload, err := s.persistAssistantMessage(ctx, state, input, result.content, result.thinking)
 	if err != nil {
-		s.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
+		s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
 	}
 
-	s.finishTraceRun(ctx, state.traceID, ragTraceStatusCancelled, nil)
+	s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusCancelled, nil)
 	_ = sink.SendCancel(payload)
 	_ = sink.SendDone()
 	return nil
 }
 
-// handleFailedResult 处理流式任务失败后的统一收口。
 func (s *RagChatService) handleFailedResult(
 	ctx context.Context,
 	state ragChatRuntimeState,
 	result ragChatTaskResult,
 	sink RagChatEventSink,
 ) error {
-	s.recordChatTraceNode(ctx, state.traceID, ragTraceStatusFailed, result)
-	s.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, result.err)
+	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusFailed, result)
+	s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, result.err)
 	_ = sink.SendError(result.err)
 	_ = sink.SendDone()
 	return result.err
 }
 
-// handleSucceededResult 处理流式任务成功后的统一收口。
 func (s *RagChatService) handleSucceededResult(
 	ctx context.Context,
 	input RagChatInput,
@@ -682,39 +618,22 @@ func (s *RagChatService) handleSucceededResult(
 	result ragChatTaskResult,
 	sink RagChatEventSink,
 ) error {
-	s.recordChatTraceNode(ctx, state.traceID, ragTraceStatusSuccess, result)
+	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusSuccess, result)
 
 	payload, err := s.persistAssistantMessage(ctx, state, input, result.content, result.thinking)
 	if err != nil {
-		s.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
+		s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
 	}
 
-	s.finishTraceRun(ctx, state.traceID, ragTraceStatusSuccess, nil)
+	s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusSuccess, nil)
 	_ = sink.SendFinish(payload)
 	_ = sink.SendDone()
 	return nil
 }
 
-// recordChatTraceNode 统一记录 chat 阶段的结果节点。
-func (s *RagChatService) recordChatTraceNode(ctx context.Context, traceID string, status string, result ragChatTaskResult) {
-	extra := map[string]any{
-		"contentLength":  len(strings.TrimSpace(result.content)),
-		"thinkingLength": len(strings.TrimSpace(result.thinking)),
-	}
-	if result.err != nil {
-		extra["error"] = result.err.Error()
-	}
-	_ = s.recordTraceNode(ctx, traceID, ragChatTraceNode{
-		NodeID:   "chat",
-		NodeType: "chat",
-		NodeName: "stream_chat",
-	}, status, extra)
-}
-
-// runConversationStage 负责准备会话实体和外部会话 ID。
 func (s *RagChatService) runConversationStage(ctx context.Context, input RagChatInput) (ragChatConversationStageResult, error) {
 	question := strings.TrimSpace(input.Question)
 	userID := strings.TrimSpace(input.UserID)
@@ -742,7 +661,6 @@ func (s *RagChatService) runConversationStage(ctx context.Context, input RagChat
 	}, nil
 }
 
-// runMemoryStage 负责加载当前会话的历史上下文。
 func (s *RagChatService) runMemoryStage(ctx context.Context, conversationID string, userID string) (ragChatMemoryStageResult, error) {
 	history, err := s.memoryService.Load(ctx, conversationID, userID)
 	if err != nil {
@@ -751,7 +669,6 @@ func (s *RagChatService) runMemoryStage(ctx context.Context, conversationID stri
 	return ragChatMemoryStageResult{history: history}, nil
 }
 
-// runUserMessageStage 负责保存当前轮的用户消息。
 func (s *RagChatService) runUserMessageStage(ctx context.Context, input RagChatInput, conversationID string) (ragChatUserMessageStageResult, error) {
 	userMessage, err := s.messageService.AddMessage(ctx, AddConversationMessageInput{
 		ConversationID: conversationID,
@@ -765,7 +682,6 @@ func (s *RagChatService) runUserMessageStage(ctx context.Context, input RagChatI
 	return ragChatUserMessageStageResult{message: userMessage}, nil
 }
 
-// runRuntimeStage 负责生成任务元数据并启动一条 trace run。
 func (s *RagChatService) runRuntimeStage(
 	ctx context.Context,
 	input RagChatInput,
@@ -789,48 +705,217 @@ func (s *RagChatService) runRuntimeStage(
 		title:         conversationStage.conversation.Title,
 		userMessageID: userMessageStage.message.ID,
 		traceID:       traceID,
-		startTime:     s.now(),
+		startTime:     s.tracer.now(),
 	}
-	_ = s.startTraceRunAt(ctx, traceID, conversationStage.conversationID, taskID, strings.TrimSpace(input.UserID), state.startTime)
+	_ = s.tracer.startTraceRunAt(ctx, traceID, conversationStage.conversationID, taskID, strings.TrimSpace(input.UserID), state.startTime)
 
 	return ragChatRuntimeStageResult{state: state}, nil
 }
 
-// runRetrieveStage 负责执行知识检索并记录检索节点。
-func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInput, traceID string) (ragChatRetrieveStageResult, error) {
-	return runRagChatStage(ctx, s, traceID, ragChatStage[ragChatRetrieveStageResult]{
+func (s *RagChatService) runRewriteStage(ctx context.Context, question string, history []convention.ChatMessage, traceID string) (ragChatRewriteStageResult, error) {
+	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatRewriteStageResult]{
+		node: ragChatTraceNode{
+			NodeID:   "rewrite",
+			NodeType: "rewrite",
+			NodeName: "query_rewrite",
+		},
+		run: func(context.Context) (ragChatRewriteStageResult, error) {
+			if s.rewriteService == nil {
+				result := ragrewrite.Result{
+					RewrittenQuestion: question,
+					SubQuestions:      []string{question},
+				}
+				return ragChatRewriteStageResult{result: result}, nil
+			}
+			result := s.rewriteService.RewriteWithHistory(question, history)
+			return ragChatRewriteStageResult{result: result}, nil
+		},
+		buildExtra: func(result ragChatRewriteStageResult) map[string]any {
+			return map[string]any{
+				"subQuestionCount": len(result.result.SubQuestions),
+			}
+		},
+	})
+}
+
+func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInput, rewriteResult ragrewrite.Result, traceID string) (ragChatRetrieveStageResult, error) {
+	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatRetrieveStageResult]{
 		node: ragChatTraceNode{
 			NodeID:   "retrieve",
 			NodeType: "retrieve",
 			NodeName: "vector_retrieve",
 		},
 		run: func(ctx context.Context) (ragChatRetrieveStageResult, error) {
-			retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
-				Query:            strings.TrimSpace(input.Question),
-				KnowledgeBaseIDs: input.KnowledgeBaseIDs,
-			})
-			if err != nil {
-				return ragChatRetrieveStageResult{}, exception.NewServiceException("failed to retrieve rag knowledge", err)
+			subQuestions := rewriteResult.SubQuestions
+			if len(subQuestions) == 0 {
+				subQuestions = []string{strings.TrimSpace(input.Question)}
 			}
-			return ragChatRetrieveStageResult{result: retrieveResult}, nil
+			searchMode := resolveRetrieveSearchMode(input.SearchMode, rewriteResult.PreferredSearchMode)
+
+			seen := map[string]convention.RetrievedChunk{}
+			for _, q := range subQuestions {
+				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
+					Query:            strings.TrimSpace(q),
+					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
+					SearchMode:       searchMode,
+				})
+				if err != nil {
+					continue
+				}
+				for _, chunk := range retrieveResult.Chunks {
+					if existing, ok := seen[chunk.ID]; ok {
+						if chunk.Score > existing.Score {
+							seen[chunk.ID] = chunk
+						}
+					} else {
+						seen[chunk.ID] = chunk
+					}
+				}
+			}
+			if len(seen) == 0 {
+				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
+					Query:            strings.TrimSpace(input.Question),
+					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
+					SearchMode:       searchMode,
+				})
+				if err != nil {
+					return ragChatRetrieveStageResult{}, exception.NewServiceException("failed to retrieve rag knowledge", err)
+				}
+				return ragChatRetrieveStageResult{result: retrieveResult, searchMode: searchMode}, nil
+			}
+
+			chunks := make([]convention.RetrievedChunk, 0, len(seen))
+			for _, chunk := range seen {
+				chunks = append(chunks, chunk)
+			}
+			sortRetrievedChunksByScore(chunks)
+			if len(chunks) > defaultTopK {
+				chunks = chunks[:defaultTopK]
+			}
+
+			knowledgeContext := ragretrieve.BuildKnowledgeContext(chunks)
+			return ragChatRetrieveStageResult{result: ragretrieve.Result{
+				Chunks:           chunks,
+				KnowledgeContext: knowledgeContext,
+			}, searchMode: searchMode}, nil
 		},
 		buildExtra: func(result ragChatRetrieveStageResult) map[string]any {
 			return map[string]any{
 				"chunkCount": len(result.result.Chunks),
+				"searchMode": result.searchMode,
+				"topScore":   topChunkScore(result.result),
 			}
 		},
 	})
 }
 
-// runPromptStage 负责组装模型输入消息并记录 prompt 节点。
+func (s *RagChatService) runToolWorkflowStage(
+	ctx context.Context,
+	input RagChatInput,
+	history []convention.ChatMessage,
+	rewriteResult ragrewrite.Result,
+	retrieveResult ragretrieve.Result,
+	searchMode string,
+	traceID string,
+) (ragChatToolStageResult, error) {
+	if s == nil || s.toolWorkflow == nil {
+		return ragChatToolStageResult{}, nil
+	}
+
+	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatToolStageResult]{
+		node: ragChatTraceNode{
+			NodeID:   "tool_workflow",
+			NodeType: "tool",
+			NodeName: "tool_workflow",
+		},
+		run: func(ctx context.Context) (ragChatToolStageResult, error) {
+			result, err := s.toolWorkflow.Run(ctx, ragtool.WorkflowInput{
+				Question:         strings.TrimSpace(input.Question),
+				UserID:           strings.TrimSpace(input.UserID),
+				ConversationID:   strings.TrimSpace(input.ConversationID),
+				TraceID:          strings.TrimSpace(traceID),
+				KnowledgeBaseIDs: append([]string(nil), input.KnowledgeBaseIDs...),
+				SearchMode:       strings.TrimSpace(searchMode),
+				History:          append([]convention.ChatMessage(nil), history...),
+				RewriteResult:    rewriteResult,
+				RetrieveResult:   retrieveResult,
+			})
+			if err != nil {
+				return ragChatToolStageResult{}, err
+			}
+			return ragChatToolStageResult{result: result}, nil
+		},
+		buildExtra: func(result ragChatToolStageResult) map[string]any {
+			names := make([]string, 0, len(result.result.Calls))
+			for _, call := range result.result.Calls {
+				names = append(names, strings.TrimSpace(call.Name))
+			}
+			return map[string]any{
+				"used":          result.result.Used,
+				"toolCallCount": len(result.result.Calls),
+				"toolNames":     names,
+				"degraded":      result.result.Degraded,
+				"degradeReason": strings.TrimSpace(result.result.DegradeReason),
+			}
+		},
+	})
+}
+
+const defaultTopK = 5
+
+func sortRetrievedChunksByScore(chunks []convention.RetrievedChunk) {
+	sort.Slice(chunks, func(i, j int) bool {
+		return chunks[i].Score > chunks[j].Score
+	})
+}
+
+func resolveRetrieveSearchMode(inputMode string, preferredMode string) string {
+	mode := strings.TrimSpace(strings.ToLower(inputMode))
+	switch mode {
+	case ragretrieve.SearchModeSemantic, ragretrieve.SearchModeKeyword, ragretrieve.SearchModeHybrid:
+		return mode
+	case "", ragretrieve.SearchModeAuto:
+		break
+	default:
+		return ragretrieve.SearchModeAuto
+	}
+
+	preferredMode = strings.TrimSpace(strings.ToLower(preferredMode))
+	switch preferredMode {
+	case ragretrieve.SearchModeSemantic, ragretrieve.SearchModeKeyword, ragretrieve.SearchModeHybrid:
+		return preferredMode
+	default:
+		return ragretrieve.SearchModeAuto
+	}
+}
+
+func topChunkScore(result ragretrieve.Result) float32 {
+	if len(result.Chunks) == 0 {
+		return 0
+	}
+	maxScore := result.Chunks[0].Score
+	for _, c := range result.Chunks[1:] {
+		if c.Score > maxScore {
+			maxScore = c.Score
+		}
+	}
+	return maxScore
+}
+func buildFallbackPrompt(question string) string {
+	return "Knowledge retrieval confidence is low for question: " + question + ". Respond in Chinese, clearly state no matching knowledge was found, and note the answer may rely on general model knowledge."
+}
+
 func (s *RagChatService) runPromptStage(
 	ctx context.Context,
 	question string,
 	history []convention.ChatMessage,
 	promptCtx ragretrieve.Result,
+	toolContext string,
+	answerGuidance string,
+	systemPromptOverride string,
 	traceID string,
 ) (ragChatPromptStageResult, error) {
-	return runRagChatStage(ctx, s, traceID, ragChatStage[ragChatPromptStageResult]{
+	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatPromptStageResult]{
 		node: ragChatTraceNode{
 			NodeID:   "prompt",
 			NodeType: "prompt",
@@ -840,7 +925,10 @@ func (s *RagChatService) runPromptStage(
 			messages, err := s.promptService.BuildMessages(ragprompt.Context{
 				Question:         question,
 				KnowledgeContext: promptCtx.KnowledgeContext,
+				ToolContext:      toolContext,
+				AnswerGuidance:   answerGuidance,
 				History:          history,
+				SystemPrompt:     systemPromptOverride,
 			})
 			if err != nil {
 				return ragChatPromptStageResult{}, err

@@ -90,6 +90,10 @@ rag:
       lock-seconds: 900
       batch-size: 20
       min-interval-seconds: 60
+    ingestion:
+      max-concurrent: 8
+      max-retries: 2
+      retry-backoff-ms: 1000
 
   mcp:
     servers:
@@ -195,6 +199,10 @@ rustfs:
   access-key-id: ""
   secret-access-key: ""
   bucket: knowledge
+
+feishu:
+  app-id: ""
+  app-secret: ""
 
 sa-token:
   token-name: Authorization

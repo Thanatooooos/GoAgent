@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -98,6 +99,23 @@ func (r *TaskRepository) List(ctx context.Context, filter port.TaskListFilter) (
 		return nil, fmt.Errorf("list ingestion tasks: %w", err)
 	}
 	return mustToTaskDomains(items)
+}
+
+// HasActiveTaskForDocument 检查指定文档是否存在 pending/running 的 ingestion task。
+func (r *TaskRepository) HasActiveTaskForDocument(ctx context.Context, documentID string) (bool, error) {
+	documentID = strings.TrimSpace(documentID)
+	if documentID == "" {
+		return false, nil
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&models.TaskModel{}).
+		Where("status IN ?", []string{domain.TaskStatusPending, domain.TaskStatusRunning}).
+		Where("metadata ->> 'documentId' = ?", documentID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("count active ingestion tasks by document id: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (r *TaskRepository) applyFilter(query *gorm.DB, filter port.TaskListFilter) *gorm.DB {

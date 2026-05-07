@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import type { CompletionPayload, FeedbackValue, Message, MessageDeltaPayload, Session } from "@/types";
+import type {
+  CompletionPayload,
+  FeedbackValue,
+  Message,
+  MessageDeltaPayload,
+  Session,
+  ToolCallPayload
+} from "@/types";
 import {
   listMessages,
   listSessions,
@@ -40,6 +47,7 @@ interface ChatState {
   cancelGeneration: () => void;
   appendStreamContent: (delta: string) => void;
   appendThinkingContent: (delta: string) => void;
+  appendToolCall: (call: ToolCallPayload) => void;
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
 }
 
@@ -93,6 +101,29 @@ function computeThinkingDuration(startAt?: number | null) {
   return Math.max(1, seconds);
 }
 
+function normalizeRetrievalMode(value?: string | null) {
+  const mode = value?.trim().toLowerCase();
+  if (mode === "semantic" || mode === "keyword" || mode === "hybrid" || mode === "auto") {
+    return mode;
+  }
+  return undefined;
+}
+
+function retrievalModeLabel(mode?: string) {
+  switch (mode) {
+    case "semantic":
+      return "语义检索";
+    case "keyword":
+      return "关键词检索";
+    case "hybrid":
+      return "混合检索";
+    case "auto":
+      return "自动检索";
+    default:
+      return undefined;
+  }
+}
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const initialActiveSessionId = readActiveSessionId();
 
@@ -118,9 +149,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const data = await listSessions();
       const sessions = data
         .map((item) => ({
-        id: item.conversationId,
-        title: item.title || "新对话",
-        lastTime: item.lastTime
+          id: item.conversationId,
+          title: item.title || "新对话",
+          lastTime: item.lastTime
         }))
         .sort((a, b) => {
           const timeA = a.lastTime ? new Date(a.lastTime).getTime() : 0;
@@ -201,12 +232,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await deleteSessionRequest(sessionId);
       set((state) => {
         const sessions = state.sessions.filter((session) => session.id !== sessionId);
-        const currentSessionId = state.currentSessionId === sessionId ? null : state.currentSessionId;
+        const currentSessionId =
+          state.currentSessionId === sessionId ? null : state.currentSessionId;
         const lastResolvedSessionId =
           state.currentSessionId === sessionId
             ? state.lastResolvedSessionId
             : state.currentSessionId;
-        const activeSessionId = currentSessionId || lastResolvedSessionId || sessions[0]?.id || null;
+        const activeSessionId =
+          currentSessionId || lastResolvedSessionId || sessions[0]?.id || null;
         writeActiveSessionId(activeSessionId);
         return {
           sessions,
@@ -370,13 +403,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const token = storage.getToken();
 
     const handlers = {
-      onMeta: (payload: { conversationId: string; taskId: string }) => {
+      onMeta: (payload: { conversationId: string; taskId: string; searchMode?: string }) => {
         if (get().streamingMessageId !== assistantId) return;
         const nextId = payload.conversationId || get().currentSessionId;
         if (!nextId) return;
+        const nextRetrievalMode = normalizeRetrievalMode(payload.searchMode);
         logChatDebug("sendMessage:onMeta", {
           payloadConversationId: payload.conversationId,
           taskId: payload.taskId,
+          searchMode: payload.searchMode,
           currentSessionId: get().currentSessionId,
           lastResolvedSessionId: get().lastResolvedSessionId,
           nextId
@@ -388,6 +423,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
           lastResolvedSessionId: nextId,
           isCreatingNew: false,
           streamTaskId: payload.taskId,
+          messages: state.messages.map((message) =>
+            message.id === state.streamingMessageId
+              ? {
+                  ...message,
+                  retrievalMode: nextRetrievalMode,
+                  retrievalModeLabel: retrievalModeLabel(nextRetrievalMode)
+                }
+              : message
+          ),
           sessions: upsertSession(state.sessions, {
             id: nextId,
             title: existing?.title || "新对话",
@@ -412,6 +456,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       onReject: (payload: MessageDeltaPayload) => {
         if (!payload || typeof payload !== "object") return;
         get().appendStreamContent(payload.delta);
+      },
+      onTool: (payload: ToolCallPayload) => {
+        if (!payload || typeof payload !== "object") return;
+        get().appendToolCall(payload);
       },
       onFinish: (payload: CompletionPayload) => {
         if (get().streamingMessageId !== assistantId) return;
@@ -484,9 +532,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set((state) => ({
           messages: state.messages.map((message) => {
             if (message.id !== state.streamingMessageId) return message;
-            const suffix = message.content.includes("（已停止生成）")
-              ? ""
-              : "\n\n（已停止生成）";
+            const suffix = message.content.includes("（已停止生成）") ? "" : "\n\n（已停止生成）";
             const nextId = payload?.messageId ? String(payload.messageId) : message.id;
             return {
               ...message,
@@ -605,7 +651,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             content: message.content + delta,
             isThinking: shouldFinalizeThinking ? false : message.isThinking,
             thinkingDuration:
-              shouldFinalizeThinking && !message.thinkingDuration ? duration : message.thinkingDuration
+              shouldFinalizeThinking && !message.thinkingDuration
+                ? duration
+                : message.thinkingDuration
           };
         })
       };
@@ -623,6 +671,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ...message,
               thinking: `${message.thinking ?? ""}${delta}`,
               isThinking: true
+            }
+          : message
+      )
+    }));
+  },
+  appendToolCall: (call) => {
+    if (!call) return;
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === state.streamingMessageId &&
+        message.status !== "cancelled" &&
+        message.status !== "error"
+          ? {
+              ...message,
+              toolCalls: [...(message.toolCalls ?? []), call]
             }
           : message
       )

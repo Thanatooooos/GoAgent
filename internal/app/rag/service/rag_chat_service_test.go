@@ -1,0 +1,319 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
+	"local/rag-project/internal/app/rag/domain"
+	"local/rag-project/internal/app/rag/port"
+	ragtool "local/rag-project/internal/app/rag/tool"
+	"local/rag-project/internal/framework/convention"
+)
+
+type toolWorkflowStub struct {
+	result ragtool.WorkflowResult
+	err    error
+	input  ragtool.WorkflowInput
+}
+
+func (s *toolWorkflowStub) Run(ctx context.Context, input ragtool.WorkflowInput) (ragtool.WorkflowResult, error) {
+	s.input = input
+	return s.result, s.err
+}
+
+type fallbackSinkStub struct {
+	metaCalls      int
+	fallbackCalls  int
+	fallbackReason string
+	finishCalls    int
+	errorCalls     int
+	doneCalls      int
+	toolCalls      int
+	toolNames      []string
+}
+
+func (s *fallbackSinkStub) SendMeta(meta RagChatMeta) error {
+	s.metaCalls++
+	return nil
+}
+
+func (s *fallbackSinkStub) SendFallback(reason string) error {
+	s.fallbackCalls++
+	s.fallbackReason = reason
+	return nil
+}
+
+func (s *fallbackSinkStub) SendThinking(delta string) error { return nil }
+func (s *fallbackSinkStub) SendMessage(delta string) error  { return nil }
+func (s *fallbackSinkStub) SendTitle(title string) error    { return nil }
+func (s *fallbackSinkStub) SendTool(name string, status string, summary string) error {
+	s.toolCalls++
+	s.toolNames = append(s.toolNames, name)
+	return nil
+}
+
+func (s *fallbackSinkStub) SendFinish(payload RagChatFinishPayload) error {
+	s.finishCalls++
+	return nil
+}
+
+func (s *fallbackSinkStub) SendCancel(payload RagChatFinishPayload) error { return nil }
+
+func (s *fallbackSinkStub) SendError(err error) error {
+	s.errorCalls++
+	return nil
+}
+
+func (s *fallbackSinkStub) SendDone() error {
+	s.doneCalls++
+	return nil
+}
+
+type traceNodeRepoRecorder struct {
+	created []domain.RagTraceNode
+}
+
+func (r *traceNodeRepoRecorder) Create(_ context.Context, node domain.RagTraceNode) (domain.RagTraceNode, error) {
+	r.created = append(r.created, node)
+	return node, nil
+}
+
+func (r *traceNodeRepoRecorder) UpdateByTraceIDAndNodeID(context.Context, string, string, domain.RagTraceNode) error {
+	return nil
+}
+
+func (r *traceNodeRepoRecorder) UpdateWhere(context.Context, port.RagTraceNodeConditions, port.RagTraceNodePatch) (int64, error) {
+	return 0, nil
+}
+
+func (r *traceNodeRepoRecorder) ListByTraceID(context.Context, string) ([]domain.RagTraceNode, error) {
+	return nil, nil
+}
+
+func TestTopChunkScore(t *testing.T) {
+	if got := topChunkScore(ragretrieve.Result{}); got != 0 {
+		t.Fatalf("empty result: expected 0, got %v", got)
+	}
+
+	result := ragretrieve.Result{
+		Chunks: []convention.RetrievedChunk{
+			{ID: "c1", Score: 0.85},
+		},
+	}
+	if got := topChunkScore(result); got != 0.85 {
+		t.Fatalf("single chunk: expected 0.85, got %v", got)
+	}
+
+	result = ragretrieve.Result{
+		Chunks: []convention.RetrievedChunk{
+			{ID: "c1", Score: 0.45},
+			{ID: "c2", Score: 0.92},
+			{ID: "c3", Score: 0.67},
+		},
+	}
+	if got := topChunkScore(result); got != 0.92 {
+		t.Fatalf("multi chunk: expected 0.92, got %v", got)
+	}
+}
+
+func TestBuildFallbackPrompt(t *testing.T) {
+	question := "what is the weather today"
+	prompt := buildFallbackPrompt(question)
+
+	if !strings.Contains(prompt, question) {
+		t.Fatalf("expected question %q in fallback prompt, got: %s", question, prompt)
+	}
+	if !strings.Contains(strings.ToLower(prompt), "general model") {
+		t.Fatalf("expected general-model fallback warning in fallback prompt, got: %s", prompt)
+	}
+	if !strings.Contains(strings.ToLower(prompt), "respond in chinese") {
+		t.Fatalf("expected Chinese-response hint in fallback prompt, got: %s", prompt)
+	}
+}
+
+func TestRagChatServiceConfidenceThresholdDefaultsOff(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	if svc.confidenceThreshold != 0 {
+		t.Fatalf("expected confidenceThreshold=0 by default, got %v", svc.confidenceThreshold)
+	}
+}
+
+func TestRagChatServiceSetConfidenceThreshold(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetConfidenceThreshold(0.6)
+	if svc.confidenceThreshold != 0.6 {
+		t.Fatalf("expected 0.6, got %v", svc.confidenceThreshold)
+	}
+
+	svc.SetConfidenceThreshold(0)
+	if svc.confidenceThreshold != 0 {
+		t.Fatalf("expected 0 after disabling, got %v", svc.confidenceThreshold)
+	}
+}
+
+func TestRagChatServiceSetToolWorkflow(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	workflow := &toolWorkflowStub{}
+	svc.SetToolWorkflow(workflow)
+	if svc.toolWorkflow != workflow {
+		t.Fatal("expected tool workflow to be assigned")
+	}
+}
+
+func TestRagChatServiceValidateDependencies(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	if err := svc.validateDependencies(); err == nil {
+		t.Fatal("expected validation error for nil dependencies")
+	}
+}
+
+func TestRagChatServiceNilSink(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	if err := svc.Chat(nil, RagChatInput{Question: "test", UserID: "u1"}, nil); err == nil {
+		t.Fatal("expected error for nil sink")
+	}
+}
+
+func TestRagChatServiceEmptyQuestion(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	sink := &fallbackSinkStub{}
+	if err := svc.Chat(nil, RagChatInput{Question: "", UserID: "u1"}, sink); err == nil {
+		t.Fatal("expected error for empty question or missing dependencies")
+	}
+}
+
+func TestRagChatServiceEmptyUserID(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	sink := &fallbackSinkStub{}
+	if err := svc.Chat(nil, RagChatInput{Question: "hello", UserID: ""}, sink); err == nil {
+		t.Fatal("expected error for empty user id")
+	}
+}
+
+func TestResolveRetrieveSearchMode(t *testing.T) {
+	if got := resolveRetrieveSearchMode("", "hybrid"); got != ragretrieve.SearchModeHybrid {
+		t.Fatalf("expected hybrid, got %q", got)
+	}
+	if got := resolveRetrieveSearchMode("keyword", "semantic"); got != ragretrieve.SearchModeKeyword {
+		t.Fatalf("expected explicit keyword, got %q", got)
+	}
+	if got := resolveRetrieveSearchMode("invalid", "semantic"); got != ragretrieve.SearchModeAuto {
+		t.Fatalf("expected auto on invalid input, got %q", got)
+	}
+}
+
+func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	result, err := svc.runToolWorkflowStage(
+		context.Background(),
+		RagChatInput{Question: "q", UserID: "u"},
+		nil,
+		ragrewrite.Result{},
+		ragretrieve.Result{},
+		ragretrieve.SearchModeSemantic,
+		"trace-1",
+	)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if result.result.Used {
+		t.Fatal("expected empty workflow result when workflow is unset")
+	}
+}
+
+func TestRunToolWorkflowStageReturnsWorkflowResult(t *testing.T) {
+	workflow := &toolWorkflowStub{
+		result: ragtool.WorkflowResult{
+			Used:    true,
+			Context: "tool context",
+			Calls: []ragtool.CallSummary{
+				{Name: "document_query", Status: ragtool.CallStatusSuccess, Summary: "matched doc-1"},
+			},
+		},
+	}
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetToolWorkflow(workflow)
+
+	history := []convention.ChatMessage{convention.UserMessage("previous")}
+	rewriteResult := ragrewrite.Result{RewrittenQuestion: "rewritten"}
+	retrieveResult := ragretrieve.Result{KnowledgeContext: "knowledge"}
+	result, err := svc.runToolWorkflowStage(
+		context.Background(),
+		RagChatInput{
+			ConversationID:   "conv-1",
+			UserID:           "user-1",
+			Question:         "why failed",
+			KnowledgeBaseIDs: []string{"kb-1"},
+		},
+		history,
+		rewriteResult,
+		retrieveResult,
+		ragretrieve.SearchModeHybrid,
+		"trace-1",
+	)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !result.result.Used {
+		t.Fatal("expected workflow result to be used")
+	}
+	if result.result.Context != "tool context" {
+		t.Fatalf("unexpected tool context: %q", result.result.Context)
+	}
+	if workflow.input.TraceID != "trace-1" {
+		t.Fatalf("unexpected trace id: %q", workflow.input.TraceID)
+	}
+	if workflow.input.SearchMode != ragretrieve.SearchModeHybrid {
+		t.Fatalf("unexpected search mode: %q", workflow.input.SearchMode)
+	}
+	if len(workflow.input.History) != 1 || workflow.input.History[0].Content != "previous" {
+		t.Fatalf("unexpected history: %+v", workflow.input.History)
+	}
+}
+
+func TestRecordToolCallTraceNodes(t *testing.T) {
+	repo := &traceNodeRepoRecorder{}
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	tracer := NewChatTracer(nil, repo)
+	_ = NewRagChatService(nil, nil, nil, nil, nil, nil, nil, tracer)
+	tracer.now = func() time.Time { return now }
+
+	tracer.recordToolCallTraceNodes(context.Background(), "trace-1", []ragtool.CallSummary{
+		{Name: "document_query", Status: ragtool.CallStatusSuccess, Summary: "matched doc-1", DurationMs: 12},
+		{Name: "task_ingestion_diagnose", Status: ragtool.CallStatusFailed, Summary: "task not found", DurationMs: 34},
+	})
+
+	if len(repo.created) != 2 {
+		t.Fatalf("expected 2 tool call trace nodes, got %d", len(repo.created))
+	}
+	if repo.created[0].ParentNodeID != "tool_workflow" || repo.created[0].Depth != 2 {
+		t.Fatalf("unexpected parent/depth: %+v", repo.created[0])
+	}
+	if repo.created[0].NodeID != "tool_01" || repo.created[1].NodeID != "tool_02" {
+		t.Fatalf("unexpected tool node ids: %+v", repo.created)
+	}
+	if repo.created[0].NodeName != "document_query" || repo.created[1].NodeName != "task_ingestion_diagnose" {
+		t.Fatalf("unexpected node names: %+v", repo.created)
+	}
+	if repo.created[1].ErrorMessage != "task not found" {
+		t.Fatalf("expected failed tool error message to be persisted, got %q", repo.created[1].ErrorMessage)
+	}
+	if repo.created[0].DurationMs == nil || *repo.created[0].DurationMs != 12 {
+		t.Fatalf("unexpected first duration: %+v", repo.created[0].DurationMs)
+	}
+	if repo.created[1].StartTime == nil || repo.created[1].EndTime == nil || !repo.created[1].EndTime.After(*repo.created[1].StartTime) {
+		t.Fatalf("expected second node to have increasing timestamps: %+v", repo.created[1])
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(repo.created[0].ExtraData), &payload); err != nil {
+		t.Fatalf("unmarshal extra data: %v", err)
+	}
+	if payload["summary"] != "matched doc-1" {
+		t.Fatalf("unexpected summary payload: %+v", payload)
+	}
+}

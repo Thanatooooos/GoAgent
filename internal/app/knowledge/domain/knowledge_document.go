@@ -3,8 +3,9 @@ package domain
 import "time"
 
 const (
-	KnowledgeDocumentSourceFile = "file"
-	KnowledgeDocumentSourceURL  = "url"
+	KnowledgeDocumentSourceFile   = "file"
+	KnowledgeDocumentSourceURL    = "url"
+	KnowledgeDocumentSourceFeishu = "feishu"
 )
 
 const (

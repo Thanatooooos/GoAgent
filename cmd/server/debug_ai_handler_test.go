@@ -11,15 +11,26 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"local/rag-project/internal/framework/config"
+	"local/rag-project/internal/framework/contextx"
 	infraai "local/rag-project/internal/infra-ai"
 )
+
+func newDebugTestRouter() *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	// 注入 admin 用户，使 debug 路由认证通过
+	router.Use(func(c *gin.Context) {
+		contextx.Set(c, &contextx.LoginUser{UserID: "test-admin", Username: "admin", Role: "admin"})
+		c.Next()
+	})
+	return router
+}
 
 func TestRegisterDebugAIRoutesRuntime(t *testing.T) {
 	loadServerTestConfig(t)
 	runtime := infraai.NewRuntime()
 
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
+	router := newDebugTestRouter()
 	registerDebugAIRoutes(router, runtime)
 
 	req := httptest.NewRequest(http.MethodGet, "/debug/ai/runtime", nil)
@@ -35,8 +46,7 @@ func TestRegisterDebugAIRoutesChatBadRequest(t *testing.T) {
 	loadServerTestConfig(t)
 	runtime := infraai.NewRuntime()
 
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
+	router := newDebugTestRouter()
 	registerDebugAIRoutes(router, runtime)
 
 	req := httptest.NewRequest(http.MethodPost, "/debug/ai/chat", bytes.NewBufferString(`{}`))

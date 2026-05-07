@@ -42,3 +42,30 @@ func Errorf(format string, args ...interface{}) {
 	}
 	fmt.Printf(format+"\n", args...)
 }
+
+// Infow 输出结构化 info 级别日志。
+func Infow(msg string, keysAndValues ...interface{}) {
+	if sugar != nil {
+		sugar.Infow(msg, keysAndValues...)
+		return
+	}
+	fmt.Printf("%s %v\n", msg, keysAndValues)
+}
+
+// Warnw 输出结构化 warn 级别日志。
+func Warnw(msg string, keysAndValues ...interface{}) {
+	if sugar != nil {
+		sugar.Warnw(msg, keysAndValues...)
+		return
+	}
+	fmt.Printf("%s %v\n", msg, keysAndValues)
+}
+
+// Errorw 输出结构化 error 级别日志。
+func Errorw(msg string, keysAndValues ...interface{}) {
+	if sugar != nil {
+		sugar.Errorw(msg, keysAndValues...)
+		return
+	}
+	fmt.Printf("%s %v\n", msg, keysAndValues)
+}

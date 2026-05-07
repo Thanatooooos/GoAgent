@@ -75,6 +75,35 @@ export interface KnowledgeDocumentChunkLog {
   startTime?: string | null;
   endTime?: string | null;
   createTime?: string | null;
+  ingestionTask?: {
+    id: string;
+    pipelineId: string;
+    sourceType?: string | null;
+    sourceLocation?: string | null;
+    sourceFileName?: string | null;
+    status?: string | null;
+    chunkCount?: number | null;
+    errorMessage?: string | null;
+    metadata?: Record<string, unknown> | null;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    createTime?: string | null;
+    updateTime?: string | null;
+  } | null;
+  ingestionNodes?: Array<{
+    id: string;
+    taskId: string;
+    nodeId: string;
+    nodeType: string;
+    nodeOrder?: number | null;
+    status?: string | null;
+    durationMs?: number | null;
+    message?: string | null;
+    errorMessage?: string | null;
+    output?: Record<string, unknown> | null;
+    createTime?: string | null;
+    updateTime?: string | null;
+  }> | null;
 }
 
 export interface PageResult<T> {

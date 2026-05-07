@@ -31,16 +31,26 @@ export interface Message {
   createdAt?: string;
   feedback?: FeedbackValue;
   status?: MessageStatus;
+  retrievalMode?: string;
+  retrievalModeLabel?: string;
+  toolCalls?: ToolCallPayload[];
 }
 
 export interface StreamMetaPayload {
   conversationId: string;
   taskId: string;
+  searchMode?: string;
 }
 
 export interface MessageDeltaPayload {
   type: string;
   delta: string;
+}
+
+export interface ToolCallPayload {
+  name: string;
+  status: string;
+  summary: string;
 }
 
 export interface CompletionPayload {

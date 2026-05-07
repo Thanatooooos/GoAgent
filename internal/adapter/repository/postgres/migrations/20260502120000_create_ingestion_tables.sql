@@ -1,4 +1,4 @@
-CREATE TABLE t_ingestion_pipeline (
+CREATE TABLE IF NOT EXISTS t_ingestion_pipeline (
     id          VARCHAR(20) NOT NULL PRIMARY KEY,
     name        VARCHAR(128) NOT NULL,
     description VARCHAR(1024),
@@ -9,10 +9,10 @@ CREATE TABLE t_ingestion_pipeline (
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted     SMALLINT DEFAULT 0
 );
-CREATE INDEX idx_ingestion_pipeline_created_by ON t_ingestion_pipeline (created_by);
-CREATE INDEX idx_ingestion_pipeline_name ON t_ingestion_pipeline (name);
+CREATE INDEX IF NOT EXISTS idx_ingestion_pipeline_created_by ON t_ingestion_pipeline (created_by);
+CREATE INDEX IF NOT EXISTS idx_ingestion_pipeline_name ON t_ingestion_pipeline (name);
 
-CREATE TABLE t_ingestion_task (
+CREATE TABLE IF NOT EXISTS t_ingestion_task (
     id              VARCHAR(20) NOT NULL PRIMARY KEY,
     pipeline_id     VARCHAR(20) NOT NULL,
     source_type     VARCHAR(16) NOT NULL,
@@ -30,11 +30,11 @@ CREATE TABLE t_ingestion_task (
     update_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted         SMALLINT DEFAULT 0
 );
-CREATE INDEX idx_ingestion_task_pipeline_id ON t_ingestion_task (pipeline_id);
-CREATE INDEX idx_ingestion_task_status ON t_ingestion_task (status);
-CREATE INDEX idx_ingestion_task_created_by ON t_ingestion_task (created_by);
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_pipeline_id ON t_ingestion_task (pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_status ON t_ingestion_task (status);
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_created_by ON t_ingestion_task (created_by);
 
-CREATE TABLE t_ingestion_task_node (
+CREATE TABLE IF NOT EXISTS t_ingestion_task_node (
     id            VARCHAR(20) NOT NULL PRIMARY KEY,
     task_id       VARCHAR(20) NOT NULL,
     pipeline_id   VARCHAR(20) NOT NULL,
@@ -51,6 +51,6 @@ CREATE TABLE t_ingestion_task_node (
     deleted       SMALLINT DEFAULT 0,
     CONSTRAINT uk_ingestion_task_node UNIQUE (task_id, node_id)
 );
-CREATE INDEX idx_ingestion_task_node_task_id ON t_ingestion_task_node (task_id);
-CREATE INDEX idx_ingestion_task_node_pipeline_id ON t_ingestion_task_node (pipeline_id);
-CREATE INDEX idx_ingestion_task_node_task_order ON t_ingestion_task_node (task_id, node_order);
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_node_task_id ON t_ingestion_task_node (task_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_node_pipeline_id ON t_ingestion_task_node (pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_node_task_order ON t_ingestion_task_node (task_id, node_order);

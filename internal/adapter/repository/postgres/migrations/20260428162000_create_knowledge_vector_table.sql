@@ -1,6 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS t_knowledge_chunk_vector (
     chunk_id VARCHAR(20) NOT NULL PRIMARY KEY,

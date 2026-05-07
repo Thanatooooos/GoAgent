@@ -81,7 +81,8 @@ func (r *TaskNodeRepository) ListByTaskID(ctx context.Context, taskID string) ([
 		Model(&models.TaskNodeModel{}).
 		Where("task_id = ?", taskID).
 		Order("node_order asc").
-		Order("create_time asc")
+		Order("create_time asc").
+		Limit(500)
 	var items []models.TaskNodeModel
 	if err := query.Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("list ingestion task nodes by task id: %w", err)

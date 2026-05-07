@@ -55,6 +55,65 @@ func readIntSetting(values map[string]any, key string) int {
 	}
 }
 
+func readBoolSetting(values map[string]any, key string) bool {
+	if len(values) == 0 {
+		return false
+	}
+	raw, ok := values[key]
+	if !ok || raw == nil {
+		return false
+	}
+	switch typed := raw.(type) {
+	case bool:
+		return typed
+	case string:
+		value, _ := strconv.ParseBool(strings.TrimSpace(typed))
+		return value
+	default:
+		return false
+	}
+}
+
+func readStringSliceSetting(values map[string]any, key string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	raw, ok := values[key]
+	if !ok || raw == nil {
+		return nil
+	}
+
+	result := make([]string, 0)
+	appendValue := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			result = append(result, value)
+		}
+	}
+
+	switch typed := raw.(type) {
+	case []string:
+		for _, item := range typed {
+			appendValue(item)
+		}
+	case []any:
+		for _, item := range typed {
+			appendValue(fmt.Sprint(item))
+		}
+	case string:
+		for _, item := range strings.Split(typed, ",") {
+			appendValue(item)
+		}
+	default:
+		appendValue(fmt.Sprint(raw))
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func pickFirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

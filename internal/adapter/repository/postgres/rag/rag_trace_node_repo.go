@@ -72,6 +72,7 @@ func (r *RagTraceNodeRepository) ListByTraceID(ctx context.Context, traceID stri
 		Where("trace_id = ?", traceID).
 		Order("start_time asc").
 		Order("id asc").
+		Limit(500).
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("list rag trace nodes by trace id: %w", err)
 	}

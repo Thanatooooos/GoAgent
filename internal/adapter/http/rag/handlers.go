@@ -205,6 +205,7 @@ func (h *Handler) Chat(c *gin.Context) {
 		Question:         strings.TrimSpace(c.Query("question")),
 		KnowledgeBaseIDs: splitCommaValues(c.Query("knowledgeBaseId")),
 		DeepThinking:     parseBool(c.Query("deepThinking")),
+		SearchMode:       strings.TrimSpace(c.Query("searchMode")),
 	}, sink); err != nil {
 		return
 	}
@@ -233,6 +234,11 @@ func (s *sseChatSink) SendMeta(meta ragservice.RagChatMeta) error {
 	return s.sender.SendEvent("meta", meta)
 }
 
+// SendFallback 发送检索回退通知事件。
+func (s *sseChatSink) SendFallback(reason string) error {
+	return s.sender.SendEvent("fallback", gin.H{"reason": reason})
+}
+
 // SendThinking 发送 SSE thinking 事件。
 func (s *sseChatSink) SendThinking(delta string) error {
 	return s.sender.SendEvent("message", gin.H{
@@ -246,6 +252,15 @@ func (s *sseChatSink) SendMessage(delta string) error {
 	return s.sender.SendEvent("message", gin.H{
 		"type":  "response",
 		"delta": delta,
+	})
+}
+
+// SendTool 发送单个 tool 调用摘要事件。
+func (s *sseChatSink) SendTool(name string, status string, summary string) error {
+	return s.sender.SendEvent("tool", gin.H{
+		"name":    name,
+		"status":  status,
+		"summary": summary,
 	})
 }
 

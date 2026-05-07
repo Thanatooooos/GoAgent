@@ -17,6 +17,7 @@ func NewTemplateLoader() *TemplateLoader {
 		templates: map[string]string{},
 	}
 	loader.Register(DefaultKBTemplate, defaultKBTemplateContent)
+	loader.Register(FallbackKBTemplate, fallbackKBTemplateContent)
 	return loader
 }
 

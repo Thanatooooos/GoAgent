@@ -1,12 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  Activity,
   ClipboardList,
   FileUp,
   FolderKanban,
+  Gauge,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
+  TimerReset,
+  TriangleAlert,
   Trash2
 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,17 +19,56 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type {
+  IngestionMetricsSnapshot,
+  IngestionNodeMetrics,
   IngestionPipeline,
   IngestionPipelineNode,
   IngestionPipelinePayload,
@@ -37,6 +81,7 @@ import {
   createIngestionPipeline,
   createIngestionTask,
   deleteIngestionPipeline,
+  getIngestionMetrics,
   getIngestionPipeline,
   getIngestionPipelines,
   getIngestionTask,
@@ -49,6 +94,7 @@ import { getSystemSettings } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
 const PIPELINE_PAGE_SIZE = 10;
 const TASK_PAGE_SIZE = 10;
+const METRICS_POLL_INTERVAL_MS = 10000;
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "pending" },
@@ -113,6 +159,16 @@ const truncateJson = (value: unknown, max = 120) => {
   return `${raw.slice(0, max)}...`;
 };
 
+const formatPercent = (value?: number | null) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return "-";
+  return `${(value * 100).toFixed(1)}%`;
+};
+
+const formatDuration = (value?: number | null) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return "-";
+  return `${value} ms`;
+};
+
 const statusBadgeVariant = (status?: string | null) => {
   if (!status) return "outline";
   const normalized = status.toLowerCase();
@@ -138,13 +194,7 @@ const pipelineSchema = z.object({
 
 type PipelineFormValues = z.infer<typeof pipelineSchema>;
 
-type PipelineNodeType =
-  | "fetcher"
-  | "parser"
-  | "enhancer"
-  | "chunker"
-  | "enricher"
-  | "indexer";
+type PipelineNodeType = "fetcher" | "parser" | "enhancer" | "chunker" | "enricher" | "indexer";
 
 interface EnhancerTaskForm {
   id: string;
@@ -232,6 +282,8 @@ export function IngestionPage() {
   const [taskStatus, setTaskStatus] = useState<string | undefined>();
   const [taskPageNo, setTaskPageNo] = useState(1);
   const [taskLoading, setTaskLoading] = useState(false);
+  const [metrics, setMetrics] = useState<IngestionMetricsSnapshot | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [taskDetail, setTaskDetail] = useState<{ open: boolean; taskId: string | null }>({
@@ -277,6 +329,25 @@ export function IngestionPage() {
     }
   };
 
+  const loadMetrics = async (silent = false) => {
+    if (!silent) {
+      setMetricsLoading(true);
+    }
+    try {
+      const data = await getIngestionMetrics();
+      setMetrics(data);
+    } catch (error) {
+      if (!silent) {
+        toast.error(getErrorMessage(error, "加载指标失败"));
+      }
+      console.error(error);
+    } finally {
+      if (!silent) {
+        setMetricsLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     loadPipelines();
   }, [pipelinePageNo, pipelineKeyword]);
@@ -288,6 +359,15 @@ export function IngestionPage() {
   useEffect(() => {
     loadPipelineOptions();
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "tasks") return;
+    loadMetrics();
+    const timer = window.setInterval(() => {
+      loadMetrics(true);
+    }, METRICS_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [activeTab]);
 
   useEffect(() => {
     if (tabParam === "tasks" || tabParam === "pipelines") {
@@ -317,6 +397,7 @@ export function IngestionPage() {
     setTaskPageNo(1);
     loadTasks(1, taskStatus);
     loadPipelineOptions();
+    loadMetrics();
   };
 
   const handlePipelineDelete = async () => {
@@ -343,8 +424,7 @@ export function IngestionPage() {
     }
   };
 
-  const taskStatusLabel = (status?: string | null) =>
-    status ? status.toLowerCase() : "unknown";
+  const taskStatusLabel = (status?: string | null) => (status ? status.toLowerCase() : "unknown");
 
   return (
     <div className="admin-page">
@@ -434,13 +514,19 @@ export function IngestionPage() {
                       <TableCell>{formatDate(pipeline.updateTime)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openPipelineNodes(pipeline)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openPipelineNodes(pipeline)}
+                          >
                             查看节点
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setPipelineDialog({ open: true, mode: "edit", pipeline })}
+                            onClick={() =>
+                              setPipelineDialog({ open: true, mode: "edit", pipeline })
+                            }
                           >
                             <Pencil className="mr-0.1 h-4 w-4" />
                             编辑
@@ -474,107 +560,198 @@ export function IngestionPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <CardTitle>通道任务</CardTitle>
-                <CardDescription>监控执行状态与节点日志</CardDescription>
-              </div>
-              <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-                <Select
-                  value={taskStatus || "all"}
-                  onValueChange={(value) => {
-                    setTaskPageNo(1);
-                    setTaskStatus(value === "all" ? undefined : value);
-                  }}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="任务状态" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部状态</SelectItem>
-                    {STATUS_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" onClick={handleTaskRefresh}>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <CardTitle>运行指标</CardTitle>
+                  <CardDescription>查看当前执行器负载、任务结果与节点耗时分布</CardDescription>
+                </div>
+                <Button variant="outline" onClick={() => loadMetrics()} disabled={metricsLoading}>
                   <RefreshCw className="mr-2 h-4 w-4" />
-                  刷新
-                </Button>
-                <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
-                  <FileUp className="mr-2 h-4 w-4" />
-                  上传文件
-                </Button>
-                <Button className="admin-primary-gradient" onClick={() => setTaskDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  新建任务
+                  {metricsLoading ? "刷新中..." : "刷新指标"}
                 </Button>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {taskLoading ? (
-              <div className="py-10 text-center text-muted-foreground">加载中...</div>
-            ) : tasks.length === 0 ? (
-              <div className="py-10 text-center text-muted-foreground">暂无任务</div>
-            ) : (
-              <Table className="min-w-[980px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[220px]">任务ID</TableHead>
-                    <TableHead>来源</TableHead>
-                    <TableHead className="w-[120px]">状态</TableHead>
-                    <TableHead className="w-[120px]">负责人</TableHead>
-                    <TableHead className="w-[90px]">分片数</TableHead>
-                    <TableHead className="w-[170px]">创建时间</TableHead>
-                    <TableHead className="w-[140px] text-left">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {tasks.map((task) => (
-                    <TableRow key={task.id}>
-                      <TableCell className="font-mono text-xs">{task.id}</TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <span className="font-medium">{task.sourceType || "-"}</span>
-                          <span className="text-muted-foreground">
-                            {" "}
-                            {task.sourceFileName || task.sourceLocation || ""}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusBadgeVariant(task.status)}>
-                          {taskStatusLabel(task.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{task.createdBy || "-"}</TableCell>
-                      <TableCell>{task.chunkCount ?? "-"}</TableCell>
-                      <TableCell>{formatDate(task.createTime)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm" variant="outline" onClick={() => setTaskDetail({ open: true, taskId: task.id })}>
-                          查看详情
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricsStatCard
+                  title="运行中任务"
+                  value={String(metrics?.runningTasks ?? 0)}
+                  description={`已占用 ${metrics?.usedSlots ?? 0} / ${metrics?.maxConcurrent ?? 0} 并发`}
+                  icon={<Activity className="h-4 w-4" />}
+                />
+                <MetricsStatCard
+                  title="任务成功率"
+                  value={formatPercent(metrics?.rates.successRate)}
+                  description={`成功 ${metrics?.totals.succeeded ?? 0} / 完成 ${(metrics?.totals.succeeded ?? 0) + (metrics?.totals.failed ?? 0) + (metrics?.totals.canceled ?? 0)}`}
+                  icon={<Gauge className="h-4 w-4" />}
+                />
+                <MetricsStatCard
+                  title="失败与取消"
+                  value={`${metrics?.totals.failed ?? 0} / ${metrics?.totals.canceled ?? 0}`}
+                  description={`失败率 ${formatPercent(metrics?.rates.failureRate)}`}
+                  icon={<TriangleAlert className="h-4 w-4" />}
+                />
+                <MetricsStatCard
+                  title="累计重试次数"
+                  value={String(metrics?.totals.retries ?? 0)}
+                  description={`累计提交 ${metrics?.totals.submitted ?? 0} 个任务`}
+                  icon={<RotateCcw className="h-4 w-4" />}
+                />
+              </div>
 
-            <Pagination
-              current={taskPage?.current || 1}
-              pages={taskPage?.pages || 1}
-              total={taskPage?.total || 0}
-              onPrev={() => setTaskPageNo((prev) => Math.max(1, prev - 1))}
-              onNext={() => setTaskPageNo((prev) => Math.min(taskPage?.pages || 1, prev + 1))}
-            />
-          </CardContent>
-        </Card>
+              <div className="rounded-xl border border-border/70">
+                <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">节点指标</h3>
+                    <p className="text-xs text-muted-foreground">
+                      按节点类型聚合运行次数、重试次数与耗时
+                    </p>
+                  </div>
+                  <Badge variant="outline">
+                    <TimerReset className="mr-1 h-3.5 w-3.5" />
+                    10s 自动刷新
+                  </Badge>
+                </div>
+                {metricsLoading && !metrics ? (
+                  <div className="py-10 text-center text-muted-foreground">加载指标中...</div>
+                ) : !metrics?.nodes?.length ? (
+                  <div className="py-10 text-center text-muted-foreground">暂无节点指标</div>
+                ) : (
+                  <Table className="min-w-[900px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[140px]">节点类型</TableHead>
+                        <TableHead className="w-[90px]">运行次数</TableHead>
+                        <TableHead className="w-[90px]">成功</TableHead>
+                        <TableHead className="w-[90px]">失败</TableHead>
+                        <TableHead className="w-[90px]">重试</TableHead>
+                        <TableHead className="w-[130px]">平均耗时</TableHead>
+                        <TableHead className="w-[130px]">最大耗时</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {metrics.nodes.map((node) => (
+                        <NodeMetricsRow key={node.nodeType} node={node} />
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <CardTitle>通道任务</CardTitle>
+                  <CardDescription>监控执行状态与节点日志</CardDescription>
+                </div>
+                <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+                  <Select
+                    value={taskStatus || "all"}
+                    onValueChange={(value) => {
+                      setTaskPageNo(1);
+                      setTaskStatus(value === "all" ? undefined : value);
+                    }}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="任务状态" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部状态</SelectItem>
+                      {STATUS_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" onClick={handleTaskRefresh}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    刷新
+                  </Button>
+                  <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
+                    <FileUp className="mr-2 h-4 w-4" />
+                    上传文件
+                  </Button>
+                  <Button
+                    className="admin-primary-gradient"
+                    onClick={() => setTaskDialogOpen(true)}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    新建任务
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {taskLoading ? (
+                <div className="py-10 text-center text-muted-foreground">加载中...</div>
+              ) : tasks.length === 0 ? (
+                <div className="py-10 text-center text-muted-foreground">暂无任务</div>
+              ) : (
+                <Table className="min-w-[980px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[220px]">任务ID</TableHead>
+                      <TableHead>来源</TableHead>
+                      <TableHead className="w-[120px]">状态</TableHead>
+                      <TableHead className="w-[120px]">负责人</TableHead>
+                      <TableHead className="w-[90px]">分片数</TableHead>
+                      <TableHead className="w-[170px]">创建时间</TableHead>
+                      <TableHead className="w-[140px] text-left">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell className="font-mono text-xs">{task.id}</TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <span className="font-medium">{task.sourceType || "-"}</span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              {task.sourceFileName || task.sourceLocation || ""}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={statusBadgeVariant(task.status)}>
+                            {taskStatusLabel(task.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{task.createdBy || "-"}</TableCell>
+                        <TableCell>{task.chunkCount ?? "-"}</TableCell>
+                        <TableCell>{formatDate(task.createTime)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setTaskDetail({ open: true, taskId: task.id })}
+                          >
+                            查看详情
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+
+              <Pagination
+                current={taskPage?.current || 1}
+                pages={taskPage?.pages || 1}
+                total={taskPage?.total || 0}
+                onPrev={() => setTaskPageNo((prev) => Math.max(1, prev - 1))}
+                onNext={() => setTaskPageNo((prev) => Math.min(taskPage?.pages || 1, prev + 1))}
+              />
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       <PipelineDialog
@@ -599,10 +776,15 @@ export function IngestionPage() {
       <PipelineNodesDialog
         open={pipelineNodesDialog.open}
         pipeline={pipelineNodesDialog.pipeline}
-        onOpenChange={(open) => setPipelineNodesDialog({ open, pipeline: open ? pipelineNodesDialog.pipeline : null })}
+        onOpenChange={(open) =>
+          setPipelineNodesDialog({ open, pipeline: open ? pipelineNodesDialog.pipeline : null })
+        }
       />
 
-      <AlertDialog open={Boolean(pipelineDeleteTarget)} onOpenChange={(open) => (!open ? setPipelineDeleteTarget(null) : null)}>
+      <AlertDialog
+        open={Boolean(pipelineDeleteTarget)}
+        onOpenChange={(open) => (!open ? setPipelineDeleteTarget(null) : null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除流水线？</AlertDialogTitle>
@@ -612,7 +794,10 @@ export function IngestionPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePipelineDelete} className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction
+              onClick={handlePipelineDelete}
+              className="bg-destructive text-destructive-foreground"
+            >
               删除
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -655,6 +840,48 @@ export function IngestionPage() {
         onOpenChange={(open) => setTaskDetail({ open, taskId: open ? taskDetail.taskId : null })}
       />
     </div>
+  );
+}
+
+interface MetricsStatCardProps {
+  title: string;
+  value: string;
+  description: string;
+  icon: ReactNode;
+}
+
+function MetricsStatCard({ title, value, description, icon }: MetricsStatCardProps) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            {title}
+          </p>
+          <p className="text-2xl font-semibold text-foreground">{value}</p>
+        </div>
+        <div className="rounded-full border border-border/70 bg-muted/60 p-2 text-muted-foreground">
+          {icon}
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+function NodeMetricsRow({ node }: { node: IngestionNodeMetrics }) {
+  return (
+    <TableRow>
+      <TableCell>
+        <Badge variant="outline">{node.nodeType}</Badge>
+      </TableCell>
+      <TableCell>{node.runs}</TableCell>
+      <TableCell>{node.successes}</TableCell>
+      <TableCell>{node.failures}</TableCell>
+      <TableCell>{node.retries}</TableCell>
+      <TableCell>{formatDuration(node.avgDurationMs)}</TableCell>
+      <TableCell>{formatDuration(node.maxDurationMs)}</TableCell>
+    </TableRow>
   );
 }
 
@@ -825,7 +1052,11 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     if (Array.isArray(parsed)) {
       return { rules: parsed };
     }
-    if (parsed && typeof parsed === "object" && Array.isArray((parsed as { rules?: unknown }).rules)) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      Array.isArray((parsed as { rules?: unknown }).rules)
+    ) {
       return { rules: (parsed as { rules?: unknown }).rules };
     }
     throw new Error("解析规则必须是数组或包含 rules 字段的对象");
@@ -932,7 +1163,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
         settings = buildSettings(node) as Record<string, unknown> | undefined;
         condition = parseCondition(node.condition);
       } catch (error) {
-        return { ok: false as const, message: error instanceof Error ? error.message : "节点配置错误" };
+        return {
+          ok: false as const,
+          message: error instanceof Error ? error.message : "节点配置错误"
+        };
       }
       result.push({
         nodeId,
@@ -1144,7 +1378,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                         size="sm"
                         variant="ghost"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => setNodes((prev) => prev.filter((item) => item.id !== node.id))}
+                        onClick={() =>
+                          setNodes((prev) => prev.filter((item) => item.id !== node.id))
+                        }
                       >
                         删除
                       </Button>
@@ -1198,7 +1434,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                           onChange={(event) =>
                             setNodes((prev) =>
                               prev.map((item) =>
-                                item.id === node.id ? { ...item, nextNodeId: event.target.value } : item
+                                item.id === node.id
+                                  ? { ...item, nextNodeId: event.target.value }
+                                  : item
                               )
                             )
                           }
@@ -1223,7 +1461,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                             setNodes((prev) =>
                               prev.map((item) =>
                                 item.id === node.id
-                                  ? { ...item, parser: { ...item.parser, rulesJson: event.target.value } }
+                                  ? {
+                                      ...item,
+                                      parser: { ...item.parser, rulesJson: event.target.value }
+                                    }
                                   : item
                               )
                             )
@@ -1270,7 +1511,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, chunker: { ...item.chunker, chunkSize: event.target.value } }
+                                    ? {
+                                        ...item,
+                                        chunker: { ...item.chunker, chunkSize: event.target.value }
+                                      }
                                     : item
                                 )
                               )
@@ -1287,7 +1531,13 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, chunker: { ...item.chunker, overlapSize: event.target.value } }
+                                    ? {
+                                        ...item,
+                                        chunker: {
+                                          ...item.chunker,
+                                          overlapSize: event.target.value
+                                        }
+                                      }
                                     : item
                                 )
                               )
@@ -1303,7 +1553,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, chunker: { ...item.chunker, separator: event.target.value } }
+                                    ? {
+                                        ...item,
+                                        chunker: { ...item.chunker, separator: event.target.value }
+                                      }
                                     : item
                                 )
                               )
@@ -1324,7 +1577,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, enhancer: { ...item.enhancer, modelId: event.target.value } }
+                                    ? {
+                                        ...item,
+                                        enhancer: { ...item.enhancer, modelId: event.target.value }
+                                      }
                                     : item
                                 )
                               )
@@ -1346,7 +1602,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                         ...item,
                                         enhancer: {
                                           ...item.enhancer,
-                                          tasks: [...item.enhancer.tasks, createTask("context_enhance")]
+                                          tasks: [
+                                            ...item.enhancer.tasks,
+                                            createTask("context_enhance")
+                                          ]
                                         }
                                       }
                                     : item
@@ -1367,7 +1626,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                             {node.enhancer.tasks.map((task, taskIndex) => (
                               <div key={task.id} className="rounded-md border p-3 space-y-3">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-xs text-muted-foreground">任务 {taskIndex + 1}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    任务 {taskIndex + 1}
+                                  </span>
                                   <Button
                                     type="button"
                                     size="sm"
@@ -1381,7 +1642,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                                 ...item,
                                                 enhancer: {
                                                   ...item.enhancer,
-                                                  tasks: item.enhancer.tasks.filter((t) => t.id !== task.id)
+                                                  tasks: item.enhancer.tasks.filter(
+                                                    (t) => t.id !== task.id
+                                                  )
                                                 }
                                               }
                                             : item
@@ -1468,7 +1731,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                                   ...item.enhancer,
                                                   tasks: item.enhancer.tasks.map((t) =>
                                                     t.id === task.id
-                                                      ? { ...t, userPromptTemplate: event.target.value }
+                                                      ? {
+                                                          ...t,
+                                                          userPromptTemplate: event.target.value
+                                                        }
                                                       : t
                                                   )
                                                 }
@@ -1498,7 +1764,13 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                 setNodes((prev) =>
                                   prev.map((item) =>
                                     item.id === node.id
-                                      ? { ...item, enricher: { ...item.enricher, modelId: event.target.value } }
+                                      ? {
+                                          ...item,
+                                          enricher: {
+                                            ...item.enricher,
+                                            modelId: event.target.value
+                                          }
+                                        }
                                       : item
                                   )
                                 )
@@ -1571,7 +1843,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                             {node.enricher.tasks.map((task, taskIndex) => (
                               <div key={task.id} className="rounded-md border p-3 space-y-3">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-xs text-muted-foreground">任务 {taskIndex + 1}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    任务 {taskIndex + 1}
+                                  </span>
                                   <Button
                                     type="button"
                                     size="sm"
@@ -1585,7 +1859,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                                 ...item,
                                                 enricher: {
                                                   ...item.enricher,
-                                                  tasks: item.enricher.tasks.filter((t) => t.id !== task.id)
+                                                  tasks: item.enricher.tasks.filter(
+                                                    (t) => t.id !== task.id
+                                                  )
                                                 }
                                               }
                                             : item
@@ -1672,7 +1948,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                                   ...item.enricher,
                                                   tasks: item.enricher.tasks.map((t) =>
                                                     t.id === task.id
-                                                      ? { ...t, userPromptTemplate: event.target.value }
+                                                      ? {
+                                                          ...t,
+                                                          userPromptTemplate: event.target.value
+                                                        }
                                                       : t
                                                   )
                                                 }
@@ -1701,7 +1980,13 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, indexer: { ...item.indexer, embeddingModel: event.target.value } }
+                                    ? {
+                                        ...item,
+                                        indexer: {
+                                          ...item.indexer,
+                                          embeddingModel: event.target.value
+                                        }
+                                      }
                                     : item
                                 )
                               )
@@ -1717,7 +2002,13 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, indexer: { ...item.indexer, metadataFields: event.target.value } }
+                                    ? {
+                                        ...item,
+                                        indexer: {
+                                          ...item.indexer,
+                                          metadataFields: event.target.value
+                                        }
+                                      }
                                     : item
                                 )
                               )
@@ -1736,7 +2027,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                         onChange={(event) =>
                           setNodes((prev) =>
                             prev.map((item) =>
-                              item.id === node.id ? { ...item, condition: event.target.value } : item
+                              item.id === node.id
+                                ? { ...item, condition: event.target.value }
+                                : item
                             )
                           )
                         }
@@ -1746,7 +2039,11 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                   </div>
                 ))}
 
-                <Button type="button" variant="outline" onClick={() => setNodes((prev) => [...prev, createNode()])}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setNodes((prev) => [...prev, createNode()])}
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   添加节点
                 </Button>
@@ -1754,7 +2051,12 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+              >
                 取消
               </Button>
               <Button type="submit" disabled={saving}>
@@ -1955,7 +2257,9 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
         form.setError("location", { message: "请输入来源地址" });
         return;
       }
-      const normalizedType = values.sourceType ? values.sourceType.toUpperCase() : values.sourceType;
+      const normalizedType = values.sourceType
+        ? values.sourceType.toUpperCase()
+        : values.sourceType;
       const payload: IngestionTaskCreatePayload = {
         pipelineId: values.pipelineId,
         source: {
@@ -1980,7 +2284,9 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
       <DialogContent className="max-h-[90vh] overflow-y-auto sidebar-scroll sm:max-w-[720px]">
         <DialogHeader>
           <DialogTitle>新建通道任务</DialogTitle>
-          <DialogDescription>支持 Local File / URL / Feishu / S3 来源，Local File 会直接上传文件</DialogDescription>
+          <DialogDescription>
+            支持 Local File / URL / Feishu / S3 来源，Local File 会直接上传文件
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form className="space-y-4" onSubmit={form.handleSubmit(handleSubmit)}>
@@ -2087,7 +2393,11 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
                   <FormItem>
                     <FormLabel>访问凭证（JSON，可选）</FormLabel>
                     <FormControl>
-                      <Textarea placeholder={sourceMeta.credentialsHint || '{"token":"xxx"}'} rows={4} {...field} />
+                      <Textarea
+                        placeholder={sourceMeta.credentialsHint || '{"token":"xxx"}'}
+                        rows={4}
+                        {...field}
+                      />
                     </FormControl>
                     {sourceMeta.credentialsHint ? (
                       <FormDescription>示例：{sourceMeta.credentialsHint}</FormDescription>
@@ -2113,7 +2423,12 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
             />
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+              >
                 取消
               </Button>
               <Button type="submit" disabled={saving}>
@@ -2272,15 +2587,16 @@ function TaskDetailDialog({ open, taskId, onOpenChange }: TaskDetailDialogProps)
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Badge variant={statusBadgeVariant(task.status)}>{task.status || "-"}</Badge>
-                  {task.errorMessage ? (
-                    <Badge variant="destructive">error</Badge>
-                  ) : null}
+                  {task.errorMessage ? <Badge variant="destructive">error</Badge> : null}
                 </div>
                 <div className="text-sm text-muted-foreground">Pipeline: {task.pipelineId}</div>
                 <div className="text-sm text-muted-foreground">
-                  Source: {task.sourceType || "-"} {task.sourceFileName || task.sourceLocation || ""}
+                  Source: {task.sourceType || "-"}{" "}
+                  {task.sourceFileName || task.sourceLocation || ""}
                 </div>
-                <div className="text-sm text-muted-foreground">Chunks: {task.chunkCount ?? "-"}</div>
+                <div className="text-sm text-muted-foreground">
+                  Chunks: {task.chunkCount ?? "-"}
+                </div>
               </div>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <div>Created: {formatDate(task.createTime)}</div>
@@ -2323,7 +2639,9 @@ function TaskDetailDialog({ open, taskId, onOpenChange }: TaskDetailDialogProps)
                         <TableCell className="font-mono text-xs">{node.nodeId}</TableCell>
                         <TableCell>{node.nodeType}</TableCell>
                         <TableCell>
-                          <Badge variant={nodeStatusVariant(node.status)}>{node.status || "-"}</Badge>
+                          <Badge variant={nodeStatusVariant(node.status)}>
+                            {node.status || "-"}
+                          </Badge>
                         </TableCell>
                         <TableCell>{node.durationMs ?? "-"} ms</TableCell>
                         <TableCell>

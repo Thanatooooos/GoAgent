@@ -2,6 +2,8 @@ package ingestion
 
 import (
 	"mime/multipart"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -157,7 +159,7 @@ func (h *TaskHandler) Create(c *gin.Context) {
 		SourceType:     req.Source.Type,
 		SourceLocation: req.Source.Location,
 		SourceFileName: req.Source.FileName,
-		Metadata:       req.Metadata,
+		Metadata:       mergeTaskMetadata(req.Metadata, req.Source.Credentials),
 		CreatedBy:      user.UserID,
 	})
 	if err != nil {
@@ -179,11 +181,17 @@ func (h *TaskHandler) Upload(c *gin.Context) {
 		_ = c.Error(err)
 		return
 	}
+	sourceLocation, metadata, err := persistUploadedSource(file)
+	if err != nil {
+		_ = c.Error(exception.NewServiceException("failed to persist uploaded source file", err))
+		return
+	}
 	item, err := h.service.Create(c.Request.Context(), ingestionservice.CreateTaskInput{
 		PipelineID:     pipelineID,
 		SourceType:     domain.TaskSourceTypeFile,
-		SourceLocation: buildUploadedSourceLocation(file),
+		SourceLocation: sourceLocation,
 		SourceFileName: file.Filename,
+		Metadata:       metadata,
 		CreatedBy:      user.UserID,
 	})
 	if err != nil {
@@ -199,6 +207,64 @@ func buildUploadedSourceLocation(file *multipart.FileHeader) string {
 		return ""
 	}
 	return file.Filename
+}
+
+func mergeTaskMetadata(metadata map[string]any, credentials map[string]string) map[string]any {
+	if len(metadata) == 0 && len(credentials) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(metadata)+2)
+	for key, value := range metadata {
+		result[key] = value
+	}
+	if len(credentials) > 0 {
+		result["sourceCredentials"] = credentials
+		result["headers"] = credentials
+	}
+	return result
+}
+
+func persistUploadedSource(file *multipart.FileHeader) (string, map[string]any, error) {
+	if file == nil {
+		return "", nil, nil
+	}
+	pattern := "goagent-ingestion-*"
+	if ext := filepath.Ext(file.Filename); ext != "" {
+		pattern += ext
+	}
+	tempFile, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", nil, err
+	}
+	path := tempFile.Name()
+	if closeErr := tempFile.Close(); closeErr != nil {
+		_ = os.Remove(path)
+		return "", nil, closeErr
+	}
+	if err := saveMultipartFile(file, path); err != nil {
+		_ = os.Remove(path)
+		return "", nil, err
+	}
+	return path, map[string]any{
+		"cleanupSourceLocation": true,
+	}, nil
+}
+
+func saveMultipartFile(file *multipart.FileHeader, targetPath string) error {
+	src, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(targetPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	_, err = dst.ReadFrom(src)
+	return err
 }
 
 // toTaskVOs 批量转换 task 出参。

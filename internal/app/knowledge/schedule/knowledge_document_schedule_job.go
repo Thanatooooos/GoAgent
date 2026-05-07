@@ -163,7 +163,9 @@ func (j *KnowledgeDocumentScheduleJob) dispatchLease(ctx context.Context, lease 
 
 	return j.dispatcher.Submit(func() {
 		defer func() {
-			if _, err := j.lockManager.Release(newBackgroundTaskContext(ctx, 5*time.Second), lease); err != nil {
+			releaseCtx, releaseCancel := newBackgroundTaskContext(ctx, 5*time.Second)
+			defer releaseCancel()
+			if _, err := j.lockManager.Release(releaseCtx, lease); err != nil {
 				log.Warnf("release schedule lock after processing failed: scheduleId=%s lockToken=%s err=%v",
 					lease.ScheduleID, lease.LockToken, err)
 			}
@@ -195,6 +197,11 @@ func (d *managedScheduleTaskDispatcher) Submit(task func()) error {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Errorf("schedule task dispatch panic recovered: %v", recovered)
+			}
+		}()
 		if d.ctx.Err() != nil {
 			return
 		}
@@ -229,11 +236,10 @@ func normalizePositiveInt64(value int64, fallback int64) int64 {
 	return fallback
 }
 
-func newBackgroundTaskContext(ctx context.Context, timeout time.Duration) context.Context {
+func newBackgroundTaskContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	base := context.Background()
 	if ctx != nil {
 		base = context.WithoutCancel(ctx)
 	}
-	taskCtx, _ := context.WithTimeout(base, timeout)
-	return taskCtx
+	return context.WithTimeout(base, timeout)
 }

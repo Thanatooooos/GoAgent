@@ -94,7 +94,7 @@ func TestUserContextMiddlewareLoadsUser(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req.Header.Set("X-Login-Id", "1")
+	req.Header.Set("Authorization", "Bearer 1")
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)

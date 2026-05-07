@@ -27,4 +27,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Parser.Tika.URL == "" {
 		t.Fatal("expected parser.tika.url to be configured")
 	}
+	if cfg.Rag.Knowledge.Ingestion.MaxConcurrent != 8 {
+		t.Fatalf("unexpected rag.knowledge.ingestion.max-concurrent: %d", cfg.Rag.Knowledge.Ingestion.MaxConcurrent)
+	}
 }

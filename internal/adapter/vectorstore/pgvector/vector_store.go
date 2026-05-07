@@ -129,6 +129,68 @@ func (s *VectorStore) DeleteChunks(ctx context.Context, chunkIDs []string) error
 	return nil
 }
 
+// SearchByKeyword 使用 pg_trgm 的 word_similarity 做中文关键词模糊检索。
+func (s *VectorStore) SearchByKeyword(ctx context.Context, query string, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("postgres vector store db is required")
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []corevector.SearchHit{}, nil
+	}
+	if topK <= 0 {
+		topK = 5
+	}
+
+	sqlBuilder := strings.Builder{}
+	sqlBuilder.WriteString(`
+SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata, word_similarity(content, ?) AS score
+FROM t_knowledge_chunk_vector
+WHERE word_similarity(content, ?) > 0
+`)
+	args := []any{query, query}
+	if len(knowledgeBaseIDs) > 0 {
+		sqlBuilder.WriteString("AND kb_id IN ?\n")
+		args = append(args, knowledgeBaseIDs)
+	}
+	sqlBuilder.WriteString("ORDER BY score DESC\nLIMIT ?")
+	args = append(args, topK)
+
+	queryResult := s.db.WithContext(ctx).Raw(sqlBuilder.String(), args...)
+
+	rows, err := queryResult.Rows()
+	if err != nil {
+		return nil, fmt.Errorf("keyword search chunks: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]corevector.SearchHit, 0, topK)
+	for rows.Next() {
+		var (
+			chunkID    string
+			documentID string
+			kbID       string
+			index      int
+			content    string
+			metadata   []byte
+			score      float32
+		)
+		if err := rows.Scan(&chunkID, &documentID, &kbID, &index, &content, &metadata, &score); err != nil {
+			return nil, fmt.Errorf("scan keyword search hit: %w", err)
+		}
+		result = append(result, corevector.SearchHit{
+			ChunkID:         chunkID,
+			DocumentID:      documentID,
+			KnowledgeBaseID: kbID,
+			Index:           index,
+			Text:            content,
+			Score:           score,
+			Metadata:        unmarshalMetadata(metadata),
+		})
+	}
+	return result, nil
+}
+
 func (s *VectorStore) UpdateChunk(ctx context.Context, chunk port.ChunkVector) error {
 	return s.UpsertDocumentChunks(ctx, []port.ChunkVector{chunk})
 }

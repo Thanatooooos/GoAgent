@@ -125,10 +125,10 @@ CREATE INDEX IF NOT EXISTS idx_doc_id_exec ON t_knowledge_document_schedule_exec
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS t_knowledge_document_schedule_exec;
-DROP TABLE IF EXISTS t_knowledge_document_schedule;
-DROP TABLE IF EXISTS t_knowledge_document_chunk_log;
-DROP TABLE IF EXISTS t_knowledge_chunk;
-DROP TABLE IF EXISTS t_knowledge_document;
-DROP TABLE IF EXISTS t_knowledge_base;
+-- DROP TABLE IF EXISTS t_knowledge_document_schedule_exec;
+-- DROP TABLE IF EXISTS t_knowledge_document_schedule;
+-- DROP TABLE IF EXISTS t_knowledge_document_chunk_log;
+-- DROP TABLE IF EXISTS t_knowledge_chunk;
+-- DROP TABLE IF EXISTS t_knowledge_document;
+-- DROP TABLE IF EXISTS t_knowledge_base;
 -- +goose StatementEnd

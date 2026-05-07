@@ -13,6 +13,7 @@ import (
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
 	knowledgeschedule "local/rag-project/internal/app/knowledge/schedule"
+	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
 	"local/rag-project/internal/framework/distributedid"
 	"local/rag-project/internal/framework/exception"
 	"local/rag-project/internal/framework/log"
@@ -103,8 +104,14 @@ type KnowledgeDocumentChunkLogPageInput struct {
 	PageSize   int
 }
 
+type KnowledgeDocumentChunkLogItem struct {
+	Log            domain.KnowledgeDocumentChunkLog
+	IngestionTask  *ingestiondomain.Task
+	IngestionNodes []ingestiondomain.TaskNode
+}
+
 type KnowledgeDocumentChunkLogPageResult struct {
-	Items    []domain.KnowledgeDocumentChunkLog
+	Items    []KnowledgeDocumentChunkLogItem
 	Total    int
 	Page     int
 	PageSize int
@@ -127,14 +134,14 @@ type KnowledgeDocumentScheduleExecPageResult struct {
 type KnowledgeDocumentService struct {
 	baseRepo        port.KnowledgeBaseRepository
 	documentRepo    port.KnowledgeDocumentRepository
-	chunkRepo       port.KnowledgeChunkRepository
 	chunkLogRepo    port.KnowledgeDocumentChunkLogRepository
-	vectorStore     port.VectorStore
 	storage         port.FileStorage
 	taskQueue       port.TaskQueue
 	scheduleService *KnowledgeDocumentScheduleService
 	remoteFetcher   remoteDocumentFetcher
 	deleteTx        KnowledgeDocumentDeleteTransaction
+		ingestionTaskCreator IngestionTaskCreator
+		ingestionTaskReader  IngestionTaskReader
 }
 
 type remoteDocumentFetcher interface {
@@ -160,9 +167,9 @@ type knowledgeDocumentScheduleExecLister interface {
 func NewKnowledgeDocumentService(
 	baseRepo port.KnowledgeBaseRepository,
 	documentRepo port.KnowledgeDocumentRepository,
-	chunkRepo port.KnowledgeChunkRepository,
+	_ port.KnowledgeChunkRepository, // deprecated: kept for backward compatibility
 	chunkLogRepo port.KnowledgeDocumentChunkLogRepository,
-	vectorStore port.VectorStore,
+	_ port.VectorStore, // deprecated: kept for backward compatibility
 	storage port.FileStorage,
 	taskQueue port.TaskQueue,
 	scheduleService *KnowledgeDocumentScheduleService,
@@ -176,9 +183,7 @@ func NewKnowledgeDocumentService(
 	return &KnowledgeDocumentService{
 		baseRepo:        baseRepo,
 		documentRepo:    documentRepo,
-		chunkRepo:       chunkRepo,
 		chunkLogRepo:    chunkLogRepo,
-		vectorStore:     vectorStore,
 		storage:         storage,
 		taskQueue:       taskQueue,
 		scheduleService: scheduleService,
@@ -689,13 +694,17 @@ func (s *KnowledgeDocumentService) PageChunkLogs(ctx context.Context, input Know
 	})
 	if err != nil {
 		return KnowledgeDocumentChunkLogPageResult{}, exception.NewServiceException("failed to page knowledge document chunk logs", err)
-	}
-	return KnowledgeDocumentChunkLogPageResult{
-		Items:    items,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
-	}, nil
+		}
+		mapped := make([]KnowledgeDocumentChunkLogItem, 0, len(items))
+		for _, item := range items {
+			mapped = append(mapped, KnowledgeDocumentChunkLogItem{Log: item})
+		}
+		return KnowledgeDocumentChunkLogPageResult{
+			Items:    mapped,
+			Total:    total,
+			Page:     page,
+			PageSize: pageSize,
+		}, nil
 }
 
 func (s *KnowledgeDocumentService) PageScheduleExecs(ctx context.Context, input PageKnowledgeDocumentScheduleExecInput) (KnowledgeDocumentScheduleExecPageResult, error) {
@@ -1075,4 +1084,139 @@ func truncateKnowledgeDocumentFileType(fileType string) string {
 		return fileType[:16]
 	}
 	return fileType
+}
+
+type CreateKnowledgePipelineTaskInput struct {
+	TaskID          string
+	PipelineID      string
+	SourceType      string
+	SourceLocation  string
+	SourceFileName  string
+	DocumentID      string
+	KnowledgeBaseID string
+	DocumentName    string
+	OperatorID      string
+}
+
+type KnowledgeDocumentIngestionTaskCompletedInput struct {
+	TaskID       string
+	DocumentID   string
+	PipelineID   string
+	ChunkCount   int
+	StartedAt    *time.Time
+	CompletedAt  *time.Time
+	OperatorID   string
+	ErrorMessage string
+}
+
+type IngestionTaskCreator interface {
+	CreateKnowledgePipelineTask(ctx context.Context, input CreateKnowledgePipelineTaskInput) (string, error)
+}
+
+type IngestionTaskReader interface {
+	GetKnowledgePipelineTask(ctx context.Context, taskID string) (ingestiondomain.Task, error)
+	ListKnowledgePipelineTaskNodes(ctx context.Context, taskID string) ([]ingestiondomain.TaskNode, error)
+}
+
+func (s *KnowledgeDocumentService) SetIngestionTaskCreator(creator IngestionTaskCreator) {
+	if s == nil {
+		return
+	}
+	s.ingestionTaskCreator = creator
+}
+
+func (s *KnowledgeDocumentService) SetIngestionTaskReader(reader IngestionTaskReader) {
+	if s == nil {
+		return
+	}
+	s.ingestionTaskReader = reader
+}
+
+func (s *KnowledgeDocumentService) OnIngestionTaskCompleted(ctx context.Context, input KnowledgeDocumentIngestionTaskCompletedInput) error {
+	if s == nil || s.documentRepo == nil {
+		return exception.NewServiceException("knowledge document repository is required", nil)
+	}
+
+	documentID := strings.TrimSpace(input.DocumentID)
+	if documentID == "" {
+		return nil
+	}
+
+	document, err := s.documentRepo.GetByID(ctx, documentID)
+	if err != nil {
+		return fmt.Errorf("get knowledge document: %w", err)
+	}
+	if document.ID == "" {
+		return nil
+	}
+
+	operatorID := strings.TrimSpace(input.OperatorID)
+	if operatorID == "" {
+		operatorID = "system"
+	}
+
+	chunkCount := input.ChunkCount
+	if input.ErrorMessage != "" {
+		_ = s.markDocumentFailed(ctx, documentID, operatorID)
+		_ = s.finishPipelineChunkLogWithRecord(ctx, documentID, input.TaskID, chunkCount, input.ErrorMessage, input.StartedAt, input.CompletedAt)
+		return nil
+	}
+
+	_ = s.markDocumentSuccess(ctx, documentID, chunkCount, operatorID)
+	_ = s.finishPipelineChunkLogWithRecord(ctx, documentID, input.TaskID, chunkCount, "", input.StartedAt, input.CompletedAt)
+	return nil
+}
+
+func (s *KnowledgeDocumentService) markDocumentSuccess(ctx context.Context, documentID string, chunkCount int, operatorID string) error {
+	_, err := s.documentRepo.UpdateFields(ctx, port.Where(
+		port.KnowledgeDocument.ID.Eq(strings.TrimSpace(documentID)),
+		port.KnowledgeDocument.Status.Eq(domain.KnowledgeDocumentStatusRunning),
+	), port.Set(
+		port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentStatusSuccess),
+		port.KnowledgeDocument.ChunkCount.To(chunkCount),
+		port.KnowledgeDocument.UpdatedBy.To(strings.TrimSpace(operatorID)),
+		port.KnowledgeDocument.UpdatedAt.To(time.Now()),
+	))
+	return err
+}
+
+func (s *KnowledgeDocumentService) finishPipelineChunkLogWithRecord(ctx context.Context, documentID, taskID string, chunkCount int, errorMessage string, startedAt, completedAt *time.Time) error {
+	if s.chunkLogRepo == nil {
+		return nil
+	}
+	record, err := s.loadCompletablePipelineChunkLog(ctx, documentID)
+	if err != nil || record.ID == "" {
+		return err
+	}
+	record.Status = domain.KnowledgeDocumentChunkLogStatusSuccess
+	if errorMessage != "" {
+		record.Status = domain.KnowledgeDocumentChunkLogStatusFailed
+		record.ErrorMessage = errorMessage
+	}
+	record.ChunkCount = chunkCount
+	now := time.Now()
+	if startedAt != nil {
+		record.StartTime = startedAt
+	}
+	if completedAt != nil {
+		record.EndTime = completedAt
+	}
+	record.UpdatedAt = now
+
+	_, err = s.chunkLogRepo.Update(ctx, record)
+	return err
+}
+
+func (s *KnowledgeDocumentService) loadCompletablePipelineChunkLog(ctx context.Context, documentID string) (domain.KnowledgeDocumentChunkLog, error) {
+	if s.chunkLogRepo == nil {
+		return domain.KnowledgeDocumentChunkLog{}, nil
+	}
+	items, err := s.chunkLogRepo.ListByDocumentID(ctx, documentID, port.ListOptions{Limit: 1})
+	if err != nil {
+		return domain.KnowledgeDocumentChunkLog{}, err
+	}
+	if len(items) == 0 {
+		return domain.KnowledgeDocumentChunkLog{}, nil
+	}
+	return items[0], nil
 }

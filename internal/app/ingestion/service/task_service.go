@@ -36,6 +36,7 @@ type TaskPageResult struct {
 
 // CreateTaskInput 描述创建 task 的入参。
 type CreateTaskInput struct {
+	ID             string
 	PipelineID     string
 	SourceType     string
 	SourceLocation string
@@ -67,6 +68,11 @@ func NewTaskService(
 		executor:     executor,
 		now:          time.Now,
 	}
+}
+
+// activeDocumentTaskChecker 用于判断文档是否已有活动中的 ingestion task。
+type activeDocumentTaskChecker interface {
+	HasActiveTaskForDocument(ctx context.Context, documentID string) (bool, error)
 }
 
 // Page 分页查询 task 列表。
@@ -121,6 +127,22 @@ func (s *TaskService) Get(ctx context.Context, id string) (domain.Task, error) {
 	return item, nil
 }
 
+// GetNode 查询指定 task 下的单个节点执行记录。
+func (s *TaskService) GetNode(ctx context.Context, taskID string, nodeID string) (domain.TaskNode, error) {
+	if s == nil || s.taskNodeRepo == nil {
+		return domain.TaskNode{}, exception.NewServiceException("ingestion task node repository is required", nil)
+	}
+	taskID = strings.TrimSpace(taskID)
+	nodeID = strings.TrimSpace(nodeID)
+	if taskID == "" {
+		return domain.TaskNode{}, exception.NewClientException("task id is required", nil)
+	}
+	if nodeID == "" {
+		return domain.TaskNode{}, exception.NewClientException("node id is required", nil)
+	}
+	return s.taskNodeRepo.GetByTaskIDAndNodeID(ctx, taskID, nodeID)
+}
+
 // ListNodes 查询单个 task 下的节点执行记录。
 func (s *TaskService) ListNodes(ctx context.Context, taskID string) ([]domain.TaskNode, error) {
 	if s == nil || s.taskNodeRepo == nil {
@@ -159,14 +181,29 @@ func (s *TaskService) Create(ctx context.Context, input CreateTaskInput) (domain
 	if strings.TrimSpace(pipeline.ID) == "" {
 		return domain.Task{}, exception.NewClientException("ingestion pipeline not found", nil)
 	}
+	if documentID := readStringSetting(input.Metadata, "documentId"); documentID != "" {
+		if checker, ok := s.taskRepo.(activeDocumentTaskChecker); ok {
+			hasActive, err := checker.HasActiveTaskForDocument(ctx, documentID)
+			if err != nil {
+				return domain.Task{}, exception.NewServiceException("failed to check active ingestion task for document", err)
+			}
+			if hasActive {
+				return domain.Task{}, exception.NewClientException("ingestion task for document is already running", nil)
+			}
+		}
+	}
 
 	now := s.now()
-	id, err := distributedid.NextID()
-	if err != nil {
-		return domain.Task{}, exception.NewServiceException("failed to generate ingestion task id", err)
+	taskID := strings.TrimSpace(input.ID)
+	if taskID == "" {
+		id, err := distributedid.NextID()
+		if err != nil {
+			return domain.Task{}, exception.NewServiceException("failed to generate ingestion task id", err)
+		}
+		taskID = fmt.Sprintf("%d", id)
 	}
 	task := domain.Task{
-		ID:             fmt.Sprintf("%d", id),
+		ID:             taskID,
 		PipelineID:     pipelineID,
 		SourceType:     sourceType,
 		SourceLocation: strings.TrimSpace(input.SourceLocation),

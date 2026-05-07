@@ -7,6 +7,7 @@ import (
 
 	"local/rag-project/internal/framework/convention"
 	infraai "local/rag-project/internal/infra-ai"
+	umw "local/rag-project/internal/middleware"
 )
 
 type debugChatRequest struct {
@@ -16,7 +17,10 @@ type debugChatRequest struct {
 }
 
 func registerDebugAIRoutes(r *gin.Engine, runtime *infraai.Runtime) {
-	r.GET("/debug/ai/runtime", func(c *gin.Context) {
+	debug := r.Group("/debug")
+	debug.Use(requireDebugAuth())
+
+	debug.GET("/ai/runtime", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"chatClients":      len(runtime.ChatClients),
 			"embeddingClients": len(runtime.EmbeddingClients),
@@ -27,7 +31,7 @@ func registerDebugAIRoutes(r *gin.Engine, runtime *infraai.Runtime) {
 		})
 	})
 
-	r.POST("/debug/ai/chat", func(c *gin.Context) {
+	debug.POST("/ai/chat", func(c *gin.Context) {
 		var req debugChatRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -67,4 +71,17 @@ func registerDebugAIRoutes(r *gin.Engine, runtime *infraai.Runtime) {
 			"thinking": chatReq.ThinkingEnabled(),
 		})
 	})
+}
+
+// requireDebugAuth 调试接口需要 admin 角色认证。
+func requireDebugAuth() gin.HandlerFunc {
+	loginCheck := umw.RequireLogin()
+	roleCheck := umw.RequireRole("admin")
+	return func(c *gin.Context) {
+		loginCheck(c)
+		if c.IsAborted() {
+			return
+		}
+		roleCheck(c)
+	}
 }
