@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import type {
   CompletionPayload,
+  FallbackPayload,
   FeedbackValue,
   Message,
   MessageDeltaPayload,
@@ -442,6 +443,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (get().cancelRequested) {
           stopTask(payload.taskId).catch(() => null);
         }
+      },
+      onFallback: (payload: FallbackPayload) => {
+        if (get().streamingMessageId !== assistantId) return;
+        const reason = payload?.reason?.trim();
+        if (!reason) return;
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message.id === state.streamingMessageId &&
+            message.status !== "cancelled" &&
+            message.status !== "error"
+              ? {
+                  ...message,
+                  fallbackReason: reason
+                }
+              : message
+          )
+        }));
       },
       onMessage: (payload: MessageDeltaPayload) => {
         if (!payload || typeof payload !== "object") return;

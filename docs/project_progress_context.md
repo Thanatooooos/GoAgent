@@ -1,6 +1,6 @@
 # Project Progress Context
 
-更新时间：2026-05-07
+更新时间：2026-05-08
 
 这份文档用于维护 `goagent` 当前项目进度，帮助后续开发快速对齐当前阶段、已完成能力、最新进展、验证状态、已知风险和下一步计划。
 
@@ -134,6 +134,8 @@
   - LLM rewrite
   - memory compression
   - `semantic / keyword / hybrid / auto` 检索模式
+  - 多通道检索基础架构（`channel + processor + context`）
+  - `vector_global / keyword` 两路检索通道
   - 低置信度 fallback
   - SSE `meta` 下发 `searchMode`
   - prompt 支持单独注入 `ToolContext`
@@ -187,6 +189,215 @@
   - trace 查询接口已透出节点 `extraData`，可用于后续展示 tool 调用链细节
 
 ## 最新进展
+
+### 2026-05-08
+
+#### 1. 把 retrieve 从模式分支重构为多通道检索基础架构
+
+- `internal/app/rag/core/retrieve` 新增：
+  - `search_types.go`
+  - `channels.go`
+  - `post_processors.go`
+- 把原先 `service.go` 中写死的 `semantic / keyword / hybrid` 分支逻辑，重构为：
+  - `SearchContext`
+  - `SearchChannel`
+  - `SearchChannelResult`
+  - `SearchResultPostProcessor`
+- 当前通道化后的实现仍然保持无 `intent` 依赖，但已为后续接入 `intent_directed channel` 预留扩展位
+
+#### 2. 落地了首批无 intent 依赖的检索通道
+
+- 新增 `vector_global` 通道
+  - 负责全局向量语义检索
+- 新增 `keyword` 通道
+  - 负责关键词检索
+- 当前对外仍兼容原有检索模式：
+  - `semantic` → 仅启用 `vector_global`
+  - `keyword` → 仅启用 `keyword`
+  - `hybrid` → 同时启用 `vector_global + keyword`
+  - `auto` → 仍由 query 特征推断模式，但内部执行已切到通道编排
+
+#### 3. 落地了检索后处理链
+
+- 新增 `fusion` 后处理器
+  - 对多通道结果做统一聚合
+- 新增 `dedup` 后处理器
+  - 按 chunk ID 去重并保留高分结果
+- 新增 `rerank` 后处理器
+  - 在已有 rerank 能力之上统一进行重排
+- 这样后续若接入更多通道（如 `intent_directed` / `title_match` / `metadata_filter`），不需要重写主检索流程
+
+#### 4. 给 retrieve 结果补齐了可观测元数据
+
+- `retrieve.Result` 新增：
+  - `SearchChannels`
+  - `ChannelStats`
+- `RagChatService.runRetrieveStage()` 现在会把这些信息写入 retrieve trace 节点 `extraData`
+- 当前 trace 已能记录：
+  - 本次命中的检索通道列表
+  - 每个通道的 chunk 数量
+  - 每个通道的耗时
+  - 通道级错误信息（若某一路失败但整体可降级继续）
+
+#### 5. 调整了多子问题检索结果的聚合方式
+
+- 之前 `RagChatService` 在 `rewrite` 产生多个子问题后，只按 chunk ID 做本地去重
+- 现在改为先保留每个子问题的完整 `retrieve.Result`，再通过 `ragretrieve.MergeResults(...)` 聚合：
+  - 合并 chunks
+  - 合并 `SearchChannels`
+  - 合并 `ChannelStats`
+- 这样后续即使接入更多 channel / route hint，也不会丢失子问题级别的通道元信息
+
+#### 6. 补齐了多通道检索相关测试
+
+- 更新 `internal/app/rag/core/retrieve/service_test.go`
+  - 覆盖 `semantic / keyword / hybrid` 下的通道输出
+  - 覆盖一路失败、另一路成功的降级场景
+  - 覆盖 `MergeResults` 的通道元数据聚合
+- `internal/app/rag/service` 相关测试保持通过
+- 验证命令：
+
+```powershell
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/rag/core/retrieve ./internal/app/rag/service -count=1
+```
+
+#### 7. 补了一轮 `retrieve auto` 决策校准与样本回放基础设施
+
+- 新增 `internal/app/rag/core/retrieve/search_mode_decision.go`
+  - 把 `auto` 模式决策统一收敛为 `AnalyzeSearchMode(...)`
+  - 输出 `RequestedMode / ResolvedMode / Source / Reason / Signals`
+- `retrieve` 内部与 trace 侧现在共享同一套检索模式决策结果
+  - 通道执行使用同一份 `ResolvedMode`
+  - retrieve trace 会补充 `searchDecisions`
+  - channel metadata 会带上模式来源与降级信息
+- 新增命令行回放工具 `cmd/retrieve-debug`
+  - 支持批量回放 query 样本
+  - 支持文本输出与 `-json` 输出
+  - 可用 `expectedMode` 做 `PASS / FAIL` 对比
+- 新增样本集 `testdata/retrieve_search_mode_samples.json`
+  - 覆盖概念问答、精确匹配、资源 ID 查询、报错排障、代码符号定位、SSE 事件定位等真实问题
+  - 当前样本回放结果已达到 `18/18 PASS`
+
+#### 8. `retrieve` 后续明确计划
+
+- 短期继续做“稳定性和可解释性”增强，而不是马上扩大量智能路由
+  - 继续扩大真实 query 样本集，沉淀固定回放集
+  - 继续校准 `auto` 模式边界，重点关注 query 误分流
+  - 收口 `searchDecisions / channelStats` 的 trace 契约，方便前端消费
+- 中期再补检索能力
+  - 评估增加 `title_match`、`metadata_filter` 等无 intent 通道
+  - 细化文档级去重、section/source 优先级、版本过滤
+  - 继续明确部分失败、rerank 不可用等降级语义
+- 当前对 `retrieve` 的定位是“持续优化项”
+  - 优先级低于诊断质量、可观测性闭环和 ingestion 生产化一致性
+  - 但高于更重的 Agent 智能化扩展
+
+#### 9. 补了一轮 diagnose 结构化增强
+
+- `document_ingestion_diagnose / task_ingestion_diagnose / trace_retrieval_diagnose` 三类结果统一补齐：
+  - `diagnosisScope`
+  - `facts`
+  - `inferences`
+  - `riskHints`
+  - `nextActions`
+- `confidence` 统一收口为固定口径：
+  - `high`
+  - `medium`
+  - `low`
+- `answer_guidance` 从“只消费 evidence”升级为“区分结论 / 事实 / 推断 / 风险提示 / 下一步建议”
+- `trace_retrieval_diagnose` 新增弱相关命中判断：
+  - 当 `retrieve.chunkCount > 0` 但 `retrieve.topScore` 偏低时，会输出“命中存在但 grounding 质量弱”的中置信度诊断
+- 对应测试已补齐并通过：
+  - diagnose payload 结构字段
+  - degraded tool workflow 风险提示
+  - weak topScore 检测
+
+#### 10. 前端补齐了 `fallback` SSE 事件消费与可视化提示
+
+- `frontend/src/hooks/useStreamResponse.ts`
+  - 新增 `fallback` SSE 事件分支
+  - `StreamHandlers` 新增 `onFallback`
+- `frontend/src/types/index.ts`
+  - `Message` 新增 `fallbackReason`
+  - 新增 `FallbackPayload`
+- `frontend/src/stores/chatStore.ts`
+  - 在流式会话中把 `fallback` 事件绑定到当前 assistant 消息
+- `frontend/src/components/chat/MessageItem.tsx`
+  - 新增琥珀色提示条，明确提示“已回退到通用模型，需要注意核验”
+- 至此后端已下发的 `fallback` 事件不再静默丢失，用户可以明确感知“低置信度检索 -> 通用模型回退”
+
+#### 11. 固化了 integration test 的统一入口与 CI 骨架
+
+- 新增仓库根目录 `Makefile`
+  - `make test-go`
+  - `make lint`
+  - `make build`
+  - `make integration-up`
+  - `make test-integration`
+  - `make integration-down`
+- 新增 `.github/workflows/ci.yml`
+  - frontend lint
+  - backend unit test
+  - frontend build
+  - `docker compose` 拉起 `postgres + object-storage` 后执行 integration test
+- 把 knowledge / ingestion pipeline integration test 从 `AutoMigrate` 改为 `postgresrepo.RunMigrations(db)`
+  - 测试建表方式与 runtime 更一致
+  - 降低“测试能过但运行时 schema 路径不一致”的风险
+
+#### 12. 收口了一轮 ingestion 生产化一致性问题
+
+- `KnowledgeDocumentService.OnIngestionTaskCompleted(...)`
+  - 不再静默吞掉 `document / chunk_log` 回写错误
+  - 改为返回聚合错误，便于上层日志和后续对账发现问题
+- `finishPipelineChunkLogWithRecord(...)`
+  - 优先按 `taskId` 精确命中 chunk log
+  - 仅在按 task 未命中时才回退到 document 最新记录
+  - 新增 task/document 不匹配保护，避免错误覆盖其他任务的 chunk log
+- `MultiTaskObserver`
+  - 从“某个 observer 失败就短路”调整为“所有 observer 尽量执行完，再聚合错误返回”
+  - 避免 repository observer、metrics observer、knowledge bridge observer 互相拖累
+- `ExecutorService`
+  - task completion observer 失败时显式记录 error log
+  - 修正成功日志中的 chunk 统计为 `current.Chunks`
+- 新增测试
+  - `internal/app/ingestion/service/multi_task_observer_test.go`
+  - `internal/app/knowledge/service/knowledge_document_service_test.go` 中补齐 task-scoped chunk log 回写与 mismatch 场景
+
+#### 13. 落地了 ingestion 对账规则与自动 reconcile 修复
+
+- `internal/app/knowledge/service/knowledge_document_ingestion_reconcile.go`
+  - 新增 `ReconcileIngestionTaskCompletion(...)`
+  - 以 ingestion task 终态为准，对 `document / chunk_log` 做自动对账修复
+  - 新增 task metadata 中 `documentId` 与入参 `documentId` 的 mismatch 保护，避免错误修复到其他文档
+  - 当 `chunk_log` 缺失时，可按 `taskId` 自动补建最小可用记录
+- `KnowledgeDocumentService.OnIngestionTaskCompleted(...)`
+  - 在原有“即时回写”之后追加 reconcile，形成“完成回调修复 + 后续兜底修复”双层机制
+- `KnowledgeDocumentService.ScanAndReconcileIngestionTasks(...)`
+  - 新增按文档分页扫描的后台 reconcile 入口
+  - 当前仅处理 `processMode=pipeline` 文档，并基于最新 `chunk_log.taskId` 反查 ingestion task 后做状态修复
+- `internal/bootstrap/knowledge/runtime.go`
+  - 将 ingestion reconcile scan 挂入现有 knowledge schedule loop，复用同一套后台 ticker 生命周期
+- 新增测试
+  - 覆盖 task 终态与 `document/chunk_log` 漂移时的自动修复
+  - 覆盖 `chunk_log` 缺失时的自动补建
+  - 覆盖 scan 入口按最新 `chunk_log.taskId` 触发 reconcile 的场景
+
+#### 14. 补齐了 trace / tool / fallback 可观测性展示链路
+
+- 后端 trace 数据补齐
+  - `ChatTracer` 新增 trace run `extraData` 追加能力，用于把 fallback 等运行时元信息写入 `rag_trace_run`
+  - `RagChatService` 在低置信度 fallback 触发时：
+    - 写入 `trace run.extraData.fallback`
+    - 额外落一条 `fallback` trace node
+  - `trace_handlers.go` 现已透出 `rag_trace_run.extraData`
+- 前端 trace 详情页增强
+  - `frontend/src/pages/admin/traces/RagTraceDetailPage.tsx`
+    - 新增 `Retrieve Observability` 面板：展示 `searchMode / chunkCount / topScore / searchChannels / channelStats / searchDecisions`
+    - 新增 `Tool Workflow` 面板：展示 `used / toolCallCount / toolNames / degraded / degradeReason` 以及每次 `tool_call` 的状态、耗时、summary、error
+    - 新增 `Fallback` 顶部提示：明确展示是否触发 fallback 及其原因
+  - `frontend/src/services/ragTraceService.ts`
+    - 补齐 `run.extraData` 与 `node.extraData` 类型字段
+- 至此 trace 详情页已从“仅时间线”升级为“检索 + 工具 + fallback”三段式可解释观察面板
 
 ### 2026-05-07
 
@@ -356,40 +567,72 @@ $env:GOCACHE='D:\goagent\.gocache'; go test ./internal/framework/... -count=1   
 - `rag_trace_node` 已能记录每次 tool call 的独立节点（含状态、摘要、耗时、父子关系）
 - trace 查询接口已能返回节点 `extraData`
 
+**增量验证（2026-05-08）：**
+
+```powershell
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/ingestion/service ./internal/app/knowledge/service -count=1
+```
+
+- `internal/app/ingestion/service` PASS
+- `internal/app/knowledge/service` PASS
+
+**后续增量验证（2026-05-08）：**
+
+```powershell
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/knowledge/service ./internal/app/rag/service ./internal/adapter/http/rag -count=1
+```
+
+- `internal/app/knowledge/service` PASS
+- `internal/app/rag/service` PASS
+- `internal/adapter/http/rag` PASS（无测试文件，包可正常编译）
+
 ## 当前已知问题与风险
 
 1. `tool` 决策仍是本地规则 + LLM planner 双轨
    LLMPlanner 已落地，但"大模型判断是否需要调用 tool"的完整 Agent 形态尚未完全打磨（planner 与 rule fallback 的边界需继续调整）。
 
-2. 诊断能力已形成最小闭环，但准确率和可信度仍需继续提升
+2. 多通道检索目前仍是“无 intent 依赖”版本
+   已完成 `vector_global + keyword` 的通道化重构，但还没有接入 `intent_directed`、标题检索或 metadata 定向检索；当前提升集中在召回质量与可解释性，而非更高层的路由决策质量。
+
+3. 诊断能力已形成最小闭环，但准确率和可信度仍需继续提升
    当前已具备 `document / task / trace` 三类诊断入口，但更多仍是基于状态和规则的高概率判断；后续需要补更细粒度证据提取、冲突证据处理和更稳定的置信度评估。
 
-3. `RagChatEventSink` 接口扩展后需要更新所有实现
+4. `RagChatEventSink` 接口扩展后需要更新所有实现
    已更新 `sseChatSink` 和 `fallbackSinkStub`，需关注是否有其他实现。
 
-4. `ingestion` 生产化仍未完全收口
-   虽然已补强幂等、补偿、状态保护和摘要输出，但仍需要继续完善更系统的写入一致性和恢复能力。
+5. `ingestion` 生产化仍未完全收口
+   虽然已补上 task 完成后的即时 reconcile 与后台定时 reconcile scan，但仍需要继续完善修复结果沉淀、异常统计、对账结果暴露和更系统的恢复策略。
 
-5. integration test 尚未纳入固定执行流程
+6. integration test 尚未纳入固定执行流程
    已有集成测试能力，但仍未接入 CI 或固定 compose 场景。
 
-6. 前端尚未消费 `fallback` SSE 事件
-   后端已能下发 fallback 提示，前端仍缺可视化告警。
+7. trace 可观测性已具备首轮闭环，但仍需继续产品化
+   trace 详情页已能展示 `retrieve / tool / fallback` 关键元数据，但列表页概览、聊天与 trace 联动、异常筛选和更多运行态摘要仍需继续补齐。
 
 ## 下一步计划
 
 ### P0
+
+- 稳定多通道检索基础架构
+  - 继续细化 `auto` 模式下的 channel 启停策略
+  - 继续验证精确匹配类 query 的召回质量提升
+  - 评估是否补充 `title / metadata` 等无 intent 依赖通道
 
 - 提升诊断结果质量
   - 继续细化 `document / task / trace` 诊断证据提取
   - 继续让结论、事实、推断、建议边界更清晰
   - 继续稳定置信度判断逻辑
 
+- 收口 ingestion 状态一致性与恢复能力
+  - 增加 `document / chunk_log / task` 不一致状态的对账规则
+  - 评估后台 reconcile loop 的最小落地方案
+  - 继续完善 observer 错误观测与回写失败恢复
+
 ### P1
 
 - 完善 tool trace 可视化与消费链路
-  - 基于 `rag_trace_node.extraData` 在 trace 查询/前端中展示 tool 调用链细节
-  - 区分 `tool_workflow` 汇总节点与 `tool_call` 子节点的展示语义
+  - 继续把 `rag_trace_run.extraData`、`rag_trace_node.extraData` 用于列表摘要、聊天/trace 联动和异常筛选
+  - 进一步区分 `tool_workflow` 汇总节点与 `tool_call` 子节点的展示语义
 
 - 增强诊断闭环价值
   - 对常见失败模式给出更具体的排障建议

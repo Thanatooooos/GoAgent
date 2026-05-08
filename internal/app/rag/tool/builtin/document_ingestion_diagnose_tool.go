@@ -66,6 +66,7 @@ func (t *DocumentIngestionDiagnoseTool) Invoke(ctx context.Context, call ragtool
 
 	conclusion, confidence, evidence, suggestions, latestTaskID, latestNodeID, latestNodeError, latestLogStatus, latestLogError :=
 		diagnoseDocumentIngestion(document, chunkLogs)
+	confidence = normalizeDiagnosisConfidence(confidence)
 
 	summary := fmt.Sprintf("document=%s confidence=%s conclusion=%s", documentID, confidence, conclusion)
 	if latestLogStatus != "" {
@@ -87,23 +88,20 @@ func (t *DocumentIngestionDiagnoseTool) Invoke(ctx context.Context, call ragtool
 		Name:    "document_ingestion_diagnose",
 		Status:  ragtool.CallStatusSuccess,
 		Summary: summary,
-		Data: map[string]any{
+		Data: buildDiagnosisPayload("document_ingestion", conclusion, confidence, evidence, suggestions, map[string]any{
 			"documentId":      document.ID,
 			"documentName":    document.Name,
 			"documentStatus":  document.Status,
 			"processMode":     document.ProcessMode,
 			"pipelineId":      document.PipelineID,
 			"chunkCount":      document.ChunkCount,
-			"conclusion":      conclusion,
-			"confidence":      confidence,
-			"evidence":        evidence,
-			"suggestions":     suggestions,
 			"latestTaskId":    latestTaskID,
 			"latestNodeId":    latestNodeID,
+			"latestNodeError": latestNodeError,
 			"latestLogStatus": latestLogStatus,
 			"latestLogError":  latestLogError,
 			"chunkLogCount":   len(chunkLogs.Items),
-		},
+		}),
 	}, nil
 }
 

@@ -212,6 +212,13 @@ func TestDocumentIngestionDiagnoseToolInvoke(t *testing.T) {
 	if len(evidence) == 0 {
 		t.Fatal("expected diagnosis evidence")
 	}
+	facts, _ := result.Data["facts"].([]string)
+	if len(facts) == 0 {
+		t.Fatal("expected diagnosis facts")
+	}
+	if scope, _ := result.Data["diagnosisScope"].(string); scope != "document_ingestion" {
+		t.Fatalf("unexpected diagnosis scope: %q", scope)
+	}
 }
 
 func TestIngestionTaskQueryToolInvokeWithNodes(t *testing.T) {
@@ -288,6 +295,12 @@ func TestTaskIngestionDiagnoseToolInvoke(t *testing.T) {
 	evidence, _ := result.Data["evidence"].([]string)
 	if len(evidence) == 0 {
 		t.Fatal("expected diagnosis evidence")
+	}
+	if scope, _ := result.Data["diagnosisScope"].(string); scope != "task_ingestion" {
+		t.Fatalf("unexpected diagnosis scope: %q", scope)
+	}
+	if nextActions, _ := result.Data["nextActions"].([]string); len(nextActions) == 0 {
+		t.Fatal("expected nextActions")
 	}
 }
 
@@ -450,6 +463,9 @@ func TestTraceRetrievalDiagnoseToolInvoke(t *testing.T) {
 	if !strings.Contains(conclusion, "returned no chunks") {
 		t.Fatalf("unexpected conclusion: %q", conclusion)
 	}
+	if scope, _ := result.Data["diagnosisScope"].(string); scope != "trace_retrieval" {
+		t.Fatalf("unexpected diagnosis scope: %q", scope)
+	}
 }
 
 func TestDiagnoseDocumentIngestionDetectsStateInconsistency(t *testing.T) {
@@ -526,6 +542,45 @@ func TestTraceRetrievalDiagnoseToolReportsToolWorkflowDegradation(t *testing.T) 
 	}
 	if !strings.Contains(result.Summary, "node=tool_workflow") {
 		t.Fatalf("unexpected summary: %q", result.Summary)
+	}
+	if riskHints, _ := result.Data["riskHints"].([]string); len(riskHints) == 0 {
+		t.Fatal("expected risk hints for degraded tool workflow")
+	}
+}
+
+func TestTraceRetrievalDiagnoseToolReportsWeakTopScore(t *testing.T) {
+	tool := NewTraceRetrievalDiagnoseTool(
+		&traceRunRepoStub{
+			run: ragdomain.RagTraceRun{
+				TraceID:        "trace-3",
+				Status:         "success",
+				ConversationID: "conv-3",
+			},
+		},
+		&traceNodeRepoStub{
+			nodes: []ragdomain.RagTraceNode{
+				{NodeID: "rewrite", NodeType: "rewrite", Status: "success"},
+				{NodeID: "retrieve", NodeType: "retrieve", Status: "success", ExtraData: `{"chunkCount":4,"searchMode":"hybrid","topScore":0.21}`},
+				{NodeID: "prompt", NodeType: "prompt", Status: "success"},
+			},
+		},
+	)
+
+	result, err := tool.Invoke(context.Background(), ragtool.Call{
+		Name: "trace_retrieval_diagnose",
+		Arguments: map[string]any{
+			"traceId": "trace-3",
+		},
+	})
+	if err != nil {
+		t.Fatalf("invoke trace retrieval diagnose: %v", err)
+	}
+	conclusion, _ := result.Data["conclusion"].(string)
+	if !strings.Contains(conclusion, "top retrieval score is weak") {
+		t.Fatalf("unexpected conclusion: %q", conclusion)
+	}
+	if confidence, _ := result.Data["confidence"].(string); confidence != diagnosisConfidenceMedium {
+		t.Fatalf("unexpected confidence: %q", confidence)
 	}
 }
 

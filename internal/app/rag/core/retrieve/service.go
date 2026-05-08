@@ -14,14 +14,10 @@ import (
 const (
 	DefaultTopK = 5
 
-	// SearchModeAuto 自动选择更合适的检索模式。
-	SearchModeAuto = "auto"
-	// SearchModeSemantic 纯向量语义检索。
+	SearchModeAuto     = "auto"
 	SearchModeSemantic = "semantic"
-	// SearchModeKeyword 纯关键词检索。
-	SearchModeKeyword = "keyword"
-	// SearchModeHybrid 混合检索（向量+关键词 RRF 融合）。
-	SearchModeHybrid = "hybrid"
+	SearchModeKeyword  = "keyword"
+	SearchModeHybrid   = "hybrid"
 )
 
 type Request struct {
@@ -30,13 +26,14 @@ type Request struct {
 	TopK             int
 	ScoreThreshold   *float32
 	RerankTopN       int
-	// SearchMode 检索模式：semantic / keyword / hybrid，默认 semantic。
-	SearchMode string
+	SearchMode       string
 }
 
 type Result struct {
 	Chunks           []convention.RetrievedChunk
 	KnowledgeContext string
+	SearchChannels   []string
+	ChannelStats     []ChannelStat
 }
 
 type Service interface {
@@ -45,17 +42,29 @@ type Service interface {
 }
 
 type Engine struct {
-	searcher  corevector.Searcher
-	embedding aiembedding.EmbeddingService
-	reranker  airerank.RerankService
+	searcher   corevector.Searcher
+	embedding  aiembedding.EmbeddingService
+	reranker   airerank.RerankService
+	channels   []SearchChannel
+	processors []SearchResultPostProcessor
 }
 
 func NewEngine(searcher corevector.Searcher, embedding aiembedding.EmbeddingService, reranker airerank.RerankService) *Engine {
-	return &Engine{
+	engine := &Engine{
 		searcher:  searcher,
 		embedding: embedding,
 		reranker:  reranker,
 	}
+	engine.channels = []SearchChannel{
+		NewVectorGlobalChannel(searcher, embedding),
+		NewKeywordChannel(searcher),
+	}
+	engine.processors = []SearchResultPostProcessor{
+		NewFusionPostProcessor(),
+		NewDedupPostProcessor(),
+		NewRerankPostProcessor(reranker),
+	}
+	return engine
 }
 
 func (e *Engine) Retrieve(ctx context.Context, request Request) (Result, error) {
@@ -67,126 +76,22 @@ func (e *Engine) Retrieve(ctx context.Context, request Request) (Result, error) 
 		return Result{}, nil
 	}
 
-	mode := resolveSearchMode(request)
-	switch mode {
-	case SearchModeKeyword:
-		return e.retrieveByKeyword(ctx, request)
-	case SearchModeHybrid:
-		return e.retrieveHybrid(ctx, request)
-	default:
-		return e.retrieveSemantic(ctx, request)
-	}
-}
-
-// retrieveSemantic 纯向量语义检索（原有行为）。
-func (e *Engine) retrieveSemantic(ctx context.Context, request Request) (Result, error) {
-	if e.embedding == nil {
-		return Result{}, fmt.Errorf("embedding service is required")
-	}
-	query := strings.TrimSpace(request.Query)
-	vector, err := e.embedding.Embed(query)
+	searchCtx := buildSearchContext(request)
+	channelResults, err := e.executeChannels(ctx, searchCtx)
 	if err != nil {
-		return Result{}, fmt.Errorf("embed query: %w", err)
-	}
-	return e.RetrieveByVector(ctx, vector, request)
-}
-
-// retrieveByKeyword 纯关键词检索。
-func (e *Engine) retrieveByKeyword(ctx context.Context, request Request) (Result, error) {
-	if e.searcher == nil {
-		return Result{}, fmt.Errorf("searcher is required")
-	}
-	topK := request.TopK
-	if topK <= 0 {
-		topK = DefaultTopK
+		return Result{}, err
 	}
 
-	hits, err := e.searcher.SearchByKeyword(ctx, strings.TrimSpace(request.Query), request.KnowledgeBaseIDs, topK)
+	chunks, err := e.executeProcessors(ctx, searchCtx, channelResults)
 	if err != nil {
-		return Result{}, fmt.Errorf("keyword search chunks: %w", err)
-	}
-
-	chunks := toRetrievedChunks(hits)
-	return Result{
-		Chunks:           chunks,
-		KnowledgeContext: BuildKnowledgeContext(chunks),
-	}, nil
-}
-
-// retrieveHybrid 混合检索：语义 + 关键词并行后 RRF 融合，再 rerank。
-func (e *Engine) retrieveHybrid(ctx context.Context, request Request) (Result, error) {
-	if e.searcher == nil {
-		return Result{}, fmt.Errorf("searcher is required")
-	}
-	if e.embedding == nil {
-		return Result{}, fmt.Errorf("embedding service is required")
-	}
-	query := strings.TrimSpace(request.Query)
-	topK := request.TopK
-	if topK <= 0 {
-		topK = DefaultTopK
-	}
-
-	// 并行执行语义检索和关键词检索。
-	type searchResult struct {
-		hits []corevector.SearchHit
-		err  error
-	}
-	vectorCh := make(chan searchResult, 1)
-	keywordCh := make(chan searchResult, 1)
-
-	go func() {
-		vector, err := e.embedding.Embed(query)
-		if err != nil {
-			vectorCh <- searchResult{err: err}
-			return
-		}
-		hits, err := e.searcher.Search(ctx, corevector.SearchRequest{
-			Vector:           vector,
-			KnowledgeBaseIDs: request.KnowledgeBaseIDs,
-			TopK:             topK * 2,
-			ScoreThreshold:   request.ScoreThreshold,
-		})
-		vectorCh <- searchResult{hits: hits, err: err}
-	}()
-
-	go func() {
-		hits, err := e.searcher.SearchByKeyword(ctx, query, request.KnowledgeBaseIDs, topK*2)
-		keywordCh <- searchResult{hits: hits, err: err}
-	}()
-
-	vectorResult := <-vectorCh
-	keywordResult := <-keywordCh
-
-	// 两路都失败时降级为空结果。
-	if vectorResult.err != nil && keywordResult.err != nil {
-		return Result{}, fmt.Errorf("hybrid search both channels failed: vector=%v keyword=%v", vectorResult.err, keywordResult.err)
-	}
-
-	var chunks []convention.RetrievedChunk
-	if vectorResult.err == nil && keywordResult.err == nil {
-		chunks = RRFusion(vectorResult.hits, keywordResult.hits, defaultRRFK)
-	} else if vectorResult.err == nil {
-		chunks = toRetrievedChunks(vectorResult.hits)
-	} else {
-		chunks = toRetrievedChunks(keywordResult.hits)
-	}
-
-	// 融合后可选 rerank。
-	if e.reranker != nil && len(chunks) > 1 {
-		rerankTopN := request.RerankTopN
-		if rerankTopN <= 0 || rerankTopN > len(chunks) {
-			rerankTopN = len(chunks)
-		}
-		reranked, rerankErr := e.reranker.Rerank(query, chunks, rerankTopN)
-		if rerankErr == nil && len(reranked) > 0 {
-			chunks = reranked
-		}
+		return Result{}, err
 	}
 
 	return Result{
 		Chunks:           chunks,
 		KnowledgeContext: BuildKnowledgeContext(chunks),
+		SearchChannels:   collectSearchChannels(channelResults),
+		ChannelStats:     collectChannelStats(channelResults),
 	}, nil
 }
 
@@ -228,7 +133,78 @@ func (e *Engine) RetrieveByVector(ctx context.Context, vector []float32, request
 	return Result{
 		Chunks:           chunks,
 		KnowledgeContext: BuildKnowledgeContext(chunks),
+		SearchChannels:   []string{ChannelVectorGlobal},
+		ChannelStats: []ChannelStat{
+			{
+				Name:       ChannelVectorGlobal,
+				ChunkCount: len(chunks),
+			},
+		},
 	}, nil
+}
+
+func (e *Engine) executeChannels(ctx context.Context, searchCtx SearchContext) ([]SearchChannelResult, error) {
+	results := make([]SearchChannelResult, 0, len(e.channels))
+	successCount := 0
+	var firstErr error
+	for _, channel := range e.channels {
+		if channel == nil || !channel.Enabled(searchCtx) {
+			continue
+		}
+		result, err := channel.Search(ctx, searchCtx)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("search channel %s: %w", channel.Name(), err)
+			}
+			results = append(results, SearchChannelResult{
+				ChannelName: channel.Name(),
+				Error:       err.Error(),
+				Metadata: map[string]any{
+					"status":        "failed",
+					"requestedMode": searchCtx.RequestedMode,
+					"resolvedMode":  searchCtx.ResolvedMode,
+					"modeSource":    searchCtx.ModeDecision.Source,
+				},
+			})
+			continue
+		}
+		results = append(results, result)
+		successCount++
+	}
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no search channels enabled for mode %s", searchCtx.ResolvedMode)
+	}
+	if successCount == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+	return results, nil
+}
+
+func (e *Engine) executeProcessors(ctx context.Context, searchCtx SearchContext, channelResults []SearchChannelResult) ([]convention.RetrievedChunk, error) {
+	current := []convention.RetrievedChunk{}
+	processors := e.processors
+	if len(processors) == 0 {
+		processors = []SearchResultPostProcessor{
+			NewFusionPostProcessor(),
+			NewDedupPostProcessor(),
+			NewRerankPostProcessor(e.reranker),
+		}
+	}
+	for _, processor := range processors {
+		if processor == nil || !processor.Enabled(searchCtx) {
+			continue
+		}
+		next, err := processor.Process(ctx, SearchProcessInput{
+			Context:        searchCtx,
+			ChannelResults: channelResults,
+			Chunks:         current,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("post processor %s: %w", processor.Name(), err)
+		}
+		current = next
+	}
+	return current, nil
 }
 
 func BuildKnowledgeContext(chunks []convention.RetrievedChunk) string {
@@ -245,7 +221,6 @@ func BuildKnowledgeContext(chunks []convention.RetrievedChunk) string {
 		builder.WriteString(fmt.Sprintf("%d", idx+1))
 		builder.WriteString("]")
 
-		// 如果 chunk 携带章节信息，在编号后附上来源标注。
 		if section, ok := chunk.Metadata["section"]; ok {
 			if sectionStr, ok := section.(string); ok && strings.TrimSpace(sectionStr) != "" {
 				builder.WriteString(" (")
@@ -281,55 +256,12 @@ func toRetrievedChunks(hits []corevector.SearchHit) []convention.RetrievedChunk 
 }
 
 func resolveSearchMode(request Request) string {
-	mode := strings.TrimSpace(strings.ToLower(request.SearchMode))
-	switch mode {
-	case SearchModeSemantic, SearchModeKeyword, SearchModeHybrid:
-		return mode
-	case "", SearchModeAuto:
-		return inferSearchModeFromQuery(request.Query)
-	default:
-		return inferSearchModeFromQuery(request.Query)
-	}
+	return AnalyzeSearchMode(request).ResolvedMode
 }
 
 func inferSearchModeFromQuery(query string) string {
-	query = strings.TrimSpace(strings.ToLower(query))
-	if query == "" {
-		return SearchModeSemantic
-	}
-
-	hybridHints := []string{
-		"`", "/", "\\", ".go", ".java", ".py", ".sql", ".yaml", ".yml", ".json",
-		"报错", "异常", "错误", "error", "stack trace", "panic", "nil pointer",
-		"配置", "参数", "字段", "函数", "接口", "类", "命令", "sql", "http", "api",
-		"nginx", "docker", "k8s", "kubectl", "redis", "mysql", "postgres",
-		"v1", "v2", "404", "500",
-	}
-	for _, hint := range hybridHints {
-		if strings.Contains(query, hint) {
-			return SearchModeHybrid
-		}
-	}
-
-	keywordHints := []string{
-		"包含", "出现", "叫做", "名称", "标题", "匹配", "搜索词", "关键字",
-		"contains", "match", "keyword", "named",
-	}
-	for _, hint := range keywordHints {
-		if strings.Contains(query, hint) {
-			return SearchModeKeyword
-		}
-	}
-
-	semanticHints := []string{
-		"什么是", "含义", "定义", "原理", "作用", "为什么", "区别", "优点", "缺点", "场景",
-		"how", "why", "what is", "difference", "principle", "overview",
-	}
-	for _, hint := range semanticHints {
-		if strings.Contains(query, hint) {
-			return SearchModeSemantic
-		}
-	}
-
-	return SearchModeHybrid
+	return AnalyzeSearchMode(Request{
+		Query:      query,
+		SearchMode: SearchModeAuto,
+	}).ResolvedMode
 }

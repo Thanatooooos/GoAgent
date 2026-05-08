@@ -9,6 +9,12 @@ import (
 	ragdomain "local/rag-project/internal/app/rag/domain"
 )
 
+const (
+	diagnosisConfidenceHigh   = "high"
+	diagnosisConfidenceMedium = "medium"
+	diagnosisConfidenceLow    = "low"
+)
+
 type ingestionNodeStats struct {
 	Total         int
 	SuccessCount  int
@@ -209,4 +215,86 @@ func readTraceExtraStringSlice(raw string, key string) []string {
 
 func findToolWorkflowNode(nodes []ragdomain.RagTraceNode) *ragdomain.RagTraceNode {
 	return findTraceNode(nodes, "tool_workflow")
+}
+
+func normalizeDiagnosisConfidence(confidence string) string {
+	switch strings.TrimSpace(strings.ToLower(confidence)) {
+	case diagnosisConfidenceHigh:
+		return diagnosisConfidenceHigh
+	case diagnosisConfidenceMedium:
+		return diagnosisConfidenceMedium
+	default:
+		return diagnosisConfidenceLow
+	}
+}
+
+func buildDiagnosisPayload(scope string, conclusion string, confidence string, evidence []string, suggestions []string, extra map[string]any) map[string]any {
+	facts := normalizeStringList(evidence)
+	nextActions := normalizeStringList(suggestions)
+	inferences := deriveDiagnosisInferences(conclusion, confidence)
+	riskHints := deriveDiagnosisRiskHints(conclusion, confidence)
+
+	data := map[string]any{
+		"diagnosisScope": scope,
+		"conclusion":     strings.TrimSpace(conclusion),
+		"confidence":     normalizeDiagnosisConfidence(confidence),
+		"evidence":       facts,
+		"facts":          facts,
+		"inferences":     inferences,
+		"riskHints":      riskHints,
+		"suggestions":    nextActions,
+		"nextActions":    nextActions,
+	}
+	for key, value := range extra {
+		data[key] = value
+	}
+	return data
+}
+
+func normalizeStringList(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
+}
+
+func deriveDiagnosisInferences(conclusion string, confidence string) []string {
+	conclusion = strings.TrimSpace(conclusion)
+	confidence = normalizeDiagnosisConfidence(confidence)
+	if conclusion == "" {
+		return []string{}
+	}
+	inferences := []string{conclusion}
+	switch confidence {
+	case diagnosisConfidenceMedium:
+		inferences = append(inferences, "The diagnosis is supported by partial evidence and should be verified against detailed logs or state write-back order.")
+	case diagnosisConfidenceLow:
+		inferences = append(inferences, "The diagnosis is tentative because the available evidence is incomplete or internally inconsistent.")
+	}
+	return inferences
+}
+
+func deriveDiagnosisRiskHints(conclusion string, confidence string) []string {
+	conclusion = strings.TrimSpace(strings.ToLower(conclusion))
+	confidence = normalizeDiagnosisConfidence(confidence)
+	risks := make([]string, 0, 3)
+	if confidence != diagnosisConfidenceHigh {
+		risks = append(risks, fmt.Sprintf("Confidence is %s, so the conclusion may shift after more evidence is collected.", confidence))
+	}
+	if strings.Contains(conclusion, "inconsistent") {
+		risks = append(risks, "State write-back order or retry compensation may have produced conflicting status snapshots.")
+	}
+	if strings.Contains(conclusion, "degraded") {
+		risks = append(risks, "Part of the diagnosis depends on degraded tool or trace evidence, so the final explanation may be incomplete.")
+	}
+	if strings.Contains(conclusion, "running") {
+		risks = append(risks, "The target is still running, so any diagnosis is a snapshot rather than a final conclusion.")
+	}
+	return risks
 }

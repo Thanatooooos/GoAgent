@@ -57,6 +57,7 @@ func (t *TraceRetrievalDiagnoseTool) Invoke(ctx context.Context, call ragtool.Ca
 	}
 
 	conclusion, confidence, evidence, suggestions, focusNode, focusReason := diagnoseTraceRetrieval(run, nodes)
+	confidence = normalizeDiagnosisConfidence(confidence)
 	summary := fmt.Sprintf("trace=%s confidence=%s conclusion=%s", traceID, confidence, conclusion)
 	if focusNode != "" {
 		summary = fmt.Sprintf("%s node=%s", summary, focusNode)
@@ -69,19 +70,15 @@ func (t *TraceRetrievalDiagnoseTool) Invoke(ctx context.Context, call ragtool.Ca
 		Name:    "trace_retrieval_diagnose",
 		Status:  ragtool.CallStatusSuccess,
 		Summary: summary,
-		Data: map[string]any{
+		Data: buildDiagnosisPayload("trace_retrieval", conclusion, confidence, evidence, suggestions, map[string]any{
 			"traceId":        run.TraceID,
 			"conversationId": run.ConversationID,
 			"taskId":         run.TaskID,
 			"traceStatus":    run.Status,
-			"conclusion":     conclusion,
-			"confidence":     confidence,
-			"evidence":       evidence,
-			"suggestions":    suggestions,
 			"focusNode":      focusNode,
 			"focusReason":    focusReason,
 			"nodeCount":      len(nodes),
-		},
+		}),
 	}, nil
 }
 
@@ -128,6 +125,10 @@ func diagnoseTraceRetrieval(
 		topScore := readTraceExtraFloat(retrieveNode.ExtraData, "topScore")
 		if topScore >= 0 {
 			evidence = append(evidence, fmt.Sprintf("retrieve.topScore=%.4f", topScore))
+			if topScore > 0 && topScore < 0.35 {
+				return "trace retrieval returned chunks, but the top retrieval score is weak, so grounding quality is likely poor", diagnosisConfidenceMedium, evidence,
+					[]string{"inspect the highest-ranked chunks for relevance drift", "compare semantic, keyword, and hybrid retrieval outputs for the same query"}, "retrieve", fmt.Sprintf("topScore=%.4f", topScore)
+			}
 		}
 		if chunkCount >= 0 {
 			evidence = append(evidence, fmt.Sprintf("retrieve.chunkCount=%d", chunkCount))

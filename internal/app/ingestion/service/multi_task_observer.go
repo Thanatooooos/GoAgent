@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"local/rag-project/internal/app/ingestion/domain"
@@ -25,42 +26,46 @@ func NewMultiTaskObserver(observers ...TaskObserver) *MultiTaskObserver {
 
 // OnTaskStarted 广播任务开始事件。
 func (o *MultiTaskObserver) OnTaskStarted(ctx context.Context, task domain.Task) error {
+	var errs []error
 	for _, observer := range o.observers {
 		if err := observer.OnTaskStarted(ctx, task); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // OnTaskCompleted 广播任务完成事件。
 func (o *MultiTaskObserver) OnTaskCompleted(ctx context.Context, task domain.Task, state ExecutionState, execErr error) error {
+	var errs []error
 	for _, observer := range o.observers {
 		if err := observer.OnTaskCompleted(ctx, task, state, execErr); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // OnNodeStarted 广播节点开始事件。
 func (o *MultiTaskObserver) OnNodeStarted(ctx context.Context, task domain.Task, node WorkflowNodeSpec) error {
+	var errs []error
 	for _, observer := range o.observers {
 		if err := observer.OnNodeStarted(ctx, task, node); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // OnNodeRetry 广播节点重试事件。
 func (o *MultiTaskObserver) OnNodeRetry(ctx context.Context, task domain.Task, node WorkflowNodeSpec, attempt int, backoff time.Duration, execErr error) error {
+	var errs []error
 	for _, observer := range o.observers {
 		if err := observer.OnNodeRetry(ctx, task, node, attempt, backoff, execErr); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // OnNodeCompleted 广播节点完成事件。
@@ -72,10 +77,11 @@ func (o *MultiTaskObserver) OnNodeCompleted(
 	duration time.Duration,
 	execErr error,
 ) error {
+	var errs []error
 	for _, observer := range o.observers {
 		if err := observer.OnNodeCompleted(ctx, task, node, output, duration, execErr); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }

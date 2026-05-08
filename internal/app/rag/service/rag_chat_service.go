@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -211,9 +210,23 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	if s.confidenceThreshold > 0 {
 		maxScore := topChunkScore(retrieveResult)
 		if maxScore < float32(s.confidenceThreshold) {
+			fallbackReason := "low confidence retrieval, fallback to general model"
 			fallbackPrompt = buildFallbackPrompt(question)
 			retrieveResult.KnowledgeContext = ""
-			_ = sink.SendFallback("low confidence retrieval, fallback to general model")
+			_ = sink.SendFallback(fallbackReason)
+			s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, map[string]any{
+				"fallback": map[string]any{
+					"triggered": true,
+					"reason":    fallbackReason,
+				},
+			})
+			_ = s.tracer.recordTraceNode(ctx, prepared.state.traceID, ragChatTraceNode{
+				NodeID:   "fallback",
+				NodeType: "fallback",
+				NodeName: "fallback_to_general_model",
+			}, ragTraceStatusSuccess, map[string]any{
+				"reason": fallbackReason,
+			})
 		}
 	}
 
@@ -739,6 +752,7 @@ func (s *RagChatService) runRewriteStage(ctx context.Context, question string, h
 }
 
 func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInput, rewriteResult ragrewrite.Result, traceID string) (ragChatRetrieveStageResult, error) {
+	searchDecisions := make([]map[string]any, 0)
 	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatRetrieveStageResult]{
 		node: ragChatTraceNode{
 			NodeID:   "retrieve",
@@ -752,8 +766,20 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 			}
 			searchMode := resolveRetrieveSearchMode(input.SearchMode, rewriteResult.PreferredSearchMode)
 
-			seen := map[string]convention.RetrievedChunk{}
+			results := make([]ragretrieve.Result, 0, len(subQuestions))
 			for _, q := range subQuestions {
+				decision := ragretrieve.AnalyzeSearchMode(ragretrieve.Request{
+					Query:      strings.TrimSpace(q),
+					SearchMode: searchMode,
+				})
+				searchDecisions = append(searchDecisions, map[string]any{
+					"query":         strings.TrimSpace(q),
+					"requestedMode": decision.RequestedMode,
+					"resolvedMode":  decision.ResolvedMode,
+					"source":        decision.Source,
+					"reason":        decision.Reason,
+					"signals":       append([]string(nil), decision.Signals...),
+				})
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
 					Query:            strings.TrimSpace(q),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
@@ -762,17 +788,21 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 				if err != nil {
 					continue
 				}
-				for _, chunk := range retrieveResult.Chunks {
-					if existing, ok := seen[chunk.ID]; ok {
-						if chunk.Score > existing.Score {
-							seen[chunk.ID] = chunk
-						}
-					} else {
-						seen[chunk.ID] = chunk
-					}
-				}
+				results = append(results, retrieveResult)
 			}
-			if len(seen) == 0 {
+			if len(results) == 0 {
+				decision := ragretrieve.AnalyzeSearchMode(ragretrieve.Request{
+					Query:      strings.TrimSpace(input.Question),
+					SearchMode: searchMode,
+				})
+				searchDecisions = append(searchDecisions, map[string]any{
+					"query":         strings.TrimSpace(input.Question),
+					"requestedMode": decision.RequestedMode,
+					"resolvedMode":  decision.ResolvedMode,
+					"source":        decision.Source,
+					"reason":        decision.Reason,
+					"signals":       append([]string(nil), decision.Signals...),
+				})
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
 					Query:            strings.TrimSpace(input.Question),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
@@ -784,27 +814,40 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 				return ragChatRetrieveStageResult{result: retrieveResult, searchMode: searchMode}, nil
 			}
 
-			chunks := make([]convention.RetrievedChunk, 0, len(seen))
-			for _, chunk := range seen {
-				chunks = append(chunks, chunk)
-			}
-			sortRetrievedChunksByScore(chunks)
-			if len(chunks) > defaultTopK {
-				chunks = chunks[:defaultTopK]
-			}
-
-			knowledgeContext := ragretrieve.BuildKnowledgeContext(chunks)
-			return ragChatRetrieveStageResult{result: ragretrieve.Result{
-				Chunks:           chunks,
-				KnowledgeContext: knowledgeContext,
-			}, searchMode: searchMode}, nil
+			merged := ragretrieve.MergeResults(results, defaultTopK)
+			return ragChatRetrieveStageResult{result: merged, searchMode: searchMode}, nil
 		},
 		buildExtra: func(result ragChatRetrieveStageResult) map[string]any {
-			return map[string]any{
+			extra := map[string]any{
 				"chunkCount": len(result.result.Chunks),
 				"searchMode": result.searchMode,
 				"topScore":   topChunkScore(result.result),
 			}
+			if len(result.result.SearchChannels) > 0 {
+				extra["searchChannels"] = append([]string(nil), result.result.SearchChannels...)
+			}
+			if len(searchDecisions) > 0 {
+				extra["searchDecisions"] = append([]map[string]any(nil), searchDecisions...)
+			}
+			if len(result.result.ChannelStats) > 0 {
+				stats := make([]map[string]any, 0, len(result.result.ChannelStats))
+				for _, stat := range result.result.ChannelStats {
+					item := map[string]any{
+						"name":       stat.Name,
+						"chunkCount": stat.ChunkCount,
+						"latencyMs":  stat.LatencyMs,
+					}
+					if stat.Error != "" {
+						item["error"] = stat.Error
+					}
+					if len(stat.Metadata) > 0 {
+						item["metadata"] = stat.Metadata
+					}
+					stats = append(stats, item)
+				}
+				extra["channelStats"] = stats
+			}
+			return extra
 		},
 	})
 }
@@ -862,12 +905,6 @@ func (s *RagChatService) runToolWorkflowStage(
 }
 
 const defaultTopK = 5
-
-func sortRetrievedChunksByScore(chunks []convention.RetrievedChunk) {
-	sort.Slice(chunks, func(i, j int) bool {
-		return chunks[i].Score > chunks[j].Score
-	})
-}
 
 func resolveRetrieveSearchMode(inputMode string, preferredMode string) string {
 	mode := strings.TrimSpace(strings.ToLower(inputMode))

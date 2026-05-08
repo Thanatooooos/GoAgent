@@ -77,6 +77,31 @@ func (t *ChatTracer) finishTraceRun(ctx context.Context, traceID string, status 
 	})
 }
 
+func (t *ChatTracer) appendTraceRunExtra(ctx context.Context, traceID string, patch map[string]any) {
+	if t == nil || t.traceRunRepo == nil || strings.TrimSpace(traceID) == "" || len(patch) == 0 {
+		return
+	}
+	run, err := t.traceRunRepo.GetByTraceID(ctx, traceID)
+	if err != nil || strings.TrimSpace(run.ID) == "" {
+		return
+	}
+
+	payload := map[string]any{}
+	if strings.TrimSpace(run.ExtraData) != "" {
+		_ = json.Unmarshal([]byte(run.ExtraData), &payload)
+	}
+	for key, value := range patch {
+		payload[key] = value
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	run.ExtraData = string(raw)
+	run.UpdateTime = t.now()
+	_ = t.traceRunRepo.UpdateByTraceID(ctx, traceID, run)
+}
+
 func (t *ChatTracer) recordTraceNode(ctx context.Context, traceID string, node ragChatTraceNode, status string, extra map[string]any) error {
 	now := t.now()
 	return t.recordTraceNodeAt(ctx, traceID, node, status, now, now, extra)

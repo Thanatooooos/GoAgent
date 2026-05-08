@@ -10,7 +10,6 @@ import (
 
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
 	postgresingestion "local/rag-project/internal/adapter/repository/postgres/ingestion"
-	ingestionmodels "local/rag-project/internal/adapter/repository/postgres/ingestion/models"
 	postgresknowledge "local/rag-project/internal/adapter/repository/postgres/knowledge"
 	corechunk "local/rag-project/internal/app/core/chunk"
 	coreparser "local/rag-project/internal/app/core/parser"
@@ -40,13 +39,8 @@ func TestPipelineFetcherNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new postgres db: %v", err)
 	}
-
-	if err := db.AutoMigrate(
-		&ingestionmodels.PipelineModel{},
-		&ingestionmodels.TaskModel{},
-		&ingestionmodels.TaskNodeModel{},
-	); err != nil {
-		t.Fatalf("auto migrate ingestion tables: %v", err)
+	if err := postgresrepo.RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
 	}
 
 	pipelineRepo := postgresingestion.NewPipelineRepository(db)
@@ -260,13 +254,8 @@ func TestPipelineIndexerMissingDependency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new postgres db: %v", err)
 	}
-
-	if err := db.AutoMigrate(
-		&ingestionmodels.PipelineModel{},
-		&ingestionmodels.TaskModel{},
-		&ingestionmodels.TaskNodeModel{},
-	); err != nil {
-		t.Fatalf("auto migrate ingestion tables: %v", err)
+	if err := postgresrepo.RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
 	}
 
 	pipelineRepo := postgresingestion.NewPipelineRepository(db)

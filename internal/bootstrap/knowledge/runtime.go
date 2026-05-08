@@ -271,6 +271,11 @@ func (r *Runtime) startScheduleLoop(cfg *config.Config) {
 			if err := r.ScheduleJob.Scan(ctx); err != nil {
 				log.Warnf("knowledge schedule scan failed: %v", err)
 			}
+			if r.DocumentService != nil {
+				if err := r.DocumentService.ScanAndReconcileIngestionTasks(ctx, reconcileScanBatchSize(cfg)); err != nil {
+					log.Warnf("knowledge ingestion reconcile scan failed: %v", err)
+				}
+			}
 		}
 
 		run()
@@ -324,4 +329,11 @@ func scheduleScanInterval(cfg *config.Config) time.Duration {
 		return 10 * time.Second
 	}
 	return time.Duration(cfg.Rag.Knowledge.Schedule.ScanDelayMs) * time.Millisecond
+}
+
+func reconcileScanBatchSize(cfg *config.Config) int {
+	if cfg == nil || cfg.Rag.Knowledge.Schedule.BatchSize <= 0 {
+		return 100
+	}
+	return cfg.Rag.Knowledge.Schedule.BatchSize
 }

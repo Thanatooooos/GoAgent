@@ -8,12 +8,15 @@ import (
 	"testing"
 	"time"
 
+	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
 )
 
 type knowledgeDocumentServiceDocumentRepoStub struct {
 	getByIDFn      func(ctx context.Context, id string) (domain.KnowledgeDocument, error)
+	listFn         func(ctx context.Context, filter port.KnowledgeDocumentListFilter) ([]domain.KnowledgeDocument, error)
+	updateFn       func(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error)
 	updateFieldsFn func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error)
 	deleteFn       func(ctx context.Context, id string) error
 }
@@ -23,6 +26,9 @@ func (s knowledgeDocumentServiceDocumentRepoStub) Create(ctx context.Context, do
 }
 
 func (s knowledgeDocumentServiceDocumentRepoStub) Update(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
+	if s.updateFn != nil {
+		return s.updateFn(ctx, document)
+	}
 	return document, nil
 }
 
@@ -60,6 +66,9 @@ func (s knowledgeDocumentServiceDocumentRepoStub) CountChunkedByKnowledgeBaseID(
 }
 
 func (s knowledgeDocumentServiceDocumentRepoStub) List(ctx context.Context, filter port.KnowledgeDocumentListFilter) ([]domain.KnowledgeDocument, error) {
+	if s.listFn != nil {
+		return s.listFn(ctx, filter)
+	}
 	return nil, nil
 }
 
@@ -123,6 +132,25 @@ func (s knowledgeDocumentServiceVectorStoreStub) DeleteByDocumentID(ctx context.
 		return s.deleteByDocumentIDFn(ctx, documentID)
 	}
 	return nil
+}
+
+type knowledgeDocumentServiceIngestionTaskReaderStub struct {
+	getTaskFn      func(ctx context.Context, taskID string) (ingestiondomain.Task, error)
+	listTaskNodeFn func(ctx context.Context, taskID string) ([]ingestiondomain.TaskNode, error)
+}
+
+func (s knowledgeDocumentServiceIngestionTaskReaderStub) GetKnowledgePipelineTask(ctx context.Context, taskID string) (ingestiondomain.Task, error) {
+	if s.getTaskFn != nil {
+		return s.getTaskFn(ctx, taskID)
+	}
+	return ingestiondomain.Task{}, nil
+}
+
+func (s knowledgeDocumentServiceIngestionTaskReaderStub) ListKnowledgePipelineTaskNodes(ctx context.Context, taskID string) ([]ingestiondomain.TaskNode, error) {
+	if s.listTaskNodeFn != nil {
+		return s.listTaskNodeFn(ctx, taskID)
+	}
+	return nil, nil
 }
 
 func (s knowledgeDocumentServiceVectorStoreStub) DeleteChunk(ctx context.Context, chunkID string) error {
@@ -238,6 +266,45 @@ func (s knowledgeDocumentServiceStorageStub) Open(ctx context.Context, key strin
 	return nil, nil
 }
 
+type knowledgeDocumentServiceChunkLogRepoStub struct {
+	createFn           func(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error)
+	getByTaskIDFn      func(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error)
+	listByDocumentIDFn func(ctx context.Context, documentID string, options port.ListOptions) ([]domain.KnowledgeDocumentChunkLog, error)
+	updateFn           func(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error)
+}
+
+func (s knowledgeDocumentServiceChunkLogRepoStub) Create(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
+	if s.createFn != nil {
+		return s.createFn(ctx, log)
+	}
+	return log, nil
+}
+
+func (s knowledgeDocumentServiceChunkLogRepoStub) Update(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
+	if s.updateFn != nil {
+		return s.updateFn(ctx, log)
+	}
+	return log, nil
+}
+
+func (s knowledgeDocumentServiceChunkLogRepoStub) GetByID(ctx context.Context, id string) (domain.KnowledgeDocumentChunkLog, error) {
+	return domain.KnowledgeDocumentChunkLog{}, nil
+}
+
+func (s knowledgeDocumentServiceChunkLogRepoStub) GetByTaskID(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error) {
+	if s.getByTaskIDFn != nil {
+		return s.getByTaskIDFn(ctx, taskID)
+	}
+	return domain.KnowledgeDocumentChunkLog{}, nil
+}
+
+func (s knowledgeDocumentServiceChunkLogRepoStub) ListByDocumentID(ctx context.Context, documentID string, options port.ListOptions) ([]domain.KnowledgeDocumentChunkLog, error) {
+	if s.listByDocumentIDFn != nil {
+		return s.listByDocumentIDFn(ctx, documentID, options)
+	}
+	return nil, nil
+}
+
 func TestKnowledgeDocumentServiceDeleteUsesTransactionalCleanup(t *testing.T) {
 	t.Parallel()
 
@@ -339,6 +406,434 @@ func TestKnowledgeDocumentServiceDeleteUsesTransactionalCleanup(t *testing.T) {
 	if got != want {
 		t.Fatalf("unexpected delete order: got=%s want=%s", got, want)
 	}
+}
+
+func TestKnowledgeDocumentServiceOnIngestionTaskCompletedUsesTaskScopedChunkLog(t *testing.T) {
+	t.Parallel()
+
+	updated := domain.KnowledgeDocumentChunkLog{}
+	svc := NewKnowledgeDocumentService(
+		nil,
+		knowledgeDocumentServiceDocumentRepoStub{
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+				return domain.KnowledgeDocument{ID: id, Status: domain.KnowledgeDocumentStatusRunning}, nil
+			},
+			updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+				return 1, nil
+			},
+		},
+		nil,
+		knowledgeDocumentServiceChunkLogRepoStub{
+			getByTaskIDFn: func(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error) {
+				return domain.KnowledgeDocumentChunkLog{
+					ID:         taskID,
+					DocumentID: "doc-1",
+					Status:     domain.KnowledgeDocumentChunkLogStatusRunning,
+				}, nil
+			},
+			listByDocumentIDFn: func(ctx context.Context, documentID string, options port.ListOptions) ([]domain.KnowledgeDocumentChunkLog, error) {
+				t.Fatal("expected task-scoped chunk log lookup before latest-document fallback")
+				return nil, nil
+			},
+			updateFn: func(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
+				updated = log
+				return log, nil
+			},
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	err := svc.OnIngestionTaskCompleted(context.Background(), KnowledgeDocumentIngestionTaskCompletedInput{
+		TaskID:      "task-1",
+		DocumentID:  "doc-1",
+		ChunkCount:  3,
+		OperatorID:  "tester",
+		CompletedAt: timePointer(time.Now()),
+	})
+	if err != nil {
+		t.Fatalf("OnIngestionTaskCompleted() error = %v", err)
+	}
+	if updated.ID != "task-1" {
+		t.Fatalf("expected task-scoped chunk log update, got id=%q", updated.ID)
+	}
+	if updated.ChunkCount != 3 {
+		t.Fatalf("expected chunk count 3, got %d", updated.ChunkCount)
+	}
+	if updated.Status != domain.KnowledgeDocumentChunkLogStatusSuccess {
+		t.Fatalf("expected success chunk log status, got %q", updated.Status)
+	}
+}
+
+func TestKnowledgeDocumentServiceOnIngestionTaskCompletedReturnsChunkLogMismatch(t *testing.T) {
+	t.Parallel()
+
+	svc := NewKnowledgeDocumentService(
+		nil,
+		knowledgeDocumentServiceDocumentRepoStub{
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+				return domain.KnowledgeDocument{ID: id, Status: domain.KnowledgeDocumentStatusRunning}, nil
+			},
+			updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+				return 1, nil
+			},
+		},
+		nil,
+		knowledgeDocumentServiceChunkLogRepoStub{
+			getByTaskIDFn: func(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error) {
+				return domain.KnowledgeDocumentChunkLog{
+					ID:         taskID,
+					DocumentID: "doc-other",
+					Status:     domain.KnowledgeDocumentChunkLogStatusRunning,
+				}, nil
+			},
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	err := svc.OnIngestionTaskCompleted(context.Background(), KnowledgeDocumentIngestionTaskCompletedInput{
+		TaskID:     "task-1",
+		DocumentID: "doc-1",
+		ChunkCount: 1,
+	})
+	if err == nil {
+		t.Fatal("expected mismatch error when task-scoped chunk log belongs to another document")
+	}
+	if !strings.Contains(err.Error(), "belongs to document") {
+		t.Fatalf("expected document mismatch error, got %v", err)
+	}
+}
+
+func TestKnowledgeDocumentServiceOnIngestionTaskCompletedReconcilesDocumentStatusFromTask(t *testing.T) {
+	t.Parallel()
+
+	var updatedDocument domain.KnowledgeDocument
+	var updatedLog domain.KnowledgeDocumentChunkLog
+
+	svc := NewKnowledgeDocumentService(
+		nil,
+		knowledgeDocumentServiceDocumentRepoStub{
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+				return domain.KnowledgeDocument{
+					ID:            id,
+					Status:        domain.KnowledgeDocumentStatusRunning,
+					ProcessMode:   domain.KnowledgeDocumentProcessModePipeline,
+					ChunkStrategy: "markdown",
+					PipelineID:    "pipeline-1",
+				}, nil
+			},
+			updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+				return 1, nil
+			},
+			updateFn: nil,
+		},
+		nil,
+		knowledgeDocumentServiceChunkLogRepoStub{
+			getByTaskIDFn: func(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error) {
+				return domain.KnowledgeDocumentChunkLog{
+					ID:         taskID,
+					DocumentID: "doc-1",
+					Status:     domain.KnowledgeDocumentChunkLogStatusSuccess,
+					ChunkCount: 9,
+				}, nil
+			},
+			updateFn: func(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
+				updatedLog = log
+				return log, nil
+			},
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.documentRepo = knowledgeDocumentServiceDocumentRepoStub{
+		getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+			return domain.KnowledgeDocument{
+				ID:            id,
+				Status:        domain.KnowledgeDocumentStatusRunning,
+				ProcessMode:   domain.KnowledgeDocumentProcessModePipeline,
+				ChunkStrategy: "markdown",
+				PipelineID:    "pipeline-1",
+			}, nil
+		},
+		updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+			return 1, nil
+		},
+		updateFn: func(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
+			updatedDocument = document
+			return document, nil
+		},
+	}
+	svc.SetIngestionTaskReader(knowledgeDocumentServiceIngestionTaskReaderStub{
+		getTaskFn: func(ctx context.Context, taskID string) (ingestiondomain.Task, error) {
+			completedAt := time.Now()
+			return ingestiondomain.Task{
+				ID:           taskID,
+				Status:       ingestiondomain.TaskStatusFailed,
+				ChunkCount:   0,
+				ErrorMessage: "indexer failed",
+				CompletedAt:  &completedAt,
+				Metadata: map[string]any{
+					"documentId": "doc-1",
+				},
+				UpdatedBy: "tester",
+			}, nil
+		},
+	})
+
+	err := svc.OnIngestionTaskCompleted(context.Background(), KnowledgeDocumentIngestionTaskCompletedInput{
+		TaskID:       "task-1",
+		DocumentID:   "doc-1",
+		ChunkCount:   3,
+		OperatorID:   "tester",
+		ErrorMessage: "indexer failed",
+	})
+	if err != nil {
+		t.Fatalf("OnIngestionTaskCompleted() error = %v", err)
+	}
+	if updatedDocument.Status != domain.KnowledgeDocumentStatusFailed {
+		t.Fatalf("expected reconciled document status failed, got %q", updatedDocument.Status)
+	}
+	if updatedLog.Status != domain.KnowledgeDocumentChunkLogStatusFailed {
+		t.Fatalf("expected reconciled chunk log status failed, got %q", updatedLog.Status)
+	}
+	if updatedLog.ErrorMessage != "indexer failed" {
+		t.Fatalf("expected reconciled chunk log error, got %q", updatedLog.ErrorMessage)
+	}
+}
+
+func TestKnowledgeDocumentServiceReconcileIngestionTaskCompletionCreatesMissingChunkLog(t *testing.T) {
+	t.Parallel()
+
+	var createdLog domain.KnowledgeDocumentChunkLog
+
+	svc := NewKnowledgeDocumentService(
+		nil,
+		knowledgeDocumentServiceDocumentRepoStub{
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+				return domain.KnowledgeDocument{
+					ID:            id,
+					Status:        domain.KnowledgeDocumentStatusSuccess,
+					ProcessMode:   domain.KnowledgeDocumentProcessModePipeline,
+					ChunkStrategy: "markdown",
+					PipelineID:    "pipeline-1",
+				}, nil
+			},
+			updateFn: func(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
+				return document, nil
+			},
+		},
+		nil,
+		knowledgeDocumentServiceChunkLogRepoStub{
+			getByTaskIDFn: func(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error) {
+				return domain.KnowledgeDocumentChunkLog{}, nil
+			},
+			createFn: func(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
+				createdLog = log
+				return log, nil
+			},
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetIngestionTaskReader(knowledgeDocumentServiceIngestionTaskReaderStub{
+		getTaskFn: func(ctx context.Context, taskID string) (ingestiondomain.Task, error) {
+			startedAt := time.Now().Add(-time.Minute)
+			completedAt := time.Now()
+			return ingestiondomain.Task{
+				ID:          taskID,
+				Status:      ingestiondomain.TaskStatusSuccess,
+				ChunkCount:  6,
+				StartedAt:   &startedAt,
+				CompletedAt: &completedAt,
+				PipelineID:  "pipeline-1",
+				Metadata: map[string]any{
+					"documentId": "doc-1",
+				},
+			}, nil
+		},
+	})
+
+	err := svc.ReconcileIngestionTaskCompletion(context.Background(), KnowledgeDocumentIngestionTaskCompletedInput{
+		TaskID:     "task-1",
+		DocumentID: "doc-1",
+		ChunkCount: 6,
+	})
+	if err != nil {
+		t.Fatalf("ReconcileIngestionTaskCompletion() error = %v", err)
+	}
+	if createdLog.ID != "task-1" {
+		t.Fatalf("expected created chunk log id task-1, got %q", createdLog.ID)
+	}
+	if createdLog.DocumentID != "doc-1" {
+		t.Fatalf("expected created chunk log document doc-1, got %q", createdLog.DocumentID)
+	}
+	if createdLog.Status != domain.KnowledgeDocumentChunkLogStatusSuccess {
+		t.Fatalf("expected created chunk log success, got %q", createdLog.Status)
+	}
+	if createdLog.ChunkCount != 6 {
+		t.Fatalf("expected created chunk log chunk count 6, got %d", createdLog.ChunkCount)
+	}
+}
+
+func TestKnowledgeDocumentServiceReconcileIngestionTaskCompletionRejectsTaskDocumentMismatch(t *testing.T) {
+	t.Parallel()
+
+	svc := NewKnowledgeDocumentService(
+		nil,
+		knowledgeDocumentServiceDocumentRepoStub{
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+				return domain.KnowledgeDocument{ID: id, Status: domain.KnowledgeDocumentStatusRunning}, nil
+			},
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetIngestionTaskReader(knowledgeDocumentServiceIngestionTaskReaderStub{
+		getTaskFn: func(ctx context.Context, taskID string) (ingestiondomain.Task, error) {
+			return ingestiondomain.Task{
+				ID:     taskID,
+				Status: ingestiondomain.TaskStatusFailed,
+				Metadata: map[string]any{
+					"documentId": "doc-other",
+				},
+			}, nil
+		},
+	})
+
+	err := svc.ReconcileIngestionTaskCompletion(context.Background(), KnowledgeDocumentIngestionTaskCompletedInput{
+		TaskID:     "task-1",
+		DocumentID: "doc-1",
+	})
+	if err == nil {
+		t.Fatal("expected task/document mismatch error")
+	}
+	if !strings.Contains(err.Error(), "belongs to document") {
+		t.Fatalf("expected mismatch error, got %v", err)
+	}
+}
+
+func TestKnowledgeDocumentServiceScanAndReconcileIngestionTasksUsesLatestChunkLogTaskID(t *testing.T) {
+	t.Parallel()
+
+	calledTaskIDs := make([]string, 0, 3)
+	updatedDocuments := make([]domain.KnowledgeDocument, 0, 1)
+
+	svc := NewKnowledgeDocumentService(
+		nil,
+		knowledgeDocumentServiceDocumentRepoStub{
+			listFn: func(ctx context.Context, filter port.KnowledgeDocumentListFilter) ([]domain.KnowledgeDocument, error) {
+				if filter.ListOptions.Offset > 0 {
+					return nil, nil
+				}
+				switch filter.Status {
+				case domain.KnowledgeDocumentStatusRunning:
+					return []domain.KnowledgeDocument{
+						{
+							ID:          "doc-pipeline",
+							ProcessMode: domain.KnowledgeDocumentProcessModePipeline,
+							Status:      domain.KnowledgeDocumentStatusRunning,
+							PipelineID:  "pipeline-1",
+						},
+						{
+							ID:          "doc-chunk",
+							ProcessMode: domain.KnowledgeDocumentProcessModeChunk,
+							Status:      domain.KnowledgeDocumentStatusRunning,
+						},
+					}, nil
+				default:
+					return nil, nil
+				}
+			},
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+				return domain.KnowledgeDocument{
+					ID:          id,
+					ProcessMode: domain.KnowledgeDocumentProcessModePipeline,
+					Status:      domain.KnowledgeDocumentStatusRunning,
+					PipelineID:  "pipeline-1",
+				}, nil
+			},
+			updateFn: func(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
+				updatedDocuments = append(updatedDocuments, document)
+				return document, nil
+			},
+		},
+		nil,
+		knowledgeDocumentServiceChunkLogRepoStub{
+			listByDocumentIDFn: func(ctx context.Context, documentID string, options port.ListOptions) ([]domain.KnowledgeDocumentChunkLog, error) {
+				if documentID != "doc-pipeline" {
+					t.Fatalf("unexpected chunk log lookup for document %q", documentID)
+				}
+				return []domain.KnowledgeDocumentChunkLog{
+					{
+						ID:         "task-123",
+						DocumentID: documentID,
+						Status:     domain.KnowledgeDocumentChunkLogStatusRunning,
+					},
+				}, nil
+			},
+			getByTaskIDFn: func(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error) {
+				return domain.KnowledgeDocumentChunkLog{
+					ID:         taskID,
+					DocumentID: "doc-pipeline",
+					Status:     domain.KnowledgeDocumentChunkLogStatusRunning,
+				}, nil
+			},
+			updateFn: func(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
+				return log, nil
+			},
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetIngestionTaskReader(knowledgeDocumentServiceIngestionTaskReaderStub{
+		getTaskFn: func(ctx context.Context, taskID string) (ingestiondomain.Task, error) {
+			calledTaskIDs = append(calledTaskIDs, taskID)
+			return ingestiondomain.Task{
+				ID:         taskID,
+				Status:     ingestiondomain.TaskStatusSuccess,
+				ChunkCount: 4,
+				Metadata: map[string]any{
+					"documentId": "doc-pipeline",
+				},
+			}, nil
+		},
+	})
+
+	err := svc.ScanAndReconcileIngestionTasks(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ScanAndReconcileIngestionTasks() error = %v", err)
+	}
+	if len(calledTaskIDs) != 1 || calledTaskIDs[0] != "task-123" {
+		t.Fatalf("expected reconcile to load task-123 once, got %+v", calledTaskIDs)
+	}
+	if len(updatedDocuments) != 1 || updatedDocuments[0].Status != domain.KnowledgeDocumentStatusSuccess {
+		t.Fatalf("expected pipeline document status to be reconciled to success, got %+v", updatedDocuments)
+	}
+}
+
+func timePointer(value time.Time) *time.Time {
+	return &value
 }
 
 func TestKnowledgeDocumentServiceDeleteSkipsStorageCleanupWhenTransactionFails(t *testing.T) {

@@ -1,0 +1,94 @@
+{
+  "samples": [
+    {
+      "name": "concept question",
+      "query": "什么是 RAG 检索增强生成",
+      "expectedMode": "semantic"
+    },
+    {
+      "name": "difference question",
+      "query": "向量检索和关键词检索有什么区别",
+      "expectedMode": "semantic"
+    },
+    {
+      "name": "architecture overview",
+      "query": "retrieve 模块整体架构是怎样的",
+      "expectedMode": "semantic"
+    },
+    {
+      "name": "how relation question",
+      "query": "如何理解 rewrite 和 retrieve 的关系",
+      "expectedMode": "semantic"
+    },
+    {
+      "name": "trace diagnose question",
+      "query": "trace 检索命中过少通常代表什么问题",
+      "expectedMode": "semantic"
+    },
+    {
+      "name": "title contains exact phrase",
+      "query": "标题包含 \"Kubernetes\" 的文档",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "named lookup",
+      "query": "有没有名称叫 GoAgent 的知识库文档",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "quoted trace node search",
+      "query": "搜索包含 \"tool_workflow\" 的 trace 节点",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "document id lookup",
+      "query": "查找 document doc-1 的最新 chunk log",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "task id lookup",
+      "query": "task-diag-1 这个任务的节点日志",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "error troubleshooting",
+      "query": "nginx 404 报错怎么排查",
+      "expectedMode": "hybrid"
+    },
+    {
+      "name": "api locator",
+      "query": "chat 接口的 timeout 参数在哪里配置",
+      "expectedMode": "hybrid"
+    },
+    {
+      "name": "code symbol lookup",
+      "query": "RagChatService.runRetrieveStage 是怎么工作的",
+      "expectedMode": "hybrid"
+    },
+    {
+      "name": "path lookup",
+      "query": "internal/app/rag/core/retrieve/service.go 里做了什么",
+      "expectedMode": "hybrid"
+    },
+    {
+      "name": "config field troubleshoot",
+      "query": "PreferredSearchMode 这个字段是在哪里决定的",
+      "expectedMode": "hybrid"
+    },
+    {
+      "name": "sql and migration question",
+      "query": "rag_trace_node 的 SQL 迁移在哪里",
+      "expectedMode": "hybrid"
+    },
+    {
+      "name": "pipeline failure diagnosis",
+      "query": "indexer connection refused 这个 ingestion 失败怎么诊断",
+      "expectedMode": "hybrid"
+    },
+    {
+      "name": "sse event locator",
+      "query": "fallback SSE 事件是在哪一层下发的",
+      "expectedMode": "hybrid"
+    }
+  ]
+}

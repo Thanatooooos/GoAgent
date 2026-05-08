@@ -34,6 +34,7 @@ export interface Message {
   retrievalMode?: string;
   retrievalModeLabel?: string;
   toolCalls?: ToolCallPayload[];
+  fallbackReason?: string;
 }
 
 export interface StreamMetaPayload {
@@ -51,6 +52,10 @@ export interface ToolCallPayload {
   name: string;
   status: string;
   summary: string;
+}
+
+export interface FallbackPayload {
+  reason: string;
 }
 
 export interface CompletionPayload {

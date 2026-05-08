@@ -34,13 +34,11 @@ func TestBuildKnowledgeContextWithSection(t *testing.T) {
 	if !strings.Contains(context, "(第二章)") {
 		t.Fatalf("expected section annotation for chunk 2: %q", context)
 	}
-	// 无 section 的 chunk 不加括号标注。
 	if !strings.Contains(context, "[3] 内容C") {
 		t.Fatalf("expected no section annotation for chunk 3: %q", context)
 	}
 }
 
-// mockSearcher 实现 corevector.Searcher 用于测试。
 type mockSearcher struct {
 	hits        []corevector.SearchHit
 	keywordHits []corevector.SearchHit
@@ -48,25 +46,22 @@ type mockSearcher struct {
 	keywordErr  error
 }
 
-func (m *mockSearcher) Search(ctx context.Context, request corevector.SearchRequest) ([]corevector.SearchHit, error) {
+func (m *mockSearcher) Search(context.Context, corevector.SearchRequest) ([]corevector.SearchHit, error) {
 	return m.hits, m.err
 }
 
-func (m *mockSearcher) SearchByKeyword(ctx context.Context, query string, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
+func (m *mockSearcher) SearchByKeyword(context.Context, string, []string, int) ([]corevector.SearchHit, error) {
 	return m.keywordHits, m.keywordErr
 }
 
 var _ corevector.Searcher = (*mockSearcher)(nil)
 
-// mockEmbedding 实现 embedding.EmbeddingService 用于测试。
 type mockEmbedding struct {
 	vector []float32
 	err    error
 }
 
-func (m *mockEmbedding) Embed(text string) ([]float32, error) {
-	return m.vector, m.err
-}
+func (m *mockEmbedding) Embed(string) ([]float32, error) { return m.vector, m.err }
 
 func (m *mockEmbedding) EmbedBatch(texts []string) ([][]float32, error) {
 	result := make([][]float32, len(texts))
@@ -76,17 +71,13 @@ func (m *mockEmbedding) EmbedBatch(texts []string) ([][]float32, error) {
 	return result, m.err
 }
 
-func (m *mockEmbedding) EmbedWithModel(text string, modelID string) ([]float32, error) {
-	return m.vector, m.err
-}
+func (m *mockEmbedding) EmbedWithModel(string, string) ([]float32, error) { return m.vector, m.err }
 
 func (m *mockEmbedding) EmbedBatchWithModel(texts []string, modelID string) ([][]float32, error) {
 	return m.EmbedBatch(texts)
 }
 
-func (m *mockEmbedding) Dimension() int {
-	return 768
-}
+func (m *mockEmbedding) Dimension() int { return 768 }
 
 var _ aiembedding.EmbeddingService = (*mockEmbedding)(nil)
 
@@ -109,6 +100,9 @@ func TestRetrieveSemanticModeDefault(t *testing.T) {
 	if len(result.Chunks) != 1 || result.Chunks[0].ID != "c1" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
+	if len(result.SearchChannels) != 1 || result.SearchChannels[0] != ChannelVectorGlobal {
+		t.Fatalf("unexpected search channels: %+v", result.SearchChannels)
+	}
 }
 
 func TestRetrieveKeywordMode(t *testing.T) {
@@ -128,6 +122,9 @@ func TestRetrieveKeywordMode(t *testing.T) {
 	}
 	if len(result.Chunks) != 1 || result.Chunks[0].ID != "k1" {
 		t.Fatalf("unexpected keyword result: %+v", result)
+	}
+	if len(result.SearchChannels) != 1 || result.SearchChannels[0] != ChannelKeyword {
+		t.Fatalf("unexpected search channels: %+v", result.SearchChannels)
 	}
 }
 
@@ -160,6 +157,132 @@ func TestResolveSearchModeInvalidFallsBackToInference(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSearchModeExplicitWins(t *testing.T) {
+	decision := AnalyzeSearchMode(Request{
+		Query:      "什么是 RAG",
+		SearchMode: SearchModeKeyword,
+	})
+	if decision.ResolvedMode != SearchModeKeyword {
+		t.Fatalf("expected explicit keyword mode, got %q", decision.ResolvedMode)
+	}
+	if decision.Source != modeSourceExplicit {
+		t.Fatalf("expected explicit source, got %q", decision.Source)
+	}
+}
+
+func TestAnalyzeSearchModeAutoSemantic(t *testing.T) {
+	decision := AnalyzeSearchMode(Request{
+		Query:      "什么是 RAG 检索增强生成",
+		SearchMode: SearchModeAuto,
+	})
+	if decision.ResolvedMode != SearchModeSemantic {
+		t.Fatalf("expected semantic, got %q", decision.ResolvedMode)
+	}
+	if decision.Source != modeSourceAuto {
+		t.Fatalf("expected auto source, got %q", decision.Source)
+	}
+	if len(decision.Signals) == 0 {
+		t.Fatal("expected semantic decision signals")
+	}
+}
+
+func TestAnalyzeSearchModeAutoKeyword(t *testing.T) {
+	decision := AnalyzeSearchMode(Request{
+		Query:      "标题包含 \"Kubernetes\" 的文档",
+		SearchMode: SearchModeAuto,
+	})
+	if decision.ResolvedMode != SearchModeKeyword {
+		t.Fatalf("expected keyword, got %q", decision.ResolvedMode)
+	}
+}
+
+func TestAnalyzeSearchModeAutoHybrid(t *testing.T) {
+	decision := AnalyzeSearchMode(Request{
+		Query:      "nginx 404 报错怎么排查",
+		SearchMode: SearchModeAuto,
+	})
+	if decision.ResolvedMode != SearchModeHybrid {
+		t.Fatalf("expected hybrid, got %q", decision.ResolvedMode)
+	}
+}
+
+func TestAnalyzeSearchModeSamples(t *testing.T) {
+	testCases := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "concept question",
+			query: "什么是 RAG 检索增强生成",
+			want:  SearchModeSemantic,
+		},
+		{
+			name:  "difference question",
+			query: "向量检索和关键词检索有什么区别",
+			want:  SearchModeSemantic,
+		},
+		{
+			name:  "title contains exact phrase",
+			query: "标题包含 \"Kubernetes\" 的文档",
+			want:  SearchModeKeyword,
+		},
+		{
+			name:  "named lookup",
+			query: "有没有名称叫 GoAgent 的知识库文档",
+			want:  SearchModeKeyword,
+		},
+		{
+			name:  "error troubleshooting",
+			query: "nginx 404 报错怎么排查",
+			want:  SearchModeHybrid,
+		},
+		{
+			name:  "api locator",
+			query: "chat 接口的 timeout 参数在哪里配置",
+			want:  SearchModeHybrid,
+		},
+		{
+			name:  "code symbol lookup",
+			query: "RagChatService.runRetrieveStage 是怎么工作的",
+			want:  SearchModeHybrid,
+		},
+		{
+			name:  "path lookup",
+			query: "internal/app/rag/core/retrieve/service.go 里做了什么",
+			want:  SearchModeHybrid,
+		},
+		{
+			name:  "natural language how question",
+			query: "如何理解 rewrite 和 retrieve 的关系",
+			want:  SearchModeSemantic,
+		},
+		{
+			name:  "exact phrase with quotes",
+			query: "搜索包含 \"tool_workflow\" 的 trace 节点",
+			want:  SearchModeKeyword,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			decision := AnalyzeSearchMode(Request{
+				Query:      tc.query,
+				SearchMode: SearchModeAuto,
+			})
+			if decision.ResolvedMode != tc.want {
+				t.Fatalf("query %q: expected %q, got %q (reason=%q, signals=%v)", tc.query, tc.want, decision.ResolvedMode, decision.Reason, decision.Signals)
+			}
+			if decision.Source != modeSourceAuto {
+				t.Fatalf("query %q: expected auto source, got %q", tc.query, decision.Source)
+			}
+			if len(decision.Signals) == 0 {
+				t.Fatalf("query %q: expected non-empty decision signals", tc.query)
+			}
+		})
+	}
+}
+
 func TestRetrieveHybridMode(t *testing.T) {
 	searcher := &mockSearcher{
 		hits: []corevector.SearchHit{
@@ -180,9 +303,14 @@ func TestRetrieveHybridMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// 两条结果分别来自两个通道。
 	if len(result.Chunks) != 2 {
 		t.Fatalf("expected 2 chunks from hybrid, got %d: %+v", len(result.Chunks), result.Chunks)
+	}
+	if len(result.SearchChannels) != 2 {
+		t.Fatalf("expected 2 search channels, got %+v", result.SearchChannels)
+	}
+	if len(result.ChannelStats) != 2 {
+		t.Fatalf("expected 2 channel stats, got %+v", result.ChannelStats)
 	}
 }
 
@@ -207,6 +335,21 @@ func TestRetrieveHybridVectorFailsKeywordOk(t *testing.T) {
 	if len(result.Chunks) != 1 || result.Chunks[0].ID != "k1" {
 		t.Fatalf("expected keyword fallback, got %+v", result)
 	}
+	if len(result.ChannelStats) != 2 {
+		t.Fatalf("expected failed and successful channel stats, got %+v", result.ChannelStats)
+	}
+	foundFailed := false
+	for _, stat := range result.ChannelStats {
+		if stat.Name == ChannelVectorGlobal && stat.Error != "" {
+			foundFailed = true
+			if stat.Metadata["status"] != "failed" {
+				t.Fatalf("expected failed channel status metadata, got %+v", stat.Metadata)
+			}
+		}
+	}
+	if !foundFailed {
+		t.Fatalf("expected failed vector channel stat, got %+v", result.ChannelStats)
+	}
 }
 
 func TestRetrieveEmptyQuery(t *testing.T) {
@@ -225,5 +368,38 @@ func TestRetrieveNilEngine(t *testing.T) {
 	_, err := engine.Retrieve(context.Background(), Request{Query: "test"})
 	if err == nil {
 		t.Fatal("expected error for nil engine")
+	}
+}
+
+func TestMergeResultsAggregatesChannelMetadata(t *testing.T) {
+	merged := MergeResults([]Result{
+		{
+			Chunks: []convention.RetrievedChunk{
+				{ID: "c1", Score: 0.9, Text: "A"},
+			},
+			SearchChannels: []string{ChannelVectorGlobal},
+			ChannelStats: []ChannelStat{
+				{Name: ChannelVectorGlobal, ChunkCount: 1, LatencyMs: 10},
+			},
+		},
+		{
+			Chunks: []convention.RetrievedChunk{
+				{ID: "c2", Score: 0.8, Text: "B"},
+			},
+			SearchChannels: []string{ChannelKeyword},
+			ChannelStats: []ChannelStat{
+				{Name: ChannelKeyword, ChunkCount: 1, LatencyMs: 5},
+			},
+		},
+	}, 5)
+
+	if len(merged.SearchChannels) != 2 {
+		t.Fatalf("expected 2 merged channels, got %+v", merged.SearchChannels)
+	}
+	if len(merged.ChannelStats) != 2 {
+		t.Fatalf("expected 2 merged channel stats, got %+v", merged.ChannelStats)
+	}
+	if merged.KnowledgeContext == "" {
+		t.Fatal("expected merged knowledge context")
 	}
 }

@@ -28,6 +28,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const toolCalls = message.toolCalls ?? [];
   const hasToolCalls = toolCalls.length > 0;
   const hasFailedTools = toolCalls.some((tc) => tc.status === "failed");
+  const fallbackReason = message.fallbackReason?.trim();
   const [toolsExpanded, setToolsExpanded] = React.useState(false);
 
   if (isUser) {
@@ -153,6 +154,12 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
           </div>
         ) : null}
         <div className="space-y-2">
+          {fallbackReason ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+              <span className="font-medium">已回退到通用模型：</span>
+              当前知识库检索置信度较低，请注意核验回答内容。
+            </div>
+          ) : null}
           {retrievalModeLabel ? (
             <div className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700">
               检索策略：{retrievalModeLabel}

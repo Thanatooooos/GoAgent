@@ -31,6 +31,7 @@ export interface RagTraceNode {
   durationMs?: number | null;
   startTime?: string | null;
   endTime?: string | null;
+  extraData?: string | null;
 }
 
 export interface RagTraceDetail {

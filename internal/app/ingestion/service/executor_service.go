@@ -446,11 +446,17 @@ func (s *ExecutorService) runWorkflow(ctx context.Context, workflow WorkflowSpec
 			"pipelineId", task.PipelineID,
 			"sourceType", task.SourceType,
 			"totalDurationMs", totalDuration.Milliseconds(),
-			"chunkCount", len(state.Chunks),
+			"chunkCount", len(current.Chunks),
 		)
 	}
 	if s.taskObserver != nil {
-		_ = s.taskObserver.OnTaskCompleted(ctx, task, current, execErr)
+		if err := s.taskObserver.OnTaskCompleted(ctx, task, current, execErr); err != nil {
+			log.Errorw("ingestion task completion observer failed",
+				"taskId", task.ID,
+				"pipelineId", task.PipelineID,
+				"error", err.Error(),
+			)
+		}
 	}
 }
 

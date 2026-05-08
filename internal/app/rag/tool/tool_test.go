@@ -171,8 +171,9 @@ func TestBuildAnswerGuidanceFromDiagnosisResult(t *testing.T) {
 			Data: map[string]any{
 				"conclusion":  "document ingestion failed at node indexer",
 				"confidence":  "high",
-				"evidence":    []string{"document.status=failed", "failedNode=indexer"},
-				"suggestions": []string{"check vector store connectivity"},
+				"facts":       []string{"document.status=failed", "failedNode=indexer"},
+				"inferences":  []string{"document ingestion failed at node indexer"},
+				"nextActions": []string{"check vector store connectivity"},
 			},
 		},
 	})
@@ -184,5 +185,8 @@ func TestBuildAnswerGuidanceFromDiagnosisResult(t *testing.T) {
 	}
 	if !strings.Contains(guidance, "document ingestion failed at node indexer") {
 		t.Fatalf("missing diagnosis conclusion: %q", guidance)
+	}
+	if !strings.Contains(guidance, "推断") {
+		t.Fatalf("expected inference boundary in guidance: %q", guidance)
 	}
 }

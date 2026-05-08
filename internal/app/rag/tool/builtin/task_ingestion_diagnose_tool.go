@@ -59,6 +59,7 @@ func (t *TaskIngestionDiagnoseTool) Invoke(ctx context.Context, call ragtool.Cal
 	}
 
 	conclusion, confidence, evidence, suggestions, latestNodeID, latestNodeError := diagnoseTaskIngestion(task, nodes)
+	confidence = normalizeDiagnosisConfidence(confidence)
 
 	summary := fmt.Sprintf("task=%s confidence=%s conclusion=%s", taskID, confidence, conclusion)
 	if latestNodeID != "" {
@@ -74,21 +75,17 @@ func (t *TaskIngestionDiagnoseTool) Invoke(ctx context.Context, call ragtool.Cal
 		Name:    "task_ingestion_diagnose",
 		Status:  ragtool.CallStatusSuccess,
 		Summary: summary,
-		Data: map[string]any{
+		Data: buildDiagnosisPayload("task_ingestion", conclusion, confidence, evidence, suggestions, map[string]any{
 			"taskId":          task.ID,
 			"pipelineId":      task.PipelineID,
 			"taskStatus":      task.Status,
 			"sourceType":      task.SourceType,
 			"chunkCount":      task.ChunkCount,
 			"errorMessage":    task.ErrorMessage,
-			"conclusion":      conclusion,
-			"confidence":      confidence,
-			"evidence":        evidence,
-			"suggestions":     suggestions,
 			"latestNodeId":    latestNodeID,
 			"latestNodeError": latestNodeError,
 			"nodeCount":       len(nodes),
-		},
+		}),
 	}, nil
 }
 
