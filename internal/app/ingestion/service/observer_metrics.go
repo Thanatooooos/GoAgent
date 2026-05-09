@@ -13,12 +13,13 @@ import (
 
 // MetricsSnapshot 描述 ingestion 执行器当前可观测指标快照。
 type MetricsSnapshot struct {
-	RunningTasks  int                   `json:"runningTasks"`
-	MaxConcurrent int                   `json:"maxConcurrent"`
-	UsedSlots     int                   `json:"usedSlots"`
-	Totals        MetricsTotalsSnapshot `json:"totals"`
-	Rates         MetricsRatesSnapshot  `json:"rates"`
-	Nodes         []NodeMetricsSnapshot `json:"nodes"`
+	RunningTasks  int                      `json:"runningTasks"`
+	MaxConcurrent int                      `json:"maxConcurrent"`
+	UsedSlots     int                      `json:"usedSlots"`
+	Totals        MetricsTotalsSnapshot    `json:"totals"`
+	Rates         MetricsRatesSnapshot     `json:"rates"`
+	Reconcile     ReconcileMetricsSnapshot `json:"reconcile"`
+	Nodes         []NodeMetricsSnapshot    `json:"nodes"`
 }
 
 // MetricsTotalsSnapshot 汇总 task 与 retry 相关指标。
@@ -35,6 +36,35 @@ type MetricsTotalsSnapshot struct {
 type MetricsRatesSnapshot struct {
 	SuccessRate float64 `json:"successRate"`
 	FailureRate float64 `json:"failureRate"`
+}
+
+type ReconcileMetricsSnapshot struct {
+	Attempts        int64                     `json:"attempts"`
+	Skipped         int64                     `json:"skipped"`
+	DocumentUpdated int64                     `json:"documentUpdated"`
+	ChunkLogUpdated int64                     `json:"chunkLogUpdated"`
+	ChunkLogCreated int64                     `json:"chunkLogCreated"`
+	Failures        int64                     `json:"failures"`
+	LastFailure     *ReconcileFailureSnapshot `json:"lastFailure,omitempty"`
+}
+
+type ReconcileFailureSnapshot struct {
+	Source       string    `json:"source"`
+	TaskID       string    `json:"taskId"`
+	DocumentID   string    `json:"documentId"`
+	ErrorMessage string    `json:"errorMessage"`
+	OccurredAt   time.Time `json:"occurredAt"`
+}
+
+type ReconcileMetricsEvent struct {
+	Source          string
+	TaskID          string
+	DocumentID      string
+	Skipped         bool
+	DocumentUpdated bool
+	ChunkLogUpdated bool
+	ChunkLogCreated bool
+	ErrorMessage    string
 }
 
 // NodeMetricsSnapshot 描述单类节点的聚合指标。
@@ -63,6 +93,7 @@ type MetricsService struct {
 	maxConcurrent int
 	runningTasks  map[string]struct{}
 	totals        MetricsTotalsSnapshot
+	reconcile     ReconcileMetricsSnapshot
 	nodes         map[string]*nodeMetrics
 }
 
@@ -108,6 +139,11 @@ func (s *MetricsService) Snapshot() MetricsSnapshot {
 		MaxConcurrent: s.maxConcurrent,
 		UsedSlots:     len(s.runningTasks),
 		Totals:        s.totals,
+		Reconcile:     s.reconcile,
+	}
+	if s.reconcile.LastFailure != nil {
+		lastFailure := *s.reconcile.LastFailure
+		snapshot.Reconcile.LastFailure = &lastFailure
 	}
 	completed := s.totals.Succeeded + s.totals.Failed + s.totals.Canceled
 	if completed > 0 {
@@ -135,6 +171,38 @@ func (s *MetricsService) Snapshot() MetricsSnapshot {
 		})
 	}
 	return snapshot
+}
+
+func (s *MetricsService) RecordReconcileEvent(event ReconcileMetricsEvent) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.reconcile.Attempts++
+	if event.Skipped {
+		s.reconcile.Skipped++
+	}
+	if event.DocumentUpdated {
+		s.reconcile.DocumentUpdated++
+	}
+	if event.ChunkLogUpdated {
+		s.reconcile.ChunkLogUpdated++
+	}
+	if event.ChunkLogCreated {
+		s.reconcile.ChunkLogCreated++
+	}
+	if strings.TrimSpace(event.ErrorMessage) != "" {
+		s.reconcile.Failures++
+		s.reconcile.LastFailure = &ReconcileFailureSnapshot{
+			Source:       strings.TrimSpace(event.Source),
+			TaskID:       strings.TrimSpace(event.TaskID),
+			DocumentID:   strings.TrimSpace(event.DocumentID),
+			ErrorMessage: strings.TrimSpace(event.ErrorMessage),
+			OccurredAt:   time.Now(),
+		}
+	}
 }
 
 // MetricsObserver 把执行事件聚合为实时指标。

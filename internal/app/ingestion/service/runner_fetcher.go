@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"local/rag-project/internal/adapter/feishu"
-	knowledgeport "local/rag-project/internal/app/knowledge/port"
 	"local/rag-project/internal/app/ingestion/domain"
+	knowledgeport "local/rag-project/internal/app/knowledge/port"
 	"local/rag-project/internal/framework/exception"
 )
 
@@ -316,8 +316,8 @@ func (r *FetcherNodeRunner) fetchFeishu(
 		ContentType: "text/markdown",
 		Bytes:       content,
 		Metadata: map[string]any{
-			"source":       "feishu",
-			"documentId":   documentID,
+			"source":     "feishu",
+			"documentId": documentID,
 		},
 	}, nil
 }

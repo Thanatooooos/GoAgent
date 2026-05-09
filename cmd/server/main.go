@@ -14,10 +14,10 @@ import (
 
 	ingestionhttp "local/rag-project/internal/adapter/http/ingestion"
 	knowledgehttp "local/rag-project/internal/adapter/http/knowledge"
-	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
 	raghttp "local/rag-project/internal/adapter/http/rag"
 	settingshttp "local/rag-project/internal/adapter/http/settings"
 	userhttp "local/rag-project/internal/adapter/http/user"
+	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
 	ingestionservice "local/rag-project/internal/app/ingestion/service"
 	corevector "local/rag-project/internal/app/rag/core/vector"
 	ingestionbootstrap "local/rag-project/internal/bootstrap/ingestion"
@@ -84,6 +84,11 @@ func main() {
 	if knowledgeRuntime.DocumentService != nil && ingestionRuntime.Task != nil {
 		knowledgeRuntime.DocumentService.SetIngestionTaskCreator(knowledgebootstrap.NewIngestionTaskCreator(ingestionRuntime.Task))
 		knowledgeRuntime.DocumentService.SetIngestionTaskReader(knowledgebootstrap.NewIngestionTaskReader(ingestionRuntime.Task))
+	}
+	if knowledgeRuntime.DocumentService != nil && ingestionRuntime.Metrics != nil {
+		knowledgeRuntime.DocumentService.SetIngestionReconcileRecorder(
+			knowledgebootstrap.NewIngestionReconcileRecorder(ingestionRuntime.Metrics),
+		)
 	}
 	if ingestionRuntime.Executor != nil && knowledgeRuntime.DocumentService != nil {
 		ingestionRuntime.Executor.SetTaskObserver(ingestionservice.NewMultiTaskObserver(

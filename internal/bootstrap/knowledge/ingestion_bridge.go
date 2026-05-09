@@ -24,6 +24,32 @@ func NewIngestionTaskReader(taskService *ingestionservice.TaskService) knowledge
 	return &ingestionTaskCreatorAdapter{taskService: taskService}
 }
 
+type ingestionReconcileRecorderAdapter struct {
+	metrics *ingestionservice.MetricsService
+}
+
+func NewIngestionReconcileRecorder(metrics *ingestionservice.MetricsService) knowledgeservice.IngestionReconcileRecorder {
+	return &ingestionReconcileRecorderAdapter{metrics: metrics}
+}
+
+func (a *ingestionReconcileRecorderAdapter) RecordKnowledgeDocumentIngestionReconcile(
+	event knowledgeservice.KnowledgeDocumentIngestionReconcileEvent,
+) {
+	if a == nil || a.metrics == nil {
+		return
+	}
+	a.metrics.RecordReconcileEvent(ingestionservice.ReconcileMetricsEvent{
+		Source:          event.Source,
+		TaskID:          event.TaskID,
+		DocumentID:      event.DocumentID,
+		Skipped:         event.Skipped,
+		DocumentUpdated: event.DocumentUpdated,
+		ChunkLogUpdated: event.ChunkLogUpdated,
+		ChunkLogCreated: event.ChunkLogCreated,
+		ErrorMessage:    event.ErrorMessage,
+	})
+}
+
 func (a *ingestionTaskCreatorAdapter) CreateKnowledgePipelineTask(ctx context.Context, input knowledgeservice.CreateKnowledgePipelineTaskInput) (string, error) {
 	if a == nil || a.taskService == nil {
 		return "", exception.NewServiceException("ingestion task service is required", nil)

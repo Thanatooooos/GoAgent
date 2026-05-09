@@ -11,56 +11,91 @@ import (
 	"local/rag-project/internal/app/knowledge/port"
 )
 
-// ReconcileIngestionTaskCompletion 以 ingestion task 的终态为准，对 document/chunk_log 做补偿修复。
-// 当前仅对已完成的 success/failed task 生效；对 running/pending 只跳过，不主动改写状态。
-func (s *KnowledgeDocumentService) ReconcileIngestionTaskCompletion(ctx context.Context, input KnowledgeDocumentIngestionTaskCompletedInput) error {
+const (
+	reconcileSourceTaskCompletion = "task_completion"
+	reconcileSourceScan           = "scan"
+)
+
+type ingestionReconcileResult struct {
+	skipped         bool
+	documentUpdated bool
+	chunkLogUpdated bool
+	chunkLogCreated bool
+}
+
+// ReconcileIngestionTaskCompletion uses the ingestion task terminal state as the
+// source of truth and repairs document/chunk_log drift when possible.
+func (s *KnowledgeDocumentService) ReconcileIngestionTaskCompletion(
+	ctx context.Context,
+	input KnowledgeDocumentIngestionTaskCompletedInput,
+) error {
+	_, err := s.reconcileIngestionTaskCompletion(ctx, input, reconcileSourceTaskCompletion)
+	return err
+}
+
+func (s *KnowledgeDocumentService) reconcileIngestionTaskCompletion(
+	ctx context.Context,
+	input KnowledgeDocumentIngestionTaskCompletedInput,
+	source string,
+) (result ingestionReconcileResult, err error) {
+	defer func() {
+		s.recordIngestionReconcileEvent(source, input, result, err)
+	}()
+
 	if s == nil || s.documentRepo == nil || s.ingestionTaskReader == nil {
-		return nil
+		result.skipped = true
+		return result, nil
 	}
 
 	taskID := strings.TrimSpace(input.TaskID)
 	documentID := strings.TrimSpace(input.DocumentID)
 	if taskID == "" || documentID == "" {
-		return nil
+		result.skipped = true
+		return result, nil
 	}
 
 	task, err := s.ingestionTaskReader.GetKnowledgePipelineTask(ctx, taskID)
 	if err != nil {
-		return fmt.Errorf("load ingestion task for reconcile: %w", err)
+		return result, fmt.Errorf("load ingestion task for reconcile: %w", err)
 	}
 	if strings.TrimSpace(task.ID) == "" {
-		return nil
+		result.skipped = true
+		return result, nil
 	}
 
 	taskDocumentID := strings.TrimSpace(readIngestionTaskMetadataString(task.Metadata, "documentId"))
 	if taskDocumentID != "" && taskDocumentID != documentID {
-		return fmt.Errorf("ingestion task %q belongs to document %q, not %q", taskID, taskDocumentID, documentID)
+		return result, fmt.Errorf("ingestion task %q belongs to document %q, not %q", taskID, taskDocumentID, documentID)
 	}
 
 	expected, ok := buildIngestionReconcileExpectation(task, input)
 	if !ok {
-		return nil
+		result.skipped = true
+		return result, nil
 	}
 
 	document, err := s.documentRepo.GetByID(ctx, documentID)
 	if err != nil {
-		return fmt.Errorf("load knowledge document for reconcile: %w", err)
+		return result, fmt.Errorf("load knowledge document for reconcile: %w", err)
 	}
 	if strings.TrimSpace(document.ID) == "" {
-		return nil
+		result.skipped = true
+		return result, nil
 	}
 
-	if err := s.reconcileDocumentWithTask(ctx, document, expected); err != nil {
-		return err
+	result.documentUpdated, err = s.reconcileDocumentWithTask(ctx, document, expected)
+	if err != nil {
+		return result, err
 	}
-	if err := s.reconcileChunkLogWithTask(ctx, document, expected); err != nil {
-		return err
+	result.chunkLogUpdated, result.chunkLogCreated, err = s.reconcileChunkLogWithTask(ctx, document, expected)
+	if err != nil {
+		return result, err
 	}
-	return nil
+	return result, nil
 }
 
-// ScanAndReconcileIngestionTasks 定时扫描 pipeline 模式文档，并基于最新 chunk log 对齐 task/document/chunk_log 状态。
-// 当前用于兜底修复“完成回调部分失败”或“回写状态漂移”的场景。
+// ScanAndReconcileIngestionTasks scans pipeline documents and reconciles their
+// latest task/chunk_log/document state.
 func (s *KnowledgeDocumentService) ScanAndReconcileIngestionTasks(ctx context.Context, batchSize int) error {
 	if s == nil || s.documentRepo == nil || s.chunkLogRepo == nil || s.ingestionTaskReader == nil {
 		return nil
@@ -120,13 +155,14 @@ func (s *KnowledgeDocumentService) reconcileDocumentByLatestChunkLog(ctx context
 		return nil
 	}
 
-	return s.ReconcileIngestionTaskCompletion(ctx, KnowledgeDocumentIngestionTaskCompletedInput{
+	_, err = s.reconcileIngestionTaskCompletion(ctx, KnowledgeDocumentIngestionTaskCompletedInput{
 		TaskID:      logs[0].ID,
 		DocumentID:  document.ID,
 		ChunkCount:  logs[0].ChunkCount,
 		StartedAt:   logs[0].StartTime,
 		CompletedAt: logs[0].EndTime,
-	})
+	}, reconcileSourceScan)
+	return err
 }
 
 func readIngestionTaskMetadataString(metadata map[string]any, key string) string {
@@ -213,7 +249,7 @@ func (s *KnowledgeDocumentService) reconcileDocumentWithTask(
 	ctx context.Context,
 	document domain.KnowledgeDocument,
 	expected ingestionReconcileExpectation,
-) error {
+) (bool, error) {
 	desiredStatus := domain.KnowledgeDocumentStatusSuccess
 	if expected.status == ingestiondomain.TaskStatusFailed {
 		desiredStatus = domain.KnowledgeDocumentStatusFailed
@@ -224,7 +260,7 @@ func (s *KnowledgeDocumentService) reconcileDocumentWithTask(
 		needsUpdate = true
 	}
 	if !needsUpdate {
-		return nil
+		return false, nil
 	}
 
 	document.Status = desiredStatus
@@ -236,23 +272,23 @@ func (s *KnowledgeDocumentService) reconcileDocumentWithTask(
 
 	_, err := s.documentRepo.Update(ctx, document)
 	if err != nil {
-		return fmt.Errorf("reconcile knowledge document %q: %w", document.ID, err)
+		return false, fmt.Errorf("reconcile knowledge document %q: %w", document.ID, err)
 	}
-	return nil
+	return true, nil
 }
 
 func (s *KnowledgeDocumentService) reconcileChunkLogWithTask(
 	ctx context.Context,
 	document domain.KnowledgeDocument,
 	expected ingestionReconcileExpectation,
-) error {
+) (bool, bool, error) {
 	if s.chunkLogRepo == nil {
-		return nil
+		return false, false, nil
 	}
 
 	record, err := s.chunkLogRepo.GetByTaskID(ctx, expected.taskID)
 	if err != nil {
-		return fmt.Errorf("load knowledge document chunk log for reconcile: %w", err)
+		return false, false, fmt.Errorf("load knowledge document chunk log for reconcile: %w", err)
 	}
 	if strings.TrimSpace(record.ID) == "" {
 		record = domain.NewKnowledgeDocumentChunkLog(expected.taskID, expected.documentID)
@@ -273,13 +309,18 @@ func (s *KnowledgeDocumentService) reconcileChunkLogWithTask(
 		}
 		_, err := s.chunkLogRepo.Create(ctx, record)
 		if err != nil {
-			return fmt.Errorf("create reconciled knowledge document chunk log %q: %w", expected.taskID, err)
+			return false, false, fmt.Errorf("create reconciled knowledge document chunk log %q: %w", expected.taskID, err)
 		}
-		return nil
+		return true, true, nil
 	}
 
 	if strings.TrimSpace(record.DocumentID) != "" && strings.TrimSpace(record.DocumentID) != expected.documentID {
-		return fmt.Errorf("knowledge document chunk log task %q belongs to document %q, not %q", expected.taskID, record.DocumentID, expected.documentID)
+		return false, false, fmt.Errorf(
+			"knowledge document chunk log task %q belongs to document %q, not %q",
+			expected.taskID,
+			record.DocumentID,
+			expected.documentID,
+		)
 	}
 
 	desiredStatus := domain.KnowledgeDocumentChunkLogStatusSuccess
@@ -303,7 +344,7 @@ func (s *KnowledgeDocumentService) reconcileChunkLogWithTask(
 	}
 
 	if !needsUpdate {
-		return nil
+		return false, false, nil
 	}
 
 	record.Status = desiredStatus
@@ -322,7 +363,35 @@ func (s *KnowledgeDocumentService) reconcileChunkLogWithTask(
 
 	_, err = s.chunkLogRepo.Update(ctx, record)
 	if err != nil {
-		return fmt.Errorf("reconcile knowledge document chunk log %q: %w", record.ID, err)
+		return false, false, fmt.Errorf("reconcile knowledge document chunk log %q: %w", record.ID, err)
 	}
-	return nil
+	return true, false, nil
+}
+
+func (s *KnowledgeDocumentService) recordIngestionReconcileEvent(
+	source string,
+	input KnowledgeDocumentIngestionTaskCompletedInput,
+	result ingestionReconcileResult,
+	err error,
+) {
+	if s == nil || s.reconcileRecorder == nil {
+		return
+	}
+	s.reconcileRecorder.RecordKnowledgeDocumentIngestionReconcile(KnowledgeDocumentIngestionReconcileEvent{
+		Source:          strings.TrimSpace(source),
+		TaskID:          strings.TrimSpace(input.TaskID),
+		DocumentID:      strings.TrimSpace(input.DocumentID),
+		Skipped:         result.skipped,
+		DocumentUpdated: result.documentUpdated,
+		ChunkLogUpdated: result.chunkLogUpdated,
+		ChunkLogCreated: result.chunkLogCreated,
+		ErrorMessage:    errorMessageOf(err),
+	})
+}
+
+func errorMessageOf(err error) string {
+	if err == nil {
+		return ""
+	}
+	return strings.TrimSpace(err.Error())
 }

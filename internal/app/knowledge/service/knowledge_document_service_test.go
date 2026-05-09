@@ -153,6 +153,16 @@ func (s knowledgeDocumentServiceIngestionTaskReaderStub) ListKnowledgePipelineTa
 	return nil, nil
 }
 
+type knowledgeDocumentServiceIngestionReconcileRecorderStub struct {
+	recordFn func(event KnowledgeDocumentIngestionReconcileEvent)
+}
+
+func (s knowledgeDocumentServiceIngestionReconcileRecorderStub) RecordKnowledgeDocumentIngestionReconcile(event KnowledgeDocumentIngestionReconcileEvent) {
+	if s.recordFn != nil {
+		s.recordFn(event)
+	}
+}
+
 func (s knowledgeDocumentServiceVectorStoreStub) DeleteChunk(ctx context.Context, chunkID string) error {
 	return nil
 }
@@ -727,6 +737,82 @@ func TestKnowledgeDocumentServiceReconcileIngestionTaskCompletionRejectsTaskDocu
 	}
 	if !strings.Contains(err.Error(), "belongs to document") {
 		t.Fatalf("expected mismatch error, got %v", err)
+	}
+}
+
+func TestKnowledgeDocumentServiceReconcileIngestionTaskCompletionRecordsMetricsEvent(t *testing.T) {
+	t.Parallel()
+
+	events := make([]KnowledgeDocumentIngestionReconcileEvent, 0, 2)
+
+	svc := NewKnowledgeDocumentService(
+		nil,
+		knowledgeDocumentServiceDocumentRepoStub{
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+				return domain.KnowledgeDocument{
+					ID:          id,
+					Status:      domain.KnowledgeDocumentStatusRunning,
+					ProcessMode: domain.KnowledgeDocumentProcessModePipeline,
+					PipelineID:  "pipeline-1",
+				}, nil
+			},
+			updateFn: func(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
+				return document, nil
+			},
+		},
+		nil,
+		knowledgeDocumentServiceChunkLogRepoStub{
+			getByTaskIDFn: func(ctx context.Context, taskID string) (domain.KnowledgeDocumentChunkLog, error) {
+				return domain.KnowledgeDocumentChunkLog{}, nil
+			},
+			createFn: func(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
+				return log, nil
+			},
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetIngestionTaskReader(knowledgeDocumentServiceIngestionTaskReaderStub{
+		getTaskFn: func(ctx context.Context, taskID string) (ingestiondomain.Task, error) {
+			return ingestiondomain.Task{
+				ID:         taskID,
+				Status:     ingestiondomain.TaskStatusSuccess,
+				ChunkCount: 4,
+				PipelineID: "pipeline-1",
+				Metadata: map[string]any{
+					"documentId": "doc-1",
+				},
+			}, nil
+		},
+	})
+	svc.SetIngestionReconcileRecorder(knowledgeDocumentServiceIngestionReconcileRecorderStub{
+		recordFn: func(event KnowledgeDocumentIngestionReconcileEvent) {
+			events = append(events, event)
+		},
+	})
+
+	err := svc.ReconcileIngestionTaskCompletion(context.Background(), KnowledgeDocumentIngestionTaskCompletedInput{
+		TaskID:     "task-1",
+		DocumentID: "doc-1",
+		ChunkCount: 4,
+	})
+	if err != nil {
+		t.Fatalf("ReconcileIngestionTaskCompletion() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 reconcile event, got %d", len(events))
+	}
+	if events[0].Source != reconcileSourceTaskCompletion {
+		t.Fatalf("unexpected event source %q", events[0].Source)
+	}
+	if !events[0].DocumentUpdated || !events[0].ChunkLogCreated || !events[0].ChunkLogUpdated {
+		t.Fatalf("unexpected reconcile event: %+v", events[0])
+	}
+	if events[0].ErrorMessage != "" || events[0].Skipped {
+		t.Fatalf("expected successful reconcile event, got %+v", events[0])
 	}
 }
 

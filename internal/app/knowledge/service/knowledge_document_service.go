@@ -143,6 +143,7 @@ type KnowledgeDocumentService struct {
 	deleteTx             KnowledgeDocumentDeleteTransaction
 	ingestionTaskCreator IngestionTaskCreator
 	ingestionTaskReader  IngestionTaskReader
+	reconcileRecorder    IngestionReconcileRecorder
 }
 
 type remoteDocumentFetcher interface {
@@ -1119,6 +1120,21 @@ type IngestionTaskReader interface {
 	ListKnowledgePipelineTaskNodes(ctx context.Context, taskID string) ([]ingestiondomain.TaskNode, error)
 }
 
+type KnowledgeDocumentIngestionReconcileEvent struct {
+	Source          string
+	TaskID          string
+	DocumentID      string
+	Skipped         bool
+	DocumentUpdated bool
+	ChunkLogUpdated bool
+	ChunkLogCreated bool
+	ErrorMessage    string
+}
+
+type IngestionReconcileRecorder interface {
+	RecordKnowledgeDocumentIngestionReconcile(event KnowledgeDocumentIngestionReconcileEvent)
+}
+
 func (s *KnowledgeDocumentService) SetIngestionTaskCreator(creator IngestionTaskCreator) {
 	if s == nil {
 		return
@@ -1131,6 +1147,13 @@ func (s *KnowledgeDocumentService) SetIngestionTaskReader(reader IngestionTaskRe
 		return
 	}
 	s.ingestionTaskReader = reader
+}
+
+func (s *KnowledgeDocumentService) SetIngestionReconcileRecorder(recorder IngestionReconcileRecorder) {
+	if s == nil {
+		return
+	}
+	s.reconcileRecorder = recorder
 }
 
 func (s *KnowledgeDocumentService) OnIngestionTaskCompleted(ctx context.Context, input KnowledgeDocumentIngestionTaskCompletedInput) error {

@@ -95,3 +95,42 @@ func TestMetricsObserverCountsCanceledTask(t *testing.T) {
 		t.Fatalf("unexpected rates for canceled task: %+v", snapshot.Rates)
 	}
 }
+
+func TestMetricsServiceRecordsReconcileEvents(t *testing.T) {
+	t.Parallel()
+
+	metrics := NewMetricsService(2)
+	metrics.RecordReconcileEvent(ReconcileMetricsEvent{
+		Source:          "task_completion",
+		TaskID:          "task-1",
+		DocumentID:      "doc-1",
+		DocumentUpdated: true,
+		ChunkLogUpdated: true,
+	})
+	metrics.RecordReconcileEvent(ReconcileMetricsEvent{
+		Source:       "scan",
+		TaskID:       "task-2",
+		DocumentID:   "doc-2",
+		Skipped:      true,
+		ErrorMessage: "chunk log mismatch",
+	})
+
+	snapshot := metrics.Snapshot()
+	if snapshot.Reconcile.Attempts != 2 {
+		t.Fatalf("Attempts = %d, want 2", snapshot.Reconcile.Attempts)
+	}
+	if snapshot.Reconcile.DocumentUpdated != 1 || snapshot.Reconcile.ChunkLogUpdated != 1 {
+		t.Fatalf("unexpected reconcile update totals: %+v", snapshot.Reconcile)
+	}
+	if snapshot.Reconcile.Skipped != 1 || snapshot.Reconcile.Failures != 1 {
+		t.Fatalf("unexpected reconcile skipped/failure totals: %+v", snapshot.Reconcile)
+	}
+	if snapshot.Reconcile.LastFailure == nil {
+		t.Fatalf("expected last failure to be recorded")
+	}
+	if snapshot.Reconcile.LastFailure.TaskID != "task-2" ||
+		snapshot.Reconcile.LastFailure.DocumentID != "doc-2" ||
+		snapshot.Reconcile.LastFailure.Source != "scan" {
+		t.Fatalf("unexpected last failure snapshot: %+v", snapshot.Reconcile.LastFailure)
+	}
+}
