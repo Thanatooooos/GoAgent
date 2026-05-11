@@ -12,6 +12,7 @@ import (
 const (
 	ChannelVectorGlobal = "vector_global"
 	ChannelKeyword      = "keyword"
+	ChannelMetadataTitle = "metadata_title"
 )
 
 type SearchContext struct {

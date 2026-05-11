@@ -257,6 +257,15 @@ func TestDocumentProcessServiceExecuteChunkProcessesDocument(t *testing.T) {
 	if len(vectorStore.upserted) != len(chunkRepo.created) {
 		t.Fatalf("expected vector count to match chunk count")
 	}
+	if got := vectorStore.upserted[0].Metadata["document_name"]; got != "doc.md" {
+		t.Fatalf("expected document_name metadata, got %v", got)
+	}
+	if got := vectorStore.upserted[0].Metadata["source_type"]; got != domain.KnowledgeDocumentSourceFile {
+		t.Fatalf("expected source_type metadata, got %v", got)
+	}
+	if got := vectorStore.upserted[0].Metadata["source_file_name"]; got != "doc.md" {
+		t.Fatalf("expected source_file_name metadata, got %v", got)
+	}
 	if !documentStatusUpdated(documentRepo.updateFields, domain.KnowledgeDocumentStatusSuccess) {
 		t.Fatal("expected document to be marked success")
 	}

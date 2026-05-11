@@ -38,6 +38,8 @@ type Searcher interface {
 	Search(ctx context.Context, request SearchRequest) ([]SearchHit, error)
 	// SearchByKeyword 执行关键词/全文检索。
 	SearchByKeyword(ctx context.Context, query string, knowledgeBaseIDs []string, topK int) ([]SearchHit, error)
+	// SearchByMetadata 执行文档名、文件名、章节等 metadata 定向检索。
+	SearchByMetadata(ctx context.Context, query string, knowledgeBaseIDs []string, topK int) ([]SearchHit, error)
 }
 
 type StoreAdmin interface {

@@ -1,4 +1,5 @@
 import type {
+  AgentThinkPayload,
   CompletionPayload,
   FallbackPayload,
   MessageDeltaPayload,
@@ -9,6 +10,7 @@ import type {
 export interface StreamHandlers {
   onMeta?: (payload: StreamMetaPayload) => void;
   onFallback?: (payload: FallbackPayload) => void;
+  onAgentThink?: (payload: AgentThinkPayload) => void;
   onMessage?: (payload: MessageDeltaPayload) => void;
   onThinking?: (payload: MessageDeltaPayload) => void;
   onFinish?: (payload: CompletionPayload) => void;
@@ -17,6 +19,8 @@ export interface StreamHandlers {
   onReject?: (payload: MessageDeltaPayload) => void;
   onTitle?: (payload: { title: string }) => void;
   onTool?: (payload: ToolCallPayload) => void;
+  onToolStart?: (payload: ToolCallPayload) => void;
+  onToolResult?: (payload: ToolCallPayload) => void;
   onError?: (error: Error) => void;
   onEvent?: (event: string, payload: unknown) => void;
 }
@@ -65,6 +69,9 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
       case "fallback":
         handlers.onFallback?.(payload as FallbackPayload);
         break;
+      case "agent_think":
+        handlers.onAgentThink?.(payload as AgentThinkPayload);
+        break;
       case "message":
         {
           const messagePayload = payload as MessageDeltaPayload;
@@ -91,6 +98,12 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         break;
       case "tool":
         handlers.onTool?.(payload as ToolCallPayload);
+        break;
+      case "tool_start":
+        handlers.onToolStart?.(payload as ToolCallPayload);
+        break;
+      case "tool_result":
+        handlers.onToolResult?.(payload as ToolCallPayload);
         break;
       case "error":
         handlers.onError?.(new Error(String((payload as { error?: string })?.error || payload)));

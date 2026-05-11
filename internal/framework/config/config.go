@@ -135,6 +135,7 @@ type MilvusConfig struct {
 type RagConfig struct {
 	Vector       RagVectorConfig       `mapstructure:"vector"`
 	Default      RagDefaultConfig      `mapstructure:"default"`
+	Agent        RagAgentConfig        `mapstructure:"agent"`
 	QueryRewrite RagQueryRewriteConfig `mapstructure:"query-rewrite"`
 	RateLimit    RagRateLimitConfig    `mapstructure:"rate-limit"`
 	Memory       RagMemoryConfig       `mapstructure:"memory"`
@@ -154,6 +155,16 @@ type RagDefaultConfig struct {
 	Dimension      int    `mapstructure:"dimension"`
 	MetricType     string `mapstructure:"metric-type"`
 	SseTimeoutMs   int    `mapstructure:"sse-timeout-ms"`
+}
+
+type RagAgentConfig struct {
+	MaxIterations     int                            `mapstructure:"max-iterations"`
+	ParallelToolCalls RagAgentParallelToolCallConfig `mapstructure:"parallel-tool-calls"`
+}
+
+type RagAgentParallelToolCallConfig struct {
+	Enabled        bool `mapstructure:"enabled"`
+	MaxConcurrency int  `mapstructure:"max-concurrency"`
 }
 
 type RagQueryRewriteConfig struct {

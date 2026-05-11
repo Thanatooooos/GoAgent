@@ -16,12 +16,26 @@ type knowledgeDocumentDiagnoseReader interface {
 	PageChunkLogs(ctx context.Context, input knowledgeservice.KnowledgeDocumentChunkLogPageInput) (knowledgeservice.KnowledgeDocumentChunkLogPageResult, error)
 }
 
+// Optional interface for enriching diagnose with live task node data.
+type ingestionTaskNodeReader interface {
+	ListNodes(ctx context.Context, taskID string) ([]ingestiondomain.TaskNode, error)
+}
+
 type DocumentIngestionDiagnoseTool struct {
-	service knowledgeDocumentDiagnoseReader
+	service       knowledgeDocumentDiagnoseReader
+	taskNodeSvc   ingestionTaskNodeReader
 }
 
 func NewDocumentIngestionDiagnoseTool(service knowledgeDocumentDiagnoseReader) *DocumentIngestionDiagnoseTool {
 	return &DocumentIngestionDiagnoseTool{service: service}
+}
+
+// SetTaskNodeReader sets an optional task node reader for deeper diagnosis.
+func (t *DocumentIngestionDiagnoseTool) SetTaskNodeReader(svc ingestionTaskNodeReader) {
+	if t == nil {
+		return
+	}
+	t.taskNodeSvc = svc
 }
 
 func (t *DocumentIngestionDiagnoseTool) Definition() ragtool.Definition {
@@ -65,7 +79,7 @@ func (t *DocumentIngestionDiagnoseTool) Invoke(ctx context.Context, call ragtool
 	}
 
 	conclusion, confidence, evidence, suggestions, latestTaskID, latestNodeID, latestNodeError, latestLogStatus, latestLogError :=
-		diagnoseDocumentIngestion(document, chunkLogs)
+		diagnoseDocumentIngestion(ctx, document, chunkLogs, t.taskNodeSvc)
 	confidence = normalizeDiagnosisConfidence(confidence)
 
 	summary := fmt.Sprintf("document=%s confidence=%s conclusion=%s", documentID, confidence, conclusion)
@@ -106,8 +120,10 @@ func (t *DocumentIngestionDiagnoseTool) Invoke(ctx context.Context, call ragtool
 }
 
 func diagnoseDocumentIngestion(
+	ctx context.Context,
 	document knowledgedomain.KnowledgeDocument,
 	pageResult knowledgeservice.KnowledgeDocumentChunkLogPageResult,
+	taskNodeSvc ingestionTaskNodeReader,
 ) (conclusion string, confidence string, evidence []string, suggestions []string, latestTaskID string, latestNodeID string, latestNodeError string, latestLogStatus string, latestLogError string) {
 	evidence = append(evidence, fmt.Sprintf("document.status=%s", strings.TrimSpace(document.Status)))
 	evidence = append(evidence, fmt.Sprintf("document.processMode=%s", strings.TrimSpace(document.ProcessMode)))
@@ -193,6 +209,22 @@ func diagnoseDocumentIngestion(
 	}
 
 	if latestLogStatus == knowledgedomain.KnowledgeDocumentChunkLogStatusFailed {
+		// Enrich from live task nodes when chunk log node data is incomplete.
+		if latestTaskID != "" && taskNodeSvc != nil {
+			if liveNodes, err := taskNodeSvc.ListNodes(ctx, latestTaskID); err == nil {
+				liveStats := summarizeIngestionNodes(liveNodes)
+				if liveStats.FailedNodeID != "" {
+					evidence = appendNodeStatsEvidence(evidence, liveStats, "liveTaskNodes")
+					evidence = append(evidence, fmt.Sprintf("failedNode=%s", liveStats.FailedNodeID))
+					if liveStats.FailedError != "" {
+						evidence = append(evidence, fmt.Sprintf("failedNode.error=%s", liveStats.FailedError))
+					}
+					return fmt.Sprintf("document ingestion failed at node %s", liveStats.FailedNodeID), "high", evidence,
+						diagnosisSuggestionsForFailedNode(liveStats.FailedNodeID, liveStats.FailedError),
+						latestTaskID, liveStats.FailedNodeID, liveStats.FailedError, latestLogStatus, latestLogError
+				}
+			}
+		}
 		return "document ingestion failed, but no failed node was captured", "medium", evidence,
 			[]string{"inspect ingestion task error and chunk log write-back path", "check whether task node failure details were persisted completely"}, latestTaskID, latestNodeID, latestNodeError, latestLogStatus, latestLogError
 	}

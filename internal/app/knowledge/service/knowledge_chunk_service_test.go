@@ -128,6 +128,7 @@ type chunkServiceVectorStoreStub struct {
 	deletedChunkID  string
 	deletedChunkIDs []string
 	updatedChunkID  string
+	updatedChunk    port.ChunkVector
 }
 
 func (s *chunkServiceVectorStoreStub) UpsertDocumentChunks(ctx context.Context, chunks []port.ChunkVector) error {
@@ -146,6 +147,7 @@ func (s *chunkServiceVectorStoreStub) DeleteChunks(ctx context.Context, chunkIDs
 }
 func (s *chunkServiceVectorStoreStub) UpdateChunk(ctx context.Context, chunk port.ChunkVector) error {
 	s.updatedChunkID = chunk.ChunkID
+	s.updatedChunk = chunk
 	return nil
 }
 
@@ -333,5 +335,55 @@ func TestKnowledgeChunkServiceDeletePropagatesTransactionError(t *testing.T) {
 	}
 	if !tx.called {
 		t.Fatal("Delete() should attempt transaction before failing")
+	}
+}
+
+func TestKnowledgeChunkServiceUpdateCarriesDocumentMetadataToVector(t *testing.T) {
+	t.Parallel()
+
+	documentRepo := &chunkServiceDocumentRepoStub{
+		document: domain.KnowledgeDocument{
+			ID:              "doc-1",
+			KnowledgeBaseID: "kb-1",
+			Name:            "doc.md",
+			SourceType:      domain.KnowledgeDocumentSourceFile,
+		},
+	}
+	chunkRepo := &chunkServiceChunkRepoStub{
+		chunks: []domain.KnowledgeChunk{
+			{ID: "c1", DocumentID: "doc-1", KnowledgeBaseID: "kb-1", ChunkIndex: 3, Content: "before", Enabled: true},
+		},
+	}
+	vectorStore := &chunkServiceVectorStoreStub{}
+	service := NewKnowledgeChunkService(
+		chunkServiceBaseRepoStub{base: domain.KnowledgeBase{ID: "kb-1", EmbeddingModel: "emb"}},
+		documentRepo,
+		chunkRepo,
+		vectorStore,
+		chunkServiceEmbeddingStub{},
+	)
+
+	if err := service.Update(context.Background(), UpdateKnowledgeChunkInput{
+		DocumentID: "doc-1",
+		ChunkID:    "c1",
+		Content:    "after",
+		OperatorID: "alice",
+	}); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if vectorStore.updatedChunkID != "c1" {
+		t.Fatalf("expected UpdateChunk for c1, got %q", vectorStore.updatedChunkID)
+	}
+	if got := vectorStore.updatedChunk.Metadata["document_name"]; got != "doc.md" {
+		t.Fatalf("expected document_name metadata, got %v", got)
+	}
+	if got := vectorStore.updatedChunk.Metadata["source_type"]; got != domain.KnowledgeDocumentSourceFile {
+		t.Fatalf("expected source_type metadata, got %v", got)
+	}
+	if got := vectorStore.updatedChunk.Metadata["source_file_name"]; got != "doc.md" {
+		t.Fatalf("expected source_file_name metadata, got %v", got)
+	}
+	if got := vectorStore.updatedChunk.Metadata["chunk_index"]; got != 3 {
+		t.Fatalf("expected chunk_index metadata, got %v", got)
 	}
 }

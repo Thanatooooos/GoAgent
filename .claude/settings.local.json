@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go build ./internal/app/rag/tool/builtin/)",
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool/... -count=1)",
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go build ./internal/bootstrap/rag/)",
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool -run TestAgentLoopThinkToolCapturesReasoningInTrace -count=1 -v)",
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool -run \"TestBuildAnswerGuidance\" -count=1 -v)",
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool -run \"TestLLMObserver\" -count=1 -v)",
+      "Bash(go build *)",
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool/... -count=1 -v)",
+      "Bash(rm -rf D:/goagent/.gocache-agent)",
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool/builtin/ -count=1 -run TestDiagnoseDocumentIngestionDetectsStateInconsistency)",
+      "Bash(sed -i '533s/},$/}/' internal/app/rag/tool/builtin/query_tools_test.go)",
+      "Bash(sed -n '530,540p' internal/app/rag/tool/builtin/query_tools_test.go)",
+      "Bash(sed -i '533s/}$/},/' internal/app/rag/tool/builtin/query_tools_test.go)",
+      "Bash(sed -i '534s/}, nil\\)/nil\\)/' internal/app/rag/tool/builtin/query_tools_test.go)",
+      "Bash(sed -n '531,537p' internal/app/rag/tool/builtin/query_tools_test.go)",
+      "Bash(env GOCACHE='D:\\\\goagent\\\\.gocache-agent' go build ./internal/app/knowledge/service ./internal/app/rag/tool/builtin)",
+      "Bash(env GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool/builtin ./internal/app/knowledge/service -count=1)",
+      "Bash(env GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/tool/... -count=1)",
+      "Bash(env GOCACHE='D:\\\\goagent\\\\.gocache-agent' go build ./internal/app/rag/service)",
+      "Bash(env GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/rag/service -count=1)"
+    ]
+  }
+}

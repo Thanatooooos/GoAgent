@@ -100,6 +100,9 @@ func (t *IngestionTaskQueryTool) Invoke(ctx context.Context, call ragtool.Call) 
 		data["taskNodeCount"] = len(nodes)
 		data["taskNodeSummary"] = nodeSummary
 		summary = fmt.Sprintf("%s nodes=%d", summary, len(nodes))
+		if interesting := summarizeInterestingNodes(nodeSummary); interesting != "" {
+			summary = fmt.Sprintf("%s interestingNodes=[%s]", summary, interesting)
+		}
 	}
 
 	return ragtool.Result{
@@ -108,6 +111,30 @@ func (t *IngestionTaskQueryTool) Invoke(ctx context.Context, call ragtool.Call) 
 		Summary: summary,
 		Data:    data,
 	}, nil
+}
+
+func summarizeInterestingNodes(nodes []map[string]any) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+	items := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		nodeID := strings.TrimSpace(readStringArg(node, "nodeId"))
+		status := strings.ToLower(strings.TrimSpace(readStringArg(node, "status")))
+		if nodeID == "" {
+			continue
+		}
+		if status != ingestiondomain.TaskStatusFailed && status != ingestiondomain.TaskStatusRunning {
+			continue
+		}
+		nodeType := strings.TrimSpace(readStringArg(node, "nodeType"))
+		if nodeType != "" {
+			items = append(items, fmt.Sprintf("%s(status=%s,type=%s)", nodeID, status, nodeType))
+			continue
+		}
+		items = append(items, fmt.Sprintf("%s(status=%s)", nodeID, status))
+	}
+	return strings.Join(items, ", ")
 }
 
 var _ ingestionTaskGetter = (*ingestionservice.TaskService)(nil)

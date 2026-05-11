@@ -34,6 +34,7 @@ export interface Message {
   retrievalMode?: string;
   retrievalModeLabel?: string;
   toolCalls?: ToolCallPayload[];
+  agentThinks?: string[];
   fallbackReason?: string;
 }
 
@@ -49,9 +50,15 @@ export interface MessageDeltaPayload {
 }
 
 export interface ToolCallPayload {
+  callId?: string;
+  round?: number;
+  sequence?: number;
   name: string;
   status: string;
-  summary: string;
+  summary?: string;
+  durationMs?: number;
+  arguments?: Record<string, unknown>;
+  data?: Record<string, unknown>;
 }
 
 export interface FallbackPayload {
@@ -61,4 +68,8 @@ export interface FallbackPayload {
 export interface CompletionPayload {
   messageId?: string | null;
   title?: string | null;
+}
+
+export interface AgentThinkPayload {
+  message: string;
 }

@@ -21,6 +21,11 @@
       "expectedMode": "semantic"
     },
     {
+      "name": "retrieve main flow question",
+      "query": "retrieve 主链路整体流程是什么",
+      "expectedMode": "semantic"
+    },
+    {
       "name": "trace diagnose question",
       "query": "trace 检索命中过少通常代表什么问题",
       "expectedMode": "semantic"
@@ -38,6 +43,26 @@
     {
       "name": "quoted trace node search",
       "query": "搜索包含 \"tool_workflow\" 的 trace 节点",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "identifier search without quotes",
+      "query": "搜索包含 fallback_to_general_model 的节点",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "file name search",
+      "query": "查找文件名是 trace_handlers.go 的实现",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "section lookup",
+      "query": "查找第一章 概述 讲了什么",
+      "expectedMode": "keyword"
+    },
+    {
+      "name": "chapter title lookup",
+      "query": "搜索章节标题包含 概述 的文档",
       "expectedMode": "keyword"
     },
     {

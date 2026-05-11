@@ -1,6 +1,9 @@
 package retrieve
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 const (
 	modeSourceExplicit = "explicit"
@@ -51,7 +54,7 @@ var searchModePatterns = []searchModePattern{
 		label:    "exact_match_intent",
 		mode:     SearchModeKeyword,
 		weight:   4,
-		contains: []string{"包含", "出现", "叫做", "名称", "标题", "匹配", "搜索词", "关键字", "contains", "match", "keyword", "named"},
+		contains: []string{"包含", "出现", "叫做", "名称", "标题", "匹配", "搜索词", "关键字", "章节", "小节", "段落", "contains", "match", "keyword", "named"},
 	},
 	{
 		label:    "quoted_phrase_lookup",
@@ -64,6 +67,12 @@ var searchModePatterns = []searchModePattern{
 		mode:     SearchModeSemantic,
 		weight:   4,
 		contains: []string{"什么是", "含义", "定义", "原理", "作用", "为什么", "区别", "优点", "缺点", "场景", "how", "why", "what is", "difference", "principle", "overview"},
+	},
+	{
+		label:    "architecture_or_flow_question",
+		mode:     SearchModeSemantic,
+		weight:   3,
+		contains: []string{"架构", "流程", "链路", "主链路", "步骤", "分几步", "整体", "原始流程", "代表什么", "说明什么"},
 	},
 }
 
@@ -123,6 +132,18 @@ func AnalyzeSearchMode(request Request) SearchModeDecision {
 	if looksLikeResourceIDLookup(query) {
 		modeScores[SearchModeKeyword] += 4
 		modeSignals[SearchModeKeyword] = append(modeSignals[SearchModeKeyword], "resource_id_lookup")
+	}
+	if looksLikeIdentifierLookup(query) {
+		modeScores[SearchModeKeyword] += 3
+		modeSignals[SearchModeKeyword] = append(modeSignals[SearchModeKeyword], "identifier_lookup")
+	}
+	if looksLikeFileNameLookup(query) {
+		modeScores[SearchModeKeyword] += 10
+		modeSignals[SearchModeKeyword] = append(modeSignals[SearchModeKeyword], "file_name_lookup")
+	}
+	if looksLikeSectionLookup(query) {
+		modeScores[SearchModeKeyword] += 5
+		modeSignals[SearchModeKeyword] = append(modeSignals[SearchModeKeyword], "section_lookup")
 	}
 
 	resolvedMode, reason, signals := pickResolvedMode(modeScores, modeSignals)
@@ -196,6 +217,55 @@ func looksLikeResourceIDLookup(query string) bool {
 			strings.Contains(query, "节点") ||
 			strings.Contains(query, "log") ||
 			strings.Contains(query, "chunk"))
+}
+
+func looksLikeIdentifierLookup(query string) bool {
+	lookupIntent := matchesAnyToken(query, []string{
+		"查找", "搜索", "定位", "匹配", "包含", "出现", "文件名", "类名", "方法名", "函数名", "节点名", "字段名", "标题",
+	})
+	if !lookupIntent {
+		return false
+	}
+
+	return hasIdentifierShape(query)
+}
+
+func looksLikeFileNameLookup(query string) bool {
+	if !matchesAnyToken(query, []string{"文件名", "文件", "实现"}) {
+		return false
+	}
+	return matchesAnyToken(query, []string{
+		".go", ".java", ".py", ".sql", ".yaml", ".yml", ".json", ".md",
+	})
+}
+
+func looksLikeSectionLookup(query string) bool {
+	if !matchesAnyToken(query, []string{"章节", "小节", "段落", "第一章", "第二章", "第三章", "概述", "section"}) {
+		return false
+	}
+	return matchesAnyToken(query, []string{"查找", "搜索", "定位", "包含", "标题", "讲了什么", "内容", "实现"})
+}
+
+func hasIdentifierShape(query string) bool {
+	if matchesAnyToken(query, []string{
+		".go", ".java", ".py", ".sql", ".yaml", ".yml", ".json", ".md",
+		"_", "-", "/", "\\", "::", "->",
+	}) {
+		return true
+	}
+
+	letterRun := 0
+	for _, r := range query {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			letterRun++
+			if letterRun >= 12 {
+				return true
+			}
+			continue
+		}
+		letterRun = 0
+	}
+	return false
 }
 
 func pickResolvedMode(scores map[string]int, signals map[string][]string) (string, string, []string) {

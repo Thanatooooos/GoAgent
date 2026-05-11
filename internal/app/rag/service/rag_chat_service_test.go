@@ -27,14 +27,15 @@ func (s *toolWorkflowStub) Run(ctx context.Context, input ragtool.WorkflowInput)
 }
 
 type fallbackSinkStub struct {
-	metaCalls      int
-	fallbackCalls  int
-	fallbackReason string
-	finishCalls    int
-	errorCalls     int
-	doneCalls      int
-	toolCalls      int
-	toolNames      []string
+	metaCalls       int
+	agentThinkCalls int
+	fallbackCalls   int
+	fallbackReason  string
+	finishCalls     int
+	errorCalls      int
+	doneCalls       int
+	toolCalls       int
+	toolNames       []string
 }
 
 func (s *fallbackSinkStub) SendMeta(meta RagChatMeta) error {
@@ -48,9 +49,20 @@ func (s *fallbackSinkStub) SendFallback(reason string) error {
 	return nil
 }
 
+func (s *fallbackSinkStub) SendAgentThink(message string) error {
+	s.agentThinkCalls++
+	return nil
+}
+
 func (s *fallbackSinkStub) SendThinking(delta string) error { return nil }
 func (s *fallbackSinkStub) SendMessage(delta string) error  { return nil }
-func (s *fallbackSinkStub) SendTitle(title string) error    { return nil }
+func (s *fallbackSinkStub) SendToolStart(payload ragtool.ToolCallEvent) error {
+	return nil
+}
+func (s *fallbackSinkStub) SendToolResult(payload ragtool.ToolCallEvent) error {
+	return nil
+}
+func (s *fallbackSinkStub) SendTitle(title string) error { return nil }
 func (s *fallbackSinkStub) SendTool(name string, status string, summary string) error {
 	s.toolCalls++
 	s.toolNames = append(s.toolNames, name)
@@ -217,6 +229,7 @@ func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
 		ragretrieve.Result{},
 		ragretrieve.SearchModeSemantic,
 		"trace-1",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -255,6 +268,7 @@ func TestRunToolWorkflowStageReturnsWorkflowResult(t *testing.T) {
 		retrieveResult,
 		ragretrieve.SearchModeHybrid,
 		"trace-1",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -315,5 +329,60 @@ func TestRecordToolCallTraceNodes(t *testing.T) {
 	}
 	if payload["summary"] != "matched doc-1" {
 		t.Fatalf("unexpected summary payload: %+v", payload)
+	}
+}
+
+func TestRecordAgentWorkflowTraceNodesUsesDatabaseSafeNames(t *testing.T) {
+	repo := &traceNodeRepoRecorder{}
+	now := time.Date(2026, 5, 10, 14, 48, 0, 0, time.UTC)
+	tracer := NewChatTracer(nil, repo)
+	tracer.now = func() time.Time { return now }
+
+	tracer.recordAgentWorkflowTraceNodes(context.Background(), "trace-1", ragtool.WorkflowResult{
+		Rounds: []ragtool.RoundSummary{
+			{
+				Round:               1,
+				Done:                true,
+				Reasoning:           "enough evidence",
+				ExecutionMode:       "parallel",
+				WallClockDurationMs: 10,
+				ToolCallCount:       1,
+				TotalToolDurationMs: 12,
+				Calls: []ragtool.CallSummary{
+					{
+						CallID:     "round_1_call_01",
+						Round:      1,
+						Sequence:   1,
+						Name:       "document_ingestion_diagnose",
+						Status:     ragtool.CallStatusSuccess,
+						Summary:    "doc failed",
+						DurationMs: 12,
+					},
+				},
+			},
+		},
+	})
+
+	if len(repo.created) != 3 {
+		t.Fatalf("expected 3 trace nodes, got %d", len(repo.created))
+	}
+	if repo.created[0].NodeID != "agt_round_01" || repo.created[0].NodeType != "agt_round" {
+		t.Fatalf("unexpected round node: %+v", repo.created[0])
+	}
+	if repo.created[2].NodeID != "agt_obs_01" || repo.created[2].NodeType != "agt_obs" {
+		t.Fatalf("unexpected observation node: %+v", repo.created[2])
+	}
+	if len(repo.created[0].NodeType) > 16 || len(repo.created[2].NodeType) > 16 {
+		t.Fatal("expected trace node types to stay within varchar(16)")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(repo.created[0].ExtraData), &payload); err != nil {
+		t.Fatalf("unmarshal round extra data: %v", err)
+	}
+	if payload["executionMode"] != "parallel" {
+		t.Fatalf("expected executionMode=parallel, got %+v", payload)
+	}
+	if payload["wallClockDurationMs"] != float64(10) {
+		t.Fatalf("expected wallClockDurationMs=10, got %+v", payload)
 	}
 }

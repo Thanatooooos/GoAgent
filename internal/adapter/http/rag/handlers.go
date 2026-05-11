@@ -10,6 +10,7 @@ import (
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
+	ragtool "local/rag-project/internal/app/rag/tool"
 	"local/rag-project/internal/framework/contextx"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/exception"
@@ -239,6 +240,11 @@ func (s *sseChatSink) SendFallback(reason string) error {
 	return s.sender.SendEvent("fallback", gin.H{"reason": reason})
 }
 
+// SendAgentThink 发送 agent 观察/继续规划事件。
+func (s *sseChatSink) SendAgentThink(message string) error {
+	return s.sender.SendEvent("agent_think", gin.H{"message": message})
+}
+
 // SendThinking 发送 SSE thinking 事件。
 func (s *sseChatSink) SendThinking(delta string) error {
 	return s.sender.SendEvent("message", gin.H{
@@ -253,6 +259,16 @@ func (s *sseChatSink) SendMessage(delta string) error {
 		"type":  "response",
 		"delta": delta,
 	})
+}
+
+// SendToolStart 发送单个 tool 开始事件。
+func (s *sseChatSink) SendToolStart(payload ragtool.ToolCallEvent) error {
+	return s.sender.SendEvent("tool_start", payload)
+}
+
+// SendToolResult 发送单个 tool 结果事件。
+func (s *sseChatSink) SendToolResult(payload ragtool.ToolCallEvent) error {
+	return s.sender.SendEvent("tool_result", payload)
 }
 
 // SendTool 发送单个 tool 调用摘要事件。

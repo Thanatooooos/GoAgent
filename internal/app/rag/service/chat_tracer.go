@@ -185,6 +185,97 @@ func (t *ChatTracer) recordToolCallTraceNodes(ctx context.Context, traceID strin
 	}
 }
 
+func (t *ChatTracer) recordAgentWorkflowTraceNodes(ctx context.Context, traceID string, result ragtool.WorkflowResult) {
+	if t == nil || t.traceNodeRepo == nil || strings.TrimSpace(traceID) == "" {
+		return
+	}
+	if len(result.Rounds) == 0 {
+		t.recordToolCallTraceNodes(ctx, traceID, result.Calls)
+		return
+	}
+
+	baseTime := t.now()
+	offsetMs := int64(0)
+	for _, round := range result.Rounds {
+		roundNodeID := fmt.Sprintf("agt_round_%02d", round.Round)
+		roundDuration := int64(0)
+		for _, call := range round.Calls {
+			roundDuration += maxInt64(call.DurationMs, 1)
+		}
+		startedAt := baseTime.Add(time.Duration(offsetMs) * time.Millisecond)
+		endedAt := startedAt.Add(time.Duration(roundDuration) * time.Millisecond)
+		offsetMs += maxInt64(roundDuration, 1)
+		_ = t.recordTraceNodeAt(ctx, traceID, ragChatTraceNode{
+			NodeID:       roundNodeID,
+			ParentNodeID: "tool_workflow",
+			Depth:        2,
+			NodeType:     "agt_round",
+			NodeName:     fmt.Sprintf("agent_round_%d", round.Round),
+		}, ragTraceStatusSuccess, startedAt, endedAt, map[string]any{
+			"round":               round.Round,
+			"done":                round.Done,
+			"nextHint":            strings.TrimSpace(round.NextHint),
+			"nextHintCalls":       round.NextHintCalls,
+			"executionMode":       strings.TrimSpace(round.ExecutionMode),
+			"toolCallCount":       round.ToolCallCount,
+			"wallClockDurationMs": round.WallClockDurationMs,
+			"totalToolDurationMs": round.TotalToolDurationMs,
+		})
+
+		callOffset := int64(0)
+		for _, call := range round.Calls {
+			durationMs := maxInt64(call.DurationMs, 0)
+			callStartedAt := startedAt.Add(time.Duration(callOffset) * time.Millisecond)
+			callEndedAt := callStartedAt.Add(time.Duration(durationMs) * time.Millisecond)
+			callOffset += maxInt64(durationMs, 1)
+			extra := map[string]any{
+				"callId":     strings.TrimSpace(call.CallID),
+				"toolName":   strings.TrimSpace(call.Name),
+				"summary":    strings.TrimSpace(call.Summary),
+				"durationMs": durationMs,
+				"round":      call.Round,
+				"sequence":   call.Sequence,
+				"toolStatus": strings.TrimSpace(call.Status),
+				"arguments":  call.Arguments,
+			}
+			if len(call.Data) > 0 {
+				extra["data"] = call.Data
+			}
+			if strings.TrimSpace(call.Status) == ragtool.CallStatusFailed {
+				extra["error"] = strings.TrimSpace(call.Summary)
+			}
+			_ = t.recordTraceNodeAt(ctx, traceID, ragChatTraceNode{
+				NodeID:       firstNonEmptyString(strings.TrimSpace(call.CallID), fmt.Sprintf("tool_%02d_%02d", round.Round, call.Sequence)),
+				ParentNodeID: roundNodeID,
+				Depth:        3,
+				NodeType:     "tool_call",
+				NodeName:     strings.TrimSpace(call.Name),
+			}, strings.TrimSpace(call.Status), callStartedAt, callEndedAt, extra)
+		}
+
+		observationStatus := ragTraceStatusSuccess
+		if round.Done {
+			observationStatus = ragTraceStatusSuccess
+		}
+		observationStartedAt := endedAt
+		observationEndedAt := observationStartedAt.Add(time.Millisecond)
+		_ = t.recordTraceNodeAt(ctx, traceID, ragChatTraceNode{
+			NodeID:       fmt.Sprintf("agt_obs_%02d", round.Round),
+			ParentNodeID: roundNodeID,
+			Depth:        3,
+			NodeType:     "agt_obs",
+			NodeName:     "agent_observation",
+		}, observationStatus, observationStartedAt, observationEndedAt, map[string]any{
+			"round":         round.Round,
+			"done":          round.Done,
+			"reasoning":     strings.TrimSpace(round.Reasoning),
+			"nextHint":      strings.TrimSpace(round.NextHint),
+			"nextHintCalls": round.NextHintCalls,
+		})
+		offsetMs += 1
+	}
+}
+
 func (t *ChatTracer) recordChatTraceNode(ctx context.Context, traceID string, status string, result ragChatTaskResult) {
 	extra := map[string]any{
 		"contentLength":  len(strings.TrimSpace(result.content)),

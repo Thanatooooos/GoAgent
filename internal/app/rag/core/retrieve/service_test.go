@@ -40,10 +40,12 @@ func TestBuildKnowledgeContextWithSection(t *testing.T) {
 }
 
 type mockSearcher struct {
-	hits        []corevector.SearchHit
-	keywordHits []corevector.SearchHit
-	err         error
-	keywordErr  error
+	hits         []corevector.SearchHit
+	keywordHits  []corevector.SearchHit
+	metadataHits []corevector.SearchHit
+	err          error
+	keywordErr   error
+	metadataErr  error
 }
 
 func (m *mockSearcher) Search(context.Context, corevector.SearchRequest) ([]corevector.SearchHit, error) {
@@ -52,6 +54,10 @@ func (m *mockSearcher) Search(context.Context, corevector.SearchRequest) ([]core
 
 func (m *mockSearcher) SearchByKeyword(context.Context, string, []string, int) ([]corevector.SearchHit, error) {
 	return m.keywordHits, m.keywordErr
+}
+
+func (m *mockSearcher) SearchByMetadata(context.Context, string, []string, int) ([]corevector.SearchHit, error) {
+	return m.metadataHits, m.metadataErr
 }
 
 var _ corevector.Searcher = (*mockSearcher)(nil)
@@ -128,6 +134,61 @@ func TestRetrieveKeywordMode(t *testing.T) {
 	}
 }
 
+func TestRetrieveKeywordModeUsesMetadataTitleChannelForFileLookup(t *testing.T) {
+	searcher := &mockSearcher{
+		metadataHits: []corevector.SearchHit{
+			{
+				ChunkID: "m1",
+				Text:    "trace handlers implementation",
+				Score:   1.0,
+				Metadata: map[string]any{
+					"document_name":    "trace_handlers.go",
+					"source_file_name": "trace_handlers.go",
+					"section":          "RAG Trace Handler",
+				},
+			},
+		},
+	}
+	engine := NewEngine(searcher, nil, nil)
+
+	result, err := engine.Retrieve(context.Background(), Request{
+		Query:      "查找文件名是 trace_handlers.go 的实现",
+		SearchMode: SearchModeAuto,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Chunks) != 1 || result.Chunks[0].ID != "m1" {
+		t.Fatalf("unexpected metadata title result: %+v", result)
+	}
+	if len(result.SearchChannels) != 2 {
+		t.Fatalf("unexpected search channels: %+v", result.SearchChannels)
+	}
+	foundMetadataTitle := false
+	for _, name := range result.SearchChannels {
+		if name == ChannelMetadataTitle {
+			foundMetadataTitle = true
+			break
+		}
+	}
+	if !foundMetadataTitle {
+		t.Fatalf("expected metadata title channel in %+v", result.SearchChannels)
+	}
+	if len(result.ChannelStats) != 2 {
+		t.Fatalf("unexpected channel stats: %+v", result.ChannelStats)
+	}
+	foundMetadataTitle = false
+	for _, stat := range result.ChannelStats {
+		if stat.Name == ChannelMetadataTitle {
+			foundMetadataTitle = true
+			break
+		}
+	}
+	if !foundMetadataTitle {
+		t.Fatalf("expected metadata title stats in %+v", result.ChannelStats)
+	}
+}
+
 func TestResolveSearchModeAuto(t *testing.T) {
 	mode := resolveSearchMode(Request{
 		Query:      "nginx 404 报错怎么配置",
@@ -189,6 +250,26 @@ func TestAnalyzeSearchModeAutoSemantic(t *testing.T) {
 func TestAnalyzeSearchModeAutoKeyword(t *testing.T) {
 	decision := AnalyzeSearchMode(Request{
 		Query:      "标题包含 \"Kubernetes\" 的文档",
+		SearchMode: SearchModeAuto,
+	})
+	if decision.ResolvedMode != SearchModeKeyword {
+		t.Fatalf("expected keyword, got %q", decision.ResolvedMode)
+	}
+}
+
+func TestAnalyzeSearchModeAutoKeywordForIdentifierLookup(t *testing.T) {
+	decision := AnalyzeSearchMode(Request{
+		Query:      "搜索包含 fallback_to_general_model 的节点",
+		SearchMode: SearchModeAuto,
+	})
+	if decision.ResolvedMode != SearchModeKeyword {
+		t.Fatalf("expected keyword, got %q", decision.ResolvedMode)
+	}
+}
+
+func TestAnalyzeSearchModeAutoKeywordForSectionLookup(t *testing.T) {
+	decision := AnalyzeSearchMode(Request{
+		Query:      "查找第一章 概述 讲了什么",
 		SearchMode: SearchModeAuto,
 	})
 	if decision.ResolvedMode != SearchModeKeyword {
@@ -258,8 +339,33 @@ func TestAnalyzeSearchModeSamples(t *testing.T) {
 			want:  SearchModeSemantic,
 		},
 		{
+			name:  "architecture flow question",
+			query: "retrieve 主链路整体流程是什么",
+			want:  SearchModeSemantic,
+		},
+		{
 			name:  "exact phrase with quotes",
 			query: "搜索包含 \"tool_workflow\" 的 trace 节点",
+			want:  SearchModeKeyword,
+		},
+		{
+			name:  "identifier lookup without quotes",
+			query: "搜索包含 fallback_to_general_model 的节点",
+			want:  SearchModeKeyword,
+		},
+		{
+			name:  "file name lookup",
+			query: "查找文件名是 trace_handlers.go 的实现",
+			want:  SearchModeKeyword,
+		},
+		{
+			name:  "section lookup",
+			query: "查找第一章 概述 讲了什么",
+			want:  SearchModeKeyword,
+		},
+		{
+			name:  "chapter title lookup",
+			query: "搜索章节标题包含 概述 的文档",
 			want:  SearchModeKeyword,
 		},
 	}

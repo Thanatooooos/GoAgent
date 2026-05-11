@@ -56,6 +56,12 @@ rag:
     metric-type: COSINE
     sse-timeout-ms: 300000  # SSE 全局超时（毫秒），默认 5 分钟
 
+  agent:
+    max-iterations: 3
+    parallel-tool-calls:
+      enabled: true
+      max-concurrency: 3
+
   query-rewrite:
     enabled: true
     max-history-messages: 4

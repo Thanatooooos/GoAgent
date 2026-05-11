@@ -1,0 +1,156 @@
+{
+  "samples": [
+    {
+      "name": "project current stage by document",
+      "query": "当前项目处于什么阶段",
+      "tags": ["concept", "project_progress"],
+      "target": "source_file_name",
+      "expectedIds": ["project_progress_context.md"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-stage-1",
+          "documentId": "doc-project-progress",
+          "metadata": {
+            "source_file_name": "project_progress_context.md",
+            "document_name": "project_progress_context.md",
+            "section": "当前阶段"
+          },
+          "score": 0.93
+        }
+      ]
+    },
+    {
+      "name": "retrieve metadata enhancement title",
+      "query": "标题是 推进了 retrieve 的精确匹配与 metadata 检索能力 的内容在哪",
+      "tags": ["title", "retrieve", "metadata_title"],
+      "target": "section",
+      "expectedIds": ["4. 推进了 retrieve 的精确匹配与 metadata 检索能力"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-retrieve-enhancement-1",
+          "documentId": "doc-project-progress",
+          "metadata": {
+            "source_file_name": "project_progress_context.md",
+            "document_name": "project_progress_context.md",
+            "section": "4. 推进了 retrieve 的精确匹配与 metadata 检索能力"
+          },
+          "score": 0.97
+        }
+      ]
+    },
+    {
+      "name": "retrieve eval infrastructure title",
+      "query": "搜索标题包含 建立了 retrieve 离线评估与真实回放基础设施 的内容",
+      "tags": ["title", "retrieve_eval", "metadata_title"],
+      "target": "section",
+      "expectedIds": ["7. 建立了 retrieve 离线评估与真实回放基础设施"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-retrieve-eval-1",
+          "documentId": "doc-dev-notes-2026-05-09",
+          "metadata": {
+            "source_file_name": "development_notes_2026-05-09.md",
+            "document_name": "development_notes_2026-05-09.md",
+            "section": "7. 建立了 retrieve 离线评估与真实回放基础设施"
+          },
+          "score": 0.96
+        }
+      ]
+    },
+    {
+      "name": "ingestion reliable result title",
+      "query": "搜索标题包含 结果可信 的 ingestion 文档",
+      "tags": ["title", "ingestion", "metadata_title"],
+      "target": "section",
+      "expectedIds": ["1. 结果可信"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-ingestion-target-1",
+          "documentId": "doc-ingestion-target",
+          "metadata": {
+            "source_file_name": "target_direction.md",
+            "document_name": "target_direction.md",
+            "section": "1. 结果可信"
+          },
+          "score": 0.95
+        }
+      ]
+    },
+    {
+      "name": "trace handlers file lookup",
+      "query": "查找文件名是 trace_handlers.go 的实现",
+      "tags": ["file_name", "code_locator", "metadata_title"],
+      "target": "source_file_name",
+      "expectedIds": ["trace_handlers.go"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-trace-handlers-1",
+          "documentId": "doc-trace-handlers",
+          "metadata": {
+            "source_file_name": "trace_handlers.go",
+            "document_name": "trace_handlers.go",
+            "section": "RAG Trace Handlers"
+          },
+          "score": 0.99
+        }
+      ]
+    },
+    {
+      "name": "document process file lookup",
+      "query": "查找文件名是 document_process_service.go 的实现",
+      "tags": ["file_name", "knowledge", "metadata_title"],
+      "target": "source_file_name",
+      "expectedIds": ["document_process_service.go"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-document-process-1",
+          "documentId": "doc-document-process",
+          "metadata": {
+            "source_file_name": "document_process_service.go",
+            "document_name": "document_process_service.go",
+            "section": "Document Process Service"
+          },
+          "score": 0.98
+        }
+      ]
+    },
+    {
+      "name": "fallback trace node locator",
+      "query": "搜索包含 fallback_to_general_model 的节点",
+      "tags": ["troubleshooting", "fallback", "identifier_lookup"],
+      "target": "source_file_name",
+      "expectedIds": ["rag_chat_service.go"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-rag-chat-fallback-1",
+          "documentId": "doc-rag-chat-service",
+          "metadata": {
+            "source_file_name": "rag_chat_service.go",
+            "document_name": "rag_chat_service.go",
+            "section": "fallback_to_general_model"
+          },
+          "score": 0.94
+        }
+      ]
+    },
+    {
+      "name": "metadata search symbol file",
+      "query": "SearchByMetadata 是在哪里实现的",
+      "tags": ["code_locator", "metadata_title", "retrieve"],
+      "target": "source_file_name",
+      "expectedIds": ["vector_store.go"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-vector-store-1",
+          "documentId": "doc-vector-store",
+          "metadata": {
+            "source_file_name": "vector_store.go",
+            "document_name": "vector_store.go",
+            "section": "SearchByMetadata"
+          },
+          "score": 0.97
+        }
+      ]
+    }
+  ]
+}

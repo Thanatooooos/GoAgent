@@ -2,12 +2,14 @@ package builtin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
+	ingestionservice "local/rag-project/internal/app/ingestion/service"
 	knowledgedomain "local/rag-project/internal/app/knowledge/domain"
 	knowledgeservice "local/rag-project/internal/app/knowledge/service"
 	ragdomain "local/rag-project/internal/app/rag/domain"
@@ -16,12 +18,20 @@ import (
 )
 
 type documentGetterStub struct {
-	document knowledgedomain.KnowledgeDocument
-	err      error
+	document   knowledgedomain.KnowledgeDocument
+	pageResult knowledgeservice.KnowledgeDocumentPageResult
+	err        error
 }
 
 func (s *documentGetterStub) Get(ctx context.Context, input knowledgeservice.GetKnowledgeDocumentInput) (knowledgedomain.KnowledgeDocument, error) {
 	return s.document, s.err
+}
+
+func (s *documentGetterStub) Page(ctx context.Context, input knowledgeservice.PageKnowledgeDocumentInput) (knowledgeservice.KnowledgeDocumentPageResult, error) {
+	if s.err != nil {
+		return knowledgeservice.KnowledgeDocumentPageResult{}, s.err
+	}
+	return s.pageResult, nil
 }
 
 func (s *documentGetterStub) PageChunkLogs(ctx context.Context, input knowledgeservice.KnowledgeDocumentChunkLogPageInput) (knowledgeservice.KnowledgeDocumentChunkLogPageResult, error) {
@@ -59,11 +69,19 @@ func (s *documentGetterStub) PageChunkLogs(ctx context.Context, input knowledges
 }
 
 type ingestionTaskGetterStub struct {
-	task    ingestiondomain.Task
-	nodes   []ingestiondomain.TaskNode
-	node    ingestiondomain.TaskNode
-	err     error
-	nodeErr error
+	task       ingestiondomain.Task
+	nodes      []ingestiondomain.TaskNode
+	node       ingestiondomain.TaskNode
+	pageResult ingestionservice.TaskPageResult
+	err        error
+	nodeErr    error
+}
+
+func (s *ingestionTaskGetterStub) Page(ctx context.Context, input ingestionservice.PageTasksInput) (ingestionservice.TaskPageResult, error) {
+	if s.err != nil {
+		return ingestionservice.TaskPageResult{}, s.err
+	}
+	return s.pageResult, nil
 }
 
 func (s *ingestionTaskGetterStub) Get(ctx context.Context, id string) (ingestiondomain.Task, error) {
@@ -216,6 +234,13 @@ func TestDocumentIngestionDiagnoseToolInvoke(t *testing.T) {
 	if len(facts) == 0 {
 		t.Fatal("expected diagnosis facts")
 	}
+	if strings.Contains(facts[0], "document.status=") {
+		t.Fatalf("expected humanized facts, got %q", facts[0])
+	}
+	rawEvidence, _ := result.Data["rawEvidence"].([]string)
+	if len(rawEvidence) == 0 || !strings.Contains(rawEvidence[0], "document.status=") {
+		t.Fatalf("expected rawEvidence to preserve raw fields, got %+v", rawEvidence)
+	}
 	if scope, _ := result.Data["diagnosisScope"].(string); scope != "document_ingestion" {
 		t.Fatalf("unexpected diagnosis scope: %q", scope)
 	}
@@ -252,6 +277,9 @@ func TestIngestionTaskQueryToolInvokeWithNodes(t *testing.T) {
 	}
 	if !strings.Contains(result.Summary, "nodes=2") {
 		t.Fatalf("unexpected summary: %q", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "interestingNodes=[indexer(status=running,type=indexer)]") {
+		t.Fatalf("expected interesting node summary, got %q", result.Summary)
 	}
 }
 
@@ -295,6 +323,13 @@ func TestTaskIngestionDiagnoseToolInvoke(t *testing.T) {
 	evidence, _ := result.Data["evidence"].([]string)
 	if len(evidence) == 0 {
 		t.Fatal("expected diagnosis evidence")
+	}
+	facts, _ := result.Data["facts"].([]string)
+	if len(facts) == 0 {
+		t.Fatal("expected humanized facts")
+	}
+	if strings.Contains(facts[0], "task.status=") {
+		t.Fatalf("expected humanized task facts, got %q", facts[0])
 	}
 	if scope, _ := result.Data["diagnosisScope"].(string); scope != "task_ingestion" {
 		t.Fatalf("unexpected diagnosis scope: %q", scope)
@@ -469,7 +504,7 @@ func TestTraceRetrievalDiagnoseToolInvoke(t *testing.T) {
 }
 
 func TestDiagnoseDocumentIngestionDetectsStateInconsistency(t *testing.T) {
-	conclusion, confidence, evidence, _, _, _, _, _, _ := diagnoseDocumentIngestion(
+	conclusion, confidence, evidence, _, _, _, _, _, _ := diagnoseDocumentIngestion(context.Background(),
 		knowledgedomain.KnowledgeDocument{
 			ID:          "doc-3",
 			Status:      knowledgedomain.KnowledgeDocumentStatusFailed,
@@ -496,7 +531,7 @@ func TestDiagnoseDocumentIngestionDetectsStateInconsistency(t *testing.T) {
 				},
 			},
 		},
-	)
+	nil)
 	if !strings.Contains(conclusion, "inconsistent") {
 		t.Fatalf("expected inconsistent conclusion, got %q", conclusion)
 	}
@@ -626,6 +661,117 @@ func TestQueryToolsValidateRequiredArgs(t *testing.T) {
 	}
 }
 
+func TestDocumentListToolInvokeWithStatusFilter(t *testing.T) {
+	stub := &documentGetterStub{
+		pageResult: knowledgeservice.KnowledgeDocumentPageResult{
+			Items: []knowledgedomain.KnowledgeDocument{
+				{
+					ID:         "doc-1",
+					Name:       "test_doc_1.md",
+					Status:     knowledgedomain.KnowledgeDocumentStatusFailed,
+					ProcessMode: knowledgedomain.KnowledgeDocumentProcessModePipeline,
+				},
+				{
+					ID:         "doc-2",
+					Name:       "test_doc_2.md",
+					Status:     knowledgedomain.KnowledgeDocumentStatusFailed,
+					ProcessMode: knowledgedomain.KnowledgeDocumentProcessModePipeline,
+				},
+			},
+			Total:    2,
+			Page:     1,
+			PageSize: 20,
+		},
+	}
+	tool := NewDocumentListTool(stub)
+
+	result, err := tool.Invoke(context.Background(), ragtool.Call{
+		Name: "document_list",
+		Arguments: map[string]any{
+			"knowledgeBaseId": "kb-1",
+			"status":          "failed",
+		},
+	})
+	if err != nil {
+		t.Fatalf("invoke document_list: %v", err)
+	}
+	if result.Status != ragtool.CallStatusSuccess {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Summary, "found 2 documents") {
+		t.Fatalf("unexpected summary: %q", result.Summary)
+	}
+	failedCount, _ := result.Data["failedCount"].(int)
+	if failedCount != 2 {
+		t.Fatalf("expected failedCount=2, got %d", failedCount)
+	}
+}
+
+func TestDocumentListToolInvokeEmptyResult(t *testing.T) {
+	stub := &documentGetterStub{
+		pageResult: knowledgeservice.KnowledgeDocumentPageResult{Total: 0},
+	}
+	tool := NewDocumentListTool(stub)
+
+	result, err := tool.Invoke(context.Background(), ragtool.Call{
+		Name:      "document_list",
+		Arguments: map[string]any{"status": "running", "knowledgeBaseId": "kb-1"},
+	})
+	if err != nil {
+		t.Fatalf("invoke document_list: %v", err)
+	}
+	if !strings.Contains(result.Summary, "no documents found") {
+		t.Fatalf("expected empty summary, got %q", result.Summary)
+	}
+}
+
+func TestTaskListToolInvokeWithStatusFilter(t *testing.T) {
+	stub := &ingestionTaskGetterStub{
+		pageResult: ingestionservice.TaskPageResult{
+			Items: []ingestiondomain.Task{
+				{
+					ID:             "task-1",
+					PipelineID:     "pipe-1",
+					Status:         ingestiondomain.TaskStatusRunning,
+					SourceFileName: "test.md",
+					ChunkCount:     120,
+				},
+				{
+					ID:             "task-2",
+					PipelineID:     "pipe-1",
+					Status:         ingestiondomain.TaskStatusRunning,
+					SourceFileName: "test2.md",
+					ChunkCount:     45,
+				},
+			},
+			Total:    2,
+			Page:     1,
+			PageSize: 20,
+		},
+	}
+	tool := NewTaskListTool(stub)
+
+	result, err := tool.Invoke(context.Background(), ragtool.Call{
+		Name: "task_list",
+		Arguments: map[string]any{
+			"status": "running",
+		},
+	})
+	if err != nil {
+		t.Fatalf("invoke task_list: %v", err)
+	}
+	if result.Status != ragtool.CallStatusSuccess {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Summary, "found 2 tasks") {
+		t.Fatalf("unexpected summary: %q", result.Summary)
+	}
+	runningCount, _ := result.Data["runningCount"].(int)
+	if runningCount != 2 {
+		t.Fatalf("expected runningCount=2, got %d", runningCount)
+	}
+}
+
 func TestQueryToolsPropagateServiceError(t *testing.T) {
 	expectedErr := errors.New("backend unavailable")
 	tool := NewTraceNodeQueryTool(&traceRunRepoStub{err: expectedErr}, &traceNodeRepoStub{})
@@ -641,5 +787,52 @@ func TestQueryToolsPropagateServiceError(t *testing.T) {
 	}
 	if result.ErrorMessage != expectedErr.Error() {
 		t.Fatalf("unexpected error message: %q", result.ErrorMessage)
+	}
+}
+
+func TestWebSearchToolParsesResultsFromJSON(t *testing.T) {
+	sample := `{
+		"AbstractText": "Vector databases can experience connection refused errors when the service is not running.",
+		"AbstractURL": "https://example.com/vector-db-errors",
+		"Heading": "Vector Database Errors",
+		"RelatedTopics": [
+			{
+				"FirstURL": "https://example.com/troubleshooting",
+				"Text": "Connection Refused Troubleshooting - Common causes include port blocking, firewall rules, and service not started."
+			},
+			{
+				"FirstURL": "https://example.com/monitoring",
+				"Text": "Monitoring Vector Store Health - Set up health checks to detect connection issues early."
+			}
+		]
+	}`
+
+	var parsed duckDuckGoResponse
+	if err := json.Unmarshal([]byte(sample), &parsed); err != nil {
+		t.Fatalf("unmarshal sample: %v", err)
+	}
+	results := parsed.extractResults()
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result")
+	}
+	if !strings.Contains(results[0].Snippet, "connection refused") {
+		t.Fatalf("expected abstract in first result, got %q", results[0].Snippet)
+	}
+	if !strings.Contains(results[1].Title, "Connection Refused") {
+		t.Fatalf("expected topic title in second result, got %q", results[1].Title)
+	}
+}
+
+func TestWebSearchToolRequiresQuery(t *testing.T) {
+	tool := NewWebSearchTool()
+	result, err := tool.Invoke(context.Background(), ragtool.Call{
+		Name:      "web_search",
+		Arguments: map[string]any{"query": ""},
+	})
+	if err != nil {
+		t.Fatalf("invoke without query: %v", err)
+	}
+	if result.Status != ragtool.CallStatusFailed {
+		t.Fatalf("expected failed status without query, got %q", result.Status)
 	}
 }

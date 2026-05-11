@@ -49,8 +49,11 @@ type RagChatFinishPayload struct {
 type RagChatEventSink interface {
 	SendMeta(meta RagChatMeta) error
 	SendFallback(reason string) error
+	SendAgentThink(message string) error
 	SendThinking(delta string) error
 	SendMessage(delta string) error
+	SendToolStart(payload ragtool.ToolCallEvent) error
+	SendToolResult(payload ragtool.ToolCallEvent) error
 	SendTitle(title string) error
 	SendTool(name string, status string, summary string) error
 	SendFinish(payload RagChatFinishPayload) error
@@ -117,6 +120,31 @@ type ragChatRetrieveStageResult struct {
 
 type ragChatToolStageResult struct {
 	result ragtool.WorkflowResult
+}
+
+type ragChatWorkflowEventSink struct {
+	sink RagChatEventSink
+}
+
+func (s ragChatWorkflowEventSink) OnAgentThink(message string) error {
+	if s.sink == nil {
+		return nil
+	}
+	return s.sink.SendAgentThink(message)
+}
+
+func (s ragChatWorkflowEventSink) OnToolStart(event ragtool.ToolCallEvent) error {
+	if s.sink == nil {
+		return nil
+	}
+	return s.sink.SendToolStart(event)
+}
+
+func (s ragChatWorkflowEventSink) OnToolResult(event ragtool.ToolCallEvent) error {
+	if s.sink == nil {
+		return nil
+	}
+	return s.sink.SendToolResult(event)
 }
 
 type ragChatPromptStageResult struct {
@@ -238,6 +266,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		retrieveResult,
 		prepared.searchMode,
 		prepared.state.traceID,
+		sink,
 	)
 	if err != nil {
 		toolStage = ragChatToolStageResult{
@@ -247,13 +276,10 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 			},
 		}
 	}
-	for _, call := range toolStage.result.Calls {
-		_ = sink.SendTool(call.Name, call.Status, call.Summary)
-	}
 	if toolStage.result.Degraded {
 		_ = sink.SendTool("tool_workflow", ragtool.CallStatusFailed, toolStage.result.DegradeReason)
 	}
-	s.tracer.recordToolCallTraceNodes(ctx, prepared.state.traceID, toolStage.result.Calls)
+	s.tracer.recordAgentWorkflowTraceNodes(ctx, prepared.state.traceID, toolStage.result)
 
 	promptStage, err := s.runPromptStage(
 		ctx,
@@ -262,7 +288,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		retrieveResult,
 		toolStage.result.Context,
 		toolStage.result.AnswerGuidance,
-		fallbackPrompt,
+		effectiveFallbackPrompt(fallbackPrompt, toolStage.result.Used, question),
 		prepared.state.traceID,
 	)
 	if err != nil {
@@ -860,6 +886,7 @@ func (s *RagChatService) runToolWorkflowStage(
 	retrieveResult ragretrieve.Result,
 	searchMode string,
 	traceID string,
+	sink RagChatEventSink,
 ) (ragChatToolStageResult, error) {
 	if s == nil || s.toolWorkflow == nil {
 		return ragChatToolStageResult{}, nil
@@ -882,6 +909,7 @@ func (s *RagChatService) runToolWorkflowStage(
 				History:          append([]convention.ChatMessage(nil), history...),
 				RewriteResult:    rewriteResult,
 				RetrieveResult:   retrieveResult,
+				EventSink:        ragChatWorkflowEventSink{sink: sink},
 			})
 			if err != nil {
 				return ragChatToolStageResult{}, err
@@ -896,6 +924,7 @@ func (s *RagChatService) runToolWorkflowStage(
 			return map[string]any{
 				"used":          result.result.Used,
 				"toolCallCount": len(result.result.Calls),
+				"roundCount":    len(result.result.Rounds),
 				"toolNames":     names,
 				"degraded":      result.result.Degraded,
 				"degradeReason": strings.TrimSpace(result.result.DegradeReason),
@@ -940,6 +969,16 @@ func topChunkScore(result ragretrieve.Result) float32 {
 }
 func buildFallbackPrompt(question string) string {
 	return "Knowledge retrieval confidence is low for question: " + question + ". Respond in Chinese, clearly state no matching knowledge was found, and note the answer may rely on general model knowledge."
+}
+
+func effectiveFallbackPrompt(fallbackPrompt string, toolUsed bool, question string) string {
+	if fallbackPrompt == "" {
+		return ""
+	}
+	if toolUsed {
+		return ""
+	}
+	return fallbackPrompt
 }
 
 func (s *RagChatService) runPromptStage(

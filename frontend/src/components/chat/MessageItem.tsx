@@ -26,6 +26,8 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
   const retrievalModeLabel = message.retrievalModeLabel?.trim();
   const toolCalls = message.toolCalls ?? [];
+  const agentThinks = (message.agentThinks ?? []).filter((item) => item.trim().length > 0);
+  const hasAgentThinks = agentThinks.length > 0;
   const hasToolCalls = toolCalls.length > 0;
   const hasFailedTools = toolCalls.some((tc) => tc.status === "failed");
   const fallbackReason = message.fallbackReason?.trim();
@@ -82,6 +84,26 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             ) : null}
           </div>
         ) : null}
+        {hasAgentThinks ? (
+          <div className="overflow-hidden rounded-lg border border-sky-200 bg-sky-50">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-100">
+                <Brain className="h-4 w-4 text-sky-700" />
+              </div>
+              <span className="text-sm font-medium text-sky-800">Agent 推理</span>
+              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-700">
+                {agentThinks.length}
+              </span>
+            </div>
+            <div className="border-t border-sky-200 px-4 pb-4">
+              {agentThinks.map((item, idx) => (
+                <p key={`${idx}-${item}`} className="mt-3 text-sm leading-6 text-sky-900">
+                  {item}
+                </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {hasToolCalls ? (
           <div className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50">
             <button
@@ -128,6 +150,11 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                         <span className="text-sm font-medium text-gray-800">
                           {tc.name}
                         </span>
+                        {typeof tc.round === "number" ? (
+                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                            第 {tc.round} 轮
+                          </span>
+                        ) : null}
                         <span
                           className={cn(
                             "rounded-full px-1.5 py-0.5 text-xs font-medium",
@@ -140,7 +167,15 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                         >
                           {tc.status}
                         </span>
+                        {typeof tc.durationMs === "number" && tc.durationMs > 0 ? (
+                          <span className="text-xs text-gray-400">{tc.durationMs}ms</span>
+                        ) : null}
                       </div>
+                      {tc.arguments && Object.keys(tc.arguments).length > 0 ? (
+                        <p className="mt-1 text-xs text-gray-400 break-words">
+                          参数：{JSON.stringify(tc.arguments)}
+                        </p>
+                      ) : null}
                       {tc.summary ? (
                         <p className="mt-0.5 text-xs text-gray-500 break-words line-clamp-3">
                           {tc.summary}

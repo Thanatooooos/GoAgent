@@ -41,6 +41,7 @@ type RuntimeOptions struct {
 type Runtime struct {
 	DB           *gorm.DB
 	ownsDB       bool
+	Retrieve     ragretrieve.Service
 	Conversation *ragservice.ConversationService
 	Message      *ragservice.ConversationMessageService
 	Feedback     *ragservice.MessageFeedbackService
@@ -134,7 +135,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	retrieveService := ragretrieve.NewEngine(searcher, aiRuntime.Embedding, aiRuntime.Rerank)
 	feedbackService := ragservice.NewMessageFeedbackService(messageRepo, feedbackRepo)
 	traceService := ragservice.NewTraceService(traceRunRepo, traceNodeRepo, userRepo)
-		tracer := ragservice.NewChatTracer(traceRunRepo, traceNodeRepo)
+	tracer := ragservice.NewChatTracer(traceRunRepo, traceNodeRepo)
 	chatService := ragservice.NewRagChatService(
 		conversationService,
 		messageService,
@@ -143,17 +144,18 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		retrieveService,
 		promptService,
 		aiRuntime.Chat,
-			tracer,
+		tracer,
 	)
 	// 检索置信度阈值：低于此值时回退到通用 LLM 模式并提醒用户。
 	if cfg != nil {
 		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
 	}
-	chatService.SetToolWorkflow(buildLocalToolWorkflow(db, traceRunRepo, traceNodeRepo, aiRuntime.Chat))
+	chatService.SetToolWorkflow(buildLocalToolWorkflow(db, traceRunRepo, traceNodeRepo, cfg, aiRuntime.Chat))
 
 	return &Runtime{
 		DB:           db,
 		ownsDB:       ownsDB,
+		Retrieve:     retrieveService,
 		Conversation: conversationService,
 		Message:      messageService,
 		Feedback:     feedbackService,
@@ -213,6 +215,7 @@ func buildLocalToolWorkflow(
 	db *gorm.DB,
 	traceRunRepo *postgresrag.RagTraceRunRepository,
 	traceNodeRepo *postgresrag.RagTraceNodeRepository,
+	cfg *config.Config,
 	chatService aichat.LLMService,
 ) ragtool.Workflow {
 	if db == nil {
@@ -224,18 +227,18 @@ func buildLocalToolWorkflow(
 	baseRepo := postgresknowledge.NewKnowledgeBaseRepository(db)
 	documentRepo := postgresknowledge.NewKnowledgeDocumentRepository(db, nil)
 	chunkLogRepo := postgresknowledge.NewKnowledgeDocumentChunkLogRepository(db)
-		documentService := knowledgeservice.NewKnowledgeDocumentService(
-			baseRepo,
-			documentRepo,
-			nil,
+	documentService := knowledgeservice.NewKnowledgeDocumentService(
+		baseRepo,
+		documentRepo,
+		nil,
 		chunkLogRepo,
 		nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
 
 	pipelineRepo := postgresingestion.NewPipelineRepository(db)
 	taskRepo := postgresingestion.NewTaskRepository(db)
@@ -243,8 +246,14 @@ func buildLocalToolWorkflow(
 	taskService := ingestionservice.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, nil)
 	documentService.SetIngestionTaskReader(knowledgePipelineTaskReader{taskService: taskService})
 
+	registry.MustRegister(ragbuiltin.NewThinkTool())
+	registry.MustRegister(ragbuiltin.NewWebSearchTool())
+	registry.MustRegister(ragbuiltin.NewDocumentListTool(documentService))
+	registry.MustRegister(ragbuiltin.NewTaskListTool(taskService))
 	registry.MustRegister(ragbuiltin.NewDocumentQueryTool(documentService))
-	registry.MustRegister(ragbuiltin.NewDocumentIngestionDiagnoseTool(documentService))
+	documentDiagnoseTool := ragbuiltin.NewDocumentIngestionDiagnoseTool(documentService)
+	documentDiagnoseTool.SetTaskNodeReader(taskService)
+	registry.MustRegister(documentDiagnoseTool)
 	registry.MustRegister(ragbuiltin.NewDocumentChunkLogQueryTool(documentService))
 	registry.MustRegister(ragbuiltin.NewTaskIngestionDiagnoseTool(taskService))
 	registry.MustRegister(ragbuiltin.NewIngestionTaskQueryTool(taskService))
@@ -252,9 +261,17 @@ func buildLocalToolWorkflow(
 	registry.MustRegister(ragbuiltin.NewTraceNodeQueryTool(traceRunRepo, traceNodeRepo))
 	registry.MustRegister(ragbuiltin.NewTraceRetrievalDiagnoseTool(traceRunRepo, traceNodeRepo))
 
-	wf := ragtool.NewLocalWorkflow(ragtool.NewExecutor(registry))
+	wf := ragtool.NewAgentLoop(ragtool.NewExecutor(registry))
+	if cfg != nil {
+		wf.SetMaxIterations(cfg.Rag.Agent.MaxIterations)
+		wf.SetParallelToolCalls(
+			cfg.Rag.Agent.ParallelToolCalls.Enabled,
+			cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency,
+		)
+	}
 	if chatService != nil {
 		wf.SetPlanner(planner.NewLLMPlanner(chatService))
+		wf.SetObserver(ragtool.NewLLMObserver(chatService))
 	}
 	return wf
 }

@@ -402,15 +402,10 @@ func (s *KnowledgeDocumentService) Page(ctx context.Context, input PageKnowledge
 	if s == nil || s.documentRepo == nil {
 		return KnowledgeDocumentPageResult{}, exception.NewServiceException("knowledge document repository is required", nil)
 	}
-	knowledgeBaseID := strings.TrimSpace(input.KnowledgeBaseID)
-	if knowledgeBaseID == "" {
-		return KnowledgeDocumentPageResult{}, exception.NewClientException("knowledge base id is required", nil)
-	}
-
 	page, pageSize := paging.Normalize(input.Page, input.PageSize, defaultKnowledgePageSize, maxKnowledgePageSize)
 
 	baseFilter := port.KnowledgeDocumentListFilter{
-		KnowledgeBaseID: knowledgeBaseID,
+		KnowledgeBaseID: strings.TrimSpace(input.KnowledgeBaseID),
 		Status:          strings.TrimSpace(input.Status),
 		Query:           strings.TrimSpace(input.Query),
 	}
@@ -420,7 +415,7 @@ func (s *KnowledgeDocumentService) Page(ctx context.Context, input PageKnowledge
 	}
 
 	items, err := s.documentRepo.List(ctx, port.KnowledgeDocumentListFilter{
-		KnowledgeBaseID: knowledgeBaseID,
+		KnowledgeBaseID: strings.TrimSpace(input.KnowledgeBaseID),
 		Status:          strings.TrimSpace(input.Status),
 		Query:           strings.TrimSpace(input.Query),
 		ListOptions: port.ListOptions{

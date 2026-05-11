@@ -471,12 +471,7 @@ func (s *KnowledgeChunkService) rebuildDocumentVectors(ctx context.Context, docu
 			Index:           chunk.ChunkIndex,
 			Text:            chunk.Content,
 			Embedding:       embeddings[i],
-			Metadata: map[string]any{
-				"document_id":       document.ID,
-				"knowledge_base_id": document.KnowledgeBaseID,
-				"document_name":     document.Name,
-				"chunk_index":       chunk.ChunkIndex,
-			},
+			Metadata:        buildKnowledgeVectorMetadata(document, chunk.ChunkIndex, nil),
 		})
 	}
 	if err := s.vectorStore.UpsertDocumentChunks(ctx, vectors); err != nil {
@@ -562,12 +557,7 @@ func (s *KnowledgeChunkService) upsertChunkVectorsWithStore(ctx context.Context,
 			Index:           chunk.ChunkIndex,
 			Text:            chunk.Content,
 			Embedding:       embeddings[i],
-			Metadata: map[string]any{
-				"document_id":       document.ID,
-				"knowledge_base_id": document.KnowledgeBaseID,
-				"document_name":     document.Name,
-				"chunk_index":       chunk.ChunkIndex,
-			},
+			Metadata:        buildKnowledgeVectorMetadata(document, chunk.ChunkIndex, nil),
 		})
 	}
 	if len(vectors) == 1 {

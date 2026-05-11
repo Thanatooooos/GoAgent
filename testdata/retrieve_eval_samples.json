@@ -1,0 +1,61 @@
+{
+  "samples": [
+    {
+      "name": "file name chunk lookup",
+      "query": "查找文件名是 trace_handlers.go 的实现",
+      "tags": ["keyword", "file_name", "metadata_title"],
+      "target": "chunk",
+      "expectedIds": ["chunk-trace-1"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-trace-1",
+          "documentId": "doc-trace",
+          "score": 0.98
+        },
+        {
+          "chunkId": "chunk-trace-2",
+          "documentId": "doc-trace",
+          "score": 0.72
+        }
+      ]
+    },
+    {
+      "name": "chapter title document lookup",
+      "query": "搜索章节标题包含 概述 的文档",
+      "tags": ["keyword", "section", "metadata_title"],
+      "target": "document",
+      "expectedIds": ["doc-architecture"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-overview-1",
+          "documentId": "doc-architecture",
+          "score": 0.91
+        },
+        {
+          "chunkId": "chunk-other-1",
+          "documentId": "doc-other",
+          "score": 0.65
+        }
+      ]
+    },
+    {
+      "name": "semantic concept question",
+      "query": "什么是 RAG 检索增强生成",
+      "tags": ["semantic", "concept"],
+      "target": "document",
+      "expectedIds": ["doc-rag-intro"],
+      "retrieved": [
+        {
+          "chunkId": "chunk-wrong-1",
+          "documentId": "doc-history",
+          "score": 0.82
+        },
+        {
+          "chunkId": "chunk-rag-1",
+          "documentId": "doc-rag-intro",
+          "score": 0.80
+        }
+      ]
+    }
+  ]
+}

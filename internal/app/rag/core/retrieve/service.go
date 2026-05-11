@@ -58,6 +58,7 @@ func NewEngine(searcher corevector.Searcher, embedding aiembedding.EmbeddingServ
 	engine.channels = []SearchChannel{
 		NewVectorGlobalChannel(searcher, embedding),
 		NewKeywordChannel(searcher),
+		NewMetadataTitleChannel(searcher),
 	}
 	engine.processors = []SearchResultPostProcessor{
 		NewFusionPostProcessor(),

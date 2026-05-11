@@ -99,6 +99,60 @@ func (c *keywordChannel) Search(ctx context.Context, searchCtx SearchContext) (S
 	}), nil
 }
 
+type metadataTitleChannel struct {
+	searcher corevector.Searcher
+}
+
+func NewMetadataTitleChannel(searcher corevector.Searcher) SearchChannel {
+	return &metadataTitleChannel{searcher: searcher}
+}
+
+func (c *metadataTitleChannel) Name() string  { return ChannelMetadataTitle }
+func (c *metadataTitleChannel) Priority() int { return 25 }
+func (c *metadataTitleChannel) Enabled(ctx SearchContext) bool {
+	if c == nil || c.searcher == nil {
+		return false
+	}
+	switch ctx.ResolvedMode {
+	case SearchModeKeyword, SearchModeHybrid:
+	default:
+		return false
+	}
+	return hasSearchSignal(ctx, "exact_match_intent") ||
+		hasSearchSignal(ctx, "identifier_lookup") ||
+		hasSearchSignal(ctx, "file_name_lookup") ||
+		matchesAnyToken(strings.ToLower(strings.TrimSpace(ctx.Query)), []string{"标题", "文件名", "章节", "section"})
+}
+
+func (c *metadataTitleChannel) Search(ctx context.Context, searchCtx SearchContext) (SearchChannelResult, error) {
+	startedAt := time.Now()
+	hits, err := c.searcher.SearchByMetadata(ctx, strings.TrimSpace(searchCtx.Query), searchCtx.KnowledgeBaseIDs, expandChannelTopK(searchCtx.TopK))
+	if err != nil {
+		return SearchChannelResult{}, fmt.Errorf("metadata title search chunks: %w", err)
+	}
+	return newChannelResult(c.Name(), toRetrievedChunks(hits), startedAt, map[string]any{
+		"requestedMode": searchCtx.RequestedMode,
+		"resolvedMode":  searchCtx.ResolvedMode,
+		"topK":          searchCtx.TopK,
+		"expandedTopK":  expandChannelTopK(searchCtx.TopK),
+		"modeSource":    searchCtx.ModeDecision.Source,
+		"fields":        []string{"document_name", "source_file_name", "section"},
+	}), nil
+}
+
+func hasSearchSignal(ctx SearchContext, signal string) bool {
+	signals, ok := ctx.QueryHints["signals"].([]string)
+	if !ok {
+		return false
+	}
+	for _, item := range signals {
+		if strings.TrimSpace(item) == signal {
+			return true
+		}
+	}
+	return false
+}
+
 func expandChannelTopK(topK int) int {
 	if topK <= 0 {
 		topK = DefaultTopK

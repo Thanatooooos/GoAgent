@@ -30,4 +30,13 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Rag.Knowledge.Ingestion.MaxConcurrent != 8 {
 		t.Fatalf("unexpected rag.knowledge.ingestion.max-concurrent: %d", cfg.Rag.Knowledge.Ingestion.MaxConcurrent)
 	}
+	if cfg.Rag.Agent.MaxIterations != 3 {
+		t.Fatalf("unexpected rag.agent.max-iterations: %d", cfg.Rag.Agent.MaxIterations)
+	}
+	if !cfg.Rag.Agent.ParallelToolCalls.Enabled {
+		t.Fatal("expected rag.agent.parallel-tool-calls.enabled to default to true")
+	}
+	if cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency != 3 {
+		t.Fatalf("unexpected rag.agent.parallel-tool-calls.max-concurrency: %d", cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency)
+	}
 }

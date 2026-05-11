@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { toast } from "sonner";
 
 import type {
+  AgentThinkPayload,
   CompletionPayload,
   FallbackPayload,
   FeedbackValue,
@@ -48,6 +49,7 @@ interface ChatState {
   cancelGeneration: () => void;
   appendStreamContent: (delta: string) => void;
   appendThinkingContent: (delta: string) => void;
+  appendAgentThink: (payload: AgentThinkPayload) => void;
   appendToolCall: (call: ToolCallPayload) => void;
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
 }
@@ -471,11 +473,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (payload.type !== "think") return;
         get().appendThinkingContent(payload.delta);
       },
+      onAgentThink: (payload: AgentThinkPayload) => {
+        if (!payload || typeof payload !== "object") return;
+        get().appendAgentThink(payload);
+      },
       onReject: (payload: MessageDeltaPayload) => {
         if (!payload || typeof payload !== "object") return;
         get().appendStreamContent(payload.delta);
       },
       onTool: (payload: ToolCallPayload) => {
+        if (!payload || typeof payload !== "object") return;
+        get().appendToolCall(payload);
+      },
+      onToolStart: (payload: ToolCallPayload) => {
+        if (!payload || typeof payload !== "object") return;
+        get().appendToolCall({ ...payload, status: payload.status || "running" });
+      },
+      onToolResult: (payload: ToolCallPayload) => {
         if (!payload || typeof payload !== "object") return;
         get().appendToolCall(payload);
       },
@@ -694,6 +708,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       )
     }));
   },
+  appendAgentThink: (payload) => {
+    const message = payload?.message?.trim();
+    if (!message) return;
+    set((state) => ({
+      messages: state.messages.map((item) => {
+        if (item.id !== state.streamingMessageId) return item;
+        if (item.status === "cancelled" || item.status === "error") return item;
+        const current = item.agentThinks ?? [];
+        if (current[current.length - 1] === message) {
+          return item;
+        }
+        return {
+          ...item,
+          agentThinks: [...current, message]
+        };
+      })
+    }));
+  },
   appendToolCall: (call) => {
     if (!call) return;
     set((state) => ({
@@ -703,7 +735,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         message.status !== "error"
           ? {
               ...message,
-              toolCalls: [...(message.toolCalls ?? []), call]
+              toolCalls: (() => {
+                const current = [...(message.toolCalls ?? [])];
+                const nextCallId = call.callId?.trim();
+                if (nextCallId) {
+                  const index = current.findIndex((item) => item.callId === nextCallId);
+                  if (index >= 0) {
+                    current[index] = {
+                      ...current[index],
+                      ...call,
+                      arguments: call.arguments ?? current[index].arguments,
+                      data: call.data ?? current[index].data
+                    };
+                    return current;
+                  }
+                }
+                return [...current, call];
+              })()
             }
           : message
       )

@@ -521,15 +521,25 @@ func buildChunkVectors(document domain.KnowledgeDocument, chunks []corechunk.Chu
 			Index:           item.Index,
 			Text:            item.Text,
 			Embedding:       item.Embedding,
-			Metadata: map[string]any{
-				"document_id":       document.ID,
-				"knowledge_base_id": document.KnowledgeBaseID,
-				"document_name":     document.Name,
-				"chunk_index":       item.Index,
-			},
+			Metadata:        buildKnowledgeVectorMetadata(document, item.Index, item.Metadata),
 		})
 	}
 	return result
+}
+
+func buildKnowledgeVectorMetadata(document domain.KnowledgeDocument, chunkIndex int, chunkMetadata map[string]any) map[string]any {
+	metadata := map[string]any{
+		"document_id":       document.ID,
+		"knowledge_base_id": document.KnowledgeBaseID,
+		"document_name":     document.Name,
+		"source_type":       document.SourceType,
+		"source_file_name":  document.Name,
+		"chunk_index":       chunkIndex,
+	}
+	for key, value := range chunkMetadata {
+		metadata[key] = value
+	}
+	return metadata
 }
 
 func detectDocumentMimeType(document domain.KnowledgeDocument) string {
