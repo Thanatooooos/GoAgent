@@ -7,26 +7,18 @@ import (
 	"gorm.io/gorm"
 
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
-	postgresingestion "local/rag-project/internal/adapter/repository/postgres/ingestion"
-	postgresknowledge "local/rag-project/internal/adapter/repository/postgres/knowledge"
 	postgresrag "local/rag-project/internal/adapter/repository/postgres/rag"
 	postgresuser "local/rag-project/internal/adapter/repository/postgres/user"
 	pgvectorstore "local/rag-project/internal/adapter/vectorstore/pgvector"
-	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
-	ingestionservice "local/rag-project/internal/app/ingestion/service"
-	knowledgeservice "local/rag-project/internal/app/knowledge/service"
 	ragmemory "local/rag-project/internal/app/rag/core/memory"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	corevector "local/rag-project/internal/app/rag/core/vector"
 	ragservice "local/rag-project/internal/app/rag/service"
-	ragtool "local/rag-project/internal/app/rag/tool"
-	ragbuiltin "local/rag-project/internal/app/rag/tool/builtin"
-	"local/rag-project/internal/app/rag/tool/planner"
+	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
 	"local/rag-project/internal/framework/config"
 	infraai "local/rag-project/internal/infra-ai"
-	aichat "local/rag-project/internal/infra-ai/chat"
 )
 
 // RuntimeOptions 描述 RAG runtime 的装配选项。
@@ -150,7 +142,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	if cfg != nil {
 		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
 	}
-	chatService.SetToolWorkflow(buildLocalToolWorkflow(db, traceRunRepo, traceNodeRepo, cfg, aiRuntime.Chat))
+	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, aiRuntime.Chat))
 
 	return &Runtime{
 		DB:           db,
@@ -197,81 +189,4 @@ func closeRuntimeDB(db *gorm.DB) error {
 		return err
 	}
 	return sqlDB.Close()
-}
-
-type knowledgePipelineTaskReader struct {
-	taskService *ingestionservice.TaskService
-}
-
-func (r knowledgePipelineTaskReader) GetKnowledgePipelineTask(ctx context.Context, taskID string) (ingestiondomain.Task, error) {
-	return r.taskService.Get(ctx, taskID)
-}
-
-func (r knowledgePipelineTaskReader) ListKnowledgePipelineTaskNodes(ctx context.Context, taskID string) ([]ingestiondomain.TaskNode, error) {
-	return r.taskService.ListNodes(ctx, taskID)
-}
-
-func buildLocalToolWorkflow(
-	db *gorm.DB,
-	traceRunRepo *postgresrag.RagTraceRunRepository,
-	traceNodeRepo *postgresrag.RagTraceNodeRepository,
-	cfg *config.Config,
-	chatService aichat.LLMService,
-) ragtool.Workflow {
-	if db == nil {
-		return nil
-	}
-
-	registry := ragtool.NewRegistry()
-
-	baseRepo := postgresknowledge.NewKnowledgeBaseRepository(db)
-	documentRepo := postgresknowledge.NewKnowledgeDocumentRepository(db, nil)
-	chunkLogRepo := postgresknowledge.NewKnowledgeDocumentChunkLogRepository(db)
-	documentService := knowledgeservice.NewKnowledgeDocumentService(
-		baseRepo,
-		documentRepo,
-		nil,
-		chunkLogRepo,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
-
-	pipelineRepo := postgresingestion.NewPipelineRepository(db)
-	taskRepo := postgresingestion.NewTaskRepository(db)
-	taskNodeRepo := postgresingestion.NewTaskNodeRepository(db)
-	taskService := ingestionservice.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, nil)
-	documentService.SetIngestionTaskReader(knowledgePipelineTaskReader{taskService: taskService})
-
-	registry.MustRegister(ragbuiltin.NewThinkTool())
-	registry.MustRegister(ragbuiltin.NewWebSearchTool())
-	registry.MustRegister(ragbuiltin.NewDocumentListTool(documentService))
-	registry.MustRegister(ragbuiltin.NewTaskListTool(taskService))
-	registry.MustRegister(ragbuiltin.NewDocumentQueryTool(documentService))
-	documentDiagnoseTool := ragbuiltin.NewDocumentIngestionDiagnoseTool(documentService)
-	documentDiagnoseTool.SetTaskNodeReader(taskService)
-	registry.MustRegister(documentDiagnoseTool)
-	registry.MustRegister(ragbuiltin.NewDocumentChunkLogQueryTool(documentService))
-	registry.MustRegister(ragbuiltin.NewTaskIngestionDiagnoseTool(taskService))
-	registry.MustRegister(ragbuiltin.NewIngestionTaskQueryTool(taskService))
-	registry.MustRegister(ragbuiltin.NewIngestionTaskNodeQueryTool(taskService))
-	registry.MustRegister(ragbuiltin.NewTraceNodeQueryTool(traceRunRepo, traceNodeRepo))
-	registry.MustRegister(ragbuiltin.NewTraceRetrievalDiagnoseTool(traceRunRepo, traceNodeRepo))
-
-	wf := ragtool.NewAgentLoop(ragtool.NewExecutor(registry))
-	if cfg != nil {
-		wf.SetMaxIterations(cfg.Rag.Agent.MaxIterations)
-		wf.SetParallelToolCalls(
-			cfg.Rag.Agent.ParallelToolCalls.Enabled,
-			cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency,
-		)
-	}
-	if chatService != nil {
-		wf.SetPlanner(planner.NewLLMPlanner(chatService))
-		wf.SetObserver(ragtool.NewLLMObserver(chatService))
-	}
-	return wf
 }

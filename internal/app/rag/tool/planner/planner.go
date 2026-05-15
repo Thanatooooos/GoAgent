@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"local/rag-project/internal/app/rag/tool"
+	ragcore "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
@@ -65,14 +65,14 @@ func NewLLMPlanner(chatService aichat.LLMService) *LLMPlanner {
 	}
 }
 
-func (p *LLMPlanner) Plan(ctx context.Context, input tool.PlanInput) (tool.PlanResult, error) {
+func (p *LLMPlanner) Plan(ctx context.Context, input ragcore.PlanInput) (ragcore.PlanResult, error) {
 	if p == nil || p.chatService == nil {
-		return tool.PlanResult{}, nil
+		return ragcore.PlanResult{}, nil
 	}
 
 	question := strings.TrimSpace(input.Question)
 	if question == "" || len(input.ToolDefinitions) == 0 {
-		return tool.PlanResult{}, nil
+		return ragcore.PlanResult{}, nil
 	}
 
 	systemPrompt := p.buildSystemPrompt(input.ToolDefinitions)
@@ -88,13 +88,13 @@ func (p *LLMPlanner) Plan(ctx context.Context, input tool.PlanInput) (tool.PlanR
 
 	response, err := p.chatService.ChatWithRequest(request)
 	if err != nil {
-		return tool.PlanResult{}, fmt.Errorf("planner llm call: %w", err)
+		return ragcore.PlanResult{}, fmt.Errorf("planner llm call: %w", err)
 	}
 
 	return p.parseResponse(response), nil
 }
 
-func (p *LLMPlanner) buildSystemPrompt(defs []tool.Definition) string {
+func (p *LLMPlanner) buildSystemPrompt(defs []ragcore.Definition) string {
 	var toolList strings.Builder
 	for _, def := range defs {
 		fmt.Fprintf(&toolList, "- %s: %s\n", def.Name, def.Description)
@@ -118,15 +118,15 @@ func (p *LLMPlanner) buildSystemPrompt(defs []tool.Definition) string {
 	)
 }
 
-func (p *LLMPlanner) buildUserPrompt(input tool.PlanInput) string {
+func (p *LLMPlanner) buildUserPrompt(input ragcore.PlanInput) string {
 	var builder strings.Builder
 	builder.WriteString("User question:\n")
 	builder.WriteString(strings.TrimSpace(input.Question))
-	if rewriteSummary := tool.SummarizeRewriteResultForLLM(input.RewriteResult); rewriteSummary != "" {
+	if rewriteSummary := ragcore.SummarizeRewriteResultForLLM(input.RewriteResult); rewriteSummary != "" {
 		builder.WriteString("\n\nRewrite context:\n")
 		builder.WriteString(rewriteSummary)
 	}
-	if retrieveSummary := tool.SummarizeRetrieveResultForLLM(input.RetrieveResult); retrieveSummary != "" {
+	if retrieveSummary := ragcore.SummarizeRetrieveResultForLLM(input.RetrieveResult); retrieveSummary != "" {
 		builder.WriteString("\n\nRetrieve context:\n")
 		builder.WriteString(retrieveSummary)
 	}
@@ -146,7 +146,7 @@ func (p *LLMPlanner) buildUserPrompt(input tool.PlanInput) string {
 			builder.WriteString(name)
 			builder.WriteString(": ")
 			builder.WriteString(summary)
-			if dataSummary := tool.SummarizeResultDataForLLM(result.Data); dataSummary != "" {
+			if dataSummary := ragcore.SummarizeResultDataForLLM(result.Data); dataSummary != "" {
 				builder.WriteString(" | data: ")
 				builder.WriteString(dataSummary)
 			}
@@ -167,10 +167,10 @@ func (p *LLMPlanner) buildUserPrompt(input tool.PlanInput) string {
 	return builder.String()
 }
 
-func (p *LLMPlanner) parseResponse(raw string) tool.PlanResult {
+func (p *LLMPlanner) parseResponse(raw string) ragcore.PlanResult {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return tool.PlanResult{}
+		return ragcore.PlanResult{}
 	}
 
 	if extracted := extractJSONBlock(raw); extracted != "" {
@@ -179,22 +179,22 @@ func (p *LLMPlanner) parseResponse(raw string) tool.PlanResult {
 
 	var parsed plannerResponse
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return tool.PlanResult{}
+		return ragcore.PlanResult{}
 	}
 
-	calls := make([]tool.Call, 0, len(parsed.Tools))
+	calls := make([]ragcore.Call, 0, len(parsed.Tools))
 	for _, tc := range parsed.Tools {
 		name := strings.TrimSpace(tc.Name)
 		if name == "" {
 			continue
 		}
-		calls = append(calls, tool.Call{
+		calls = append(calls, ragcore.Call{
 			Name:      name,
 			Arguments: tc.Arguments,
 		})
 	}
 
-	return tool.PlanResult{Calls: calls}
+	return ragcore.PlanResult{Calls: calls}
 }
 
 func extractJSONBlock(raw string) string {

@@ -21,10 +21,6 @@ type SearchContext struct {
 	TopK             int
 	ScoreThreshold   *float32
 	RerankTopN       int
-	RequestedMode    string
-	ResolvedMode     string
-	ModeDecision     SearchModeDecision
-	QueryHints       map[string]any
 	RouteHints       map[string]any
 	IntentCandidates []string
 }
@@ -70,23 +66,13 @@ func buildSearchContext(request Request) SearchContext {
 	if topK <= 0 {
 		topK = DefaultTopK
 	}
-	decision := AnalyzeSearchMode(request)
 	return SearchContext{
 		Query:            strings.TrimSpace(request.Query),
 		KnowledgeBaseIDs: append([]string(nil), request.KnowledgeBaseIDs...),
 		TopK:             topK,
 		ScoreThreshold:   request.ScoreThreshold,
 		RerankTopN:       request.RerankTopN,
-		RequestedMode:    decision.RequestedMode,
-		ResolvedMode:     decision.ResolvedMode,
-		ModeDecision:     decision,
-		QueryHints: map[string]any{
-			"signals": append([]string(nil), decision.Signals...),
-		},
-		RouteHints: map[string]any{
-			"source": decision.Source,
-			"reason": decision.Reason,
-		},
+		RouteHints:       map[string]any{},
 	}
 }
 

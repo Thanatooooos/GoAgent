@@ -83,10 +83,10 @@ func (d *DocumentStatusHelper) RecoverStuckRunning(ctx context.Context, timeoutM
 	timeout := max(timeoutMinutes, 10)
 	threshold := time.Now().Add(-time.Duration(timeout) * time.Minute)
 	result, err := d.documentRepo.UpdateFields(ctx, port.Where(
-		port.KnowledgeDocument.Status.Eq(domain.KnowledgeDocumentChunkLogStatusRunning),
+		port.KnowledgeDocument.Status.Eq(domain.KnowledgeDocumentStatusRunning),
 		port.KnowledgeDocument.UpdatedAt.Lt(threshold),
 	), port.Set(
-		port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentChunkLogStatusFailed),
+		port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentStatusFailed),
 		port.KnowledgeDocument.UpdatedBy.To(systemUser),
 	))
 	return result, err

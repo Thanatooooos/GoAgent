@@ -5,6 +5,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	"local/rag-project/internal/framework/convention"
 )
 
 type toolStub struct {
@@ -132,6 +135,74 @@ func TestRegistryRegisterAndListDefinitions(t *testing.T) {
 	}
 }
 
+func TestRegistryRegisterModuleAndGetSpec(t *testing.T) {
+	registry := NewRegistry()
+	module := NewLegacyToolAdapterWithSpec(&toolStub{
+		definition: Definition{Name: "web_search", Description: "search web", ReadOnly: true},
+	}, ToolSpec{
+		Capability:          CapabilitySearch,
+		EvidenceSources:     []string{EvidenceSourceExternalWeb},
+		ExecutionMode:       ExecutionModeReadOnly,
+		RiskLevel:           RiskLevelLow,
+		ApprovalRequirement: ApprovalRequirementNone,
+		ReadOnly:            true,
+		Family:              "web",
+	}).Module()
+
+	if err := registry.RegisterModule(module); err != nil {
+		t.Fatalf("register module: %v", err)
+	}
+	if _, ok := registry.GetModule("web_search"); !ok {
+		t.Fatal("expected module lookup to succeed")
+	}
+	spec, ok := registry.GetSpec("web_search")
+	if !ok {
+		t.Fatal("expected spec lookup to succeed")
+	}
+	if spec.Capability != CapabilitySearch {
+		t.Fatalf("unexpected capability: %q", spec.Capability)
+	}
+}
+
+func TestLegacyRegisterInfersKnownBehavior(t *testing.T) {
+	registry := NewRegistry()
+	registry.MustRegister(&toolStub{
+		definition: Definition{
+			Name:        "document_query",
+			Description: "query document",
+			ReadOnly:    true,
+			Parameters:  []ParameterDefinition{{Name: "documentId", Type: ParamTypeString, Required: true}},
+		},
+		result: Result{
+			Name:   "document_query",
+			Status: CallStatusSuccess,
+			Data: map[string]any{
+				"documentId":  "doc-1",
+				"status":      "failed",
+				"processMode": "pipeline",
+			},
+		},
+	})
+
+	behavior, ok := registry.GetBehavior("document_query")
+	if !ok || behavior.Next == nil || behavior.Observe == nil {
+		t.Fatalf("expected inferred legacy behavior, got ok=%v behavior=%+v", ok, behavior)
+	}
+
+	decision := nextDecisionWithRegistry(registry, WorkflowInput{}, Result{
+		Name:   "document_query",
+		Status: CallStatusSuccess,
+		Data: map[string]any{
+			"documentId":  "doc-1",
+			"status":      "failed",
+			"processMode": "pipeline",
+		},
+	})
+	if decision.Done || len(decision.HintCalls) != 1 || decision.HintCalls[0].Name != "document_ingestion_diagnose" {
+		t.Fatalf("expected inferred behavior-driven continuation, got %+v", decision)
+	}
+}
+
 func TestExecutorExecuteSuccess(t *testing.T) {
 	registry := NewRegistry()
 	tool := &toolStub{
@@ -143,7 +214,15 @@ func TestExecutorExecuteSuccess(t *testing.T) {
 			},
 		},
 	}
-	if err := registry.Register(tool); err != nil {
+	if err := registry.RegisterModule(NewLegacyToolAdapterWithSpec(tool, ToolSpec{
+		Capability:          CapabilityDiagnosis,
+		EvidenceSources:     []string{EvidenceSourceSystemRecords},
+		ExecutionMode:       ExecutionModeReadOnly,
+		RiskLevel:           RiskLevelLow,
+		ApprovalRequirement: ApprovalRequirementNone,
+		ReadOnly:            true,
+		Family:              "system",
+	}).Module()); err != nil {
 		t.Fatalf("register tool: %v", err)
 	}
 
@@ -166,6 +245,9 @@ func TestExecutorExecuteSuccess(t *testing.T) {
 	if tool.lastCall.Arguments["documentId"] != "doc-1" {
 		t.Fatalf("unexpected invoke arguments: %+v", tool.lastCall.Arguments)
 	}
+	if result.Meta.Capability != CapabilityDiagnosis {
+		t.Fatalf("expected result meta capability, got %+v", result.Meta)
+	}
 }
 
 func TestExecutorExecuteFailure(t *testing.T) {
@@ -177,7 +259,15 @@ func TestExecutorExecuteFailure(t *testing.T) {
 		},
 		err: errors.New("repo unavailable"),
 	}
-	if err := registry.Register(tool); err != nil {
+	if err := registry.RegisterModule(NewLegacyToolAdapterWithSpec(tool, ToolSpec{
+		Capability:          CapabilityDiagnosis,
+		EvidenceSources:     []string{EvidenceSourceRAGTrace},
+		ExecutionMode:       ExecutionModeReadOnly,
+		RiskLevel:           RiskLevelLow,
+		ApprovalRequirement: ApprovalRequirementNone,
+		ReadOnly:            true,
+		Family:              "trace",
+	}).Module()); err != nil {
 		t.Fatalf("register tool: %v", err)
 	}
 
@@ -225,6 +315,41 @@ func TestRenderContextAndToCallSummaries(t *testing.T) {
 	}
 	if summaries := ToCallSummaries(results); len(summaries) != 2 {
 		t.Fatalf("expected 2 summaries, got %d", len(summaries))
+	}
+}
+
+func TestRenderContextIncludesWebSearchAndFetchDetails(t *testing.T) {
+	results := []Result{
+		{
+			Name:    "web_search",
+			Status:  CallStatusSuccess,
+			Summary: "found 1 web result",
+			Data: map[string]any{
+				"results": []map[string]any{
+					{
+						"title":   "Vector Store Troubleshooting",
+						"url":     "https://example.com/vector-store",
+						"snippet": "How to debug connection refused errors.",
+					},
+				},
+			},
+		},
+		{
+			Name:    "web_fetch",
+			Status:  CallStatusSuccess,
+			Summary: "fetched 1 urls: 1 ok, 0 failed",
+			Data: map[string]any{
+				"combinedText": "[https://example.com/vector-store]\nCheck service health and network reachability first.",
+			},
+		},
+	}
+
+	contextText := RenderContext(results)
+	if !strings.Contains(contextText, "Vector Store Troubleshooting") {
+		t.Fatalf("expected search result title in rendered context: %q", contextText)
+	}
+	if !strings.Contains(contextText, "Check service health and network reachability first.") {
+		t.Fatalf("expected fetched page text in rendered context: %q", contextText)
 	}
 }
 
@@ -306,6 +431,334 @@ func TestBuildAnswerGuidanceResolvesStatusConflictDiagnoseFailedTaskRunning(t *t
 	}
 	if !strings.Contains(guidance, "状态不一致") {
 		t.Fatalf("expected risk hint about status inconsistency, got %q", guidance)
+	}
+}
+
+func TestViewWebSearchResultParsesGenericSlices(t *testing.T) {
+	view, ok := ViewWebSearchResult(Result{
+		Name: "web_search",
+		Data: map[string]any{
+			"query":        "vector store connection refused",
+			"provider":     "tavily",
+			"allowedCount": 1,
+			"neutralCount": 1,
+			"results": []any{
+				map[string]any{
+					"title":         "Vector Store Troubleshooting",
+					"url":           "https://example.com/a",
+					"snippet":       "Check the service endpoint first.",
+					"domain":        "example.com",
+					"provider":      "tavily",
+					"providerScore": 0.92,
+					"sourceType":    "official_docs",
+					"policy":        "allow",
+					"riskFlags":     []any{},
+					"reasons":       []any{"domain example.com matched allow list"},
+				},
+				map[string]any{
+					"title":      "Network Debugging",
+					"url":        "https://example.com/b",
+					"snippet":    "Verify DNS and firewall rules.",
+					"domain":     "example.com",
+					"sourceType": "forum",
+					"policy":     "neutral",
+					"riskFlags":  []any{"user_generated"},
+				},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected web search view to parse")
+	}
+	if view.Query != "vector store connection refused" {
+		t.Fatalf("unexpected query: %q", view.Query)
+	}
+	if view.Provider != "tavily" {
+		t.Fatalf("unexpected provider: %q", view.Provider)
+	}
+	if len(view.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(view.Results))
+	}
+	if view.AllowedCount != 1 || view.NeutralCount != 1 {
+		t.Fatalf("unexpected policy counters: %+v", view)
+	}
+	if view.Results[0].Policy != "allow" || view.Results[0].SourceType != "official_docs" {
+		t.Fatalf("expected first result policy metadata, got %+v", view.Results[0])
+	}
+	if len(view.Results[1].RiskFlags) != 1 || view.Results[1].RiskFlags[0] != "user_generated" {
+		t.Fatalf("expected second result risk flags, got %+v", view.Results[1].RiskFlags)
+	}
+	urls := view.URLs(1)
+	if len(urls) != 1 || urls[0] != "https://example.com/a" {
+		t.Fatalf("unexpected urls: %#v", urls)
+	}
+	fetchable := view.FetchableURLs(2)
+	if len(fetchable) != 2 {
+		t.Fatalf("expected both allow and neutral urls to be fetchable, got %#v", fetchable)
+	}
+}
+
+func TestBuildAnswerGuidanceFromWebSearchIncludesLocalEvidenceAndSources(t *testing.T) {
+	guidance := BuildAnswerGuidance([]Result{
+		{
+			Name:    "document_list",
+			Status:  CallStatusSuccess,
+			Summary: "matched 2 local documents about vector store operations",
+		},
+		{
+			Name:   "web_search",
+			Status: CallStatusSuccess,
+			Data: map[string]any{
+				"results": []any{
+					map[string]any{
+						"title":      "Official Troubleshooting Guide",
+						"url":        "https://example.com/official",
+						"snippet":    "Connection refused usually means the service is unavailable.",
+						"sourceType": "official_docs",
+						"policy":     "allow",
+					},
+				},
+			},
+		},
+		{
+			Name:   "web_fetch",
+			Status: CallStatusSuccess,
+			Data: map[string]any{
+				"pages": []any{
+					map[string]any{
+						"url":          "https://example.com/official",
+						"text":         "Check the vector store health before retrying.",
+						"wasTruncated": true,
+					},
+				},
+			},
+		},
+	})
+	if !strings.Contains(guidance, "本地/知识库侧已知证据") {
+		t.Fatalf("expected local evidence section, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "document_list: matched 2 local documents") {
+		t.Fatalf("expected local evidence summary, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "https://example.com/official") {
+		t.Fatalf("expected source url in guidance, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "policy=allow") || !strings.Contains(guidance, "type=official_docs") {
+		t.Fatalf("expected source policy metadata in guidance, got %q", guidance)
+	}
+}
+
+func TestViewExternalEvidenceWorkflowResultParsesQualityAndSourceReview(t *testing.T) {
+	view, ok := ViewExternalEvidenceWorkflowResult(Result{
+		Name: "external_evidence_workflow",
+		Data: map[string]any{
+			"question":            "What is Go generics?",
+			"searchQuery":         "go generics overview",
+			"selectedUrls":        []string{"https://go.dev/doc/tutorial/generics"},
+			"selectedDomains":     []string{"go.dev"},
+			"selectedSourceTypes": []string{"official_docs"},
+			"sourceCoverage":      "allow_only",
+			"qualityAssessment": map[string]any{
+				"quality":         "strong",
+				"confidence":      0.8,
+				"reasoning":       "Readable official content was fetched.",
+				"sourceDiversity": "low",
+				"corroboration":   "single_source",
+				"successfulPages": 1,
+			},
+			"sourceReview": map[string]any{
+				"totalResults":  2,
+				"allowedCount":  1,
+				"selectedCount": 1,
+				"coverage":      "allow_only",
+				"selectedSources": []any{
+					map[string]any{
+						"title":      "Generics tutorial",
+						"url":        "https://go.dev/doc/tutorial/generics",
+						"domain":     "go.dev",
+						"policy":     "allow",
+						"sourceType": "official_docs",
+					},
+				},
+			},
+			"readiness":           "ready",
+			"readinessConfidence": 0.82,
+			"citedUrls":           []string{"https://go.dev/doc/tutorial/generics"},
+		},
+	})
+	if !ok {
+		t.Fatal("expected external evidence workflow view to parse")
+	}
+	if view.SourceCoverage != "allow_only" {
+		t.Fatalf("unexpected source coverage: %q", view.SourceCoverage)
+	}
+	if view.Quality.Quality != "strong" || view.Quality.Corroboration != "single_source" {
+		t.Fatalf("unexpected quality view: %+v", view.Quality)
+	}
+	if len(view.SourceReview.SelectedSources) != 1 {
+		t.Fatalf("expected 1 selected source, got %+v", view.SourceReview.SelectedSources)
+	}
+	if view.SourceReview.SelectedSources[0].SourceType != "official_docs" {
+		t.Fatalf("unexpected selected source type: %+v", view.SourceReview.SelectedSources[0])
+	}
+}
+
+func TestBuildAnswerGuidanceFromExternalEvidenceWorkflowIncludesQualityAndSources(t *testing.T) {
+	guidance := BuildAnswerGuidance([]Result{
+		{
+			Name:    "document_list",
+			Status:  CallStatusSuccess,
+			Summary: "matched 1 local document about Go syntax basics",
+		},
+		{
+			Name:   "external_evidence_workflow",
+			Status: CallStatusSuccess,
+			Data: map[string]any{
+				"question":            "What is Go generics?",
+				"searchQuery":         "go generics overview",
+				"selectedUrls":        []string{"https://go.dev/doc/tutorial/generics"},
+				"selectedDomains":     []string{"go.dev"},
+				"selectedSourceTypes": []string{"official_docs"},
+				"sourceCoverage":      "allow_only",
+				"quality":             "strong",
+				"qualityConfidence":   0.8,
+				"qualityReasoning":    "Readable external evidence was fetched from selected sources with enough quality to ground an answer.",
+				"readiness":           "ready",
+				"readinessConfidence": 0.82,
+				"readinessReasoning":  "The fetched source is sufficient to answer with attribution.",
+				"answerStrategy":      "Answer directly and cite the official docs first.",
+				"missingInformation":  []string{"Additional corroborating source for ecosystem examples"},
+				"citedUrls":           []string{"https://go.dev/doc/tutorial/generics"},
+				"sourceReview": map[string]any{
+					"coverage": "allow_only",
+					"selectedSources": []any{
+						map[string]any{
+							"title":      "Generics tutorial",
+							"url":        "https://go.dev/doc/tutorial/generics",
+							"policy":     "allow",
+							"sourceType": "official_docs",
+						},
+					},
+				},
+				"qualityAssessment": map[string]any{
+					"quality":         "strong",
+					"confidence":      0.8,
+					"reasoning":       "Readable external evidence was fetched from selected sources with enough quality to ground an answer.",
+					"sourceDiversity": "low",
+					"corroboration":   "single_source",
+					"notes":           []string{"No obvious contradiction was detected."},
+				},
+			},
+		},
+	})
+	if !strings.Contains(guidance, "本地/知识库侧已知证据") {
+		t.Fatalf("expected local evidence section, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "外部来源质量要求") {
+		t.Fatalf("expected external quality section, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "allow_only") || !strings.Contains(guidance, "strong") {
+		t.Fatalf("expected source coverage and quality hints, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "https://go.dev/doc/tutorial/generics") {
+		t.Fatalf("expected cited URL in guidance, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "policy=allow") || !strings.Contains(guidance, "type=official_docs") {
+		t.Fatalf("expected selected source metadata, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "Additional corroborating source for ecosystem examples") {
+		t.Fatalf("expected missing information hint, got %q", guidance)
+	}
+}
+
+func TestBuildWorkflowTraceMetaDetectsSearchCapabilityAndEvidenceSources(t *testing.T) {
+	retrieveResult := ragretrieve.Result{
+		Chunks: []convention.RetrievedChunk{{ID: "c1", Score: 0.91}},
+	}
+	control := deriveWorkflowControl(WorkflowInput{
+		Control: WorkflowControl{
+			ExecutionMode:       ExecutionModeReadOnly,
+			RiskLevel:           RiskLevelLow,
+			ApprovalRequirement: ApprovalRequirementNone,
+		},
+		RetrieveResult: retrieveResult,
+	}, []Result{
+		{Name: "document_list", Summary: "matched local docs"},
+		{Name: "web_search"},
+		{Name: "web_fetch"},
+	})
+
+	if control.Capability != CapabilitySearch {
+		t.Fatalf("expected search capability, got %q", control.Capability)
+	}
+
+	traceMeta := buildWorkflowTraceMeta(control, retrieveResult, []Result{
+		{Name: "document_list"},
+		{Name: "web_search"},
+		{Name: "web_fetch"},
+	})
+	if traceMeta.ExecutionMode != ExecutionModeReadOnly {
+		t.Fatalf("unexpected execution mode: %q", traceMeta.ExecutionMode)
+	}
+	if !strings.Contains(strings.Join(traceMeta.EvidenceSources, ","), EvidenceSourceKnowledgeBase) {
+		t.Fatalf("expected knowledge base evidence source, got %+v", traceMeta.EvidenceSources)
+	}
+	if !strings.Contains(strings.Join(traceMeta.EvidenceSources, ","), EvidenceSourceExternalWeb) {
+		t.Fatalf("expected external web evidence source, got %+v", traceMeta.EvidenceSources)
+	}
+}
+
+func TestBuildWorkflowTraceMetaPrefersResultMeta(t *testing.T) {
+	control := deriveWorkflowControl(WorkflowInput{
+		Control: WorkflowControl{
+			ExecutionMode:       ExecutionModeReadOnly,
+			RiskLevel:           RiskLevelLow,
+			ApprovalRequirement: ApprovalRequirementNone,
+		},
+	}, []Result{
+		{
+			Name: "web_search",
+			Meta: ResultMeta{
+				Capability:          CapabilitySearch,
+				EvidenceSources:     []string{EvidenceSourceExternalWeb},
+				ExecutionMode:       ExecutionModeReadOnly,
+				RiskLevel:           RiskLevelLow,
+				ApprovalRequirement: ApprovalRequirementNone,
+			},
+		},
+	})
+	if control.Capability != CapabilitySearch {
+		t.Fatalf("expected capability from result meta, got %q", control.Capability)
+	}
+
+	traceMeta := buildWorkflowTraceMeta(control, ragretrieve.Result{}, []Result{
+		{
+			Name: "web_search",
+			Meta: ResultMeta{
+				EvidenceSources: []string{EvidenceSourceExternalWeb},
+			},
+		},
+	})
+	if len(traceMeta.EvidenceSources) != 1 || traceMeta.EvidenceSources[0] != EvidenceSourceExternalWeb {
+		t.Fatalf("expected evidence source from result meta, got %+v", traceMeta.EvidenceSources)
+	}
+}
+
+func TestDeriveWorkflowControlFallsBackToLegacyToolSpec(t *testing.T) {
+	control := deriveWorkflowControl(WorkflowInput{}, []Result{
+		{Name: "trace_node_query"},
+	})
+	if control.Capability != CapabilityDiagnosis {
+		t.Fatalf("expected diagnosis capability from legacy spec, got %q", control.Capability)
+	}
+	if control.ExecutionMode != ExecutionModeReadOnly {
+		t.Fatalf("expected read_only execution mode from legacy spec, got %q", control.ExecutionMode)
+	}
+	if control.RiskLevel != RiskLevelLow {
+		t.Fatalf("expected low risk from legacy spec, got %q", control.RiskLevel)
+	}
+	if control.ApprovalRequirement != ApprovalRequirementNone {
+		t.Fatalf("expected none approval requirement from legacy spec, got %q", control.ApprovalRequirement)
 	}
 }
 

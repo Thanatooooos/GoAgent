@@ -106,7 +106,7 @@ func TestRetrieveSemanticModeDefault(t *testing.T) {
 	if len(result.Chunks) != 1 || result.Chunks[0].ID != "c1" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if len(result.SearchChannels) != 1 || result.SearchChannels[0] != ChannelVectorGlobal {
+	if len(result.SearchChannels) != 3 {
 		t.Fatalf("unexpected search channels: %+v", result.SearchChannels)
 	}
 }
@@ -129,7 +129,7 @@ func TestRetrieveKeywordMode(t *testing.T) {
 	if len(result.Chunks) != 1 || result.Chunks[0].ID != "k1" {
 		t.Fatalf("unexpected keyword result: %+v", result)
 	}
-	if len(result.SearchChannels) != 1 || result.SearchChannels[0] != ChannelKeyword {
+	if len(result.SearchChannels) != 2 {
 		t.Fatalf("unexpected search channels: %+v", result.SearchChannels)
 	}
 }
@@ -189,206 +189,6 @@ func TestRetrieveKeywordModeUsesMetadataTitleChannelForFileLookup(t *testing.T) 
 	}
 }
 
-func TestResolveSearchModeAuto(t *testing.T) {
-	mode := resolveSearchMode(Request{
-		Query:      "nginx 404 报错怎么配置",
-		SearchMode: SearchModeAuto,
-	})
-	if mode != SearchModeHybrid {
-		t.Fatalf("expected hybrid, got %q", mode)
-	}
-}
-
-func TestResolveSearchModeEmptyFallsBackToSemanticForConceptQuestion(t *testing.T) {
-	mode := resolveSearchMode(Request{
-		Query: "什么是RAG",
-	})
-	if mode != SearchModeSemantic {
-		t.Fatalf("expected semantic, got %q", mode)
-	}
-}
-
-func TestResolveSearchModeInvalidFallsBackToInference(t *testing.T) {
-	mode := resolveSearchMode(Request{
-		Query:      "标题包含 Kubernetes 的文档",
-		SearchMode: "invalid",
-	})
-	if mode != SearchModeKeyword {
-		t.Fatalf("expected keyword, got %q", mode)
-	}
-}
-
-func TestAnalyzeSearchModeExplicitWins(t *testing.T) {
-	decision := AnalyzeSearchMode(Request{
-		Query:      "什么是 RAG",
-		SearchMode: SearchModeKeyword,
-	})
-	if decision.ResolvedMode != SearchModeKeyword {
-		t.Fatalf("expected explicit keyword mode, got %q", decision.ResolvedMode)
-	}
-	if decision.Source != modeSourceExplicit {
-		t.Fatalf("expected explicit source, got %q", decision.Source)
-	}
-}
-
-func TestAnalyzeSearchModeAutoSemantic(t *testing.T) {
-	decision := AnalyzeSearchMode(Request{
-		Query:      "什么是 RAG 检索增强生成",
-		SearchMode: SearchModeAuto,
-	})
-	if decision.ResolvedMode != SearchModeSemantic {
-		t.Fatalf("expected semantic, got %q", decision.ResolvedMode)
-	}
-	if decision.Source != modeSourceAuto {
-		t.Fatalf("expected auto source, got %q", decision.Source)
-	}
-	if len(decision.Signals) == 0 {
-		t.Fatal("expected semantic decision signals")
-	}
-}
-
-func TestAnalyzeSearchModeAutoKeyword(t *testing.T) {
-	decision := AnalyzeSearchMode(Request{
-		Query:      "标题包含 \"Kubernetes\" 的文档",
-		SearchMode: SearchModeAuto,
-	})
-	if decision.ResolvedMode != SearchModeKeyword {
-		t.Fatalf("expected keyword, got %q", decision.ResolvedMode)
-	}
-}
-
-func TestAnalyzeSearchModeAutoKeywordForIdentifierLookup(t *testing.T) {
-	decision := AnalyzeSearchMode(Request{
-		Query:      "搜索包含 fallback_to_general_model 的节点",
-		SearchMode: SearchModeAuto,
-	})
-	if decision.ResolvedMode != SearchModeKeyword {
-		t.Fatalf("expected keyword, got %q", decision.ResolvedMode)
-	}
-}
-
-func TestAnalyzeSearchModeAutoKeywordForSectionLookup(t *testing.T) {
-	decision := AnalyzeSearchMode(Request{
-		Query:      "查找第一章 概述 讲了什么",
-		SearchMode: SearchModeAuto,
-	})
-	if decision.ResolvedMode != SearchModeKeyword {
-		t.Fatalf("expected keyword, got %q", decision.ResolvedMode)
-	}
-}
-
-func TestAnalyzeSearchModeAutoHybrid(t *testing.T) {
-	decision := AnalyzeSearchMode(Request{
-		Query:      "nginx 404 报错怎么排查",
-		SearchMode: SearchModeAuto,
-	})
-	if decision.ResolvedMode != SearchModeHybrid {
-		t.Fatalf("expected hybrid, got %q", decision.ResolvedMode)
-	}
-}
-
-func TestAnalyzeSearchModeSamples(t *testing.T) {
-	testCases := []struct {
-		name  string
-		query string
-		want  string
-	}{
-		{
-			name:  "concept question",
-			query: "什么是 RAG 检索增强生成",
-			want:  SearchModeSemantic,
-		},
-		{
-			name:  "difference question",
-			query: "向量检索和关键词检索有什么区别",
-			want:  SearchModeSemantic,
-		},
-		{
-			name:  "title contains exact phrase",
-			query: "标题包含 \"Kubernetes\" 的文档",
-			want:  SearchModeKeyword,
-		},
-		{
-			name:  "named lookup",
-			query: "有没有名称叫 GoAgent 的知识库文档",
-			want:  SearchModeKeyword,
-		},
-		{
-			name:  "error troubleshooting",
-			query: "nginx 404 报错怎么排查",
-			want:  SearchModeHybrid,
-		},
-		{
-			name:  "api locator",
-			query: "chat 接口的 timeout 参数在哪里配置",
-			want:  SearchModeHybrid,
-		},
-		{
-			name:  "code symbol lookup",
-			query: "RagChatService.runRetrieveStage 是怎么工作的",
-			want:  SearchModeHybrid,
-		},
-		{
-			name:  "path lookup",
-			query: "internal/app/rag/core/retrieve/service.go 里做了什么",
-			want:  SearchModeHybrid,
-		},
-		{
-			name:  "natural language how question",
-			query: "如何理解 rewrite 和 retrieve 的关系",
-			want:  SearchModeSemantic,
-		},
-		{
-			name:  "architecture flow question",
-			query: "retrieve 主链路整体流程是什么",
-			want:  SearchModeSemantic,
-		},
-		{
-			name:  "exact phrase with quotes",
-			query: "搜索包含 \"tool_workflow\" 的 trace 节点",
-			want:  SearchModeKeyword,
-		},
-		{
-			name:  "identifier lookup without quotes",
-			query: "搜索包含 fallback_to_general_model 的节点",
-			want:  SearchModeKeyword,
-		},
-		{
-			name:  "file name lookup",
-			query: "查找文件名是 trace_handlers.go 的实现",
-			want:  SearchModeKeyword,
-		},
-		{
-			name:  "section lookup",
-			query: "查找第一章 概述 讲了什么",
-			want:  SearchModeKeyword,
-		},
-		{
-			name:  "chapter title lookup",
-			query: "搜索章节标题包含 概述 的文档",
-			want:  SearchModeKeyword,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			decision := AnalyzeSearchMode(Request{
-				Query:      tc.query,
-				SearchMode: SearchModeAuto,
-			})
-			if decision.ResolvedMode != tc.want {
-				t.Fatalf("query %q: expected %q, got %q (reason=%q, signals=%v)", tc.query, tc.want, decision.ResolvedMode, decision.Reason, decision.Signals)
-			}
-			if decision.Source != modeSourceAuto {
-				t.Fatalf("query %q: expected auto source, got %q", tc.query, decision.Source)
-			}
-			if len(decision.Signals) == 0 {
-				t.Fatalf("query %q: expected non-empty decision signals", tc.query)
-			}
-		})
-	}
-}
-
 func TestRetrieveHybridMode(t *testing.T) {
 	searcher := &mockSearcher{
 		hits: []corevector.SearchHit{
@@ -412,11 +212,11 @@ func TestRetrieveHybridMode(t *testing.T) {
 	if len(result.Chunks) != 2 {
 		t.Fatalf("expected 2 chunks from hybrid, got %d: %+v", len(result.Chunks), result.Chunks)
 	}
-	if len(result.SearchChannels) != 2 {
-		t.Fatalf("expected 2 search channels, got %+v", result.SearchChannels)
+	if len(result.SearchChannels) != 3 {
+		t.Fatalf("expected 3 search channels, got %+v", result.SearchChannels)
 	}
-	if len(result.ChannelStats) != 2 {
-		t.Fatalf("expected 2 channel stats, got %+v", result.ChannelStats)
+	if len(result.ChannelStats) != 3 {
+		t.Fatalf("expected 3 channel stats, got %+v", result.ChannelStats)
 	}
 }
 
@@ -441,7 +241,7 @@ func TestRetrieveHybridVectorFailsKeywordOk(t *testing.T) {
 	if len(result.Chunks) != 1 || result.Chunks[0].ID != "k1" {
 		t.Fatalf("expected keyword fallback, got %+v", result)
 	}
-	if len(result.ChannelStats) != 2 {
+	if len(result.ChannelStats) != 3 {
 		t.Fatalf("expected failed and successful channel stats, got %+v", result.ChannelStats)
 	}
 	foundFailed := false

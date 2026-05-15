@@ -54,6 +54,37 @@ interface ChatState {
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
 }
 
+function readLooseToolCallField<T = unknown>(
+  payload: Record<string, unknown>,
+  camel: string,
+  pascal: string
+): T | undefined {
+  const camelValue = payload[camel];
+  if (camelValue !== undefined) {
+    return camelValue as T;
+  }
+  const pascalValue = payload[pascal];
+  if (pascalValue !== undefined) {
+    return pascalValue as T;
+  }
+  return undefined;
+}
+
+function normalizeToolCallPayload(call: ToolCallPayload | Record<string, unknown>): ToolCallPayload {
+  const payload = call as Record<string, unknown>;
+  return {
+    callId: (readLooseToolCallField<string>(payload, "callId", "CallID") || "").trim() || undefined,
+    round: readLooseToolCallField<number>(payload, "round", "Round"),
+    sequence: readLooseToolCallField<number>(payload, "sequence", "Sequence"),
+    name: (readLooseToolCallField<string>(payload, "name", "Name") || "").trim(),
+    status: (readLooseToolCallField<string>(payload, "status", "Status") || "").trim(),
+    summary: (readLooseToolCallField<string>(payload, "summary", "Summary") || "").trim() || undefined,
+    durationMs: readLooseToolCallField<number>(payload, "durationMs", "DurationMs"),
+    arguments: readLooseToolCallField<Record<string, unknown>>(payload, "arguments", "Arguments"),
+    data: readLooseToolCallField<Record<string, unknown>>(payload, "data", "Data")
+  };
+}
+
 const ACTIVE_SESSION_STORAGE_KEY = "chat.activeSessionId";
 
 function readActiveSessionId() {
@@ -728,6 +759,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   appendToolCall: (call) => {
     if (!call) return;
+    const normalized = normalizeToolCallPayload(call);
     set((state) => ({
       messages: state.messages.map((message) =>
         message.id === state.streamingMessageId &&
@@ -737,20 +769,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ...message,
               toolCalls: (() => {
                 const current = [...(message.toolCalls ?? [])];
-                const nextCallId = call.callId?.trim();
+                const nextCallId = normalized.callId?.trim();
                 if (nextCallId) {
                   const index = current.findIndex((item) => item.callId === nextCallId);
                   if (index >= 0) {
                     current[index] = {
                       ...current[index],
-                      ...call,
-                      arguments: call.arguments ?? current[index].arguments,
-                      data: call.data ?? current[index].data
+                      ...normalized,
+                      arguments: normalized.arguments ?? current[index].arguments,
+                      data: normalized.data ?? current[index].data
                     };
                     return current;
                   }
                 }
-                return [...current, call];
+                return [...current, normalized];
               })()
             }
           : message

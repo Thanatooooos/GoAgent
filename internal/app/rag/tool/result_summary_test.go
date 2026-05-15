@@ -65,3 +65,35 @@ func TestSummarizeResultDataForLLMIncludesUnknownUsefulFieldsButSkipsNoise(t *te
 		t.Fatalf("expected summary to skip fullText noise field, got %q", summary)
 	}
 }
+
+func TestSummarizeResultDataForLLMIncludesExternalEvidenceFields(t *testing.T) {
+	summary := SummarizeResultDataForLLM(map[string]any{
+		"searchQuery":         "go generics tutorial",
+		"quality":             "strong",
+		"qualityConfidence":   0.8,
+		"sourceCoverage":      "allow_only",
+		"sourceDiversity":     "high",
+		"corroboration":       "corroborated",
+		"readiness":           "ready",
+		"readinessConfidence": 0.82,
+		"answerStrategy":      "Answer directly and cite the strongest sources first.",
+		"selectedUrls":        []string{"https://go.dev/doc/tutorial/generics"},
+		"citedUrls":           []string{"https://go.dev/doc/tutorial/generics"},
+	})
+
+	for _, part := range []string{
+		"searchQuery=go generics tutorial",
+		"quality=strong",
+		"sourceCoverage=allow_only",
+		"sourceDiversity=high",
+		"corroboration=corroborated",
+		"readiness=ready",
+		"answerStrategy=Answer directly and cite the strongest sources first.",
+		"selectedUrls=https://go.dev/doc/tutorial/generics",
+		"citedUrls=https://go.dev/doc/tutorial/generics",
+	} {
+		if !strings.Contains(summary, part) {
+			t.Fatalf("expected summary to contain %q, got %q", part, summary)
+		}
+	}
+}

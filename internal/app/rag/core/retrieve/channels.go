@@ -25,15 +25,7 @@ func NewVectorGlobalChannel(searcher corevector.Searcher, embedding aiembedding.
 func (c *vectorGlobalChannel) Name() string  { return ChannelVectorGlobal }
 func (c *vectorGlobalChannel) Priority() int { return 10 }
 func (c *vectorGlobalChannel) Enabled(ctx SearchContext) bool {
-	if c == nil || c.searcher == nil || c.embedding == nil {
-		return false
-	}
-	switch ctx.ResolvedMode {
-	case SearchModeSemantic, SearchModeHybrid:
-		return true
-	default:
-		return false
-	}
+	return c != nil && c.searcher != nil && c.embedding != nil
 }
 
 func (c *vectorGlobalChannel) Search(ctx context.Context, searchCtx SearchContext) (SearchChannelResult, error) {
@@ -47,18 +39,15 @@ func (c *vectorGlobalChannel) Search(ctx context.Context, searchCtx SearchContex
 		KnowledgeBaseIDs: searchCtx.KnowledgeBaseIDs,
 		TopK:             expandChannelTopK(searchCtx.TopK),
 		ScoreThreshold:   searchCtx.ScoreThreshold,
-		SearchMode:       searchCtx.ResolvedMode,
+		SearchMode:       SearchModeHybrid,
 		Query:            searchCtx.Query,
 	})
 	if err != nil {
 		return SearchChannelResult{}, fmt.Errorf("vector search chunks: %w", err)
 	}
 	return newChannelResult(c.Name(), toRetrievedChunks(hits), startedAt, map[string]any{
-		"requestedMode": searchCtx.RequestedMode,
-		"resolvedMode":  searchCtx.ResolvedMode,
-		"topK":          searchCtx.TopK,
-		"expandedTopK":  expandChannelTopK(searchCtx.TopK),
-		"modeSource":    searchCtx.ModeDecision.Source,
+		"topK":         searchCtx.TopK,
+		"expandedTopK": expandChannelTopK(searchCtx.TopK),
 	}), nil
 }
 
@@ -73,15 +62,7 @@ func NewKeywordChannel(searcher corevector.Searcher) SearchChannel {
 func (c *keywordChannel) Name() string  { return ChannelKeyword }
 func (c *keywordChannel) Priority() int { return 20 }
 func (c *keywordChannel) Enabled(ctx SearchContext) bool {
-	if c == nil || c.searcher == nil {
-		return false
-	}
-	switch ctx.ResolvedMode {
-	case SearchModeKeyword, SearchModeHybrid:
-		return true
-	default:
-		return false
-	}
+	return c != nil && c.searcher != nil
 }
 
 func (c *keywordChannel) Search(ctx context.Context, searchCtx SearchContext) (SearchChannelResult, error) {
@@ -91,11 +72,8 @@ func (c *keywordChannel) Search(ctx context.Context, searchCtx SearchContext) (S
 		return SearchChannelResult{}, fmt.Errorf("keyword search chunks: %w", err)
 	}
 	return newChannelResult(c.Name(), toRetrievedChunks(hits), startedAt, map[string]any{
-		"requestedMode": searchCtx.RequestedMode,
-		"resolvedMode":  searchCtx.ResolvedMode,
-		"topK":          searchCtx.TopK,
-		"expandedTopK":  expandChannelTopK(searchCtx.TopK),
-		"modeSource":    searchCtx.ModeDecision.Source,
+		"topK":         searchCtx.TopK,
+		"expandedTopK": expandChannelTopK(searchCtx.TopK),
 	}), nil
 }
 
@@ -110,18 +88,7 @@ func NewMetadataTitleChannel(searcher corevector.Searcher) SearchChannel {
 func (c *metadataTitleChannel) Name() string  { return ChannelMetadataTitle }
 func (c *metadataTitleChannel) Priority() int { return 25 }
 func (c *metadataTitleChannel) Enabled(ctx SearchContext) bool {
-	if c == nil || c.searcher == nil {
-		return false
-	}
-	switch ctx.ResolvedMode {
-	case SearchModeKeyword, SearchModeHybrid:
-	default:
-		return false
-	}
-	return hasSearchSignal(ctx, "exact_match_intent") ||
-		hasSearchSignal(ctx, "identifier_lookup") ||
-		hasSearchSignal(ctx, "file_name_lookup") ||
-		matchesAnyToken(strings.ToLower(strings.TrimSpace(ctx.Query)), []string{"标题", "文件名", "章节", "section"})
+	return c != nil && c.searcher != nil
 }
 
 func (c *metadataTitleChannel) Search(ctx context.Context, searchCtx SearchContext) (SearchChannelResult, error) {
@@ -131,26 +98,10 @@ func (c *metadataTitleChannel) Search(ctx context.Context, searchCtx SearchConte
 		return SearchChannelResult{}, fmt.Errorf("metadata title search chunks: %w", err)
 	}
 	return newChannelResult(c.Name(), toRetrievedChunks(hits), startedAt, map[string]any{
-		"requestedMode": searchCtx.RequestedMode,
-		"resolvedMode":  searchCtx.ResolvedMode,
-		"topK":          searchCtx.TopK,
-		"expandedTopK":  expandChannelTopK(searchCtx.TopK),
-		"modeSource":    searchCtx.ModeDecision.Source,
-		"fields":        []string{"document_name", "source_file_name", "section"},
+		"topK":         searchCtx.TopK,
+		"expandedTopK": expandChannelTopK(searchCtx.TopK),
+		"fields":       []string{"document_name", "source_file_name", "section"},
 	}), nil
-}
-
-func hasSearchSignal(ctx SearchContext, signal string) bool {
-	signals, ok := ctx.QueryHints["signals"].([]string)
-	if !ok {
-		return false
-	}
-	for _, item := range signals {
-		if strings.TrimSpace(item) == signal {
-			return true
-		}
-	}
-	return false
 }
 
 func expandChannelTopK(topK int) int {

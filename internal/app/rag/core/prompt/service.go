@@ -11,6 +11,7 @@ type Context struct {
 	Question         string
 	KnowledgeContext string
 	ToolContext      string
+	WorkflowPolicy   string
 	AnswerGuidance   string
 	History          []convention.ChatMessage
 	SystemPromptKey  string
@@ -56,6 +57,9 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 	if strings.TrimSpace(ctx.ToolContext) != "" {
 		messages = append(messages, convention.SystemMessage(formatToolContext(ctx.ToolContext)))
 	}
+	if strings.TrimSpace(ctx.WorkflowPolicy) != "" {
+		messages = append(messages, convention.SystemMessage(formatWorkflowPolicy(ctx.WorkflowPolicy)))
+	}
 	if strings.TrimSpace(ctx.AnswerGuidance) != "" {
 		messages = append(messages, convention.SystemMessage(formatAnswerGuidance(ctx.AnswerGuidance)))
 	}
@@ -74,6 +78,10 @@ func formatKnowledgeContext(context string) string {
 
 func formatToolContext(context string) string {
 	return "## 工具上下文\n" + strings.TrimSpace(context)
+}
+
+func formatWorkflowPolicy(policy string) string {
+	return "## 执行约束\n" + strings.TrimSpace(policy)
 }
 
 func formatAnswerGuidance(guidance string) string {

@@ -11,7 +11,7 @@ import (
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
-	ragtool "local/rag-project/internal/app/rag/tool"
+	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 )
 
@@ -211,11 +211,11 @@ func TestResolveRetrieveSearchMode(t *testing.T) {
 	if got := resolveRetrieveSearchMode("", "hybrid"); got != ragretrieve.SearchModeHybrid {
 		t.Fatalf("expected hybrid, got %q", got)
 	}
-	if got := resolveRetrieveSearchMode("keyword", "semantic"); got != ragretrieve.SearchModeKeyword {
-		t.Fatalf("expected explicit keyword, got %q", got)
+	if got := resolveRetrieveSearchMode("keyword", "semantic"); got != ragretrieve.SearchModeHybrid {
+		t.Fatalf("expected hybrid (always), got %q", got)
 	}
-	if got := resolveRetrieveSearchMode("invalid", "semantic"); got != ragretrieve.SearchModeAuto {
-		t.Fatalf("expected auto on invalid input, got %q", got)
+	if got := resolveRetrieveSearchMode("invalid", "semantic"); got != ragretrieve.SearchModeHybrid {
+		t.Fatalf("expected hybrid (always), got %q", got)
 	}
 }
 
@@ -285,6 +285,15 @@ func TestRunToolWorkflowStageReturnsWorkflowResult(t *testing.T) {
 	if workflow.input.SearchMode != ragretrieve.SearchModeHybrid {
 		t.Fatalf("unexpected search mode: %q", workflow.input.SearchMode)
 	}
+	if workflow.input.Control.ExecutionMode != ragtool.ExecutionModeReadOnly {
+		t.Fatalf("unexpected workflow execution mode: %q", workflow.input.Control.ExecutionMode)
+	}
+	if workflow.input.Control.RiskLevel != ragtool.RiskLevelLow {
+		t.Fatalf("unexpected workflow risk level: %q", workflow.input.Control.RiskLevel)
+	}
+	if workflow.input.Control.ApprovalRequirement != ragtool.ApprovalRequirementNone {
+		t.Fatalf("unexpected workflow approval requirement: %q", workflow.input.Control.ApprovalRequirement)
+	}
 	if len(workflow.input.History) != 1 || workflow.input.History[0].Content != "previous" {
 		t.Fatalf("unexpected history: %+v", workflow.input.History)
 	}
@@ -339,6 +348,13 @@ func TestRecordAgentWorkflowTraceNodesUsesDatabaseSafeNames(t *testing.T) {
 	tracer.now = func() time.Time { return now }
 
 	tracer.recordAgentWorkflowTraceNodes(context.Background(), "trace-1", ragtool.WorkflowResult{
+		TraceMeta: ragtool.WorkflowTraceMeta{
+			Capability:          ragtool.CapabilitySearch,
+			ExecutionMode:       ragtool.ExecutionModeReadOnly,
+			RiskLevel:           ragtool.RiskLevelLow,
+			ApprovalRequirement: ragtool.ApprovalRequirementNone,
+			EvidenceSources:     []string{ragtool.EvidenceSourceKnowledgeBase, ragtool.EvidenceSourceExternalWeb},
+		},
 		Rounds: []ragtool.RoundSummary{
 			{
 				Round:               1,
@@ -381,6 +397,12 @@ func TestRecordAgentWorkflowTraceNodesUsesDatabaseSafeNames(t *testing.T) {
 	}
 	if payload["executionMode"] != "parallel" {
 		t.Fatalf("expected executionMode=parallel, got %+v", payload)
+	}
+	if payload["capability"] != ragtool.CapabilitySearch {
+		t.Fatalf("expected capability=search, got %+v", payload)
+	}
+	if payload["workflowMode"] != ragtool.ExecutionModeReadOnly {
+		t.Fatalf("expected workflowMode=read_only, got %+v", payload)
 	}
 	if payload["wallClockDurationMs"] != float64(10) {
 		t.Fatalf("expected wallClockDurationMs=10, got %+v", payload)

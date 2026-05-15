@@ -161,10 +161,7 @@ func (e *Engine) executeChannels(ctx context.Context, searchCtx SearchContext) (
 				ChannelName: channel.Name(),
 				Error:       err.Error(),
 				Metadata: map[string]any{
-					"status":        "failed",
-					"requestedMode": searchCtx.RequestedMode,
-					"resolvedMode":  searchCtx.ResolvedMode,
-					"modeSource":    searchCtx.ModeDecision.Source,
+					"status": "failed",
 				},
 			})
 			continue
@@ -173,7 +170,7 @@ func (e *Engine) executeChannels(ctx context.Context, searchCtx SearchContext) (
 		successCount++
 	}
 	if len(results) == 0 {
-		return nil, fmt.Errorf("no search channels enabled for mode %s", searchCtx.ResolvedMode)
+		return nil, fmt.Errorf("no search channels enabled")
 	}
 	if successCount == 0 && firstErr != nil {
 		return nil, firstErr
@@ -256,13 +253,3 @@ func toRetrievedChunks(hits []corevector.SearchHit) []convention.RetrievedChunk 
 	return result
 }
 
-func resolveSearchMode(request Request) string {
-	return AnalyzeSearchMode(request).ResolvedMode
-}
-
-func inferSearchModeFromQuery(query string) string {
-	return AnalyzeSearchMode(Request{
-		Query:      query,
-		SearchMode: SearchModeAuto,
-	}).ResolvedMode
-}

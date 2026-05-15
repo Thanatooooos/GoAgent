@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 type processorScheduleRepository struct {
 	schedule      domain.KnowledgeDocumentSchedule
+	getByIDFn     func(ctx context.Context, id string) (domain.KnowledgeDocumentSchedule, error)
 	updateWhereFn func(ctx context.Context, cond port.KnowledgeDocumentScheduleConditions, patch port.KnowledgeDocumentSchedulePatch) (int64, error)
 	renewLockFn   func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time) (bool, error)
 }
@@ -40,6 +42,9 @@ func (r processorScheduleRepository) DeleteByDocumentID(ctx context.Context, doc
 }
 
 func (r processorScheduleRepository) GetByID(ctx context.Context, id string) (domain.KnowledgeDocumentSchedule, error) {
+	if r.getByIDFn != nil {
+		return r.getByIDFn(ctx, id)
+	}
 	if r.schedule.ID == id {
 		return r.schedule, nil
 	}
@@ -71,6 +76,7 @@ func (r processorScheduleRepository) ReleaseLock(ctx context.Context, lease doma
 
 type processorDocumentRepository struct {
 	document       domain.KnowledgeDocument
+	getByIDFn      func(ctx context.Context, id string) (domain.KnowledgeDocument, error)
 	updateFieldsFn func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error)
 }
 
@@ -96,6 +102,9 @@ func (r processorDocumentRepository) UpdateFields(ctx context.Context, where por
 func (r processorDocumentRepository) Delete(ctx context.Context, id string) error { return nil }
 
 func (r processorDocumentRepository) GetByID(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+	if r.getByIDFn != nil {
+		return r.getByIDFn(ctx, id)
+	}
 	if r.document.ID == id {
 		return r.document, nil
 	}
@@ -150,12 +159,50 @@ func (r processorExecRepository) List(ctx context.Context, filter port.Knowledge
 }
 
 type processorRemoteFetcher struct {
-	result schedule.RemoteFetchResult
-	err    error
+	fetchFn func(ctx context.Context, rawURL string, lastETag string, lastModified string, lastContentHash string, fallbackFileName string) (schedule.RemoteFetchResult, error)
+	result  schedule.RemoteFetchResult
+	err     error
 }
 
 func (f processorRemoteFetcher) FetchIfChanged(ctx context.Context, rawURL string, lastETag string, lastModified string, lastContentHash string, fallbackFileName string) (schedule.RemoteFetchResult, error) {
+	if f.fetchFn != nil {
+		return f.fetchFn(ctx, rawURL, lastETag, lastModified, lastContentHash, fallbackFileName)
+	}
 	return f.result, f.err
+}
+
+type processorDocumentProcessor struct {
+	processFn func(ctx context.Context, document domain.KnowledgeDocument) error
+}
+
+func (p processorDocumentProcessor) ProcessRefreshedDocument(ctx context.Context, document domain.KnowledgeDocument) error {
+	if p.processFn != nil {
+		return p.processFn(ctx, document)
+	}
+	return nil
+}
+
+type processorFileStorage struct {
+	uploadFn func(ctx context.Context, file port.FileUpload) (port.StoredFile, error)
+	deleteFn func(ctx context.Context, key string) error
+}
+
+func (s processorFileStorage) Upload(ctx context.Context, file port.FileUpload) (port.StoredFile, error) {
+	if s.uploadFn != nil {
+		return s.uploadFn(ctx, file)
+	}
+	return port.StoredFile{}, nil
+}
+
+func (s processorFileStorage) Delete(ctx context.Context, key string) error {
+	if s.deleteFn != nil {
+		return s.deleteFn(ctx, key)
+	}
+	return nil
+}
+
+func (s processorFileStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
 }
 
 func TestScheduleRefreshProcessorMarksSkippedWhenRemoteUnchanged(t *testing.T) {
@@ -225,6 +272,12 @@ func TestScheduleRefreshProcessorStoresChangedFileAndMarksSuccess(t *testing.T) 
 			ID:              "schedule-1",
 			DocumentID:      "doc-1",
 			KnowledgeBaseID: "kb-1",
+		},
+		renewLockFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			return true, nil
 		},
 	}
 	documentRepo := processorDocumentRepository{
@@ -331,6 +384,175 @@ func TestScheduleRefreshProcessorDisablesInvalidCron(t *testing.T) {
 	}
 	if !disabled {
 		t.Fatal("invalid cron should disable schedule")
+	}
+}
+
+func TestScheduleRefreshProcessorAbortsBeforeDocumentLoadWhenLeaseLostAfterScheduleLoad(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 28, 12, 0, 0, 0, time.UTC)
+	renewCalls := 0
+	documentLoaded := false
+	execCreated := false
+	fetchCalled := false
+	scheduleRepo := processorScheduleRepository{
+		schedule: domain.KnowledgeDocumentSchedule{
+			ID:              "schedule-1",
+			DocumentID:      "doc-1",
+			KnowledgeBaseID: "kb-1",
+		},
+		renewLockFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time) (bool, error) {
+			renewCalls++
+			return renewCalls == 1, nil
+		},
+	}
+	documentRepo := processorDocumentRepository{
+		document: scheduledURLDocument(),
+		getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeDocument, error) {
+			documentLoaded = true
+			return scheduledURLDocument(), nil
+		},
+	}
+	execRepo := processorExecRepository{
+		createFn: func(ctx context.Context, exec domain.KnowledgeDocumentScheduleExec) (domain.KnowledgeDocumentScheduleExec, error) {
+			execCreated = true
+			return exec, nil
+		},
+	}
+
+	processor := schedule.NewScheduleRefreshProcessor(schedule.ScheduleRefreshProcessorOptions{
+		ScheduleRepo: scheduleRepo,
+		DocumentRepo: documentRepo,
+		ExecRepo:     execRepo,
+		Storage:      processorFileStorage{},
+		LockManager:  schedule.NewScheduleLockManager(scheduleRepo, schedule.ScheduleLockOptions{Now: func() time.Time { return now }}),
+		RemoteFileFetcher: processorRemoteFetcher{
+			fetchFn: func(ctx context.Context, rawURL string, lastETag string, lastModified string, lastContentHash string, fallbackFileName string) (schedule.RemoteFetchResult, error) {
+				fetchCalled = true
+				return schedule.RemoteFetchResult{}, nil
+			},
+		},
+		Now:    func() time.Time { return now },
+		NextID: func() (int64, error) { return 1, nil },
+	})
+
+	err := processor.Process(context.Background(), domain.KnowledgeDocumentScheduleLockLease{ScheduleID: "schedule-1", LockToken: "owner-1"})
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if documentLoaded {
+		t.Fatal("document should not be loaded after lease is lost at the second check")
+	}
+	if execCreated {
+		t.Fatal("exec record should not be created after lease is lost at the second check")
+	}
+	if fetchCalled {
+		t.Fatal("remote fetch should not run after lease is lost at the second check")
+	}
+}
+
+func TestScheduleRefreshProcessorCleanupRollsBackDocumentAndDeletesFileOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	tempFile := writeTempFile(t, "fresh content")
+	now := time.Date(2026, time.April, 28, 12, 0, 0, 0, time.UTC)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var sawRunning bool
+	var sawFailed bool
+	var deletedKey string
+	documentRepo := processorDocumentRepository{
+		document: scheduledURLDocument(),
+		updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+			for _, assignment := range set {
+				if assignment.Field != port.KnowledgeDocument.Status.Key {
+					continue
+				}
+				switch assignment.Value {
+				case domain.KnowledgeDocumentStatusRunning:
+					sawRunning = true
+				case domain.KnowledgeDocumentStatusFailed:
+					if ctx.Err() != nil {
+						t.Fatalf("cleanup rollback should use a non-canceled context, got %v", ctx.Err())
+					}
+					sawFailed = true
+				}
+			}
+			return 1, nil
+		},
+	}
+	scheduleRepo := processorScheduleRepository{
+		schedule: domain.KnowledgeDocumentSchedule{
+			ID:              "schedule-1",
+			DocumentID:      "doc-1",
+			KnowledgeBaseID: "kb-1",
+		},
+		renewLockFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			return true, nil
+		},
+	}
+	execRepo := processorExecRepository{
+		createFn: func(ctx context.Context, exec domain.KnowledgeDocumentScheduleExec) (domain.KnowledgeDocumentScheduleExec, error) {
+			exec.ID = "exec-1"
+			return exec, nil
+		},
+	}
+	storage := processorFileStorage{
+		uploadFn: func(ctx context.Context, file port.FileUpload) (port.StoredFile, error) {
+			cancel()
+			return port.StoredFile{Key: "stored-key", FileName: file.FileName, ContentType: file.ContentType, Size: file.Size}, nil
+		},
+		deleteFn: func(ctx context.Context, key string) error {
+			if ctx.Err() != nil {
+				t.Fatalf("cleanup delete should use a non-canceled context, got %v", ctx.Err())
+			}
+			deletedKey = key
+			return nil
+		},
+	}
+
+	processor := schedule.NewScheduleRefreshProcessor(schedule.ScheduleRefreshProcessorOptions{
+		ScheduleRepo: scheduleRepo,
+		DocumentRepo: documentRepo,
+		ExecRepo:     execRepo,
+		Storage:      storage,
+		LockManager:  schedule.NewScheduleLockManager(scheduleRepo, schedule.ScheduleLockOptions{Now: func() time.Time { return now }}),
+		RemoteFileFetcher: processorRemoteFetcher{result: schedule.RemoteFetchResult{
+			Changed:      true,
+			TempFile:     tempFile,
+			Size:         int64(len("fresh content")),
+			ContentType:  "text/markdown",
+			FileName:     "fresh.md",
+			ContentHash:  "hash-1",
+			ETag:         `"v2"`,
+			LastModified: "Tue, 28 Apr 2026 00:00:00 GMT",
+		}},
+		DocumentProcessor: processorDocumentProcessor{
+			processFn: func(ctx context.Context, document domain.KnowledgeDocument) error {
+				t.Fatal("document processor should not run after context cancellation")
+				return nil
+			},
+		},
+		Now:    func() time.Time { return now },
+		NextID: func() (int64, error) { return 1, nil },
+	})
+
+	err := processor.Process(ctx, domain.KnowledgeDocumentScheduleLockLease{ScheduleID: "schedule-1", LockToken: "owner-1"})
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if !sawRunning {
+		t.Fatal("document should be claimed before cleanup rollback")
+	}
+	if !sawFailed {
+		t.Fatal("cleanup should roll back the document status to failed on context cancellation")
+	}
+	if deletedKey != "stored-key" {
+		t.Fatalf("cleanup should delete stored file, got %q", deletedKey)
 	}
 }
 

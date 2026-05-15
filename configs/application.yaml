@@ -32,17 +32,6 @@ spring:
       port: 6379
       password: ""
 
-rocketmq:
-  name-server: 127.0.0.1:9876
-  producer:
-    group: ragent-producer${unique-name:}_pg
-    send-message-timeout: 2000
-  consumer:
-    chunk-document-group: ragent-document-chunk-consumer${unique-name:}_pg
-  topics:
-    chunk-document: knowledge-document-chunk_topic${unique-name:}
-    refresh-remote-document: knowledge-document-refresh_topic${unique-name:}
-
 milvus:
   uri: http://localhost:19530
 
@@ -93,6 +82,7 @@ rag:
   knowledge:
     schedule:
       scan-delay-ms: 10000
+      run-timeout-ms: 30000
       lock-seconds: 900
       batch-size: 20
       min-interval-seconds: 60
@@ -107,6 +97,22 @@ rag:
         url: http://localhost:9099
 
   search:
+    web-search:
+      provider: tavily          # "duckduckgo" (default, blocked in mainland China) or "tavily"
+      api-key: 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       # required for tavily, sign up at https://app.tavily.com
+      source-policy:
+        allow-domains:
+          - go.dev
+          - pkg.go.dev
+          - golang.org
+          - docs.github.com
+        deny-domains:
+          - quora.com
+          - pinterest.com
+        allow-suffixes:
+          - .gov
+          - .edu
+        deny-suffixes: []
     channels:
       vector-global:
         confidence-threshold: 0.6

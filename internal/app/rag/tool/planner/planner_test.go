@@ -8,7 +8,7 @@ import (
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
-	"local/rag-project/internal/app/rag/tool"
+	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
@@ -41,18 +41,18 @@ func (m *mockLLMService) StreamChatWithRequest(convention.ChatRequest, aichat.St
 	return nil, errors.New("not implemented")
 }
 
-var sampleDefs = []tool.Definition{
+var sampleDefs = []ragtool.Definition{
 	{
 		Name:        "document_query",
 		Description: "query document status",
-		Parameters: []tool.ParameterDefinition{
+		Parameters: []ragtool.ParameterDefinition{
 			{Name: "documentId", Type: "string", Description: "document id", Required: true},
 		},
 	},
 	{
 		Name:        "ingestion_task_query",
 		Description: "query ingestion task",
-		Parameters: []tool.ParameterDefinition{
+		Parameters: []ragtool.ParameterDefinition{
 			{Name: "taskId", Type: "string", Description: "task id", Required: true},
 			{Name: "includeNodes", Type: "boolean", Description: "include node details", Required: false},
 		},
@@ -65,7 +65,7 @@ func TestLLMPlannerPlanSingleTool(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	result, err := planner.Plan(context.Background(), tool.PlanInput{
+	result, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "what is the state of doc-abc?",
 		ToolDefinitions: sampleDefs,
 	})
@@ -89,7 +89,7 @@ func TestLLMPlannerPlanMultipleTools(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	result, err := planner.Plan(context.Background(), tool.PlanInput{
+	result, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "check doc-abc and task-xyz",
 		ToolDefinitions: sampleDefs,
 	})
@@ -107,7 +107,7 @@ func TestLLMPlannerPlanNoTools(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	result, err := planner.Plan(context.Background(), tool.PlanInput{
+	result, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "hello there",
 		ToolDefinitions: sampleDefs,
 	})
@@ -125,7 +125,7 @@ func TestLLMPlannerPlanMarkdownJSONBlock(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	result, err := planner.Plan(context.Background(), tool.PlanInput{
+	result, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "check doc-abc",
 		ToolDefinitions: sampleDefs,
 	})
@@ -143,7 +143,7 @@ func TestLLMPlannerPlanEmptyQuestion(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	result, err := planner.Plan(context.Background(), tool.PlanInput{
+	result, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "",
 		ToolDefinitions: sampleDefs,
 	})
@@ -161,7 +161,7 @@ func TestLLMPlannerPlanNoDefinitions(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	result, err := planner.Plan(context.Background(), tool.PlanInput{
+	result, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "check doc-abc",
 		ToolDefinitions: nil,
 	})
@@ -179,7 +179,7 @@ func TestLLMPlannerPlanLLMError(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	_, err := planner.Plan(context.Background(), tool.PlanInput{
+	_, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "check doc-abc",
 		ToolDefinitions: sampleDefs,
 	})
@@ -194,7 +194,7 @@ func TestLLMPlannerPlanMalformedJSON(t *testing.T) {
 	}
 	planner := NewLLMPlanner(mock)
 
-	result, err := planner.Plan(context.Background(), tool.PlanInput{
+	result, err := planner.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "check doc-abc",
 		ToolDefinitions: sampleDefs,
 	})
@@ -208,7 +208,7 @@ func TestLLMPlannerPlanMalformedJSON(t *testing.T) {
 
 func TestLLMPlannerPlanNilPlanner(t *testing.T) {
 	var p *LLMPlanner
-	result, err := p.Plan(context.Background(), tool.PlanInput{
+	result, err := p.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "check doc-abc",
 		ToolDefinitions: sampleDefs,
 	})
@@ -222,7 +222,7 @@ func TestLLMPlannerPlanNilPlanner(t *testing.T) {
 
 func TestLLMPlannerPlanNilChatService(t *testing.T) {
 	p := &LLMPlanner{chatService: nil}
-	result, err := p.Plan(context.Background(), tool.PlanInput{
+	result, err := p.Plan(context.Background(), ragtool.PlanInput{
 		Question:        "check doc-abc",
 		ToolDefinitions: sampleDefs,
 	})
@@ -260,13 +260,13 @@ func TestBuildSystemPrompt(t *testing.T) {
 
 func TestBuildUserPromptIncludesHintAndPreviousResults(t *testing.T) {
 	p := NewLLMPlanner(&mockLLMService{response: "{}"})
-	prompt := p.buildUserPrompt(tool.PlanInput{
+	prompt := p.buildUserPrompt(ragtool.PlanInput{
 		Question: "why did doc-1 fail",
-		AgentState: tool.AgentState{
+		AgentState: ragtool.AgentState{
 			Phase:      "deep_dive",
 			Hypothesis: "document ingestion failed at node indexer",
 			Confidence: 0.72,
-			NextHintCalls: []tool.HintCall{{
+			NextHintCalls: []ragtool.HintCall{{
 				Name: "ingestion_task_node_query",
 				Arguments: map[string]any{
 					"taskId": "task-1",
@@ -274,7 +274,7 @@ func TestBuildUserPromptIncludesHintAndPreviousResults(t *testing.T) {
 				},
 			}},
 		},
-		PreviousResults: []tool.Result{
+		PreviousResults: []ragtool.Result{
 			{
 				Name:    "document_ingestion_diagnose",
 				Summary: "document ingestion failed at node indexer",
@@ -314,7 +314,7 @@ func TestBuildUserPromptIncludesHintAndPreviousResults(t *testing.T) {
 
 func TestBuildUserPromptIncludesRewriteAndRetrieveContext(t *testing.T) {
 	p := NewLLMPlanner(&mockLLMService{response: "{}"})
-	prompt := p.buildUserPrompt(tool.PlanInput{
+	prompt := p.buildUserPrompt(ragtool.PlanInput{
 		Question: "why did task-1 fail?",
 		RewriteResult: ragrewrite.Result{
 			RewrittenQuestion:   "why did ingestion task task-1 fail?",

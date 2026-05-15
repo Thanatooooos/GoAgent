@@ -1,6 +1,6 @@
 # Project Progress Context
 
-更新时间：2026-05-11
+更新时间：2026-05-12
 
 这份文档用于维护 `goagent` 当前项目进度，帮助后续开发快速对齐当前阶段、已完成能力、最新进展、验证状态、已知风险和下一步计划。
 
@@ -20,7 +20,7 @@
    已形成最小 chat 闭环，支持多轮对话、rewrite、retrieve、prompt、trace、fallback，重点开始转向检索策略优化、可解释性和 Agent 能力扩展。
 
 4. `Agent / Tool`
-   已完成第一阶段基础设施：自研 tool 抽象、tool registry、tool executor、AgentLoop V1（支持并行执行）、LLMPlanner、LLMObserver（支持多 hint + think 隔离 + 解析失败日志），以及接入 `RagChatService` 的扩展点。工具集已从 8 个诊断工具扩展为 10 个（+ document_list / task_list / web_search / think）。当前处于“LLM 主决策 + diagnose 一步到位 + 规则 fallback/guardrail”的稳定 agent 化阶段。
+   已完成第一阶段基础设施：自研 tool 抽象、tool registry、tool executor、AgentLoop V1（支持并行执行）、LLMPlanner、LLMObserver（支持多 hint + think 隔离 + 解析失败日志），以及接入 `RagChatService` 的扩展点。工具集已从 8 个扩展至 15 个（+ document_list / task_list / web_search / web_fetch / think / 3 Eino Graph）。当前处于“LLM 主决策 + diagnose 一步到位 + 规则 fallback/guardrail + RAG 优先联网搜索 + 外部证据工作流”的稳定 agent 化阶段。
 
 ## 已完成能力
 
@@ -155,12 +155,13 @@
   - `RenderContext`
   - `Workflow`
   - `Planner + PlanInput / PlanResult`
-- 已实现 tool（10 个）
+- 已实现 tool（15 个）
   - 诊断类：`document_ingestion_diagnose`（含 live task node 补齐）、`task_ingestion_diagnose`、`trace_retrieval_diagnose`
   - 查询类：`document_query`、`document_chunk_log_query`、`ingestion_task_query`、`ingestion_task_node_query`、`trace_node_query`
   - 发现类：`document_list`（按 status/query 分页）、`task_list`（按 status/pipelineId 分页）
-  - 外部类：`web_search`（DuckDuckGo API）
+  - 外部类：`web_search`（可配置 SearchProvider：DuckDuckGo / Tavily）、`web_fetch`（网页正文提取，并发支持）
   - 元工具：`think`（推理记录，无副作用）
+  - Graph：`document_root_cause_diagnosis`、`document_diagnose_with_search`、`external_evidence_workflow`
 - 已实现能力
   - LLM planner（含 retrieve/rewrite 上下文注入）
   - LLM observer（主 observer，支持多 hint、think 隔离、taskNodeSummary 强制下钻）+ RuleObserver fallback（跳过 think）
@@ -398,6 +399,192 @@
 - 新增：document_list、task_list、web_search、think 集成、open-ended baseRules、多 hint 校验、状态冲突归一、空名拒绝
 
 
+### 2026-05-11
+
+#### 1. 检索模式简化（P0）
+
+- 删除 `search_mode_decision.go`（~289 行），消除三层启发式打分
+- `channels.go` 三个 `Enabled()` 方法改为纯基础设施检查，3 通道始终全部启用
+- `search_types.go` 移除 `ResolvedMode / ModeDecision / QueryHints`
+- `rag_chat_service.go` 的 `resolveRetrieveSearchMode()` 直接返回 `"hybrid"`
+- 删除 `cmd/retrieve-debug/`（依赖已废弃的 `AnalyzeSearchMode`）
+- 测试更新：通道数期望值更新为 3，删除 8 个模式决策测试
+- 净删除 ~350 行
+
+#### 2. 状态机去重（P0）
+
+- 新增 `internal/app/rag/tool/next_action.go`（120 行）——单一决策源
+- `nextAction(result)` 覆盖 5 种工具类型的 "结果 → 下一步" 映射
+- `planCallsFromResults` 从 60 行退化为 9 行薄适配层
+- `RuleObserver` 5 个 `observe*` 函数改为 `switch reason` 模式
+- 净减少 ~39 行，关键是消除双重维护风险
+
+#### 3. Result 类型安全读取（P1）
+
+- `Result` 新增 4 个方法：`GetString(key)`, `GetInt(key)`, `GetStringSlice(key)`, `PreferStringSlice(primary, fallback)`
+- 替换 59 处 `readDataString(result.Data, ...)` → `result.GetString(...)`
+- 替换 18 处 `result.Data["key"].(string)` → `result.GetString("key")`
+- 独立 helper 函数保留给原生 `map[string]any` 场景
+
+#### 4. Eino Graph as Tool 接入（P1）
+
+- 引入 `github.com/cloudwego/eino v0.8.13` + 传递依赖
+- 新增 `DiagnosisGraphTool`：Eino 线性 Graph，3 个 Lambda 节点（diagnose → task_query → node_query）
+- Graph 编译为 `Runnable`，每个 Lambda 闭包捕获 `*Executor` 调用已有 tool
+- 注册到 `buildLocalToolWorkflow`，`planWithBaseRules` 诊断关键词路由到 graph tool
+- 新增 `agent_loop_graph_test.go`，9 个集成测试覆盖 7 种路由场景 + 真实 Eino 链执行
+
+**效果：** 确定性诊断场景 LLM 调用从 6 次降到 0 次（baseRules 路由 + Eino 链 + RuleObserver 终止）
+
+#### 5. AgentState 合并简化
+
+- `llmObserverResponse` 去掉顶层 `confidence/nextHintCalls/nextHint`，LLM 只输出 `state` block
+- `parseResponse` state block 成为单一数据源
+- `agent_loop.go:148-169` 合并逻辑从 20 行减到 11 行
+
+#### 6. Graph Tool 对 Observer 可读性提升
+
+- `DiagnosisGraphTool` 产出新增 `diagnosisDepth` 字段：`node_level` / `task_level` / `diagnose_only`
+- `RuleObserver` default 分支按 depth 分叉 confidence：0.95 / 0.75 / 0.6
+- `result_summary.go` 新增 `diagnosisDepth` priority key（LLM 可见）
+
+#### 7. Diagnose + Web Search Graph（新增能力）
+
+- 新增 `DiagnoseSearchGraphTool`：Eino Graph `document_root_cause_diagnosis → web_search`
+- 零 LLM 关键词提取：`extractSearchKeyword()` 匹配 20 个技术错误模式 + `looksLikeTechnicalError` 启发式
+- 无技术错误时自动跳过搜索
+- base rules 新增路由：含"解决/修复/solution/fix"关键词时路由到 diagnose+search
+
+#### 8. 工具集现状
+
+- 现有 13 个 tool：10 个 builtin + 1 个 think + 2 个 Eino Graph Tool
+- Graph Tool：`document_root_cause_diagnosis`（3 跳诊断）、`document_diagnose_with_search`（诊断+搜索）
+
+### 2026-05-12
+
+#### 1. Agent Search 能力落地（RAG 优先）
+
+核心原则：**只在知识库检索结果不足时（chunks=0、低分、通道全错误）才触发联网搜索**，诊断链路不受影响。
+
+- 新增 `WebFetchTool`（`internal/app/rag/tool/builtin/web_fetch_tool.go`）
+  - 支持 1-3 个 URL 并发抓取，提取网页正文（正则剥离标签、过滤导航行、截断 8KB）
+- 抽象 `SearchProvider` 接口
+  - `DuckDuckGoProvider`：原有逻辑（免费，国内被墙）
+  - `TavilyProvider`：新增（`web_search_tavily.go`），Tavily Search API，国内可访问，免费 1000 次/月
+- 新增 `RagWebSearchConfig`（`rag.search.web-search.provider` / `api-key`）
+  - `runtime.go`：`buildSearchProvider(cfg)` 根据配置选择 provider
+
+#### 2. 搜索链路集成到 AgentLoop
+
+- `planWithBaseRules`：无特定 ID + `kbInsufficient(RetrieveResult)` → 自动规划 `web_search`
+- `nextAction::nextActionWebSearch`：`web_search` 有结果 → `web_fetch(urls=[前3个URL])`
+- `RuleObserver`：
+  - 新增 `observeWebSearch()` / `observeWebFetch()` 观察函数
+  - `kbInsufficient()`：`len(Chunks)==0` 或 `topScore<0.4` 或全通道错误
+  - `document_list`/`task_list` 返回空 + KB 不足 → 触发 `web_search`
+- `LLMObserver`：新增 3 个 few-shot 示例（#6-#8）+ 规则 #10（检索质量评估）
+- `answer_guidance::buildWebSearchGuidance()`：信源标注、矛盾显式化、知识库优先、局限性说明
+
+#### 3. 全链路日志补强
+
+此前 tool 包仅 3 处日志调用，补强后覆盖：
+
+- `executor.go`：`[tool] <name> started/success/failed (<N>ms)` + 参数 + 摘要
+- `agent_loop.go`：`[agent] start` / `round N: M call(s) [names] (mode)` / `observer: DONE/CONTINUE` / `done: N rounds, M calls`
+- `observer_rule.go`：`[observer] kb insufficient (chunks=N), triggering web_search`
+
+#### 4. 工具集现状
+
+- 现有 **14 个 tool**：11 个 builtin + 1 个 think + 2 个 Eino Graph Tool
+- 新增：`web_fetch`
+
+#### 5. P0 收口：结果视图层、执行语义与 capability trace 元数据
+
+- 新增 `internal/app/rag/tool/result_views.go`
+  - `WebSearchResultView`
+  - `WebFetchResultView`
+  - `DiagnosisResultView`
+  - 统一承接 `Result.Data` 中常见的 `[]map[string]any` / `[]any` 混合结果，减少下游重复猜字段结构
+- `answer_guidance.go` / `renderer.go` / `next_action.go` / `observer_rule.go` 已切到优先消费 typed view
+  - `diagnose` guidance 通过 `DiagnosisResultView` 读取结果
+  - `web_search` / `web_fetch` 的 renderer 与 observer 不再散落解析原始 map
+  - `nextAction` 的 web 分支基于 view 提取 URL，降低链路耦合
+- `buildWebSearchGuidance()` 补充“本地/知识库侧已知证据”与“外部网页来源”分层表达
+  - 回答阶段会显式区分 KB 证据与外部来源，便于后续做信源评级与引用排序
+- 新增 `internal/app/rag/tool/workflow_control.go`
+  - `ExecutionMode`: `read_only` / `proposal_only` / `guarded_write`
+  - `RiskLevel`: `low` / `medium` / `high`
+  - `ApprovalRequirement`: `none` / `recommended` / `required`
+  - `Capability`: `knowledge` / `diagnosis` / `search` / `general`
+  - `WorkflowTraceMeta`: 记录能力域、证据来源与退化状态
+- `WorkflowInput` / `WorkflowResult` 已显式携带 `Control` 与 `TraceMeta`
+  - 当前 `runToolWorkflowStage(...)` 默认注入 `read_only + low + none`
+  - `AgentLoop` 结束时会推导 capability 与 evidence sources
+- capability 级 trace 元数据已补入运行链路
+  - 证据来源当前识别：`knowledge_base` / `system_records` / `rag_trace` / `external_web`
+  - `rag_chat_service.go` 会把 `toolWorkflow.control`、`toolWorkflow.traceMeta`、`toolCallCount`、`roundCount` 写入 trace run extraData
+  - `chat_tracer.go` 会把 `capability` / `workflowMode` / `riskLevel` / `approvalRequirement` / `evidenceSources` 写入 `agt_round` / `agt_obs`
+- prompt 上下文新增 `WorkflowPolicy`
+  - `prompt.Context` 会额外渲染 `## 执行约束` 系统消息，让回答阶段显式知道当前工作模式与审批边界
+- 这一轮 P0 的实际收益
+  - 把高频结果消费从“散读 map”收成“typed result contract”
+  - 把 workflow 运行语义从隐式约定收成显式上下文
+  - 把 trace 从“看见调用过程”推进到“看见能力域、风险等级与证据类型”
+
+#### 6. 外部证据工作流收口（web_search → 信源评估 → web_fetch → 质量审核 → readiness）
+
+- 新增 `internal/app/rag/tool/graph/external_evidence_workflow_graph.go`
+  - 以 Eino Graph 方式固化 `web_search -> select -> web_fetch -> assess`
+  - `select` 阶段不再只是“拿前三个 URL”，而是显式产出 `sourceReview`
+  - `assess` 阶段拆成两层：
+    - `qualityAssessment`：外部证据质量、来源多样性、交叉印证、抓取成功/失败/截断情况
+    - `readiness`：当前证据是否足以支持最终回答
+- `external_evidence_workflow` 结果契约补齐：
+  - `selectedUrls / selectedDomains / selectedSourceTypes`
+  - `sourceCoverage / sourceReview`
+  - `quality / qualityConfidence / qualityReasoning / qualityAssessment`
+  - `readiness / readinessConfidence / readinessReasoning / citedUrls`
+- `result_views.go` 新增 `ExternalEvidenceWorkflowView`
+  - 统一读取 `sourceReview` 与 `qualityAssessment`
+  - 为 renderer / answer guidance / 前端联调提供稳定消费入口
+- `answer_guidance.go`
+  - 新增 `buildExternalEvidenceGuidance(...)`
+  - 回答阶段现在会显式区分：
+    - 本地/知识库证据
+    - 外部网页来源
+    - 来源质量与局限
+    - 引用 URL
+- `renderer.go` / `result_summary.go`
+  - `external_evidence_workflow` 现在会把 selected sources、quality、readiness 渲染进 ToolContext / LLM 摘要
+- 新增测试：
+  - `eino_external_evidence_workflow_graph_test.go`
+  - `tool_test.go` 中 external evidence guidance / view 断言
+  - `result_summary_test.go` 中 external evidence 字段摘要断言
+
+#### 7. 联调收口：Tool 卡片事件字段对齐 + 工作流阶段日志
+
+- 前后端联调中发现 Tool 卡片只显示空白 running 占位：
+  - 后端 `ToolCallEvent` 无 JSON tag，SSE 序列化后字段为 `CallID / Name / Summary`
+  - 前端按 `callId / name / summary` 读取，导致名称、摘要、参数、耗时全部丢失
+- 已修复后端事件结构：
+  - `internal/app/rag/tool/workflow.go` 为 `ToolCallEvent` 补齐 JSON tag
+  - `tool_start / tool_result` 事件可稳定输出 `callId / round / sequence / name / status / summary / arguments / data`
+- 已修复前端兼容消费：
+  - `frontend/src/stores/chatStore.ts` 新增 `normalizeToolCallPayload(...)`
+  - 同时兼容 camelCase / PascalCase，避免旧进程或历史事件导致卡片再次空白
+- `external_evidence_workflow` 新增阶段级日志：
+  - `workflow start / done`
+  - `search start / done`
+  - `select done`
+  - `fetch start / done`
+  - `assess done`
+  - 现在联调时可以直接从日志确认：
+    - 搜索命中了多少结果
+    - 选中了哪些 URL
+    - 来源 coverage / diversity
+    - fetch 成功/失败/截断
+    - 最终 quality / readiness 是否足够
+
 ### 2026-05-09
 
 #### 1. 做了一版 ingestion 最小收口
@@ -507,7 +694,7 @@
 
 ## 当前验证状态
 
-截至 2026-05-11，以下增量验证已通过（测试数 49 → 71）：
+截至 2026-05-12，以下增量验证已通过（35 个包全量 PASS，零回归）：
 
 ```powershell
 $env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/ingestion/service ./internal/app/knowledge/service ./internal/adapter/http/ingestion -count=1
@@ -546,37 +733,91 @@ $env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/tool -run T
 - `cmd/retrieve-eval` 可正常编译
 - `internal/bootstrap/rag` 可正常编译
 
+2026-05-12 增量验证：
+
+```
+# tool 全量
+go test ./internal/app/rag/tool/... -count=1 → PASS
+
+# builtin + tavily
+go test ./internal/app/rag/tool/builtin/... -count=1 → PASS
+
+# planner
+go test ./internal/app/rag/tool/planner/... -count=1 → PASS
+
+# service
+go test ./internal/app/rag/service/... -count=1 → PASS
+
+# config (含 RagWebSearchConfig)
+go test ./internal/framework/config/... -count=1 → PASS
+
+# 全量 internal（35 packages）
+go test ./internal/... -count=1 → 35 PASS, 0 FAIL
+
+# full build
+go build ./... → PASS
+```
+
+2026-05-12 P0 收口增量验证：
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/tool/... ./internal/app/rag/core/prompt ./internal/app/rag/service/... -count=1
+```
+
+- `internal/app/rag/tool/...` PASS
+- `internal/app/rag/core/prompt` PASS
+- `internal/app/rag/service/...` PASS
+
+2026-05-12 外部证据工作流 / Tool 卡片联调增量验证：
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/tool/... -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/tool -count=1
+```
+
+- `internal/app/rag/tool/...` PASS（含 `external_evidence_workflow` 新增测试）
+- `internal/app/rag/tool` PASS（含 `ToolCallEvent` JSON tag / Tool 卡片联调修复后回归）
+
 ## 当前已知问题与风险
 
 1. `tool / agent` 决策已进入 “LLMObserver + LLMPlanner + 规则兜底” 的混合版本  
    `LLMObserver` 已成为默认主 observer，`RuleObserver` 已退为 fallback/guardrail。`doc_fail_01` 的标准失败样例可稳定走通，且 `diagnose` 一步到位大幅减少了对 LLM Observer 下钻决策的依赖。当前剩余主要风险已从”基础交互是否可用”转为”LLM 决策质量是否足够稳定”，在 diagnose 覆盖不到的场景下仍需防范参数幻觉和重复调用。
 
-2. 运行中场景已回答一致性收口  
+3. 运行中场景已回答一致性收口  
    `ID` 误识别、同轮过深规划、状态冲突归一已完成首轮修复。`answer_guidance` 已支持当 diagnose 结论与 task/node 实际状态冲突时以 task/node 为准，并显式标注不一致。
 
-3. 多通道检索目前仍是”无 intent 依赖”版本  
+4. 多通道检索目前仍是”无 intent 依赖”版本  
    已完成 `vector_global + keyword + metadata_title` 通道化重构，但还没有接入 `intent_directed`、metadata 字段扩展策略或更细的 route hint。
 
-4. 工具集已扩展但仍缺少写操作和更多外部工具  
-   已从 8 个扩展到 10 个（含 web_search），但仍无写操作工具（如创建文档）或更多外部系统对接。
+5. 工具集已扩展至 15 个但仍缺少更多结构化外部工具与写操作工具  
+   已含 web_search（DuckDuckGo/Tavily 双后端）+ web_fetch（网页抓取）+ external_evidence_workflow（外部证据工作流），但仍无更多结构化外部工具（如 JSON API / GitHub / SQL readonly）和写操作工具（如创建文档）。
 
-5. `ingestion` 生产化仍未完全收口  
+6. `ingestion` 生产化仍未完全收口  
    已补上 reconcile 结果留痕与基础统计，但修复结果沉淀、异常统计、超时治理和更系统的恢复策略仍未完成。该项已转入”中期待办”。
 
-6. trace 可观测性具备首轮闭环，但仍需继续产品化  
-   round / observation extraData 中已补充 nextHintCalls、executionMode、toolCallCount 等字段，但列表摘要、聊天到 trace 联动、异常筛选仍需继续补齐。
+7. trace 可观测性具备首轮闭环，但仍需继续产品化 
+   round / observation extraData 中已补充 `capability`、`workflowMode`、`riskLevel`、`approvalRequirement`、`evidenceSources`、`nextHintCalls`、`toolCallCount` 等字段，但列表摘要、聊天到 trace 联动、异常筛选仍需继续补齐。
 
-7. AgentLoop V1 已从”纯诊断”扩展为”诊断 + 发现 + 搜索”，但仍是单 Agent  
-   对模糊问题、多意图问题的处理有所提升（开放发现 + web 搜索），但还不是多 Agent 协作系统。
+8. AgentLoop V1 已从”纯诊断”扩展为”诊断 + 发现 + 搜索”，但仍是单 Agent  
+   已落地 RAG 优先的联网搜索（web_search + web_fetch + external_evidence_workflow + Tavily 国内可用后端），模糊问题处理和外部证据整合有所提升，但还不是多 Agent 协作系统。
+
+10. Tool 卡片前端展示虽已修复基础事件字段对齐，但仍需继续产品化  
+   当前已修复 `tool_start/tool_result` 的 `callId/name/summary` 对齐问题，工具调用名称、参数、摘要和耗时可重新展示；但 `external_evidence_workflow` 这类复杂结果仍更适合做专门卡片视图，而不是只显示通用摘要。
+
+9. DuckDuckGo 在国内被墙，需配置 Tavily 替代  
+   `rag.search.web-search.provider=tavily` + `api-key` 可解决，但需要用户注册免费 API key。未配置时回退 DuckDuckGo（国内超时）。
 
 ## 下一步计划
 
 ### P0
 
-- 联调验证近期改动
-  - 端到端验证 `doc_fail_01`：确认 diagnose 一步到位返回 indexer 错误
-  - 端到端验证 `doc_run_01`：确认状态冲突归一后回答不再被浅层结论带偏
-  - 验证开放问题："最近有哪些文档导入失败了？"
+- 联调验证 Agent Search 全链路
+  - E2E 验证 "Go 泛型怎么用" → KB 无内容 → web_search → web_fetch → 综合回答
+  - E2E 验证 "Go 泛型怎么用" → KB 无内容 → external_evidence_workflow → source review / quality / readiness → 综合回答
+  - E2E 验证 "doc_fail_01 为什么导入失败" → 诊断链路，不触发搜索
+  - E2E 验证 "最近有哪些文档" → document_list，不触发搜索
+  - 验证 Tavily API key 配置生效，确认国内可用性
+  - 联调验证 Tool 卡片是否稳定显示 `callId / name / summary / arguments / duration`
 
 - 多通道检索优化
   - 基于 `retrieve-eval` 持续扩充真实 query 样本集
@@ -585,13 +826,110 @@ $env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/tool -run T
 ### P1
 
 - 继续扩展工具集
-  - 评估是否需要更多外部工具（如 HTTP fetch、数据库查询等）
+  - 评估是否需要更多结构化外部工具（如 JSON API fetch、GitHub 搜索、数据库 readonly 查询等）
   - 评估是否需要写操作工具（需配合确认机制）
+- 继续把高频结果契约视图化
+  - 为 `task_query` / `task_node_query` / `trace_node_query` 补齐 result view
+  - 继续减少 renderer / observer / guidance 中对 `map[string]any` 的直接消费
 
 - trace 产品化
   - 列表摘要、聊天到 trace 联动、异常筛选
 
 ### P2
+
+---
+
+## 2026-05-12 Additional Update: RAG Tool Modularization
+
+### Status Summary
+
+- The long-term RAG tool modularization effort has moved from architecture design into active rollout.
+- The runtime is now effectively `module-first`, while central `switch toolName` logic is being reduced to legacy fallback.
+- This makes future external tool integration much more realistic: new tools can increasingly be added as modules instead of framework patches.
+
+### Completed So Far
+
+#### Phase 1 Foundation: done
+
+- `ToolModule / ToolSpec / ToolBehavior / ToolInvoker / ResultMeta / ModuleRegistry` are in place.
+- `Executor` now runs modules and injects `Result.Meta`.
+- `Registry` is module-centric while still preserving legacy `Tool` registration.
+- `buildLocalToolWorkflow(...)` now registers modules instead of raw tools.
+
+#### Phase 2 Web family migration: done
+
+These tools already have their own module behavior:
+
+- `web_search`
+- `web_fetch`
+- `external_evidence_workflow`
+
+Each now owns its own:
+
+- `Decode`
+- `Next`
+- `Observe`
+- `RenderContext`
+- `BuildGuidance`
+
+#### Phase 3 Central orchestration slimming: largely done
+
+- `AgentLoop` now prefers registry-driven behavior for next-step planning.
+- `RuleObserver` now behaves like an orchestrator instead of the primary holder of tool-specific semantics.
+- `RenderContext` and `AnswerGuidance` are now module-first.
+- `workflow_control` already prefers `Result.Meta` over name-based inference.
+
+#### Phase 4 System tool family migration: completed
+
+Families already migrated to module behavior:
+
+- `document_query / document_chunk_log_query / document_list`
+- `ingestion_task_query / ingestion_task_node_query / task_list`
+- `document_ingestion_diagnose / task_ingestion_diagnose / trace_retrieval_diagnose / trace_node_query`
+- `think`
+- `document_root_cause_diagnosis / document_diagnose_with_search`
+
+### Important Engineering Result
+
+- Legacy `MustRegister(tool)` now auto-infers known module behavior for migrated tool families.
+- This means old tests and old registration style do not need a full rewrite immediately.
+- `RuleObserver` no longer needs to carry the big document/task/web/trace branch table as the main path.
+
+### Validation
+
+Incremental validation for the modularization rollout passed on 2026-05-13:
+
+```powershell
+$env:GOCACHE=(Join-Path (Resolve-Path .).Path '.gocache'); go test ./internal/app/rag/tool/... ./internal/bootstrap/rag -count=1
+```
+
+Current result:
+
+- `internal/app/rag/tool` PASS
+- `internal/app/rag/tool/builtin` PASS
+- `internal/app/rag/tool/planner` PASS
+- `internal/bootstrap/rag` PASS
+
+### Remaining Work
+
+#### Phase 4 wrap-up result
+
+- `next_action.go` compatibility fallback now reuses inferred behavior instead of keeping central document/task/web name branching.
+- `planCallsFromResults(...)` no longer keeps a separate `web_search` special case and now follows the same compatibility decision path.
+- `workflow_control.go` fallback now resolves capability / evidence / execution metadata through legacy module spec inference instead of a tool-name-specific table.
+- Physical typed-view relocation is not required for Phase 4 completion; the next meaningful architecture step is adding a truly new external module family on the current module-first runtime.
+
+#### Phase 5 preparation
+
+The recommended first external module families remain:
+
+- `api/*` for readonly JSON API tools
+- `github/*` for readonly repo / issue / release / file tools
+- `db/*` for domain-specific readonly queries
+
+### Current Conclusion
+
+As of 2026-05-12, the project is no longer only “planning” modularization. The main RAG toolchain has already entered a practical modularized state, with system families mostly migrated and central fallback logic actively being retired.
 
 - ingestion 收口
   - pending/running 超时治理

@@ -286,7 +286,7 @@ func (s *KnowledgeDocumentService) Upload(ctx context.Context, input UploadKnowl
 			if cleanup != nil {
 				cleanup()
 			}
-			return domain.KnowledgeDocument{}, exception.NewServiceException("failed to create knowledge document schedule", err)
+			log.Warnf("failed to create knowledge document schedule", err)
 		}
 	}
 

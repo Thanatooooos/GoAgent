@@ -12,7 +12,7 @@ import (
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/domain"
-	ragtool "local/rag-project/internal/app/rag/tool"
+	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/distributedid"
 	"local/rag-project/internal/framework/exception"
@@ -279,6 +279,19 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	if toolStage.result.Degraded {
 		_ = sink.SendTool("tool_workflow", ragtool.CallStatusFailed, toolStage.result.DegradeReason)
 	}
+	s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, map[string]any{
+		"toolWorkflow": map[string]any{
+			"used":              toolStage.result.Used,
+			"degraded":          toolStage.result.Degraded,
+			"degradeReason":     strings.TrimSpace(toolStage.result.DegradeReason),
+			"control":           toolStage.result.Control,
+			"traceMeta":         toolStage.result.TraceMeta,
+			"toolCallCount":     len(toolStage.result.Calls),
+			"roundCount":        len(toolStage.result.Rounds),
+			"hasAnswerGuidance": strings.TrimSpace(toolStage.result.AnswerGuidance) != "",
+			"hasToolContext":    strings.TrimSpace(toolStage.result.Context) != "",
+		},
+	})
 	s.tracer.recordAgentWorkflowTraceNodes(ctx, prepared.state.traceID, toolStage.result)
 
 	promptStage, err := s.runPromptStage(
@@ -287,6 +300,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		prepared.history,
 		retrieveResult,
 		toolStage.result.Context,
+		toolStage.result.Control.PromptString(),
 		toolStage.result.AnswerGuidance,
 		effectiveFallbackPrompt(fallbackPrompt, toolStage.result.Used, question),
 		prepared.state.traceID,
@@ -778,7 +792,6 @@ func (s *RagChatService) runRewriteStage(ctx context.Context, question string, h
 }
 
 func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInput, rewriteResult ragrewrite.Result, traceID string) (ragChatRetrieveStageResult, error) {
-	searchDecisions := make([]map[string]any, 0)
 	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatRetrieveStageResult]{
 		node: ragChatTraceNode{
 			NodeID:   "retrieve",
@@ -794,18 +807,6 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 
 			results := make([]ragretrieve.Result, 0, len(subQuestions))
 			for _, q := range subQuestions {
-				decision := ragretrieve.AnalyzeSearchMode(ragretrieve.Request{
-					Query:      strings.TrimSpace(q),
-					SearchMode: searchMode,
-				})
-				searchDecisions = append(searchDecisions, map[string]any{
-					"query":         strings.TrimSpace(q),
-					"requestedMode": decision.RequestedMode,
-					"resolvedMode":  decision.ResolvedMode,
-					"source":        decision.Source,
-					"reason":        decision.Reason,
-					"signals":       append([]string(nil), decision.Signals...),
-				})
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
 					Query:            strings.TrimSpace(q),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
@@ -817,18 +818,6 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 				results = append(results, retrieveResult)
 			}
 			if len(results) == 0 {
-				decision := ragretrieve.AnalyzeSearchMode(ragretrieve.Request{
-					Query:      strings.TrimSpace(input.Question),
-					SearchMode: searchMode,
-				})
-				searchDecisions = append(searchDecisions, map[string]any{
-					"query":         strings.TrimSpace(input.Question),
-					"requestedMode": decision.RequestedMode,
-					"resolvedMode":  decision.ResolvedMode,
-					"source":        decision.Source,
-					"reason":        decision.Reason,
-					"signals":       append([]string(nil), decision.Signals...),
-				})
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
 					Query:            strings.TrimSpace(input.Question),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
@@ -852,9 +841,7 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 			if len(result.result.SearchChannels) > 0 {
 				extra["searchChannels"] = append([]string(nil), result.result.SearchChannels...)
 			}
-			if len(searchDecisions) > 0 {
-				extra["searchDecisions"] = append([]map[string]any(nil), searchDecisions...)
-			}
+
 			if len(result.result.ChannelStats) > 0 {
 				stats := make([]map[string]any, 0, len(result.result.ChannelStats))
 				for _, stat := range result.result.ChannelStats {
@@ -904,6 +891,7 @@ func (s *RagChatService) runToolWorkflowStage(
 				UserID:           strings.TrimSpace(input.UserID),
 				ConversationID:   strings.TrimSpace(input.ConversationID),
 				TraceID:          strings.TrimSpace(traceID),
+				Control:          defaultWorkflowControl(),
 				KnowledgeBaseIDs: append([]string(nil), input.KnowledgeBaseIDs...),
 				SearchMode:       strings.TrimSpace(searchMode),
 				History:          append([]convention.ChatMessage(nil), history...),
@@ -922,12 +910,17 @@ func (s *RagChatService) runToolWorkflowStage(
 				names = append(names, strings.TrimSpace(call.Name))
 			}
 			return map[string]any{
-				"used":          result.result.Used,
-				"toolCallCount": len(result.result.Calls),
-				"roundCount":    len(result.result.Rounds),
-				"toolNames":     names,
-				"degraded":      result.result.Degraded,
-				"degradeReason": strings.TrimSpace(result.result.DegradeReason),
+				"used":                result.result.Used,
+				"toolCallCount":       len(result.result.Calls),
+				"roundCount":          len(result.result.Rounds),
+				"toolNames":           names,
+				"degraded":            result.result.Degraded,
+				"degradeReason":       strings.TrimSpace(result.result.DegradeReason),
+				"capability":          strings.TrimSpace(result.result.TraceMeta.Capability),
+				"executionMode":       strings.TrimSpace(result.result.TraceMeta.ExecutionMode),
+				"riskLevel":           strings.TrimSpace(result.result.TraceMeta.RiskLevel),
+				"approvalRequirement": strings.TrimSpace(result.result.TraceMeta.ApprovalRequirement),
+				"evidenceSources":     append([]string(nil), result.result.TraceMeta.EvidenceSources...),
 			}
 		},
 	})
@@ -936,23 +929,7 @@ func (s *RagChatService) runToolWorkflowStage(
 const defaultTopK = 5
 
 func resolveRetrieveSearchMode(inputMode string, preferredMode string) string {
-	mode := strings.TrimSpace(strings.ToLower(inputMode))
-	switch mode {
-	case ragretrieve.SearchModeSemantic, ragretrieve.SearchModeKeyword, ragretrieve.SearchModeHybrid:
-		return mode
-	case "", ragretrieve.SearchModeAuto:
-		break
-	default:
-		return ragretrieve.SearchModeAuto
-	}
-
-	preferredMode = strings.TrimSpace(strings.ToLower(preferredMode))
-	switch preferredMode {
-	case ragretrieve.SearchModeSemantic, ragretrieve.SearchModeKeyword, ragretrieve.SearchModeHybrid:
-		return preferredMode
-	default:
-		return ragretrieve.SearchModeAuto
-	}
+	return ragretrieve.SearchModeHybrid
 }
 
 func topChunkScore(result ragretrieve.Result) float32 {
@@ -987,6 +964,7 @@ func (s *RagChatService) runPromptStage(
 	history []convention.ChatMessage,
 	promptCtx ragretrieve.Result,
 	toolContext string,
+	workflowPolicy string,
 	answerGuidance string,
 	systemPromptOverride string,
 	traceID string,
@@ -1002,6 +980,7 @@ func (s *RagChatService) runPromptStage(
 				Question:         question,
 				KnowledgeContext: promptCtx.KnowledgeContext,
 				ToolContext:      toolContext,
+				WorkflowPolicy:   workflowPolicy,
 				AnswerGuidance:   answerGuidance,
 				History:          history,
 				SystemPrompt:     systemPromptOverride,
@@ -1017,4 +996,12 @@ func (s *RagChatService) runPromptStage(
 			}
 		},
 	})
+}
+
+func defaultWorkflowControl() ragtool.WorkflowControl {
+	return ragtool.WorkflowControl{
+		ExecutionMode:       ragtool.ExecutionModeReadOnly,
+		RiskLevel:           ragtool.RiskLevelLow,
+		ApprovalRequirement: ragtool.ApprovalRequirementNone,
+	}
 }

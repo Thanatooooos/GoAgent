@@ -39,4 +39,10 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency != 3 {
 		t.Fatalf("unexpected rag.agent.parallel-tool-calls.max-concurrency: %d", cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency)
 	}
+	if cfg.Rag.Search.WebSearch.SourcePolicy.AllowDomains[0] != "go.dev" {
+		t.Fatalf("expected web search source policy allow-domains to load, got %+v", cfg.Rag.Search.WebSearch.SourcePolicy.AllowDomains)
+	}
+	if cfg.Rag.Search.WebSearch.SourcePolicy.DenyDomains[0] != "quora.com" {
+		t.Fatalf("expected web search source policy deny-domains to load, got %+v", cfg.Rag.Search.WebSearch.SourcePolicy.DenyDomains)
+	}
 }

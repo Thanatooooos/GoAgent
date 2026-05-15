@@ -133,6 +133,95 @@ func TestKnowledgeDocumentScheduleJobScanReleasesLeaseWhenDispatcherFails(t *tes
 	}
 }
 
+func TestKnowledgeDocumentScheduleJobScanContinuesAfterDispatchFailure(t *testing.T) {
+	t.Parallel()
+
+	dispatchErr := errors.New("queue full")
+	processed := make([]string, 0)
+	released := make([]string, 0)
+	dispatchCount := 0
+	repo := stubScheduleRepository{
+		listDueFn: func(ctx context.Context, before time.Time, limit int) ([]domain.KnowledgeDocumentSchedule, error) {
+			return []domain.KnowledgeDocumentSchedule{{ID: "schedule-1"}, {ID: "schedule-2"}}, nil
+		},
+		tryAcquireLockFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time, acquiredAt time.Time) (bool, error) {
+			return true, nil
+		},
+		releaseLockFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease) (bool, error) {
+			released = append(released, lease.ScheduleID)
+			return true, nil
+		},
+	}
+
+	job := NewKnowledgeDocumentScheduleJobWithOptions(repo, DocumentStatusHelper{}, KnowledgeDocumentScheduleJobOptions{
+		LockManager: NewScheduleLockManager(repo, ScheduleLockOptions{}),
+		Processor: stubScheduleLeaseProcessor{
+			processFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease) error {
+				processed = append(processed, lease.ScheduleID)
+				return nil
+			},
+		},
+		Dispatcher: stubScheduleTaskDispatcher{
+			submitFn: func(task func()) error {
+				dispatchCount++
+				if dispatchCount == 1 {
+					return dispatchErr
+				}
+				task()
+				return nil
+			},
+		},
+	})
+
+	err := job.Scan(context.Background())
+	if !errors.Is(err, dispatchErr) {
+		t.Fatalf("Scan() error = %v, want joined error containing %v", err, dispatchErr)
+	}
+	if len(processed) != 1 || processed[0] != "schedule-2" {
+		t.Fatalf("expected second schedule to continue processing, got %+v", processed)
+	}
+	if len(released) != 2 {
+		t.Fatalf("expected both dispatched leases to be released, got %+v", released)
+	}
+}
+
+func TestKnowledgeDocumentScheduleJobScanContinuesAfterAcquireFailure(t *testing.T) {
+	t.Parallel()
+
+	acquireErr := errors.New("db timeout")
+	processed := make([]string, 0)
+	repo := stubScheduleRepository{
+		listDueFn: func(ctx context.Context, before time.Time, limit int) ([]domain.KnowledgeDocumentSchedule, error) {
+			return []domain.KnowledgeDocumentSchedule{{ID: "schedule-1"}, {ID: "schedule-2"}}, nil
+		},
+		tryAcquireLockFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease, lockUntil time.Time, acquiredAt time.Time) (bool, error) {
+			if lease.ScheduleID == "schedule-1" {
+				return false, acquireErr
+			}
+			return true, nil
+		},
+	}
+
+	job := NewKnowledgeDocumentScheduleJobWithOptions(repo, DocumentStatusHelper{}, KnowledgeDocumentScheduleJobOptions{
+		LockManager: NewScheduleLockManager(repo, ScheduleLockOptions{}),
+		Processor: stubScheduleLeaseProcessor{
+			processFn: func(ctx context.Context, lease domain.KnowledgeDocumentScheduleLockLease) error {
+				processed = append(processed, lease.ScheduleID)
+				return nil
+			},
+		},
+		Dispatcher: stubScheduleTaskDispatcher{},
+	})
+
+	err := job.Scan(context.Background())
+	if !errors.Is(err, acquireErr) {
+		t.Fatalf("Scan() error = %v, want joined error containing %v", err, acquireErr)
+	}
+	if len(processed) != 1 || processed[0] != "schedule-2" {
+		t.Fatalf("expected second schedule to continue processing, got %+v", processed)
+	}
+}
+
 func TestKnowledgeDocumentScheduleJobScanReleasesLeaseWhenProcessorMissing(t *testing.T) {
 	t.Parallel()
 

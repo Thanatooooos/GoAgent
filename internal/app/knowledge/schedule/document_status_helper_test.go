@@ -120,6 +120,32 @@ func TestDocumentStatusHelperTryMarkRunningWrapsRepositoryError(t *testing.T) {
 	}
 }
 
+func TestDocumentStatusHelperRecoverStuckRunningUsesDocumentStatuses(t *testing.T) {
+	t.Parallel()
+
+	var updatedAtAssigned bool
+	helper := NewDocumentStatusHelper(stubKnowledgeDocumentRepository{
+		updateFieldsFn: func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+			assertPredicate(t, where, port.KnowledgeDocument.Status.Key, port.OperatorEQ, domain.KnowledgeDocumentStatusRunning)
+			assertAssignment(t, set, port.KnowledgeDocument.Status.Key, domain.KnowledgeDocumentStatusFailed)
+			assertAssignment(t, set, port.KnowledgeDocument.UpdatedBy.Key, systemUser)
+			updatedAtAssigned = hasAssignment(set, port.KnowledgeDocument.UpdatedAt.Key)
+			return 2, nil
+		},
+	})
+
+	affected, err := helper.RecoverStuckRunning(context.Background(), 30)
+	if err != nil {
+		t.Fatalf("RecoverStuckRunning() error = %v", err)
+	}
+	if affected != 2 {
+		t.Fatalf("RecoverStuckRunning() affected = %d, want 2", affected)
+	}
+	if updatedAtAssigned {
+		t.Fatal("RecoverStuckRunning() should not assign updated_at")
+	}
+}
+
 func assertPredicate(t *testing.T, predicates port.UpdatePredicates, field port.FieldKey, operator port.PredicateOperator, value any) {
 	t.Helper()
 	for _, predicate := range predicates {

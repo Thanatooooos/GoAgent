@@ -46,8 +46,6 @@ func main() {
 	if cfg != nil && cfg.Server.Port != 0 {
 		port = cfg.Server.Port
 	}
-	disableRocketMQ := shouldDisableRocketMQ()
-
 	// 先建库并执行所有迁移，确保表在 runtime 启动前已就绪。
 	initDB, err := postgresrepo.NewGormDB(cfg.Spring.Datasource)
 	if err != nil {
@@ -66,7 +64,6 @@ func main() {
 	knowledgeRuntime, err := knowledgebootstrap.NewRuntime(context.Background(), knowledgebootstrap.RuntimeOptions{
 		Config:          cfg,
 		AIRuntime:       aiRuntime,
-		DisableRocketMQ: disableRocketMQ,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "init knowledge runtime failed: %v\n", err)
@@ -236,9 +233,4 @@ func registerRagRoutes(r *gin.Engine, cfg *config.Config, runtime *ragbootstrap.
 	protected := resolveContextPath(r, cfg).Group("/")
 	protected.Use(umw.RequireLogin())
 	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Feedback, runtime.Chat, runtime.Trace)
-}
-
-func shouldDisableRocketMQ() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv("DISABLE_ROCKETMQ")))
-	return value == "1" || value == "true" || value == "yes"
 }

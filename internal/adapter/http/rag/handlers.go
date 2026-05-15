@@ -10,7 +10,7 @@ import (
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
-	ragtool "local/rag-project/internal/app/rag/tool"
+	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/contextx"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/exception"

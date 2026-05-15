@@ -24,21 +24,13 @@ type ServletMultipartConfig struct {
 }
 
 type SpringConfig struct {
-	Application SpringApplicationConfig `mapstructure:"application"`
-	Servlet     ServletConfig           `mapstructure:"servlet"`
-	Datasource  DataSourceConfig        `mapstructure:"datasource"`
-	Data        SpringDataConfig        `mapstructure:"data"`
-}
-
-type SpringApplicationConfig struct {
-	Name string `mapstructure:"name"`
+	Servlet    ServletConfig    `mapstructure:"servlet"`
+	Datasource DataSourceConfig `mapstructure:"datasource"`
 }
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Spring   SpringConfig   `mapstructure:"spring"`
-	RocketMQ RocketMQConfig `mapstructure:"rocketmq"`
-	Milvus   MilvusConfig   `mapstructure:"milvus"`
+	Server ServerConfig `mapstructure:"server"`
+	Spring SpringConfig `mapstructure:"spring"`
 	Rag      RagConfig      `mapstructure:"rag"`
 	AI       AIConfig       `mapstructure:"ai"`
 	Parser   ParserConfig   `mapstructure:"parser"`
@@ -97,41 +89,6 @@ type HikariConfig struct {
 	PoolName          string `mapstructure:"pool-name"`
 }
 
-type SpringDataConfig struct {
-	Redis RedisConfig `mapstructure:"redis"`
-}
-
-type RedisConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Password string `mapstructure:"password"`
-}
-
-type RocketMQConfig struct {
-	NameServer string         `mapstructure:"name-server"`
-	Producer   RocketProducer `mapstructure:"producer"`
-	Consumer   RocketConsumer `mapstructure:"consumer"`
-	Topics     RocketTopics   `mapstructure:"topics"`
-}
-
-type RocketProducer struct {
-	Group              string `mapstructure:"group"`
-	SendMessageTimeout int    `mapstructure:"send-message-timeout"`
-}
-
-type RocketConsumer struct {
-	ChunkDocumentGroup string `mapstructure:"chunk-document-group"`
-}
-
-type RocketTopics struct {
-	ChunkDocument         string `mapstructure:"chunk-document"`
-	RefreshRemoteDocument string `mapstructure:"refresh-remote-document"`
-}
-
-type MilvusConfig struct {
-	Uri string `mapstructure:"uri"`
-}
-
 type RagConfig struct {
 	Vector       RagVectorConfig       `mapstructure:"vector"`
 	Default      RagDefaultConfig      `mapstructure:"default"`
@@ -139,9 +96,7 @@ type RagConfig struct {
 	QueryRewrite RagQueryRewriteConfig `mapstructure:"query-rewrite"`
 	RateLimit    RagRateLimitConfig    `mapstructure:"rate-limit"`
 	Memory       RagMemoryConfig       `mapstructure:"memory"`
-	Semaphore    RagSemaphoreConfig    `mapstructure:"semaphore"`
 	Knowledge    RagKnowledgeConfig    `mapstructure:"knowledge"`
-	Mcp          RagMcpConfig          `mapstructure:"mcp"`
 	Search       RagSearchConfig       `mapstructure:"search"`
 	Trace        RagTraceConfig        `mapstructure:"trace"`
 }
@@ -189,20 +144,8 @@ type RagMemoryConfig struct {
 	HistoryKeepTurns  int  `mapstructure:"history-keep-turns"`
 	SummaryStartTurns int  `mapstructure:"summary-start-turns"`
 	SummaryEnabled    bool `mapstructure:"summary-enabled"`
-	TtlMinutes        int  `mapstructure:"ttl-minutes"`
 	SummaryMaxChars   int  `mapstructure:"summary-max-chars"`
 	TitleMaxLength    int  `mapstructure:"title-max-length"`
-}
-
-type RagSemaphoreConfig struct {
-	DocumentUpload RagSemaphoreItem `mapstructure:"document-upload"`
-}
-
-type RagSemaphoreItem struct {
-	Name           string `mapstructure:"name"`
-	MaxConcurrent  int    `mapstructure:"max-concurrent"`
-	MaxWaitSeconds int    `mapstructure:"max-wait-seconds"`
-	LeaseSeconds   int    `mapstructure:"lease-seconds"`
 }
 
 type RagKnowledgeConfig struct {
@@ -212,6 +155,7 @@ type RagKnowledgeConfig struct {
 
 type RagKnowledgeSchedule struct {
 	ScanDelayMs        int `mapstructure:"scan-delay-ms"`
+	RunTimeoutMs       int `mapstructure:"run-timeout-ms"`
 	LockSeconds        int `mapstructure:"lock-seconds"`
 	BatchSize          int `mapstructure:"batch-size"`
 	MinIntervalSeconds int `mapstructure:"min-interval-seconds"`
@@ -223,17 +167,22 @@ type RagKnowledgeIngestion struct {
 	RetryBackoffMs int `mapstructure:"retry-backoff-ms"`
 }
 
-type RagMcpConfig struct {
-	Servers []McpServer `mapstructure:"servers"`
-}
-
-type McpServer struct {
-	Name string `mapstructure:"name"`
-	Url  string `mapstructure:"url"`
-}
-
 type RagSearchConfig struct {
-	Channels RagSearchChannels `mapstructure:"channels"`
+	Channels  RagSearchChannels  `mapstructure:"channels"`
+	WebSearch RagWebSearchConfig `mapstructure:"web-search"`
+}
+
+type RagWebSearchConfig struct {
+	Provider     string                         `mapstructure:"provider"` // "duckduckgo" or "tavily"
+	ApiKey       string                         `mapstructure:"api-key"`  // required for tavily
+	SourcePolicy RagWebSearchSourcePolicyConfig `mapstructure:"source-policy"`
+}
+
+type RagWebSearchSourcePolicyConfig struct {
+	AllowDomains  []string `mapstructure:"allow-domains"`
+	DenyDomains   []string `mapstructure:"deny-domains"`
+	AllowSuffixes []string `mapstructure:"allow-suffixes"`
+	DenySuffixes  []string `mapstructure:"deny-suffixes"`
 }
 
 type RagSearchChannels struct {

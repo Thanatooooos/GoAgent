@@ -9,7 +9,7 @@ import (
 
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
-	ragtool "local/rag-project/internal/app/rag/tool"
+	ragtool "local/rag-project/internal/app/rag/tool/core"
 )
 
 type ChatTracer struct {
@@ -220,6 +220,11 @@ func (t *ChatTracer) recordAgentWorkflowTraceNodes(ctx context.Context, traceID 
 			"toolCallCount":       round.ToolCallCount,
 			"wallClockDurationMs": round.WallClockDurationMs,
 			"totalToolDurationMs": round.TotalToolDurationMs,
+			"capability":          strings.TrimSpace(result.TraceMeta.Capability),
+			"workflowMode":        strings.TrimSpace(result.TraceMeta.ExecutionMode),
+			"riskLevel":           strings.TrimSpace(result.TraceMeta.RiskLevel),
+			"approvalRequirement": strings.TrimSpace(result.TraceMeta.ApprovalRequirement),
+			"evidenceSources":     append([]string(nil), result.TraceMeta.EvidenceSources...),
 		})
 
 		callOffset := int64(0)
@@ -266,11 +271,15 @@ func (t *ChatTracer) recordAgentWorkflowTraceNodes(ctx context.Context, traceID 
 			NodeType:     "agt_obs",
 			NodeName:     "agent_observation",
 		}, observationStatus, observationStartedAt, observationEndedAt, map[string]any{
-			"round":         round.Round,
-			"done":          round.Done,
-			"reasoning":     strings.TrimSpace(round.Reasoning),
-			"nextHint":      strings.TrimSpace(round.NextHint),
-			"nextHintCalls": round.NextHintCalls,
+			"round":               round.Round,
+			"done":                round.Done,
+			"reasoning":           strings.TrimSpace(round.Reasoning),
+			"nextHint":            strings.TrimSpace(round.NextHint),
+			"nextHintCalls":       round.NextHintCalls,
+			"capability":          strings.TrimSpace(result.TraceMeta.Capability),
+			"workflowMode":        strings.TrimSpace(result.TraceMeta.ExecutionMode),
+			"riskLevel":           strings.TrimSpace(result.TraceMeta.RiskLevel),
+			"approvalRequirement": strings.TrimSpace(result.TraceMeta.ApprovalRequirement),
 		})
 		offsetMs += 1
 	}

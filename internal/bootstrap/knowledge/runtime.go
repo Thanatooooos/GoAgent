@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -14,7 +15,7 @@ import (
 	postgresknowledge "local/rag-project/internal/adapter/repository/postgres/knowledge"
 	sqlcqueries "local/rag-project/internal/adapter/repository/postgres/sqlc"
 	s3storage "local/rag-project/internal/adapter/storage/s3"
-	taskrocketmq "local/rag-project/internal/adapter/taskqueue/rocketmq"
+	taskgoroutine "local/rag-project/internal/adapter/taskqueue/goroutine"
 	pgvectorstore "local/rag-project/internal/adapter/vectorstore/pgvector"
 	"local/rag-project/internal/app/knowledge/port"
 	knowledgeschedule "local/rag-project/internal/app/knowledge/schedule"
@@ -29,7 +30,6 @@ type RuntimeOptions struct {
 	AIRuntime       *infraai.Runtime
 	Storage         port.FileStorage
 	VectorStore     port.VectorStore
-	DisableRocketMQ bool
 }
 
 type Runtime struct {
@@ -45,9 +45,8 @@ type Runtime struct {
 	Storage     port.FileStorage
 	VectorStore port.VectorStore
 
-	TaskQueue             *taskrocketmq.TaskQueue
-	ChunkDocumentConsumer *taskrocketmq.ChunkDocumentConsumer
-	ScheduleJob           *knowledgeschedule.KnowledgeDocumentScheduleJob
+	TaskQueue   port.TaskQueue
+	ScheduleJob *knowledgeschedule.KnowledgeDocumentScheduleJob
 
 	scheduleLoopCancel context.CancelFunc
 	scheduleLoopWG     sync.WaitGroup
@@ -114,30 +113,11 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	}
 	runtime.VectorStore = vectorStore
 
-	taskQueue, err := startTaskQueue(cfg, options.DisableRocketMQ)
-	if err != nil {
-		_ = runtime.Close()
-		return nil, err
-	}
-	runtime.TaskQueue = taskQueue
-
 	aiRuntime := options.AIRuntime
 	if aiRuntime == nil {
 		aiRuntime = infraai.NewRuntime()
 	}
 
-	runtime.DocumentService = service.NewKnowledgeDocumentService(
-		baseRepo,
-		documentRepo,
-		nil,
-		chunkLogRepo,
-		nil,
-		storage,
-		taskQueue,
-		runtime.ScheduleService,
-		remoteFetcher,
-		postgresknowledge.NewKnowledgeDocumentDeleteTransaction(db),
-	)
 	runtime.ChunkService = service.NewKnowledgeChunkService(
 		baseRepo,
 		documentRepo,
@@ -187,23 +167,23 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		},
 	)
 
+	runtime.TaskQueue = taskgoroutine.NewTaskQueue(runtime.DocumentProcessService, 5)
+
+	runtime.DocumentService = service.NewKnowledgeDocumentService(
+		baseRepo,
+		documentRepo,
+		nil,
+		chunkLogRepo,
+		nil,
+		storage,
+		runtime.TaskQueue,
+		runtime.ScheduleService,
+		remoteFetcher,
+		postgresknowledge.NewKnowledgeDocumentDeleteTransaction(db),
+	)
+
 	runtime.startScheduleLoop(cfg)
 
-	if !options.DisableRocketMQ {
-		consumer, err := taskrocketmq.NewChunkDocumentConsumer(
-			taskrocketmq.ChunkDocumentConsumerOptionsFromConfig(cfg),
-			runtime.DocumentProcessService,
-		)
-		if err != nil {
-			_ = runtime.Close()
-			return nil, fmt.Errorf("create chunk document consumer: %w", err)
-		}
-		if err := consumer.Start(); err != nil {
-			_ = runtime.Close()
-			return nil, fmt.Errorf("start chunk document consumer: %w", err)
-		}
-		runtime.ChunkDocumentConsumer = consumer
-	}
 	return runtime, nil
 }
 
@@ -220,14 +200,9 @@ func (r *Runtime) Close() error {
 	if r.ScheduleJob != nil {
 		r.ScheduleJob.Close()
 	}
-	if r.ChunkDocumentConsumer != nil {
-		if err := r.ChunkDocumentConsumer.Shutdown(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
 	if r.TaskQueue != nil {
-		if err := r.TaskQueue.Shutdown(); err != nil && firstErr == nil {
-			firstErr = err
+		if q, ok := r.TaskQueue.(*taskgoroutine.TaskQueue); ok {
+			q.Shutdown()
 		}
 	}
 	if r.PGXPool != nil {
@@ -260,21 +235,26 @@ func (r *Runtime) startScheduleLoop(cfg *config.Config) {
 		defer ticker.Stop()
 
 		run := func() {
+			runCtx, runCancel := context.WithTimeout(ctx, scheduleRunTimeout(cfg))
+			defer runCancel()
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					log.Errorf("knowledge schedule loop tick panic recovered: %v", recovered)
 				}
 			}()
-			if err := r.ScheduleJob.RecoverStuckRunningDocuments(ctx); err != nil {
+			if err := r.ScheduleJob.RecoverStuckRunningDocuments(runCtx); err != nil {
 				log.Warnf("knowledge schedule recover stuck running documents failed: %v", err)
 			}
-			if err := r.ScheduleJob.Scan(ctx); err != nil {
+			if err := r.ScheduleJob.Scan(runCtx); err != nil {
 				log.Warnf("knowledge schedule scan failed: %v", err)
 			}
 			if r.DocumentService != nil {
-				if err := r.DocumentService.ScanAndReconcileIngestionTasks(ctx, reconcileScanBatchSize(cfg)); err != nil {
+				if err := r.DocumentService.ScanAndReconcileIngestionTasks(runCtx, reconcileScanBatchSize(cfg)); err != nil {
 					log.Warnf("knowledge ingestion reconcile scan failed: %v", err)
 				}
+			}
+			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+				log.Warnf("knowledge schedule loop iteration timed out after %s", scheduleRunTimeout(cfg))
 			}
 		}
 
@@ -288,21 +268,6 @@ func (r *Runtime) startScheduleLoop(cfg *config.Config) {
 			}
 		}
 	}()
-}
-
-func startTaskQueue(cfg *config.Config, disabled bool) (*taskrocketmq.TaskQueue, error) {
-	if disabled {
-		return nil, nil
-	}
-
-	taskQueue, err := taskrocketmq.NewTaskQueue(taskrocketmq.TaskQueueOptionsFromConfig(cfg))
-	if err != nil {
-		return nil, fmt.Errorf("create rocketmq task queue: %w", err)
-	}
-	if err := taskQueue.Start(); err != nil {
-		return nil, fmt.Errorf("start rocketmq task queue: %w", err)
-	}
-	return taskQueue, nil
 }
 
 func closeGormDB(db *gorm.DB) error {
@@ -329,6 +294,13 @@ func scheduleScanInterval(cfg *config.Config) time.Duration {
 		return 10 * time.Second
 	}
 	return time.Duration(cfg.Rag.Knowledge.Schedule.ScanDelayMs) * time.Millisecond
+}
+
+func scheduleRunTimeout(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.Rag.Knowledge.Schedule.RunTimeoutMs <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(cfg.Rag.Knowledge.Schedule.RunTimeoutMs) * time.Millisecond
 }
 
 func reconcileScanBatchSize(cfg *config.Config) int {

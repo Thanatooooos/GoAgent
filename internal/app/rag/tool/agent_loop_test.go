@@ -2,11 +2,65 @@ package tool
 
 import (
 	"context"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	ragcore "local/rag-project/internal/app/rag/tool/core"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
+
+// testInvoker is a minimal ToolInvoker for tests that never calls Invoke.
+type testInvoker struct{}
+
+func (testInvoker) Invoke(_ context.Context, _ Call) (Result, error) {
+	return Result{}, nil
+}
+
+func TestMain(m *testing.M) {
+	setupTestRegistry()
+	os.Exit(m.Run())
+}
+
+var testRegistry *Registry
+
+func setupTestRegistry() *Registry {
+	r := NewRegistry()
+
+	register := func(name string, spec ToolSpec, behavior ToolBehavior) {
+		r.MustRegisterModule(ToolModule{Name: name, Invoker: testInvoker{}, Spec: spec, Behavior: behavior}.Normalize())
+	}
+
+	systemSpec := ToolSpec{Capability: CapabilityDiagnosis, EvidenceSources: []string{EvidenceSourceSystemRecords}, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "system"}
+	webSpec := ToolSpec{Capability: CapabilitySearch, EvidenceSources: []string{EvidenceSourceExternalWeb}, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "web"}
+	traceSpec := ToolSpec{Capability: CapabilityDiagnosis, EvidenceSources: []string{EvidenceSourceRAGTrace}, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "trace"}
+
+	register("think", ToolSpec{Capability: CapabilityGeneral, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "system"}, ThinkBehavior())
+	register("web_search", webSpec, WebSearchBehavior())
+	register("web_fetch", webSpec, WebFetchBehavior())
+	register("external_evidence_workflow", webSpec, ExternalEvidenceWorkflowBehavior())
+	register("document_list", systemSpec, DocumentListBehavior())
+	register("task_list", systemSpec, TaskListBehavior())
+	register("document_query", systemSpec, DocumentQueryBehavior())
+	register("document_chunk_log_query", systemSpec, DocumentChunkLogQueryBehavior())
+	register("document_ingestion_diagnose", systemSpec, DocumentIngestionDiagnoseBehavior())
+	register("ingestion_task_query", systemSpec, IngestionTaskQueryBehavior())
+	register("ingestion_task_node_query", systemSpec, IngestionTaskNodeQueryBehavior())
+	register("task_ingestion_diagnose", systemSpec, TaskIngestionDiagnoseBehavior())
+	register("trace_node_query", traceSpec, TraceNodeQueryBehavior())
+	register("trace_retrieval_diagnose", traceSpec, TraceRetrievalDiagnoseBehavior())
+	register("document_root_cause_diagnosis", systemSpec, DocumentRootCauseDiagnosisBehavior())
+	register("document_diagnose_with_search", systemSpec, DocumentDiagnoseWithSearchBehavior())
+
+	ragruntime.SetNextActionRegistry(r)
+	ragruntime.SetWorkflowControlRegistry(r)
+	SetLegacySpecRegistry(r)
+	ragcore.SetInferBehavior(r)
+	testRegistry = r
+	return r
+}
 
 type plannerStub struct {
 	results []PlanResult
@@ -253,8 +307,8 @@ func TestPlanWithBaseRulesUsesDocumentDiagnosisForRunningQuestion(t *testing.T) 
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
-	if calls[0].Name != "document_ingestion_diagnose" {
-		t.Fatalf("expected first call to be document_ingestion_diagnose, got %q", calls[0].Name)
+	if calls[0].Name != "document_root_cause_diagnosis" {
+		t.Fatalf("expected first call to be document_root_cause_diagnosis, got %q", calls[0].Name)
 	}
 }
 
@@ -265,8 +319,8 @@ func TestPlanWithBaseRulesUsesDocumentDiagnosisForCurrentNodeQuestion(t *testing
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
-	if calls[0].Name != "document_ingestion_diagnose" {
-		t.Fatalf("expected first call to be document_ingestion_diagnose, got %q", calls[0].Name)
+	if calls[0].Name != "document_root_cause_diagnosis" {
+		t.Fatalf("expected first call to be document_root_cause_diagnosis, got %q", calls[0].Name)
 	}
 }
 
@@ -390,6 +444,33 @@ func TestPlanCallsFromResultsFallsBackFromTaskQueryToNodeQuery(t *testing.T) {
 	}
 	if got := readStringArg(calls[0].Arguments, "nodeId"); got != "indexer" {
 		t.Fatalf("expected nodeId indexer, got %q", got)
+	}
+}
+
+func TestPlanCallsFromResultsFallsBackFromWebSearchToWebFetch(t *testing.T) {
+	calls := planCallsFromResults([]Result{
+		{
+			Name: "web_search",
+			Data: map[string]any{
+				"results": []map[string]any{
+					{"url": "https://example.com/a", "policy": "deny"},
+					{"url": "https://example.com/b", "policy": "allow"},
+				},
+			},
+		},
+	})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 fallback call, got %d", len(calls))
+	}
+	if calls[0].Name != "web_fetch" {
+		t.Fatalf("expected web_fetch, got %q", calls[0].Name)
+	}
+	urls, ok := calls[0].Arguments["urls"].([]string)
+	if !ok {
+		t.Fatalf("expected urls []string, got %#v", calls[0].Arguments["urls"])
+	}
+	if len(urls) != 1 || urls[0] != "https://example.com/b" {
+		t.Fatalf("unexpected urls: %#v", urls)
 	}
 }
 
@@ -522,23 +603,51 @@ func TestObserveTaskQueryRunningNodeUsesVerificationInsteadOfFailureDrilldown(t 
 	}
 }
 
+func TestObserveWebFetchUsesCombinedTextFromPages(t *testing.T) {
+	observation := observeWebFetch(Result{
+		Name:   "web_fetch",
+		Status: CallStatusSuccess,
+		Data: map[string]any{
+			"pages": []map[string]any{
+				{
+					"url":          "https://example.com/a",
+					"text":         "This page explains the root cause and the fix.",
+					"wasTruncated": true,
+				},
+			},
+		},
+	})
+	if !observation.Done {
+		t.Fatal("expected web_fetch observation to finish")
+	}
+	if observation.Confidence != 0.7 {
+		t.Fatalf("expected truncated fetch confidence=0.7, got %v", observation.Confidence)
+	}
+	if observation.State.Phase != "complete" {
+		t.Fatalf("expected complete phase, got %q", observation.State.Phase)
+	}
+}
+
 func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 	registry := NewRegistry()
 	registry.MustRegister(staticTool{
 		definition: Definition{
-			Name:        "document_query",
-			Description: "query document",
+			Name:        "document_root_cause_diagnosis",
+			Description: "diagnosis graph: chains diagnose → task_query → node_query",
 			ReadOnly:    true,
 			Parameters:  []ParameterDefinition{{Name: "documentId", Type: ParamTypeString, Required: true}},
 		},
 		result: Result{
-			Name:    "document_query",
+			Name:    "document_root_cause_diagnosis",
 			Status:  CallStatusSuccess,
-			Summary: "document doc-run-1 is running in pipeline mode",
+			Summary: "diagnosis chain completed: document is still running at node indexer",
 			Data: map[string]any{
-				"documentId":  "doc-run-1",
-				"status":      "running",
-				"processMode": "pipeline",
+				"documentId":   "doc-run-1",
+				"latestTaskId": "task-run-1",
+				"latestNodeId": "indexer",
+				"conclusion":   "document is still running at node indexer",
+				"confidence":   "high",
+				"chainLength":  3,
 			},
 		},
 	})
@@ -617,25 +726,11 @@ func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run agent loop: %v", err)
 	}
-	if len(result.Calls) != 3 {
-		t.Fatalf("expected 3 calls, got %d", len(result.Calls))
+	if len(result.Calls) != 1 {
+		t.Fatalf("expected 1 call from graph tool, got %d: %+v", len(result.Calls), result.Calls)
 	}
-	if result.Calls[0].Name != "document_ingestion_diagnose" ||
-		result.Calls[1].Name != "ingestion_task_query" ||
-		result.Calls[2].Name != "ingestion_task_node_query" {
-		t.Fatalf("unexpected call order: %+v", result.Calls)
-	}
-	if len(result.Rounds) < 3 {
-		t.Fatalf("expected at least 3 rounds, got %d", len(result.Rounds))
-	}
-	if result.Rounds[0].State.Phase != "verification" {
-		t.Fatalf("expected first round to enter verification, got %q", result.Rounds[0].State.Phase)
-	}
-	if result.Rounds[1].State.Phase != "verification" {
-		t.Fatalf("expected task query round to stay in verification, got %q", result.Rounds[1].State.Phase)
-	}
-	if strings.Contains(strings.ToLower(result.Rounds[1].State.Hypothesis), "failed") {
-		t.Fatalf("expected running scenario hypothesis to avoid failed wording, got %q", result.Rounds[1].State.Hypothesis)
+	if result.Calls[0].Name != "document_root_cause_diagnosis" {
+		t.Fatalf("expected graph tool, got %q", result.Calls[0].Name)
 	}
 }
 

@@ -7,6 +7,3 @@ type Result[T any] struct {
 	Data      T      `json:"data"`
 }
 
-func (r *Result[T]) SetData(data T) {
-	r.Data = data
-}

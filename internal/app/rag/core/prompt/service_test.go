@@ -13,6 +13,7 @@ func TestServiceBuildMessages(t *testing.T) {
 		Question:         "What is RAG?",
 		KnowledgeContext: "[1] retrieval augmented generation",
 		ToolContext:      "document_query: matched doc-1",
+		WorkflowPolicy:   "能力域：knowledge\n执行模式：read_only",
 		AnswerGuidance:   "先给结论，再给证据和建议。",
 		History: []convention.ChatMessage{
 			convention.UserMessage("previous"),
@@ -21,8 +22,8 @@ func TestServiceBuildMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildMessages returned error: %v", err)
 	}
-	if len(messages) != 6 {
-		t.Fatalf("expected 6 messages, got %d", len(messages))
+	if len(messages) != 7 {
+		t.Fatalf("expected 7 messages, got %d", len(messages))
 	}
 	if messages[0].Role != convention.SystemRole {
 		t.Fatalf("expected system prompt message, got %s", messages[0].Role)
@@ -34,9 +35,12 @@ func TestServiceBuildMessages(t *testing.T) {
 		t.Fatalf("expected tool context message, got %s", messages[2].Role)
 	}
 	if messages[3].Role != convention.SystemRole {
-		t.Fatalf("expected answer guidance message, got %s", messages[3].Role)
+		t.Fatalf("expected workflow policy message, got %s", messages[3].Role)
 	}
-	if messages[5].Content != "What is RAG?" {
-		t.Fatalf("unexpected final question: %q", messages[5].Content)
+	if messages[4].Role != convention.SystemRole {
+		t.Fatalf("expected answer guidance message, got %s", messages[4].Role)
+	}
+	if messages[6].Content != "What is RAG?" {
+		t.Fatalf("unexpected final question: %q", messages[6].Content)
 	}
 }
