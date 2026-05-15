@@ -69,8 +69,6 @@ type TraceExtra = Record<string, unknown>;
 
 type RetrieveDecision = {
   query: string;
-  requestedMode: string;
-  resolvedMode: string;
   source: string;
   reason: string;
   signals: string[];
@@ -371,14 +369,11 @@ export function RagTraceDetailPage() {
     const fallbackExtra = fallbackNode ? parseTraceExtra(fallbackNode.extraData) : fallbackFromRun;
 
     const retrieve = {
-      searchMode: readString(retrieveExtra.searchMode),
       chunkCount: readNumber(retrieveExtra.chunkCount),
       topScore: readNumber(retrieveExtra.topScore),
       searchChannels: readStringArray(retrieveExtra.searchChannels),
       searchDecisions: readObjectArray<Record<string, unknown>>(retrieveExtra.searchDecisions).map((item) => ({
         query: readString(item.query),
-        requestedMode: readString(item.requestedMode),
-        resolvedMode: readString(item.resolvedMode),
         source: readString(item.source),
         reason: readString(item.reason),
         signals: readStringArray(item.signals)
@@ -554,10 +549,9 @@ export function RagTraceDetailPage() {
           <CardHeader className="space-y-3 pb-3">
             <SectionTitle
               title="Retrieve Observability"
-              description="Search mode, channel-level stats and auto-routing decisions."
+              description="Channel-level stats and retrieve-routing decisions."
             />
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">mode: {observability.retrieve.searchMode || "-"}</Badge>
               <Badge variant="outline">chunks: {observability.retrieve.chunkCount}</Badge>
               <Badge variant="outline">
                 topScore: {observability.retrieve.topScore > 0 ? observability.retrieve.topScore.toFixed(2) : "-"}
@@ -602,8 +596,6 @@ export function RagTraceDetailPage() {
                     <div key={`${decision.query}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
                       <p className="text-sm font-medium text-slate-800">{decision.query || "(empty query)"}</p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <Badge variant="outline">requested: {decision.requestedMode || "-"}</Badge>
-                        <Badge variant="outline">resolved: {decision.resolvedMode || "-"}</Badge>
                         <Badge variant="outline">source: {decision.source || "-"}</Badge>
                       </div>
                       {decision.reason ? <p className="mt-2 text-xs text-slate-600">{decision.reason}</p> : null}

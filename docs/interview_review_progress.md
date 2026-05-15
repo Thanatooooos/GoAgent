@@ -626,3 +626,98 @@
    - planner 与规则回退边界
 
 3. 把已复习模块继续压缩成更适合面试口语表达的 30 秒 / 1 分钟版本
+
+---
+
+## 2026-05-15 Additional Review Update: AgentLoop Deep Dive
+
+### 今天新增掌握
+
+1. `AgentLoop` 的真实职责边界
+   - 它不是“模型自由调工具”，而是受控的多轮 `Plan -> Act -> Observe` runtime
+   - `plan` 负责选下一步动作，不直接产出最终诊断结论
+   - `observe` 负责判断当前证据是否足够，以及是否继续下钻/验证
+
+2. `AgentLoop` 关键数据结构已经完成一轮字段级梳理
+   - `WorkflowInput`
+   - `PlanInput / PlanResult`
+   - `ObserveInput / ObserveResult`
+   - `AgentState`
+   - `HintCall`
+   - `CallSummary`
+   - `RoundSummary`
+   - `WorkflowResult`
+
+3. `AgentState` 的角色已经明确
+   - 它是多轮 agent 的跨轮状态，而不是普通日志字段
+   - 其中最关键的是：
+     - `Phase`
+     - `Hypothesis`
+     - `OpenQuestions`
+     - `CheckedTools`
+     - `NextHintCalls`
+   - `NextHintCalls` 是 observe 与下一轮 plan 之间的结构化接力点
+
+4. `phase` 当前的工程意义已经厘清
+   - 现在它更像“弱状态字段”而不是强状态机
+   - 主要作用是表达当前工作模式，例如：
+     - `initial_diagnosis`
+     - `deep_dive`
+     - `verification`
+     - `external_search`
+     - `fetching`
+     - `complete`
+   - 在更广泛场景里，它适合作为 planner / observer / trace / UI 的统一阶段标签
+
+5. `plan` 阶段的输入、约束和护栏已经看清
+   - `planWithLLM(...)` 会看到：
+     - 用户问题
+     - rewrite 摘要
+     - retrieve 摘要
+     - 当前 `AgentState`
+     - 历史 tool 结果摘要
+     - 当前知识库范围
+   - planner prompt 已明确约束：
+     - 不编造 ID
+     - 优先跟随 `nextHintCalls`
+     - 不重复调已执行 call
+     - 同一实体一轮不做多层 drill-down
+     - 只在独立场景下并行规划多个 tool
+
+6. planner 不是“说了就算”，运行时还有二次校验
+   - `validateCallAgainstEvidence(...)` 会校验 call 中的 `documentId / taskId / nodeId / traceId`
+   - 参数只能来自：
+     - 用户问题中的结构化 ID
+     - 上一轮 `NextHintCalls`
+     - 历史结果中已暴露的 ID
+   - 这意味着 planner 即使出现参数幻觉，runtime 也会拒绝执行
+
+### 用两个典型样例建立了收敛直觉
+
+1. `doc_fail_01`
+   - 核心路径是：`document_ingestion_diagnose -> ingestion_task_query -> ingestion_task_node_query`
+   - 重点理解的是“多轮下钻直到拿到 node-level error”
+
+2. `doc_run_01`
+   - 核心路径仍可能下钻到 task/node，但语义是 `verification`
+   - 重点理解的是“运行中场景优先确认真实运行态，避免过早宣判失败”
+
+### 当前更适合面试表达的结论
+
+- `AgentLoop` 不是裸 agent，而是一个带 `planner / executor / observer / event sink / round summary` 的受控 runtime
+- `plan` 的本质是“下一步调什么工具”，不是“直接给最终答案”
+- 多轮收敛依赖的不是自由推理，而是 `AgentState + NextHintCalls + 历史结果 + 参数验真`
+- running 场景和 failed 场景的关键差别，不在 tool 名称，而在 `phase / hypothesis / openQuestions` 的演化方向不同
+
+### 下一步建议
+
+1. 继续把 `observe` 阶段单独拆开
+   - 看 `RuleObserver` 和 `LLMObserver` 各自怎么判断 `done / continue`
+   - 看它们如何产出 `NextHintCalls`
+
+2. 补齐 `RoundSummary / WorkflowResult` 的口语化表达
+   - 重点回答“一轮如何收敛”“为什么停止”“degraded 是什么含义”
+
+3. 进一步压缩 `AgentLoop` 面试表述
+   - 30 秒版本：解释它是什么
+   - 1 分钟版本：解释一轮 `Plan -> Act -> Observe` 如何工作

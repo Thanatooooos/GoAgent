@@ -317,9 +317,8 @@ func TestBuildUserPromptIncludesRewriteAndRetrieveContext(t *testing.T) {
 	prompt := p.buildUserPrompt(ragtool.PlanInput{
 		Question: "why did task-1 fail?",
 		RewriteResult: ragrewrite.Result{
-			RewrittenQuestion:   "why did ingestion task task-1 fail?",
-			SubQuestions:        []string{"which node failed?", "what error was returned?"},
-			PreferredSearchMode: ragretrieve.SearchModeHybrid,
+			RewrittenQuestion: "why did ingestion task task-1 fail?",
+			SubQuestions:      []string{"which node failed?", "what error was returned?"},
 		},
 		RetrieveResult: ragretrieve.Result{
 			SearchChannels: []string{ragretrieve.ChannelKeyword, ragretrieve.ChannelVectorGlobal},

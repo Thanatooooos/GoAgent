@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Brain, ChevronDown, Wrench, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { AlertCircle, Brain, CheckCircle2, ChevronDown, Wrench, XCircle } from "lucide-react";
 
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
@@ -21,17 +21,16 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
     !message.id.startsWith("assistant-");
   const isThinking = Boolean(message.isThinking);
   const [thinkingExpanded, setThinkingExpanded] = React.useState(false);
+  const [toolsExpanded, setToolsExpanded] = React.useState(false);
   const hasThinking = Boolean(message.thinking && message.thinking.trim().length > 0);
   const hasContent = message.content.trim().length > 0;
   const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
-  const retrievalModeLabel = message.retrievalModeLabel?.trim();
   const toolCalls = message.toolCalls ?? [];
   const agentThinks = (message.agentThinks ?? []).filter((item) => item.trim().length > 0);
   const hasAgentThinks = agentThinks.length > 0;
   const hasToolCalls = toolCalls.length > 0;
   const hasFailedTools = toolCalls.some((tc) => tc.status === "failed");
   const fallbackReason = message.fallbackReason?.trim();
-  const [toolsExpanded, setToolsExpanded] = React.useState(false);
 
   if (isUser) {
     return (
@@ -44,12 +43,14 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   }
 
   const thinkingDuration = message.thinkingDuration ? `${message.thinkingDuration}秒` : "";
+
   return (
     <div className="group flex">
       <div className="min-w-0 flex-1 space-y-4">
         {isThinking ? (
           <ThinkingIndicator content={message.thinking} duration={message.thinkingDuration} />
         ) : null}
+
         {!isThinking && hasThinking ? (
           <div className="overflow-hidden rounded-lg border border-[#BFDBFE] bg-[#DBEAFE]">
             <button
@@ -84,6 +85,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             ) : null}
           </div>
         ) : null}
+
         {hasAgentThinks ? (
           <div className="overflow-hidden rounded-lg border border-sky-200 bg-sky-50">
             <div className="flex items-center gap-2 px-4 py-3">
@@ -104,6 +106,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             </div>
           </div>
         ) : null}
+
         {hasToolCalls ? (
           <div className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50">
             <button
@@ -136,7 +139,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                 {toolCalls.map((tc, idx) => (
                   <div
                     key={idx}
-                    className="mt-3 flex items-start gap-3 rounded-lg bg-white px-3 py-2.5 border border-amber-100"
+                    className="mt-3 flex items-start gap-3 rounded-lg border border-amber-100 bg-white px-3 py-2.5"
                   >
                     {tc.status === "success" ? (
                       <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-500" />
@@ -147,9 +150,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-800">
-                          {tc.name}
-                        </span>
+                        <span className="text-sm font-medium text-gray-800">{tc.name}</span>
                         {typeof tc.round === "number" ? (
                           <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
                             第 {tc.round} 轮
@@ -172,12 +173,12 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                         ) : null}
                       </div>
                       {tc.arguments && Object.keys(tc.arguments).length > 0 ? (
-                        <p className="mt-1 text-xs text-gray-400 break-words">
+                        <p className="mt-1 break-words text-xs text-gray-400">
                           参数：{JSON.stringify(tc.arguments)}
                         </p>
                       ) : null}
                       {tc.summary ? (
-                        <p className="mt-0.5 text-xs text-gray-500 break-words line-clamp-3">
+                        <p className="mt-0.5 line-clamp-3 break-words text-xs text-gray-500">
                           {tc.summary}
                         </p>
                       ) : null}
@@ -188,6 +189,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             ) : null}
           </div>
         ) : null}
+
         <div className="space-y-2">
           {fallbackReason ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
@@ -195,11 +197,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
               当前知识库检索置信度较低，请注意核验回答内容。
             </div>
           ) : null}
-          {retrievalModeLabel ? (
-            <div className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700">
-              检索策略：{retrievalModeLabel}
-            </div>
-          ) : null}
+
           {isWaiting ? (
             <div className="ai-wait" aria-label="思考中">
               <span className="ai-wait-dots" aria-hidden="true">
@@ -209,10 +207,13 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
               </span>
             </div>
           ) : null}
+
           {hasContent ? <MarkdownRenderer content={message.content} /> : null}
+
           {message.status === "error" ? (
             <p className="text-xs text-rose-500">生成已中断。</p>
           ) : null}
+
           {showFeedback ? (
             <FeedbackButtons
               messageId={message.id}

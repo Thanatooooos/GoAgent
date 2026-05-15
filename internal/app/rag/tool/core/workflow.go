@@ -134,7 +134,6 @@ type WorkflowInput struct {
 	TraceID          string
 	Control          WorkflowControl
 	KnowledgeBaseIDs []string
-	SearchMode       string
 	History          []convention.ChatMessage
 	RewriteResult    ragrewrite.Result
 	RetrieveResult   ragretrieve.Result

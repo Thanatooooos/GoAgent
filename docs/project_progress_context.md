@@ -937,3 +937,89 @@ As of 2026-05-12, the project is no longer only “planning” modularization. T
 
 - Planner/Observer 合并探索
   - 减少 LLM 调用次数
+## 2026-05-15 Additional Update: Chunk Optimization + Retrieval Gating Cleanup
+
+### Status Summary
+
+- `chunk` 链路完成了一轮中文场景导向的小步优化，重点放在 fixed-size 切分边界和默认 overlap 兜底。
+- `RagChatService` 现在已经接入 `rewrite -> need_retrieval` 决策，普通闲聊可以跳过 retrieval 和 tool workflow。
+- `searchMode` 在 chat 主链路上已经不再作为真实决策字段，当前策略统一为 `hybrid`，并开始清理对应的前后端残留展示与测试。
+
+### Completed So Far
+
+#### 1. Chunk 中文友好性增强
+
+- `internal/app/core/chunk/fixed_size_chunker.go`
+  - 调整 fixed-size chunker 的句边界搜索逻辑
+  - 扩大局部搜索窗口，优先命中更合理的句末和段落边界
+  - 增加中文条款/标题类软边界识别，减少半句切断和条款标题被截断
+- `internal/app/knowledge/service/document_process_service.go`
+  - 当 chunk 配置缺省时，在文档处理主链路补上默认 overlap 兜底
+  - 保留显式传入 `overlap=0` 的兼容语义，不在底层 normalize 阶段强改
+- 新增/补强测试：
+  - `internal/app/core/chunk/test/fixed_size_chunker_test.go`
+  - `internal/app/knowledge/service/test/document_process_service_test.go`
+
+#### 2. Rewrite 决定是否需要检索
+
+- `internal/app/rag/core/rewrite/rewrite.go`
+  - `rewrite.Result` 收口为 `RewrittenQuestion / SubQuestions / NeedRetrieval`
+  - 默认兜底逻辑新增 `InferNeedRetrieval(...)`
+- `internal/app/rag/core/rewrite/llm_rewrite_service.go`
+  - rewrite prompt 新增 `need_retrieval`
+  - LLM 返回 JSON 现在只要求：
+    - `rewritten`
+    - `sub_questions`
+    - `need_retrieval`
+- `internal/app/rag/service/rag_chat_service.go`
+  - `prepareChat()` 已根据 rewrite 结果判断是否执行 retrieve
+  - `NeedRetrieval=false` 或无 `KnowledgeBaseIDs` 时跳过 retrieval
+  - `tool workflow` 只在真实 retrieval 场景里继续执行
+
+#### 3. SearchMode 收口为统一 Hybrid
+
+- chat 主链路不再把 `searchMode` 当作动态分支使用
+- `internal/app/rag/service/rag_chat_service.go`
+  - retrieval request 统一固定 `ragretrieve.SearchModeHybrid`
+  - 删除 `resolveRetrieveSearchMode(...)`
+  - tool workflow input 不再传递 `SearchMode`
+- `internal/app/rag/tool/core/workflow.go`
+  - `WorkflowInput.SearchMode` 已移除
+- `internal/app/rag/tool/core/summary.go`
+  - rewrite 摘要改为输出 `needRetrieval=true/false`
+- 前端残留展示开始同步清理：
+  - `frontend/src/components/chat/MessageItem.tsx` 删除“检索策略” badge
+  - `frontend/src/pages/admin/traces/RagTraceDetailPage.tsx` 删除 mode/requested/resolved 展示
+  - `frontend/src/stores/chatStore.ts` 不再从 SSE meta 读取 `searchMode`
+
+### Validation
+
+2026-05-15 增量验证通过：
+
+```powershell
+$env:GOCACHE='D:\code\GoAgent\.gocache-rag'; go test ./internal/app/core/chunk/... -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-rag'; go test ./internal/app/knowledge/service/test -run TestDocumentProcessServiceExecuteChunkUsesDefaultOverlapWhenChunkConfigMissing -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-rag'; go test ./internal/app/rag/core/rewrite -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-rag'; go test ./internal/app/rag/service -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-rag'; go test ./internal/app/rag/tool -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-rag'; go test ./internal/app/rag/tool/planner -count=1
+```
+
+Current result:
+
+- `internal/app/core/chunk/...` PASS
+- `internal/app/knowledge/service/test` 指定增量测试 PASS
+- `internal/app/rag/core/rewrite` PASS
+- `internal/app/rag/service` PASS
+- `internal/app/rag/tool` PASS
+- `internal/app/rag/tool/planner` PASS
+
+### Current Conclusion
+
+As of 2026-05-15, the project has completed a meaningful cleanup on the chat retrieval path:
+
+- retrieval is no longer mandatory for every request
+- rewrite now owns the main retrieval-needed decision
+- `searchMode` has effectively been downgraded from a strategy surface to an internal fixed constant on the chat path
+
+This reduces unnecessary resource consumption for greeting/small-talk requests, while also making the RAG chain easier to reason about and easier to maintain.

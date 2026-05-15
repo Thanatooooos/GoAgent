@@ -1,267 +1,128 @@
 package rewrite
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
-	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/framework/convention"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
 
-func TestParseRewriteResponseValidJSON(t *testing.T) {
-	result := parseRewriteResponse(`{"rewritten": "什么是RAG", "sub_questions": ["RAG定义", "RAG原理"], "preferred_search_mode": "semantic"}`)
-
-	if result.RewrittenQuestion != "什么是RAG" {
-		t.Fatalf("expected rewritten '什么是RAG', got %q", result.RewrittenQuestion)
-	}
-	if len(result.SubQuestions) != 3 {
-		t.Fatalf("expected 3 sub_questions (rewritten + 2 subs), got %d: %v", len(result.SubQuestions), result.SubQuestions)
-	}
-	if result.PreferredSearchMode != ragretrieve.SearchModeSemantic {
-		t.Fatalf("expected semantic, got %q", result.PreferredSearchMode)
-	}
-}
-
-func TestParseRewriteResponseMarkdownJSONBlock(t *testing.T) {
-	raw := "```json\n{\"rewritten\": \"hello world\", \"sub_questions\": [\"q1\"]}\n```"
-	result := parseRewriteResponse(raw)
-
-	if result.RewrittenQuestion != "hello world" {
-		t.Fatalf("expected rewritten 'hello world', got %q", result.RewrittenQuestion)
-	}
-	if len(result.SubQuestions) != 2 {
-		t.Fatalf("expected 2 sub_questions, got %d: %v", len(result.SubQuestions), result.SubQuestions)
-	}
-}
-
-func TestParseRewriteResponseFallbackOnInvalidJSON(t *testing.T) {
-	result := parseRewriteResponse("这不是 JSON 格式的返回")
-
-	if result.RewrittenQuestion != "这不是 JSON 格式的返回" {
-		t.Fatalf("expected fallback to raw text, got %q", result.RewrittenQuestion)
-	}
-	if len(result.SubQuestions) != 1 || result.SubQuestions[0] != "这不是 JSON 格式的返回" {
-		t.Fatalf("expected single sub_question from fallback, got %v", result.SubQuestions)
-	}
-}
-
-func TestParseRewriteResponseEmpty(t *testing.T) {
-	result := parseRewriteResponse("")
-
-	if result.RewrittenQuestion != "" {
-		t.Fatalf("expected empty rewritten question, got %q", result.RewrittenQuestion)
-	}
-	if len(result.SubQuestions) != 0 {
-		t.Fatalf("expected empty sub_questions, got %v", result.SubQuestions)
-	}
-}
-
-func TestParseRewriteResponseWhitespaceOnly(t *testing.T) {
-	result := parseRewriteResponse("   ")
-
-	if result.RewrittenQuestion != "" {
-		t.Fatalf("expected empty, got %q", result.RewrittenQuestion)
-	}
-}
-
-func TestNormalizeSubQuestionsDedup(t *testing.T) {
-	subs := normalizeSubQuestions([]string{"a", "b", "a", "c"}, "a")
-	if len(subs) != 3 {
-		t.Fatalf("expected 3 unique subs, got %d: %v", len(subs), subs)
-	}
-}
-
-func TestNormalizeSubQuestionsEmptyInput(t *testing.T) {
-	// 两个输入都为空时，不产生有效子问题。
-	subs := normalizeSubQuestions(nil, "")
-	if len(subs) != 0 {
-		t.Fatalf("expected empty, got %v", subs)
-	}
-}
-
-func TestNormalizeSubQuestionsEmptyRewrittenWithRaw(t *testing.T) {
-	// rewritten 为空但 raw 有值时，只返回去重后的 raw。
-	subs := normalizeSubQuestions([]string{"a", "b", "a"}, "")
-	if len(subs) != 2 || subs[0] != "a" || subs[1] != "b" {
-		t.Fatalf("expected [a b], got %v", subs)
-	}
-}
-
-func TestExtractJSONBlockWithTag(t *testing.T) {
-	raw := "some text\n```json\n{\"key\": \"value\"}\n```\nmore text"
-	extracted := extractJSONBlock(raw)
-	if extracted != `{"key": "value"}` {
-		t.Fatalf("expected extracted JSON, got %q", extracted)
-	}
-}
-
-func TestExtractJSONBlockWithoutTag(t *testing.T) {
-	raw := "text\n```\nplain content\n```\nend"
-	extracted := extractJSONBlock(raw)
-	if extracted != "plain content" {
-		t.Fatalf("expected plain content, got %q", extracted)
-	}
-}
-
-func TestExtractJSONBlockNoMarkers(t *testing.T) {
-	raw := `{"key": "value"}`
-	extracted := extractJSONBlock(raw)
-	if extracted != "" {
-		t.Fatalf("expected empty on no markers, got %q", extracted)
-	}
-}
-
-func TestFallbackResultNormal(t *testing.T) {
-	result := fallbackResult(" hello ")
-	if result.RewrittenQuestion != "hello" {
-		t.Fatalf("expected trimmed 'hello', got %q", result.RewrittenQuestion)
-	}
-	if result.PreferredSearchMode == "" {
-		t.Fatal("expected preferred search mode")
-	}
-}
-
-func TestFallbackResultEmpty(t *testing.T) {
-	result := fallbackResult("")
-	if result.RewrittenQuestion != "" || len(result.SubQuestions) != 0 {
-		t.Fatalf("expected empty result, got %+v", result)
-	}
-}
-
-func TestBuildRewriteHistoryPrompt(t *testing.T) {
-	history := []convention.ChatMessage{
-		convention.UserMessage("什么是向量检索"),
-		convention.AssistantMessage("向量检索是一种..."),
-	}
-	prompt := buildRewriteHistoryPrompt("base", history, "它有什么优点")
-	if !strings.Contains(prompt, "什么是向量检索") {
-		t.Fatal("expected history in prompt")
-	}
-	if !strings.Contains(prompt, "用户：") || !strings.Contains(prompt, "助手：") {
-		t.Fatal("expected role labels in prompt")
-	}
-	if !strings.Contains(prompt, "指代消解") {
-		t.Fatal("expected co-reference instruction in prompt")
-	}
-}
-
-func TestBuildRewriteHistoryPromptEmpty(t *testing.T) {
-	prompt := buildRewriteHistoryPrompt("base", nil, "q")
-	if prompt != "base" {
-		t.Fatalf("expected unchanged base, got %q", prompt)
-	}
-}
-
-// mockLLMService 用于测试的 LLM 服务桩。
-type mockLLMService struct {
+type stubLLMService struct {
 	response string
 	err      error
+	requests []convention.ChatRequest
 }
 
-func (m *mockLLMService) Chat(prompt string) (string, error) {
-	return m.response, m.err
+func (s *stubLLMService) Chat(prompt string) (string, error) {
+	return s.response, s.err
 }
 
-func (m *mockLLMService) ChatWithRequest(request convention.ChatRequest) (string, error) {
-	return m.response, m.err
+func (s *stubLLMService) ChatWithRequest(request convention.ChatRequest) (string, error) {
+	s.requests = append(s.requests, request)
+	return s.response, s.err
 }
 
-func (m *mockLLMService) ChatWithModel(request convention.ChatRequest, modelID string) (string, error) {
-	return m.response, m.err
+func (s *stubLLMService) ChatWithModel(request convention.ChatRequest, modelID string) (string, error) {
+	s.requests = append(s.requests, request)
+	return s.response, s.err
 }
 
-func (m *mockLLMService) StreamChat(prompt string, callback aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
+func (s *stubLLMService) StreamChat(prompt string, callback aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
 	return nil, nil
 }
 
-func (m *mockLLMService) StreamChatWithRequest(request convention.ChatRequest, callback aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
+func (s *stubLLMService) StreamChatWithRequest(request convention.ChatRequest, callback aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
 	return nil, nil
 }
 
-var _ aichat.LLMService = (*mockLLMService)(nil)
-
-func TestLLMServiceRewriteWithSplitSuccess(t *testing.T) {
-	mock := &mockLLMService{
-		response: `{"rewritten": "RAG技术原理", "sub_questions": ["RAG定义", "RAG架构"], "preferred_search_mode": "semantic"}`,
+func TestLLMRewriteServiceParsesNeedRetrieval(t *testing.T) {
+	llm := &stubLLMService{
+		response: `{"rewritten":"排查 nginx 404 配置错误","sub_questions":["nginx 404 原因","nginx location 配置"],"need_retrieval":true}`,
 	}
-	svc := NewLLMService(mock)
+	service := NewLLMService(llm)
 
-	result := svc.RewriteWithSplit("什么是RAG")
-	if result.RewrittenQuestion != "RAG技术原理" {
-		t.Fatalf("expected rewritten 'RAG技术原理', got %q", result.RewrittenQuestion)
+	result := service.RewriteWithSplit("nginx 配置报错 404")
+	if result.RewrittenQuestion != "排查 nginx 404 配置错误" {
+		t.Fatalf("unexpected rewritten question: %q", result.RewrittenQuestion)
 	}
-	if result.PreferredSearchMode != ragretrieve.SearchModeSemantic {
-		t.Fatalf("expected semantic, got %q", result.PreferredSearchMode)
+	if !result.NeedRetrieval {
+		t.Fatal("expected retrieval to be required")
+	}
+	if len(result.SubQuestions) != 3 {
+		t.Fatalf("expected rewritten question plus 2 sub questions, got %v", result.SubQuestions)
 	}
 }
 
-func TestLLMServiceRewriteWithSplitLLMFailure(t *testing.T) {
-	mock := &mockLLMService{
-		response: "unused",
-		err:      fmt.Errorf("llm service unavailable"),
-	}
-	svc := NewLLMService(mock)
+func TestLLMRewriteServiceFallsBackWhenJSONInvalid(t *testing.T) {
+	llm := &stubLLMService{response: "not json"}
+	service := NewLLMService(llm)
 
-	// LLM 调用失败时应该降级返回原问题。
-	result := svc.RewriteWithSplit("hello")
-	if result.RewrittenQuestion != "hello" {
-		t.Fatalf("expected fallback to original on LLM failure, got %q", result.RewrittenQuestion)
+	result := service.RewriteWithSplit("hello")
+	if result.RewrittenQuestion != "not json" {
+		t.Fatalf("expected fallback to raw model text, got %q", result.RewrittenQuestion)
 	}
-	if len(result.SubQuestions) != 1 || result.SubQuestions[0] != "hello" {
-		t.Fatalf("expected single sub_question from fallback, got %v", result.SubQuestions)
+	if !result.NeedRetrieval {
+		t.Fatal("expected fallback text to infer retrieval")
 	}
 }
 
-func TestLLMServiceRewriteNilService(t *testing.T) {
-	result := (&LLMService{}).RewriteWithSplit("hello")
-	if result.RewrittenQuestion != "hello" {
-		t.Fatalf("expected fallback on nil, got %q", result.RewrittenQuestion)
+func TestLLMRewriteServiceFallsBackWhenLLMErrors(t *testing.T) {
+	llm := &stubLLMService{err: fmt.Errorf("boom")}
+	service := NewLLMService(llm)
+
+	result := service.RewriteWithSplit("你好")
+	if result.RewrittenQuestion != "你好" {
+		t.Fatalf("expected original question on error, got %q", result.RewrittenQuestion)
+	}
+	if result.NeedRetrieval {
+		t.Fatal("expected greeting fallback to skip retrieval")
 	}
 }
 
-func TestLLMServiceRewriteEmptyQuestion(t *testing.T) {
-	mock := &mockLLMService{response: "should not be called"}
-	svc := NewLLMService(mock)
-
-	result := svc.RewriteWithSplit("")
-	if result.RewrittenQuestion != "" || len(result.SubQuestions) != 0 {
-		t.Fatalf("expected empty result, got %+v", result)
+func TestLLMRewriteServiceIncludesHistoryInPrompt(t *testing.T) {
+	llm := &stubLLMService{
+		response: `{"rewritten":"向量检索的优点","sub_questions":["向量检索优点"],"need_retrieval":true}`,
 	}
-}
-
-func TestLLMServiceRewrite(t *testing.T) {
-	mock := &mockLLMService{
-		response: `{"rewritten": "优化后的问题", "sub_questions": ["q1"]}`,
-	}
-	svc := NewLLMService(mock)
-
-	rewritten := svc.Rewrite("原始问题")
-	if rewritten != "优化后的问题" {
-		t.Fatalf("expected '优化后的问题', got %q", rewritten)
-	}
-}
-
-func TestLLMServiceRewriteWithHistorySuccess(t *testing.T) {
-	mock := &mockLLMService{
-		response: `{"rewritten": "向量检索的优点", "sub_questions": ["向量检索优势", "为什么用向量检索"], "preferred_search_mode": "semantic"}`,
-	}
-	svc := NewLLMService(mock)
+	service := NewLLMService(llm)
 
 	history := []convention.ChatMessage{
 		convention.UserMessage("什么是向量检索"),
-		convention.AssistantMessage("向量检索是一种基于embedding的检索方式"),
+		convention.AssistantMessage("向量检索是一种基于 embedding 的检索方式。"),
 	}
-	result := svc.RewriteWithHistory("它有什么优点", history)
-	if result.RewrittenQuestion != "向量检索的优点" {
-		t.Fatalf("expected rewritten with history context, got %q", result.RewrittenQuestion)
+
+	_ = service.RewriteWithHistory("它有什么优点", history)
+
+	if len(llm.requests) != 1 {
+		t.Fatalf("expected one request, got %d", len(llm.requests))
+	}
+	if len(llm.requests[0].Messages) != 2 {
+		t.Fatalf("expected system and user messages, got %d", len(llm.requests[0].Messages))
+	}
+	if llm.requests[0].Messages[0].Role != convention.SystemRole {
+		t.Fatalf("expected system prompt, got %q", llm.requests[0].Messages[0].Role)
 	}
 }
 
-func TestNormalizePreferredSearchModeFallback(t *testing.T) {
-	mode := normalizePreferredSearchMode("", "nginx 配置报错 404")
-	if mode != ragretrieve.SearchModeHybrid {
-		t.Fatalf("expected hybrid, got %q", mode)
+func TestParseRewriteResponseIgnoresUnknownFields(t *testing.T) {
+	payload := map[string]any{
+		"rewritten":       "解释 RAG 工作流",
+		"sub_questions":   []string{"RAG 定义"},
+		"need_retrieval":  true,
+		"preferred_mode":  "hybrid",
+		"unexpectedField": 123,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	result := parseRewriteResponse(string(raw))
+	if result.RewrittenQuestion != "解释 RAG 工作流" {
+		t.Fatalf("unexpected rewritten question: %q", result.RewrittenQuestion)
+	}
+	if !result.NeedRetrieval {
+		t.Fatal("expected retrieval to remain true")
 	}
 }

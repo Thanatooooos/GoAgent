@@ -61,9 +61,8 @@ func TestFixedSizeChunkerSkipsBlankInput(t *testing.T) {
 
 func TestFixedSizeChunkerPrefersSentenceBoundary(t *testing.T) {
 	chunker := chunk.NewFixedSizeChunker()
-
-	// 构造一段带句号的文本，chunk 应在句号处自然断开。
 	text := "第一句话的内容在这里。第二句话的内容在这里。第三句话的内容在这里。"
+
 	chunks, err := chunker.Chunk(text, chunk.Options{
 		ChunkSize:   20,
 		OverlapSize: 2,
@@ -74,19 +73,14 @@ func TestFixedSizeChunkerPrefersSentenceBoundary(t *testing.T) {
 	if len(chunks) < 2 {
 		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
 	}
-	// 每个 chunk 的末尾应该在 `。` 之后（语义分界点）。
-	for i, c := range chunks {
-		text := c.Text
-		if len(text) > 0 && !strings.HasSuffix(strings.TrimSpace(text), "。") {
-			t.Logf("chunk[%d] does not end with period (may be last/tail): %q", i, text[:min(30, len(text))])
-		}
+	if !strings.Contains(chunks[0].Text, "。") {
+		t.Fatalf("expected first chunk to keep a sentence boundary, got %q", chunks[0].Text)
 	}
 }
 
 func TestFixedSizeChunkerNoSentenceBoundaryFallsBack(t *testing.T) {
 	chunker := chunk.NewFixedSizeChunker()
 
-	// 无任何标点的纯字母串，应降级为固定 size 切分。
 	chunks, err := chunker.Chunk("abcdefghijklmnopqrstuvwxyz", chunk.Options{
 		ChunkSize:   8,
 		OverlapSize: 2,
@@ -97,4 +91,65 @@ func TestFixedSizeChunkerNoSentenceBoundaryFallsBack(t *testing.T) {
 	if len(chunks) < 3 {
 		t.Fatalf("expected at least 3 fixed-size chunks, got %d", len(chunks))
 	}
+}
+
+func TestFixedSizeChunkerRespectsExplicitOverlap(t *testing.T) {
+	chunker := chunk.NewFixedSizeChunker()
+	text := strings.Repeat("a", 1000)
+
+	chunks, err := chunker.Chunk(text, chunk.Options{
+		ChunkSize:   300,
+		OverlapSize: 120,
+	})
+	if err != nil {
+		t.Fatalf("chunk returned error: %v", err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(chunks))
+	}
+	overlap := commonPrefixLen(chunks[0].Text[len(chunks[0].Text)-120:], chunks[1].Text[:120])
+	if overlap != 120 {
+		t.Fatalf("expected default overlap 120, got %d", overlap)
+	}
+}
+
+func TestFixedSizeChunkerPrefersChineseOutlineBoundary(t *testing.T) {
+	chunker := chunk.NewFixedSizeChunker()
+	text := "这是导言部分主要介绍背景信息和前置说明\n第一条 适用范围\n本条说明制度适用的对象和范围\n第二条 管理职责\n本条说明职责分工"
+
+	chunks, err := chunker.Chunk(text, chunk.Options{
+		ChunkSize:   26,
+		OverlapSize: 0,
+	})
+	if err != nil {
+		t.Fatalf("chunk returned error: %v", err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("expected at least 2 chunks, got %d", len(chunks))
+	}
+	joined := make([]string, 0, len(chunks))
+	for _, item := range chunks {
+		joined = append(joined, item.Text)
+	}
+	combined := strings.Join(joined, "\n")
+	if !strings.Contains(combined, "第一条 适用范围") || !strings.Contains(combined, "第二条 管理职责") {
+		t.Fatalf("expected outline lines to stay intact, got %q", combined)
+	}
+}
+
+func commonPrefixLen(left string, right string) int {
+	runesLeft := []rune(left)
+	runesRight := []rune(right)
+	limit := len(runesLeft)
+	if len(runesRight) < limit {
+		limit = len(runesRight)
+	}
+	count := 0
+	for i := 0; i < limit; i++ {
+		if runesLeft[i] != runesRight[i] {
+			break
+		}
+		count++
+	}
+	return count
 }

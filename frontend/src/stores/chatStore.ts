@@ -437,15 +437,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const token = storage.getToken();
 
     const handlers = {
-      onMeta: (payload: { conversationId: string; taskId: string; searchMode?: string }) => {
+      onMeta: (payload: { conversationId: string; taskId: string }) => {
         if (get().streamingMessageId !== assistantId) return;
         const nextId = payload.conversationId || get().currentSessionId;
         if (!nextId) return;
-        const nextRetrievalMode = normalizeRetrievalMode(payload.searchMode);
         logChatDebug("sendMessage:onMeta", {
           payloadConversationId: payload.conversationId,
           taskId: payload.taskId,
-          searchMode: payload.searchMode,
           currentSessionId: get().currentSessionId,
           lastResolvedSessionId: get().lastResolvedSessionId,
           nextId
@@ -457,15 +455,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           lastResolvedSessionId: nextId,
           isCreatingNew: false,
           streamTaskId: payload.taskId,
-          messages: state.messages.map((message) =>
-            message.id === state.streamingMessageId
-              ? {
-                  ...message,
-                  retrievalMode: nextRetrievalMode,
-                  retrievalModeLabel: retrievalModeLabel(nextRetrievalMode)
-                }
-              : message
-          ),
           sessions: upsertSession(state.sessions, {
             id: nextId,
             title: existing?.title || "新对话",

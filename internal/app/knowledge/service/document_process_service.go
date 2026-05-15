@@ -470,6 +470,7 @@ func buildChunkOptions(document domain.KnowledgeDocument) corechunk.Options {
 		Strategy: corechunk.Strategy(strings.TrimSpace(document.ChunkStrategy)),
 	}
 	if len(document.ChunkConfig) == 0 {
+		options.OverlapSize = 120
 		return options.Normalize()
 	}
 
@@ -488,6 +489,9 @@ func buildChunkOptions(document domain.KnowledgeDocument) corechunk.Options {
 	options.ChunkSize = firstPositive(raw.ChunkSize, raw.TargetChars)
 	options.OverlapSize = firstPositive(raw.OverlapSize, raw.OverlapChars)
 	options.MinChunkSize = firstPositive(raw.MinChunkSize, raw.MinChars)
+	if options.OverlapSize == 0 && raw.OverlapSize == 0 && raw.OverlapChars == 0 {
+		options.OverlapSize = 120
+	}
 	return options.Normalize()
 }
 

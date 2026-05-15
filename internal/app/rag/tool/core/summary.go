@@ -318,8 +318,10 @@ func SummarizeRewriteResultForLLM(result ragrewrite.Result) string {
 	if len(result.SubQuestions) > 0 {
 		parts = append(parts, "subQuestions="+strings.Join(limitStrings(trimAndFilterStrings(result.SubQuestions), 3), " | "))
 	}
-	if mode := strings.TrimSpace(result.PreferredSearchMode); mode != "" {
-		parts = append(parts, "preferredSearchMode="+mode)
+	if result.NeedRetrieval {
+		parts = append(parts, "needRetrieval=true")
+	} else {
+		parts = append(parts, "needRetrieval=false")
 	}
 	return strings.Join(parts, ", ")
 }

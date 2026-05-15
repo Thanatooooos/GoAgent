@@ -112,9 +112,9 @@ func TestLLMObserverFallsBackOnInvalidJSON(t *testing.T) {
 	observer := NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
-		Question:      "why did doc-1 fail?",
-		Round:         1,
-		ToolRegistry:  testRegistry,
+		Question:        "why did doc-1 fail?",
+		Round:           1,
+		ToolRegistry:    testRegistry,
 		ToolDefinitions: testRegistry.ListDefinitions(),
 		RoundResults: []Result{
 			{
@@ -144,9 +144,9 @@ func TestLLMObserverFallsBackWhenNextHintMissing(t *testing.T) {
 	observer := NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
-		Question:       "why did task-1 fail?",
-		Round:          1,
-		ToolRegistry:   testRegistry,
+		Question:        "why did task-1 fail?",
+		Round:           1,
+		ToolRegistry:    testRegistry,
 		ToolDefinitions: testRegistry.ListDefinitions(),
 		RoundResults: []Result{
 			{
@@ -174,9 +174,9 @@ func TestLLMObserverFallsBackWhenNextHintInventsNodeID(t *testing.T) {
 	observer := NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
-		Question:       "why did task-1 fail?",
-		Round:          2,
-		ToolRegistry:   testRegistry,
+		Question:        "why did task-1 fail?",
+		Round:           2,
+		ToolRegistry:    testRegistry,
 		ToolDefinitions: testRegistry.ListDefinitions(),
 		RoundResults: []Result{
 			{
@@ -247,9 +247,9 @@ func TestLLMObserverAcceptsMultipleNextHintCalls(t *testing.T) {
 			{
 				Name: "document_ingestion_diagnose",
 				Data: map[string]any{
-					"documentId":    "doc-1",
-					"latestTaskId":  "task-1",
-					"latestNodeId":  "indexer",
+					"documentId":     "doc-1",
+					"latestTaskId":   "task-1",
+					"latestNodeId":   "indexer",
 					"latestLogError": "connection refused",
 				},
 			},
@@ -258,10 +258,10 @@ func TestLLMObserverAcceptsMultipleNextHintCalls(t *testing.T) {
 			{
 				Name: "document_ingestion_diagnose",
 				Data: map[string]any{
-					"documentId":    "doc-1",
-					"latestTaskId":  "task-1",
-					"latestNodeId":  "indexer",
-					"traceId":       "trace-abc",
+					"documentId":   "doc-1",
+					"latestTaskId": "task-1",
+					"latestNodeId": "indexer",
+					"traceId":      "trace-abc",
 				},
 			},
 		},
@@ -317,9 +317,8 @@ func TestLLMObserverBuildUserPromptIncludesRewriteAndRetrieveContext(t *testing.
 	prompt := observer.BuildUserPrompt(ObserveInput{
 		Question: "为什么这个任务失败了",
 		RewriteResult: ragrewrite.Result{
-			RewrittenQuestion:   "为什么 ingestion task task-1 失败了",
-			SubQuestions:        []string{"task-1 失败在哪个节点", "节点错误是什么"},
-			PreferredSearchMode: ragretrieve.SearchModeHybrid,
+			RewrittenQuestion: "为什么 ingestion task task-1 失败了",
+			SubQuestions:      []string{"task-1 失败在哪个节点", "节点错误是什么"},
 		},
 		RetrieveResult: ragretrieve.Result{
 			SearchChannels: []string{ragretrieve.ChannelKeyword, ragretrieve.ChannelVectorGlobal},

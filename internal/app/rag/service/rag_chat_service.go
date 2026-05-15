@@ -32,13 +32,11 @@ type RagChatInput struct {
 	Question         string
 	KnowledgeBaseIDs []string
 	DeepThinking     bool
-	SearchMode       string
 }
 
 type RagChatMeta struct {
 	ConversationID string `json:"conversationId"`
 	TaskID         string `json:"taskId"`
-	SearchMode     string `json:"searchMode,omitempty"`
 }
 
 type RagChatFinishPayload struct {
@@ -114,8 +112,8 @@ type ragChatRewriteStageResult struct {
 }
 
 type ragChatRetrieveStageResult struct {
-	result     ragretrieve.Result
-	searchMode string
+	result ragretrieve.Result
+	used   bool
 }
 
 type ragChatToolStageResult struct {
@@ -156,7 +154,7 @@ type ragChatPreparedState struct {
 	history        []convention.ChatMessage
 	rewriteResult  ragrewrite.Result
 	retrieveResult ragretrieve.Result
-	searchMode     string
+	retrievalUsed  bool
 }
 
 type ragChatStage[T any] struct {
@@ -235,7 +233,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 
 	fallbackPrompt := ""
 	retrieveResult := prepared.retrieveResult
-	if s.confidenceThreshold > 0 {
+	if prepared.retrievalUsed && s.confidenceThreshold > 0 {
 		maxScore := topChunkScore(retrieveResult)
 		if maxScore < float32(s.confidenceThreshold) {
 			fallbackReason := "low confidence retrieval, fallback to general model"
@@ -264,7 +262,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		prepared.history,
 		prepared.rewriteResult,
 		retrieveResult,
-		prepared.searchMode,
+		prepared.retrievalUsed,
 		prepared.state.traceID,
 		sink,
 	)
@@ -380,14 +378,12 @@ func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (r
 	if err != nil {
 		return ragChatPreparedState{}, err
 	}
-	runtimeStage.state.meta.SearchMode = retrieveStage.searchMode
-
 	return ragChatPreparedState{
 		state:          runtimeStage.state,
 		history:        memoryStage.history,
 		rewriteResult:  rewriteStage.result,
 		retrieveResult: retrieveStage.result,
-		searchMode:     retrieveStage.searchMode,
+		retrievalUsed:  retrieveStage.used,
 	}, nil
 }
 
@@ -777,6 +773,7 @@ func (s *RagChatService) runRewriteStage(ctx context.Context, question string, h
 				result := ragrewrite.Result{
 					RewrittenQuestion: question,
 					SubQuestions:      []string{question},
+					NeedRetrieval:     ragrewrite.InferNeedRetrieval(question),
 				}
 				return ragChatRewriteStageResult{result: result}, nil
 			}
@@ -799,18 +796,20 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 			NodeName: "vector_retrieve",
 		},
 		run: func(ctx context.Context) (ragChatRetrieveStageResult, error) {
+			if !shouldRunRetrieve(input, rewriteResult) {
+				return ragChatRetrieveStageResult{}, nil
+			}
 			subQuestions := rewriteResult.SubQuestions
 			if len(subQuestions) == 0 {
 				subQuestions = []string{strings.TrimSpace(input.Question)}
 			}
-			searchMode := resolveRetrieveSearchMode(input.SearchMode, rewriteResult.PreferredSearchMode)
 
 			results := make([]ragretrieve.Result, 0, len(subQuestions))
 			for _, q := range subQuestions {
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
 					Query:            strings.TrimSpace(q),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
-					SearchMode:       searchMode,
+					SearchMode:       ragretrieve.SearchModeHybrid,
 				})
 				if err != nil {
 					continue
@@ -821,21 +820,21 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
 					Query:            strings.TrimSpace(input.Question),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
-					SearchMode:       searchMode,
+					SearchMode:       ragretrieve.SearchModeHybrid,
 				})
 				if err != nil {
 					return ragChatRetrieveStageResult{}, exception.NewServiceException("failed to retrieve rag knowledge", err)
 				}
-				return ragChatRetrieveStageResult{result: retrieveResult, searchMode: searchMode}, nil
+				return ragChatRetrieveStageResult{result: retrieveResult, used: true}, nil
 			}
 
 			merged := ragretrieve.MergeResults(results, defaultTopK)
-			return ragChatRetrieveStageResult{result: merged, searchMode: searchMode}, nil
+			return ragChatRetrieveStageResult{result: merged, used: true}, nil
 		},
 		buildExtra: func(result ragChatRetrieveStageResult) map[string]any {
 			extra := map[string]any{
+				"used":       result.used,
 				"chunkCount": len(result.result.Chunks),
-				"searchMode": result.searchMode,
 				"topScore":   topChunkScore(result.result),
 			}
 			if len(result.result.SearchChannels) > 0 {
@@ -871,11 +870,11 @@ func (s *RagChatService) runToolWorkflowStage(
 	history []convention.ChatMessage,
 	rewriteResult ragrewrite.Result,
 	retrieveResult ragretrieve.Result,
-	searchMode string,
+	retrievalUsed bool,
 	traceID string,
 	sink RagChatEventSink,
 ) (ragChatToolStageResult, error) {
-	if s == nil || s.toolWorkflow == nil {
+	if s == nil || s.toolWorkflow == nil || !retrievalUsed {
 		return ragChatToolStageResult{}, nil
 	}
 
@@ -893,7 +892,6 @@ func (s *RagChatService) runToolWorkflowStage(
 				TraceID:          strings.TrimSpace(traceID),
 				Control:          defaultWorkflowControl(),
 				KnowledgeBaseIDs: append([]string(nil), input.KnowledgeBaseIDs...),
-				SearchMode:       strings.TrimSpace(searchMode),
 				History:          append([]convention.ChatMessage(nil), history...),
 				RewriteResult:    rewriteResult,
 				RetrieveResult:   retrieveResult,
@@ -928,8 +926,11 @@ func (s *RagChatService) runToolWorkflowStage(
 
 const defaultTopK = 5
 
-func resolveRetrieveSearchMode(inputMode string, preferredMode string) string {
-	return ragretrieve.SearchModeHybrid
+func shouldRunRetrieve(input RagChatInput, rewriteResult ragrewrite.Result) bool {
+	if len(input.KnowledgeBaseIDs) == 0 {
+		return false
+	}
+	return rewriteResult.NeedRetrieval
 }
 
 func topChunkScore(result ragretrieve.Result) float32 {

@@ -3,14 +3,13 @@ package rewrite
 import (
 	"strings"
 
-	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/framework/convention"
 )
 
 type Result struct {
-	RewrittenQuestion   string
-	SubQuestions        []string
-	PreferredSearchMode string
+	RewrittenQuestion string
+	SubQuestions      []string
+	NeedRetrieval     bool
 }
 
 type Service interface {
@@ -32,9 +31,9 @@ func (s *DefaultService) Rewrite(question string) string {
 func (s *DefaultService) RewriteWithSplit(question string) Result {
 	rewritten := s.Rewrite(question)
 	return Result{
-		RewrittenQuestion:   rewritten,
-		SubQuestions:        defaultSubQuestions(rewritten),
-		PreferredSearchMode: InferSearchModePreference(rewritten),
+		RewrittenQuestion: rewritten,
+		SubQuestions:      defaultSubQuestions(rewritten),
+		NeedRetrieval:     InferNeedRetrieval(rewritten),
 	}
 }
 
@@ -53,48 +52,32 @@ func defaultSubQuestions(question string) []string {
 	return []string{question}
 }
 
-// InferSearchModePreference 根据问题形态推断更合适的检索模式。
-func InferSearchModePreference(question string) string {
+func InferNeedRetrieval(question string) bool {
 	question = strings.TrimSpace(strings.ToLower(question))
 	if question == "" {
-		return ragretrieve.SearchModeSemantic
+		return false
 	}
 
-	// 代码、路径、报错、版本号、配置项等更适合 lexical + semantic 的混合检索。
-	hybridHints := []string{
-		"`", "/", "\\", ".go", ".java", ".py", ".sql", ".yaml", ".yml", ".json",
-		"报错", "异常", "错误", "error", "stack trace", "panic", "nil pointer",
-		"配置", "参数", "字段", "函数", "接口", "类", "命令", "sql", "http", "api",
-		"nginx", "docker", "k8s", "kubectl", "redis", "mysql", "postgres",
-		"v1", "v2", "404", "500",
+	noRetrievePhrases := []string{
+		"你好", "您好", "hi", "hello", "hey",
+		"谢谢", "感谢", "thank you", "thanks",
+		"再见", "拜拜", "bye", "goodbye",
+		"你是谁", "你是干什么的", "你能做什么", "介绍一下你自己",
 	}
-	for _, hint := range hybridHints {
-		if strings.Contains(question, hint) {
-			return ragretrieve.SearchModeHybrid
+	for _, phrase := range noRetrievePhrases {
+		if question == phrase || strings.HasPrefix(question, phrase+" ") || strings.HasPrefix(question, phrase+"，") || strings.HasPrefix(question, phrase+"。") {
+			return false
 		}
 	}
 
-	// 明显的概念解释类问题先走语义检索。
-	semanticHints := []string{
-		"什么是", "含义", "定义", "原理", "作用", "为什么", "区别", "优点", "缺点", "场景",
-		"how", "why", "what is", "difference", "principle", "overview",
-	}
-	for _, hint := range semanticHints {
-		if strings.Contains(question, hint) {
-			return ragretrieve.SearchModeSemantic
+	if len([]rune(question)) <= 12 {
+		shortChatPhrases := []string{"在吗", "忙吗", "收到吗", "好的", "嗯", "哦", "行"}
+		for _, phrase := range shortChatPhrases {
+			if question == phrase {
+				return false
+			}
 		}
 	}
 
-	// 明显的精确查找倾向问题先走关键词检索。
-	keywordHints := []string{
-		"包含", "出现", "叫做", "名称", "标题", "匹配", "搜索词", "关键字",
-		"contains", "match", "keyword", "named",
-	}
-	for _, hint := range keywordHints {
-		if strings.Contains(question, hint) {
-			return ragretrieve.SearchModeKeyword
-		}
-	}
-
-	return ragretrieve.SearchModeHybrid
+	return true
 }

@@ -207,15 +207,15 @@ func TestRagChatServiceEmptyUserID(t *testing.T) {
 	}
 }
 
-func TestResolveRetrieveSearchMode(t *testing.T) {
-	if got := resolveRetrieveSearchMode("", "hybrid"); got != ragretrieve.SearchModeHybrid {
-		t.Fatalf("expected hybrid, got %q", got)
+func TestShouldRunRetrieve(t *testing.T) {
+	if shouldRunRetrieve(RagChatInput{}, ragrewrite.Result{NeedRetrieval: true}) {
+		t.Fatal("expected no retrieve when knowledge base ids are empty")
 	}
-	if got := resolveRetrieveSearchMode("keyword", "semantic"); got != ragretrieve.SearchModeHybrid {
-		t.Fatalf("expected hybrid (always), got %q", got)
+	if shouldRunRetrieve(RagChatInput{KnowledgeBaseIDs: []string{"kb-1"}}, ragrewrite.Result{NeedRetrieval: false}) {
+		t.Fatal("expected no retrieve when rewrite says retrieval is unnecessary")
 	}
-	if got := resolveRetrieveSearchMode("invalid", "semantic"); got != ragretrieve.SearchModeHybrid {
-		t.Fatalf("expected hybrid (always), got %q", got)
+	if !shouldRunRetrieve(RagChatInput{KnowledgeBaseIDs: []string{"kb-1"}}, ragrewrite.Result{NeedRetrieval: true}) {
+		t.Fatal("expected retrieve when knowledge base exists and rewrite requires it")
 	}
 }
 
@@ -227,7 +227,7 @@ func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
 		nil,
 		ragrewrite.Result{},
 		ragretrieve.Result{},
-		ragretrieve.SearchModeSemantic,
+		false,
 		"trace-1",
 		nil,
 	)
@@ -266,7 +266,7 @@ func TestRunToolWorkflowStageReturnsWorkflowResult(t *testing.T) {
 		history,
 		rewriteResult,
 		retrieveResult,
-		ragretrieve.SearchModeHybrid,
+		true,
 		"trace-1",
 		nil,
 	)
@@ -281,9 +281,6 @@ func TestRunToolWorkflowStageReturnsWorkflowResult(t *testing.T) {
 	}
 	if workflow.input.TraceID != "trace-1" {
 		t.Fatalf("unexpected trace id: %q", workflow.input.TraceID)
-	}
-	if workflow.input.SearchMode != ragretrieve.SearchModeHybrid {
-		t.Fatalf("unexpected search mode: %q", workflow.input.SearchMode)
 	}
 	if workflow.input.Control.ExecutionMode != ragtool.ExecutionModeReadOnly {
 		t.Fatalf("unexpected workflow execution mode: %q", workflow.input.Control.ExecutionMode)

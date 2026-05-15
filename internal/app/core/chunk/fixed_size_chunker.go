@@ -1,8 +1,11 @@
 package chunk
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
-// sentenceBoundaries 句末字符集合。
+// sentenceBoundaries is the punctuation set that marks sentence endings.
 var sentenceBoundaries = map[rune]bool{
 	'。': true,
 	'！': true,
@@ -38,11 +41,9 @@ func (c *FixedSizeChunker) Chunk(text string, opts Options) ([]Chunk, error) {
 		if end > len(runes) {
 			end = len(runes)
 		} else {
-			// 在 chunkSize ± 20% 范围内寻找更优的语义切分点。
 			end = findSentenceBoundary(runes, end, opts.ChunkSize)
 		}
 
-		// 剩余尾部不足 MinChunkSize 时合并到上一个 chunk 中。
 		if end < len(runes) && opts.MinChunkSize > 0 && len(runes)-end < opts.MinChunkSize {
 			end = len(runes)
 		}
@@ -70,58 +71,142 @@ func (c *FixedSizeChunker) Chunk(text string, opts Options) ([]Chunk, error) {
 	return chunks, nil
 }
 
-// findSentenceBoundary 在 end 附近的语义边界窗口中寻找最佳切分点。
-// 优先找句末标点，其次找段落分隔符（双换行），最后找单换行。
 func findSentenceBoundary(runes []rune, end int, chunkSize int) int {
 	if end <= 0 || end >= len(runes) {
 		return end
 	}
 
-	// 搜索窗口：chunkSize 的 25% 向前和向后。
-	window := max(1, chunkSize/4)
-
-	// 优先级 1：向前搜索句末标点（。！？. ! ?）。
+	window := max(1, chunkSize/2)
 	searchStart := max(0, end-window)
 	searchEnd := min(len(runes)-1, end+window)
 
-	best := end
-
-	// 从句末标点附近向 end 方向收敛。
-	for i := end + window; i >= searchStart && i > end-5; i-- {
-		if i < len(runes) && i > 0 && isSentenceBoundary(runes[i]) {
-			// 在标点后一个字符处切分。
-			return min(i+1, len(runes))
+	for _, candidate := range orderedBoundaryCandidates(runes, end, searchStart, searchEnd) {
+		if candidate > searchStart && candidate <= len(runes) {
+			return candidate
 		}
 	}
+	return end
+}
 
-	// 优先级 2：向前搜索段落分隔（双换行）。
-	for i := end; i >= searchStart; i-- {
-		if i > 0 && runes[i-1] == '\n' && runes[i] == '\n' {
-			return i + 1
+func orderedBoundaryCandidates(runes []rune, end int, searchStart int, searchEnd int) []int {
+	candidates := make([]int, 0, 8)
+	appendUnique := func(value int) {
+		if value <= searchStart || value > len(runes) {
+			return
 		}
+		for _, existing := range candidates {
+			if existing == value {
+				return
+			}
+		}
+		candidates = append(candidates, value)
 	}
 
-	// 优先级 3：向前搜索单换行。
-	for i := end; i >= searchStart; i-- {
-		if runes[i] == '\n' {
-			return i + 1
+	limit := max(end-searchStart, searchEnd-end)
+	for offset := 0; offset <= limit; offset++ {
+		if offset == 0 {
+			if boundary := classifyBoundary(runes, end); boundary > 0 {
+				appendUnique(boundary)
+			}
+			continue
 		}
-	}
-
-	// 未找到语义边界时也尝试向后搜索到下一个换行（短距离）。
-	if end < searchEnd {
-		for i := end + 1; i <= searchEnd && i < len(runes); i++ {
-			if runes[i] == '\n' {
-				return i + 1
+		left := end - offset
+		if left >= searchStart && left <= searchEnd {
+			if boundary := classifyBoundary(runes, left); boundary > 0 {
+				appendUnique(boundary)
+			}
+		}
+		right := end + offset
+		if right >= searchStart && right <= searchEnd {
+			if boundary := classifyBoundary(runes, right); boundary > 0 {
+				appendUnique(boundary)
 			}
 		}
 	}
+	return candidates
+}
 
-	return best
+func classifyBoundary(runes []rune, index int) int {
+	if index < 0 || index >= len(runes) {
+		return 0
+	}
+	if isSentenceBoundary(runes[index]) {
+		return index + 1
+	}
+	if index > 0 && runes[index-1] == '\n' && runes[index] == '\n' {
+		return index + 1
+	}
+	if index > 0 && isSoftChineseBoundaryStart(runes, index) {
+		return index
+	}
+	if runes[index] == '\n' {
+		return index + 1
+	}
+	return 0
 }
 
 func isSentenceBoundary(r rune) bool {
 	return sentenceBoundaries[r]
+}
+
+func isSoftChineseBoundaryStart(runes []rune, index int) bool {
+	lineStart := index
+	for lineStart > 0 && runes[lineStart-1] != '\n' {
+		lineStart--
+	}
+	if lineStart != index {
+		return false
+	}
+	lineEnd := index
+	for lineEnd < len(runes) && runes[lineEnd] != '\n' {
+		lineEnd++
+	}
+	line := strings.TrimSpace(string(runes[index:lineEnd]))
+	if line == "" {
+		return false
+	}
+	line = strings.TrimLeftFunc(line, unicode.IsSpace)
+	return isChineseOutlinePrefix(line) || isFAQPrefix(line)
+}
+
+func isChineseOutlinePrefix(line string) bool {
+	if strings.HasPrefix(line, "第") && hasChineseSectionMarker(line) {
+		return true
+	}
+	prefixes := []string{
+		"（一）", "(一)", "一、",
+		"（二）", "(二)", "二、",
+		"（三）", "(三)", "三、",
+		"（四）", "(四)", "四、",
+		"1.", "2.", "3.",
+		"1.1", "1.2", "2.1",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasChineseSectionMarker(line string) bool {
+	markers := []string{"章", "节", "条", "部分", "篇"}
+	for _, marker := range markers {
+		if strings.Contains(line, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isFAQPrefix(line string) bool {
+	prefixes := []string{"Q:", "Q：", "A:", "A：", "问题：", "答案："}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeChunkText(text string) string {
@@ -147,4 +232,3 @@ func estimateChunkCount(length int, chunkSize int, overlapSize int) int {
 	}
 	return count
 }
-

@@ -325,6 +325,37 @@ func TestDocumentProcessServiceExecuteChunkMarksFailedStatusBackToRunningBeforeR
 	}
 }
 
+func TestDocumentProcessServiceExecuteChunkUsesDefaultOverlapWhenChunkConfigMissing(t *testing.T) {
+	document := processDocument()
+	document.Name = "doc.txt"
+	document.FileType = "txt"
+	documentRepo := &processDocumentRepositoryStub{document: document}
+	chunkRepo := &processChunkRepositoryStub{}
+	svc := service.NewDocumentProcessService(service.DocumentProcessServiceOptions{
+		BaseRepo:     processBaseRepositoryStub{base: domain.KnowledgeBase{ID: "kb-1", EmbeddingModel: "embed-model"}},
+		DocumentRepo: documentRepo,
+		ChunkRepo:    chunkRepo,
+		ChunkLogRepo: &processChunkLogRepositoryStub{},
+		Storage:      processStorageStub{body: strings.Repeat("a", 1000)},
+		VectorStore:  &processVectorStoreStub{},
+		Embedding:    processEmbeddingStub{},
+	})
+
+	if err := svc.ExecuteChunk(context.Background(), service.ExecuteChunkInput{DocumentID: "doc-1", TriggeredBy: "u-1"}); err != nil {
+		t.Fatalf("ExecuteChunk() error = %v", err)
+	}
+	if len(chunkRepo.created) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(chunkRepo.created))
+	}
+	first := []rune(chunkRepo.created[0].Content)
+	second := []rune(chunkRepo.created[1].Content)
+	tail := string(first[len(first)-120:])
+	head := string(second[:120])
+	if tail != head {
+		t.Fatalf("expected default overlap of 120 chars to be applied")
+	}
+}
+
 func processDocument() domain.KnowledgeDocument {
 	return domain.KnowledgeDocument{
 		ID:              "doc-1",

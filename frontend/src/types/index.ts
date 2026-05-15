@@ -31,8 +31,6 @@ export interface Message {
   createdAt?: string;
   feedback?: FeedbackValue;
   status?: MessageStatus;
-  retrievalMode?: string;
-  retrievalModeLabel?: string;
   toolCalls?: ToolCallPayload[];
   agentThinks?: string[];
   fallbackReason?: string;
@@ -41,7 +39,6 @@ export interface Message {
 export interface StreamMetaPayload {
   conversationId: string;
   taskId: string;
-  searchMode?: string;
 }
 
 export interface MessageDeltaPayload {
