@@ -7,6 +7,7 @@ import (
 
 	. "local/rag-project/internal/app/rag/tool"
 	raggraph "local/rag-project/internal/app/rag/tool/invokers/graph"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
 func TestExternalEvidenceWorkflowGraphBuildsSourceReviewAndQuality(t *testing.T) {
@@ -94,7 +95,7 @@ func TestExternalEvidenceWorkflowGraphBuildsSourceReviewAndQuality(t *testing.T)
 		},
 	})
 
-	tool, err := raggraph.NewExternalEvidenceWorkflowTool(NewExecutor(registry), nil)
+	tool, err := raggraph.NewExternalEvidenceWorkflowTool(ragruntime.NewExecutor(registry), nil)
 	if err != nil {
 		t.Fatalf("create external evidence workflow tool: %v", err)
 	}

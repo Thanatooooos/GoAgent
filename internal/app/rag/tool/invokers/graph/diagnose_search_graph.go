@@ -7,6 +7,7 @@ import (
 
 	ragtool "local/rag-project/internal/app/rag/tool"
 	ragcore "local/rag-project/internal/app/rag/tool/core"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -30,7 +31,7 @@ type DiagnoseSearchGraphTool struct {
 	runner compose.Runnable[*diagnoseSearchState, *diagnoseSearchState]
 }
 
-func NewDiagnoseSearchGraphTool(executor *ragtool.Executor) (*DiagnoseSearchGraphTool, error) {
+func NewDiagnoseSearchGraphTool(executor *ragruntime.Executor) (*DiagnoseSearchGraphTool, error) {
 	if executor == nil {
 		return nil, fmt.Errorf("executor with registry is required")
 	}

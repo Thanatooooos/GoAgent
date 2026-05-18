@@ -8,22 +8,30 @@ import (
 )
 
 func deriveWorkflowControl(input WorkflowInput, results []Result) WorkflowControl {
+	return deriveWorkflowControlWithRegistry(input, results, wfControlRegistry)
+}
+
+func DeriveWorkflowControlWithRegistry(input WorkflowInput, results []Result, registry *Registry) WorkflowControl {
+	return deriveWorkflowControlWithRegistry(input, results, registry)
+}
+
+func deriveWorkflowControlWithRegistry(input WorkflowInput, results []Result, registry *Registry) WorkflowControl {
 	control := input.Control.Normalize()
 	if control.Capability == CapabilityGeneral {
-		control.Capability = inferWorkflowCapability(results, input.RetrieveResult)
+		control.Capability = inferWorkflowCapability(results, input.RetrieveResult, registry)
 	}
 	if control.ExecutionMode == ExecutionModeReadOnly {
-		if mode := inferWorkflowExecutionMode(results); mode != "" {
+		if mode := inferWorkflowExecutionMode(results, registry); mode != "" {
 			control.ExecutionMode = mode
 		}
 	}
 	if control.RiskLevel == RiskLevelLow {
-		if level := inferWorkflowRiskLevel(results); level != "" {
+		if level := inferWorkflowRiskLevel(results, registry); level != "" {
 			control.RiskLevel = level
 		}
 	}
 	if control.ApprovalRequirement == ApprovalRequirementNone {
-		if requirement := inferWorkflowApprovalRequirement(results); requirement != "" {
+		if requirement := inferWorkflowApprovalRequirement(results, registry); requirement != "" {
 			control.ApprovalRequirement = requirement
 		}
 	}
@@ -31,22 +39,30 @@ func deriveWorkflowControl(input WorkflowInput, results []Result) WorkflowContro
 }
 
 func buildWorkflowTraceMeta(control WorkflowControl, retrieve ragretrieve.Result, results []Result) WorkflowTraceMeta {
+	return buildWorkflowTraceMetaWithRegistry(control, retrieve, results, wfControlRegistry)
+}
+
+func BuildWorkflowTraceMetaWithRegistry(control WorkflowControl, retrieve ragretrieve.Result, results []Result, registry *Registry) WorkflowTraceMeta {
+	return buildWorkflowTraceMetaWithRegistry(control, retrieve, results, registry)
+}
+
+func buildWorkflowTraceMetaWithRegistry(control WorkflowControl, retrieve ragretrieve.Result, results []Result, registry *Registry) WorkflowTraceMeta {
 	return WorkflowTraceMeta{
 		Capability:          control.Capability,
 		ExecutionMode:       control.ExecutionMode,
 		RiskLevel:           control.RiskLevel,
 		ApprovalRequirement: control.ApprovalRequirement,
-		EvidenceSources:     inferWorkflowEvidenceSources(retrieve, results),
+		EvidenceSources:     inferWorkflowEvidenceSources(retrieve, results, registry),
 	}.Normalize()
 }
 
-func inferWorkflowCapability(results []Result, retrieve ragretrieve.Result) string {
+func inferWorkflowCapability(results []Result, retrieve ragretrieve.Result, registry *Registry) string {
 	hasSearch := false
 	hasDiagnosis := false
 	hasKnowledge := false
 	hasGeneral := false
 	for _, result := range results {
-		switch inferCapabilityFromResult(result) {
+		switch inferCapabilityFromResult(result, registry) {
 		case CapabilitySearch:
 			hasSearch = true
 		case CapabilityDiagnosis:
@@ -80,7 +96,7 @@ func SetWorkflowControlRegistry(r *Registry) {
 	wfControlRegistry = r
 }
 
-func inferWorkflowEvidenceSources(retrieve ragretrieve.Result, results []Result) []string {
+func inferWorkflowEvidenceSources(retrieve ragretrieve.Result, results []Result, registry *Registry) []string {
 	sources := make([]string, 0, 4)
 	appendSource := func(value string) {
 		value = strings.TrimSpace(value)
@@ -104,8 +120,8 @@ func inferWorkflowEvidenceSources(retrieve ragretrieve.Result, results []Result)
 			}
 			continue
 		}
-		if wfControlRegistry != nil {
-			if spec, ok := wfControlRegistry.GetSpec(result.Name); ok && len(spec.EvidenceSources) > 0 {
+		if registry != nil {
+			if spec, ok := registry.GetSpec(result.Name); ok && len(spec.EvidenceSources) > 0 {
 				for _, source := range spec.EvidenceSources {
 					appendSource(source)
 				}
@@ -115,13 +131,13 @@ func inferWorkflowEvidenceSources(retrieve ragretrieve.Result, results []Result)
 	return sources
 }
 
-func inferWorkflowExecutionMode(results []Result) string {
+func inferWorkflowExecutionMode(results []Result, registry *Registry) string {
 	for _, result := range results {
 		if mode := strings.TrimSpace(result.Meta.ExecutionMode); mode != "" {
 			return mode
 		}
-		if wfControlRegistry != nil {
-			if spec, ok := wfControlRegistry.GetSpec(result.Name); ok {
+		if registry != nil {
+			if spec, ok := registry.GetSpec(result.Name); ok {
 				if mode := strings.TrimSpace(spec.ExecutionMode); mode != "" {
 					return mode
 				}
@@ -131,13 +147,13 @@ func inferWorkflowExecutionMode(results []Result) string {
 	return ""
 }
 
-func inferWorkflowRiskLevel(results []Result) string {
+func inferWorkflowRiskLevel(results []Result, registry *Registry) string {
 	for _, result := range results {
 		if level := strings.TrimSpace(result.Meta.RiskLevel); level != "" {
 			return level
 		}
-		if wfControlRegistry != nil {
-			if spec, ok := wfControlRegistry.GetSpec(result.Name); ok {
+		if registry != nil {
+			if spec, ok := registry.GetSpec(result.Name); ok {
 				if level := strings.TrimSpace(spec.RiskLevel); level != "" {
 					return level
 				}
@@ -147,13 +163,13 @@ func inferWorkflowRiskLevel(results []Result) string {
 	return ""
 }
 
-func inferWorkflowApprovalRequirement(results []Result) string {
+func inferWorkflowApprovalRequirement(results []Result, registry *Registry) string {
 	for _, result := range results {
 		if requirement := strings.TrimSpace(result.Meta.ApprovalRequirement); requirement != "" {
 			return requirement
 		}
-		if wfControlRegistry != nil {
-			if spec, ok := wfControlRegistry.GetSpec(result.Name); ok {
+		if registry != nil {
+			if spec, ok := registry.GetSpec(result.Name); ok {
 				if requirement := strings.TrimSpace(spec.ApprovalRequirement); requirement != "" {
 					return requirement
 				}
@@ -163,12 +179,12 @@ func inferWorkflowApprovalRequirement(results []Result) string {
 	return ""
 }
 
-func inferCapabilityFromResult(result Result) string {
+func inferCapabilityFromResult(result Result, registry *Registry) string {
 	if capability := strings.TrimSpace(result.Meta.Capability); capability != "" {
 		return capability
 	}
-	if wfControlRegistry != nil {
-		if spec, ok := wfControlRegistry.GetSpec(result.Name); ok {
+	if registry != nil {
+		if spec, ok := registry.GetSpec(result.Name); ok {
 			return strings.TrimSpace(spec.Capability)
 		}
 	}

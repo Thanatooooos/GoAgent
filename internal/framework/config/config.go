@@ -29,15 +29,15 @@ type SpringConfig struct {
 }
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	Spring SpringConfig `mapstructure:"spring"`
-	Rag      RagConfig      `mapstructure:"rag"`
-	AI       AIConfig       `mapstructure:"ai"`
-	Parser   ParserConfig   `mapstructure:"parser"`
-	RustFS   RustFSConfig   `mapstructure:"rustfs"`
-	Feishu   FeishuConfig   `mapstructure:"feishu"`
-	SaToken  SaTokenConfig  `mapstructure:"sa-token"`
-	App      AppConfig      `mapstructure:"app"`
+	Server  ServerConfig  `mapstructure:"server"`
+	Spring  SpringConfig  `mapstructure:"spring"`
+	Rag     RagConfig     `mapstructure:"rag"`
+	AI      AIConfig      `mapstructure:"ai"`
+	Parser  ParserConfig  `mapstructure:"parser"`
+	RustFS  RustFSConfig  `mapstructure:"rustfs"`
+	Feishu  FeishuConfig  `mapstructure:"feishu"`
+	SaToken SaTokenConfig `mapstructure:"sa-token"`
+	App     AppConfig     `mapstructure:"app"`
 }
 
 // FeishuConfig 飞书开放平台配置。
@@ -97,6 +97,7 @@ type RagConfig struct {
 	RateLimit    RagRateLimitConfig    `mapstructure:"rate-limit"`
 	Memory       RagMemoryConfig       `mapstructure:"memory"`
 	Knowledge    RagKnowledgeConfig    `mapstructure:"knowledge"`
+	MCP          RagMCPConfig          `mapstructure:"mcp"`
 	Search       RagSearchConfig       `mapstructure:"search"`
 	Trace        RagTraceConfig        `mapstructure:"trace"`
 }
@@ -172,10 +173,31 @@ type RagSearchConfig struct {
 	WebSearch RagWebSearchConfig `mapstructure:"web-search"`
 }
 
+type RagMCPConfig struct {
+	Servers map[string]RagMCPServerConfig `mapstructure:"servers"`
+}
+
+type RagMCPServerConfig struct {
+	Enabled          bool              `mapstructure:"enabled"`
+	Transport        string            `mapstructure:"transport"`
+	Command          string            `mapstructure:"command"`
+	Args             []string          `mapstructure:"args"`
+	Env              map[string]string `mapstructure:"env"`
+	StartupTimeoutMs int               `mapstructure:"startup-timeout-ms"`
+	CallTimeoutMs    int               `mapstructure:"call-timeout-ms"`
+}
+
 type RagWebSearchConfig struct {
-	Provider     string                         `mapstructure:"provider"` // "duckduckgo" or "tavily"
-	ApiKey       string                         `mapstructure:"api-key"`  // required for tavily
-	SourcePolicy RagWebSearchSourcePolicyConfig `mapstructure:"source-policy"`
+	Provider         string                         `mapstructure:"provider"`          // "duckduckgo", "tavily", or "tavily-mcp"
+	FallbackProvider string                         `mapstructure:"fallback-provider"` // "", "duckduckgo", or "tavily"
+	ApiKey           string                         `mapstructure:"api-key"`           // required for tavily direct API; reused for Tavily MCP env by default
+	MCP              RagWebSearchMCPConfig          `mapstructure:"mcp"`
+	SourcePolicy     RagWebSearchSourcePolicyConfig `mapstructure:"source-policy"`
+}
+
+type RagWebSearchMCPConfig struct {
+	Server     string `mapstructure:"server"`
+	SearchTool string `mapstructure:"search-tool"`
 }
 
 type RagWebSearchSourcePolicyConfig struct {
@@ -186,8 +208,8 @@ type RagWebSearchSourcePolicyConfig struct {
 }
 
 type RagSearchChannels struct {
-	VectorGlobal   RagSearchChannel `mapstructure:"vector-global"`
-	IntentDirected RagSearchChannel `mapstructure:"intent-directed"`
+	VectorGlobal   RagSearchChannel                    `mapstructure:"vector-global"`
+	IntentDirected RagSearchChannel                    `mapstructure:"intent-directed"`
 	Keyword        RagKeywordSearchChannelConfig       `mapstructure:"keyword"`
 	MetadataTitle  RagMetadataTitleSearchChannelConfig `mapstructure:"metadata-title"`
 }
@@ -203,9 +225,9 @@ type RagKeywordSearchChannelConfig struct {
 }
 
 type RagMetadataTitleSearchChannelConfig struct {
-	EnabledFallbackTrgm *bool   `mapstructure:"enabled-fallback-trgm"`
-	SectionWeight       float64 `mapstructure:"section-weight"`
-	DocumentNameWeight  float64 `mapstructure:"document-name-weight"`
+	EnabledFallbackTrgm  *bool   `mapstructure:"enabled-fallback-trgm"`
+	SectionWeight        float64 `mapstructure:"section-weight"`
+	DocumentNameWeight   float64 `mapstructure:"document-name-weight"`
 	SourceFileNameWeight float64 `mapstructure:"source-file-name-weight"`
 }
 

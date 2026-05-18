@@ -2,7 +2,6 @@ package assembly
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -30,6 +29,7 @@ import (
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/log"
 	aichat "local/rag-project/internal/infra-ai/chat"
+	inframcp "local/rag-project/internal/infra-mcp"
 )
 
 type knowledgePipelineTaskReader struct {
@@ -78,8 +78,8 @@ func registerMetaTools(registry *ragcore.Registry) {
 	)
 }
 
-func registerWebTools(registry *ragcore.Registry, cfg *config.Config) {
-	searchProvider := buildSearchProvider(cfg)
+func registerWebTools(registry *ragcore.Registry, cfg *config.Config, mcpManager inframcp.ToolClient) {
+	searchProvider := buildSearchProvider(cfg, mcpManager)
 	sourcePolicy := buildSourcePolicyEngine(cfg)
 
 	registerModule(registry,
@@ -161,57 +161,60 @@ func registerTraceTools(
 func registerGraphTools(registry *ragcore.Registry, executor *ragruntime.Executor, chatService aichat.LLMService) {
 	graphTool, err := raginvgraph.NewDiagnosisGraphTool(executor)
 	if err != nil {
-		panic(fmt.Sprintf("create diagnosis graph tool: %v", err))
+		log.Warnf("skip graph tool document_root_cause_diagnosis: %v", err)
+	} else {
+		registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(
+			graphTool,
+			ragcore.ToolSpec{
+				Capability:          ragcore.CapabilityDiagnosis,
+				EvidenceSources:     []string{ragcore.EvidenceSourceSystemRecords},
+				ExecutionMode:       ragcore.ExecutionModeReadOnly,
+				RiskLevel:           ragcore.RiskLevelLow,
+				ApprovalRequirement: ragcore.ApprovalRequirementNone,
+				ReadOnly:            true,
+				Family:              "graph",
+			},
+			graphmod.DocumentRootCauseDiagnosisBehavior(),
+		).Module())
 	}
-	registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(
-		graphTool,
-		ragcore.ToolSpec{
-			Capability:          ragcore.CapabilityDiagnosis,
-			EvidenceSources:     []string{ragcore.EvidenceSourceSystemRecords},
-			ExecutionMode:       ragcore.ExecutionModeReadOnly,
-			RiskLevel:           ragcore.RiskLevelLow,
-			ApprovalRequirement: ragcore.ApprovalRequirementNone,
-			ReadOnly:            true,
-			Family:              "graph",
-		},
-		graphmod.DocumentRootCauseDiagnosisBehavior(),
-	).Module())
 
 	searchGraphTool, err := raginvgraph.NewDiagnoseSearchGraphTool(executor)
 	if err != nil {
-		panic(fmt.Sprintf("create diagnose-search graph tool: %v", err))
+		log.Warnf("skip graph tool document_diagnose_with_search: %v", err)
+	} else {
+		registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(
+			searchGraphTool,
+			ragcore.ToolSpec{
+				Capability:          ragcore.CapabilitySearch,
+				EvidenceSources:     []string{ragcore.EvidenceSourceExternalWeb, ragcore.EvidenceSourceSystemRecords},
+				ExecutionMode:       ragcore.ExecutionModeReadOnly,
+				RiskLevel:           ragcore.RiskLevelLow,
+				ApprovalRequirement: ragcore.ApprovalRequirementNone,
+				ReadOnly:            true,
+				Family:              "graph",
+			},
+			graphmod.DocumentDiagnoseWithSearchBehavior(),
+		).Module())
 	}
-	registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(
-		searchGraphTool,
-		ragcore.ToolSpec{
-			Capability:          ragcore.CapabilitySearch,
-			EvidenceSources:     []string{ragcore.EvidenceSourceExternalWeb, ragcore.EvidenceSourceSystemRecords},
-			ExecutionMode:       ragcore.ExecutionModeReadOnly,
-			RiskLevel:           ragcore.RiskLevelLow,
-			ApprovalRequirement: ragcore.ApprovalRequirementNone,
-			ReadOnly:            true,
-			Family:              "graph",
-		},
-		graphmod.DocumentDiagnoseWithSearchBehavior(),
-	).Module())
 
 	externalWorkflowTool, err := raginvgraph.NewExternalEvidenceWorkflowTool(executor, chatService)
 	if err != nil {
-		panic(fmt.Sprintf("create external evidence workflow tool: %v", err))
+		log.Warnf("skip graph tool external_evidence_workflow: %v", err)
+	} else {
+		registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(
+			externalWorkflowTool,
+			ragcore.ToolSpec{
+				Capability:          ragcore.CapabilitySearch,
+				EvidenceSources:     []string{ragcore.EvidenceSourceExternalWeb},
+				ExecutionMode:       ragcore.ExecutionModeReadOnly,
+				RiskLevel:           ragcore.RiskLevelLow,
+				ApprovalRequirement: ragcore.ApprovalRequirementNone,
+				ReadOnly:            true,
+				Family:              "web",
+			},
+			webmod.ExternalEvidenceWorkflowBehavior(),
+		).Module())
 	}
-	registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(
-		externalWorkflowTool,
-		ragcore.ToolSpec{
-			Capability:          ragcore.CapabilitySearch,
-			EvidenceSources:     []string{ragcore.EvidenceSourceExternalWeb},
-			ExecutionMode:       ragcore.ExecutionModeReadOnly,
-			RiskLevel:           ragcore.RiskLevelLow,
-			ApprovalRequirement: ragcore.ApprovalRequirementNone,
-			ReadOnly:            true,
-			Family:              "web",
-		},
-		webmod.ExternalEvidenceWorkflowBehavior(),
-	).Module())
 }
 
 func buildAgentLoop(executor *ragruntime.Executor, cfg *config.Config, chatService aichat.LLMService) ragcore.Workflow {
@@ -240,6 +243,7 @@ func BuildLocalWorkflow(
 	traceRunRepo *postgresrag.RagTraceRunRepository,
 	traceNodeRepo *postgresrag.RagTraceNodeRepository,
 	cfg *config.Config,
+	mcpManager inframcp.ToolClient,
 	chatService aichat.LLMService,
 ) ragcore.Workflow {
 	if db == nil {
@@ -250,12 +254,8 @@ func BuildLocalWorkflow(
 
 	registry := ragcore.NewRegistry()
 
-	ragruntime.SetNextActionRegistry(registry)
-	ragruntime.SetWorkflowControlRegistry(registry)
-	ragcore.SetInferBehavior(registry)
-
 	registerMetaTools(registry)
-	registerWebTools(registry, cfg)
+	registerWebTools(registry, cfg, mcpManager)
 	registerSystemTools(registry, documentService, taskService)
 	registerTraceTools(registry, traceRunRepo, traceNodeRepo)
 
@@ -274,14 +274,31 @@ func registerModule(
 	registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(tool, spec, behavior).Module())
 }
 
-func buildSearchProvider(cfg *config.Config) raginvweb.SearchProvider {
+func buildSearchProvider(cfg *config.Config, mcpManager inframcp.ToolClient) raginvweb.SearchProvider {
 	if cfg == nil {
 		return raginvweb.NewDuckDuckGoProvider()
 	}
-	provider := strings.TrimSpace(cfg.Rag.Search.WebSearch.Provider)
+	provider := strings.ToLower(strings.TrimSpace(cfg.Rag.Search.WebSearch.Provider))
+	fallbackProvider := strings.ToLower(strings.TrimSpace(cfg.Rag.Search.WebSearch.FallbackProvider))
 	apiKey := strings.TrimSpace(cfg.Rag.Search.WebSearch.ApiKey)
 
-	switch strings.ToLower(provider) {
+	switch provider {
+	case "tavily-mcp":
+		serverName := strings.TrimSpace(cfg.Rag.Search.WebSearch.MCP.Server)
+		if serverName == "" {
+			serverName = "tavily"
+		}
+		toolName := strings.TrimSpace(cfg.Rag.Search.WebSearch.MCP.SearchTool)
+		if toolName == "" {
+			toolName = "tavily-search"
+		}
+		primary := raginvweb.NewTavilyMCPProvider(mcpManager, serverName, toolName)
+		secondary := fallbackSearchProvider(fallbackProvider, apiKey)
+		if secondary == nil {
+			log.Warnf("rag.search.web-search.provider=tavily-mcp but fallback-provider is unavailable, MCP failures will surface directly")
+			return primary
+		}
+		return raginvweb.NewFallbackSearchProvider("tavily-mcp", primary, secondary)
 	case "tavily":
 		if apiKey == "" {
 			log.Warnf("rag.search.web-search.provider=tavily but api-key is empty, falling back to duckduckgo")
@@ -290,6 +307,24 @@ func buildSearchProvider(cfg *config.Config) raginvweb.SearchProvider {
 		return raginvweb.NewTavilyProvider(apiKey)
 	default:
 		return raginvweb.NewDuckDuckGoProvider()
+	}
+}
+
+func fallbackSearchProvider(name string, tavilyAPIKey string) raginvweb.SearchProvider {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "":
+		return nil
+	case "duckduckgo":
+		return raginvweb.NewDuckDuckGoProvider()
+	case "tavily":
+		if strings.TrimSpace(tavilyAPIKey) == "" {
+			log.Warnf("rag.search.web-search.fallback-provider=tavily but api-key is empty, skipping Tavily fallback")
+			return nil
+		}
+		return raginvweb.NewTavilyProvider(tavilyAPIKey)
+	default:
+		log.Warnf("unsupported rag.search.web-search.fallback-provider=%q, skipping fallback", name)
+		return nil
 	}
 }
 

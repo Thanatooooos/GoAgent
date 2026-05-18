@@ -8,6 +8,7 @@ import (
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 	"local/rag-project/internal/framework/convention"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
@@ -46,7 +47,7 @@ func TestLLMObserverUsesLLMDecision(t *testing.T) {
 	mock := &mockObserverLLMService{
 		response: `{"done":false,"reasoning":"Need node-level error before answering.","confidence":0.82,"nextHintCalls":[{"name":"ingestion_task_node_query","arguments":{"taskId":"task-1","nodeId":"indexer"}}],"state":{"phase":"deep_dive","hypothesis":"task task-1 likely failed at node indexer","confidence":0.82,"openQuestions":["What is the concrete node-level error message?"],"checkedTools":["document_ingestion_diagnose"],"nextHintCalls":[{"name":"ingestion_task_node_query","arguments":{"taskId":"task-1","nodeId":"indexer"}}]}}`,
 	}
-	observer := NewLLMObserver(mock)
+	observer := ragruntime.NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
 		Question: "why did doc-1 fail?",
@@ -109,7 +110,7 @@ func TestLLMObserverUsesLLMDecision(t *testing.T) {
 
 func TestLLMObserverFallsBackOnInvalidJSON(t *testing.T) {
 	mock := &mockObserverLLMService{response: `not-json`}
-	observer := NewLLMObserver(mock)
+	observer := ragruntime.NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
 		Question:        "why did doc-1 fail?",
@@ -141,7 +142,7 @@ func TestLLMObserverFallsBackWhenNextHintMissing(t *testing.T) {
 	mock := &mockObserverLLMService{
 		response: `{"done":false,"reasoning":"Need more evidence.","confidence":0.5,"state":{"phase":"deep_dive","hypothesis":"need more evidence"}}`,
 	}
-	observer := NewLLMObserver(mock)
+	observer := ragruntime.NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
 		Question:        "why did task-1 fail?",
@@ -171,7 +172,7 @@ func TestLLMObserverFallsBackWhenNextHintInventsNodeID(t *testing.T) {
 	mock := &mockObserverLLMService{
 		response: `{"done":false,"reasoning":"Need node-level detail.","confidence":0.7,"nextHintCalls":[{"name":"ingestion_task_node_query","arguments":{"taskId":"task-1","nodeId":"node_0"}}],"state":{"phase":"deep_dive","hypothesis":"failed node needs inspection","confidence":0.7,"openQuestions":["What is the node error?"],"checkedTools":["ingestion_task_query"],"nextHintCalls":[{"name":"ingestion_task_node_query","arguments":{"taskId":"task-1","nodeId":"node_0"}}]}}`,
 	}
-	observer := NewLLMObserver(mock)
+	observer := ragruntime.NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
 		Question:        "why did task-1 fail?",
@@ -204,7 +205,7 @@ func TestLLMObserverDoesNotUseReasoningAsHypothesisFallback(t *testing.T) {
 	mock := &mockObserverLLMService{
 		response: `{"done":false,"reasoning":"Inspect the task detail next.","confidence":0.6,"nextHintCalls":[{"name":"ingestion_task_query","arguments":{"taskId":"task-1","includeNodes":true}}],"state":{"phase":"deep_dive","confidence":0.6,"openQuestions":["Which node failed?"],"checkedTools":["document_ingestion_diagnose"],"nextHintCalls":[{"name":"ingestion_task_query","arguments":{"taskId":"task-1","includeNodes":true}}]}}`,
 	}
-	observer := NewLLMObserver(mock)
+	observer := ragruntime.NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
 		Question: "why did doc-1 fail?",
@@ -238,7 +239,7 @@ func TestLLMObserverAcceptsMultipleNextHintCalls(t *testing.T) {
 	mock := &mockObserverLLMService{
 		response: `{"done":false,"reasoning":"Both task node detail and trace are needed; they are independent.","state":{"phase":"deep_dive","hypothesis":"indexer failed; trace context is also needed","confidence":0.65,"openQuestions":["What is the node error?","What does the trace show?"],"checkedTools":["document_ingestion_diagnose"],"nextHintCalls":[{"name":"ingestion_task_node_query","arguments":{"taskId":"task-1","nodeId":"indexer"}},{"name":"trace_node_query","arguments":{"traceId":"trace-abc"}}]}}`,
 	}
-	observer := NewLLMObserver(mock)
+	observer := ragruntime.NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
 		Question: "doc-1 为什么失败了？当前 trace 是什么状态？",
@@ -290,7 +291,7 @@ func TestLLMObserverRejectsMultiHintWithEmptyName(t *testing.T) {
 	mock := &mockObserverLLMService{
 		response: `{"done":false,"reasoning":"bad hint","confidence":0.5,"nextHintCalls":[{"name":"ingestion_task_node_query","arguments":{"taskId":"task-1"}},{"name":"","arguments":{}}],"state":{"phase":"deep_dive","nextHintCalls":[{"name":"ingestion_task_node_query","arguments":{"taskId":"task-1"}},{"name":"","arguments":{}}]}}`,
 	}
-	observer := NewLLMObserver(mock)
+	observer := ragruntime.NewLLMObserver(mock)
 
 	result, err := observer.Observe(context.Background(), ObserveInput{
 		Question:     "why did doc-1 fail?",
@@ -312,7 +313,7 @@ func TestLLMObserverRejectsMultiHintWithEmptyName(t *testing.T) {
 }
 
 func TestLLMObserverBuildUserPromptIncludesRewriteAndRetrieveContext(t *testing.T) {
-	observer := NewLLMObserver(&mockObserverLLMService{response: `{}`})
+	observer := ragruntime.NewLLMObserver(&mockObserverLLMService{response: `{}`})
 
 	prompt := observer.BuildUserPrompt(ObserveInput{
 		Question: "为什么这个任务失败了",

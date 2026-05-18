@@ -7,6 +7,7 @@ import (
 
 	. "local/rag-project/internal/app/rag/tool"
 	raggraph "local/rag-project/internal/app/rag/tool/invokers/graph"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
 func TestDiagnosisGraphToolDefinition(t *testing.T) {
@@ -96,7 +97,7 @@ func TestDiagnosisGraphToolChainExecutes(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	tool, err := raggraph.NewDiagnosisGraphTool(executor)
 	if err != nil {
 		t.Fatalf("create diagnosis graph tool: %v", err)

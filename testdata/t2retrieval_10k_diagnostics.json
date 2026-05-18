@@ -1,0 +1,251 @@
+{
+  "source": "testdata\\t2retrieval_10k_results.json",
+  "overall": {
+    "sampleCount": 222,
+    "hitRateAtK": {
+      "1": 0.9279279279279279,
+      "10": 0.9864864864864865,
+      "3": 0.972972972972973,
+      "5": 0.9774774774774775
+    },
+    "averageRecallAtK": {
+      "1": 0.3679851304851305,
+      "10": 0.9379406754406756,
+      "3": 0.6706817769317768,
+      "5": 0.7979976854976858
+    },
+    "averageNdcgAtK": {
+      "1": 0.9279279279279279,
+      "10": 0.9358800898403904,
+      "3": 0.9334820861488191,
+      "5": 0.9320554627408684
+    },
+    "mrr": 0.9506113256113257
+  },
+  "categories": {
+    "single_positive_miss": {
+      "summary": {
+        "count": 3,
+        "hit1": 0.0,
+        "mrr": 0.0,
+        "recall10": 0.0,
+        "ndcg10": 0.0
+      },
+      "samples": [
+        {
+          "name": "t2_2700",
+          "query": "如何在网上兼职赚钱",
+          "positiveCount": 1,
+          "firstRelevantRank": 0,
+          "hitAt1": false,
+          "recallAt10": 0.0,
+          "ndcgAt10": 0.0
+        },
+        {
+          "name": "t2_1371",
+          "query": "开户许可证变成一张纸",
+          "positiveCount": 1,
+          "firstRelevantRank": 0,
+          "hitAt1": false,
+          "recallAt10": 0.0,
+          "ndcgAt10": 0.0
+        },
+        {
+          "name": "t2_1774",
+          "query": "抚养费为什么两个账号",
+          "positiveCount": 1,
+          "firstRelevantRank": 0,
+          "hitAt1": false,
+          "recallAt10": 0.0,
+          "ndcgAt10": 0.0
+        }
+      ]
+    },
+    "single_positive_low_rank": {
+      "summary": {
+        "count": 8,
+        "hit1": 0.0,
+        "mrr": 0.4270833333333333,
+        "recall10": 1.0,
+        "ndcg10": 0.573165665741335
+      },
+      "samples": [
+        {
+          "name": "t2_280",
+          "query": "m1h是什么材质管道",
+          "positiveCount": 1,
+          "firstRelevantRank": 2,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.6309297535714574
+        },
+        {
+          "name": "t2_818",
+          "query": "千牛待评价是什么意思",
+          "positiveCount": 1,
+          "firstRelevantRank": 2,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.6309297535714574
+        },
+        {
+          "name": "t2_427",
+          "query": "卖车人不在场需要怎么公证",
+          "positiveCount": 1,
+          "firstRelevantRank": 2,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.6309297535714574
+        },
+        {
+          "name": "t2_1483",
+          "query": "可以在朋友圈发民生频道的截图不",
+          "positiveCount": 1,
+          "firstRelevantRank": 2,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.6309297535714574
+        },
+        {
+          "name": "t2_20517",
+          "query": "啤酒花的功效与作用",
+          "positiveCount": 1,
+          "firstRelevantRank": 2,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.6309297535714574
+        },
+        {
+          "name": "t2_2010",
+          "query": "coco奶茶训练员的主要工作",
+          "positiveCount": 1,
+          "firstRelevantRank": 3,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.5
+        },
+        {
+          "name": "t2_1438",
+          "query": "谭诺是什么牌的鞋",
+          "positiveCount": 1,
+          "firstRelevantRank": 3,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.5
+        },
+        {
+          "name": "t2_15142",
+          "query": "之前有过胸膜炎可以接种新冠疫苗吗",
+          "positiveCount": 1,
+          "firstRelevantRank": 4,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.43067655807339306
+        }
+      ]
+    },
+    "few_positive_low_rank": {
+      "summary": {
+        "count": 1,
+        "hit1": 0.0,
+        "mrr": 0.3333333333333333,
+        "recall10": 1.0,
+        "ndcg10": 0.5249810332008934
+      },
+      "samples": [
+        {
+          "name": "t2_1192",
+          "query": "什么样的粽子动词形容",
+          "positiveCount": 2,
+          "firstRelevantRank": 3,
+          "hitAt1": false,
+          "recallAt10": 1.0,
+          "ndcgAt10": 0.5249810332008934
+        }
+      ]
+    },
+    "multi_positive_low_recall": {
+      "summary": {
+        "count": 8,
+        "hit1": 0.75,
+        "mrr": 0.875,
+        "recall10": 0.4961444805194805,
+        "ndcg10": 0.7005723590137879
+      },
+      "samples": [
+        {
+          "name": "t2_150",
+          "query": "什么是红色革命",
+          "positiveCount": 11,
+          "firstRelevantRank": 1,
+          "hitAt1": true,
+          "recallAt10": 0.2727272727272727,
+          "ndcgAt10": 0.4152807670887413
+        },
+        {
+          "name": "t2_2486",
+          "query": "怎么样可以挣钱",
+          "positiveCount": 16,
+          "firstRelevantRank": 2,
+          "hitAt1": false,
+          "recallAt10": 0.375,
+          "ndcgAt10": 0.5113553108118987
+        },
+        {
+          "name": "t2_93",
+          "query": "属龙的处女座2020年运势",
+          "positiveCount": 20,
+          "firstRelevantRank": 1,
+          "hitAt1": true,
+          "recallAt10": 0.5,
+          "ndcgAt10": 1.0
+        },
+        {
+          "name": "t2_2192",
+          "query": "吃过兔子肉后胃一阵一阵疼痛怎么回事",
+          "positiveCount": 8,
+          "firstRelevantRank": 1,
+          "hitAt1": true,
+          "recallAt10": 0.5,
+          "ndcgAt10": 0.5323254311578438
+        },
+        {
+          "name": "t2_1337",
+          "query": "质保书岗位对司机的态度",
+          "positiveCount": 4,
+          "firstRelevantRank": 2,
+          "hitAt1": false,
+          "recallAt10": 0.5,
+          "ndcgAt10": 0.44149241373678083
+        },
+        {
+          "name": "t2_385",
+          "query": "肝的救星是什么",
+          "positiveCount": 7,
+          "firstRelevantRank": 1,
+          "hitAt1": true,
+          "recallAt10": 0.5714285714285714,
+          "ndcgAt10": 0.7041249493150387
+        },
+        {
+          "name": "t2_53",
+          "query": "杜仲泡水喝功效与作用",
+          "positiveCount": 16,
+          "firstRelevantRank": 1,
+          "hitAt1": true,
+          "recallAt10": 0.625,
+          "ndcgAt10": 1.0
+        },
+        {
+          "name": "t2_1845",
+          "query": "袋鼠妈妈的护肤品怎么样",
+          "positiveCount": 16,
+          "firstRelevantRank": 1,
+          "hitAt1": true,
+          "recallAt10": 0.625,
+          "ndcgAt10": 1.0
+        }
+      ]
+    }
+  }
+}

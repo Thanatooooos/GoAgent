@@ -1,0 +1,1064 @@
+samples=205 mrr=0.8996
+hit@1=0.8390 recall@1=0.7553 ndcg@1=0.8390
+hit@3=0.9561 recall@3=0.8907 ndcg@3=1.0529
+hit@5=0.9854 recall@5=0.9390 ndcg@5=1.1743
+hit@10=0.9951 recall@10=0.9780 ndcg@10=1.3957
+
+by_tag:
+- file_name samples=41 mrr=0.9756
+  hit@1=0.9512 recall@1=0.9512 ndcg@1=0.9512
+  hit@3=1.0000 recall@3=1.0000 ndcg@3=1.7050
+  hit@5=1.0000 recall@5=1.0000 ndcg@5=2.0240
+  hit@10=1.0000 recall@10=1.0000 ndcg@10=2.8401
+- keyword samples=123 mrr=0.8970
+  hit@1=0.8374 recall@1=0.8374 ndcg@1=0.8374
+  hit@3=0.9431 recall@3=0.9431 ndcg@3=1.1868
+  hit@5=0.9837 recall@5=0.9837 ndcg@5=1.3795
+  hit@10=1.0000 recall@10=1.0000 ndcg@10=1.7354
+- markdown samples=205 mrr=0.8996
+  hit@1=0.8390 recall@1=0.7553 ndcg@1=0.8390
+  hit@3=0.9561 recall@3=0.8907 ndcg@3=1.0529
+  hit@5=0.9854 recall@5=0.9390 ndcg@5=1.1743
+  hit@10=0.9951 recall@10=0.9780 ndcg@10=1.3957
+- metadata_title samples=123 mrr=0.8970
+  hit@1=0.8374 recall@1=0.8374 ndcg@1=0.8374
+  hit@3=0.9431 recall@3=0.9431 ndcg@3=1.1868
+  hit@5=0.9837 recall@5=0.9837 ndcg@5=1.3795
+  hit@10=1.0000 recall@10=1.0000 ndcg@10=1.7354
+- section samples=164 mrr=0.8805
+  hit@1=0.8110 recall@1=0.7063 ndcg@1=0.8110
+  hit@3=0.9451 recall@3=0.8633 ndcg@3=0.8899
+  hit@5=0.9817 recall@5=0.9238 ndcg@5=0.9618
+  hit@10=0.9939 recall@10=0.9726 ndcg@10=1.0345
+- semantic samples=82 mrr=0.9035
+  hit@1=0.8415 recall@1=0.6321 ndcg@1=0.8415
+  hit@3=0.9756 recall@3=0.8120 ndcg@3=0.8521
+  hit@5=0.9878 recall@5=0.8720 ndcg@5=0.8664
+  hit@10=0.9878 recall@10=0.9451 ndcg@10=0.8861
+
+samples_detail:
+- file_lookup_19752977514426625 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5178
+  hit@10=true recall@10=1.0000 ndcg@10=3.1521
+- section_lookup_19752977514426625_agent_能力扩展建设方案 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752977514426625_agent_能力扩展建设方案 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19752977514426625_agent_能力扩展建设方案___一、文档目的 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752977514426625_agent_能力扩展建设方案___一、文档目的 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19752981138305281 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=3.1215
+- section_lookup_19752981138305281_agent_loop_架构评估与优化方向___一、当前架构 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.3869
+  hit@10=true recall@10=1.0000 ndcg@10=1.3869
+- section_semantic_19752981138305281_agent_loop_架构评估与优化方向___一、当前架构 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.7872
+  hit@5=true recall@5=0.5000 ndcg@5=0.7872
+  hit@10=true recall@10=1.0000 ndcg@10=0.8887
+- section_lookup_19752981138305281_agent_loop_架构评估与优化方向 target=section rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_semantic_19752981138305281_agent_loop_架构评估与优化方向 target=chunk rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- file_lookup_19752984409862401 target=source_file_name rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.1309
+  hit@5=true recall@5=1.0000 ndcg@5=1.1309
+  hit@10=true recall@10=1.0000 ndcg@10=2.1036
+- section_lookup_19752984409862401_agent_loop_优化执行计划 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752984409862401_agent_loop_优化执行计划 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19752984409862401_agent_loop_优化执行计划___assumptions target=section rr=0.2000 firstRelevantRank=5
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=true recall@5=1.0000 ndcg@5=0.3869
+  hit@10=true recall@10=1.0000 ndcg@10=0.3869
+- section_semantic_19752984409862401_agent_loop_优化执行计划___assumptions target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19752985869480193 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.4307
+  hit@10=true recall@10=1.0000 ndcg@10=1.4307
+- section_lookup_19752985869480193_agent_架构复盘_&_检索模式简化_&_eino_接入评估___一、agent_架构现状评估___1.1_架构总览 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.6717
+- section_semantic_19752985869480193_agent_架构复盘_&_检索模式简化_&_eino_接入评估___一、agent_架构现状评估___1.1_架构总览 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.3333 ndcg@3=0.6735
+  hit@5=true recall@5=0.6667 ndcg@5=0.7852
+  hit@10=true recall@10=1.0000 ndcg@10=0.8814
+- section_lookup_19752985869480193_agent_架构复盘_&_检索模式简化_&_eino_接入评估___一、agent_架构现状评估___1.3_存在的结构性问题___问题_2：plancallsfromresults_和_ruleobserver_的状态机逻辑重复 target=section rr=0.2500 firstRelevantRank=4
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=true recall@5=1.0000 ndcg@5=0.8175
+  hit@10=true recall@10=1.0000 ndcg@10=0.8175
+- section_semantic_19752985869480193_agent_架构复盘_&_检索模式简化_&_eino_接入评估___一、agent_架构现状评估___1.3_存在的结构性问题___问题_2：plancallsfromresults_和_ruleobserver_的状态机逻辑重复 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.7872
+  hit@5=true recall@5=0.5000 ndcg@5=0.7872
+  hit@10=true recall@10=1.0000 ndcg@10=0.9073
+- file_lookup_19752989610799361 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=3.0544
+- section_lookup_19752989610799361_chunk_&_retrieve_质量评估方案___方案___phase_3：样本生成（~200_行，1-2_天） target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.3010
+- section_semantic_19752989610799361_chunk_&_retrieve_质量评估方案___方案___phase_3：样本生成（~200_行，1-2_天） target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.7872
+  hit@5=true recall@5=0.5000 ndcg@5=0.7872
+  hit@10=true recall@10=1.0000 ndcg@10=0.9073
+- section_lookup_19752989610799361_chunk_&_retrieve_质量评估方案 target=section rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_semantic_19752989610799361_chunk_&_retrieve_质量评估方案 target=chunk rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- file_lookup_19752990818758913 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=2.3175
+  hit@10=true recall@10=1.0000 ndcg@10=2.9221
+- section_lookup_19752990818758913_chunk_&_retrieve_评估总结 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752990818758913_chunk_&_retrieve_评估总结 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19752990818758913_chunk_&_retrieve_评估总结___结果 target=section rr=0.1250 firstRelevantRank=8
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=false recall@5=0.0000 ndcg@5=0.0000
+  hit@10=true recall@10=1.0000 ndcg@10=0.3155
+- section_semantic_19752990818758913_chunk_&_retrieve_评估总结___结果 target=chunk rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.5000
+  hit@5=true recall@5=1.0000 ndcg@5=0.5000
+  hit@10=true recall@10=1.0000 ndcg@10=0.5000
+- file_lookup_19752991909277953 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=3.1036
+- section_lookup_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10 target=section rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_semantic_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10 target=chunk rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_lookup_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10___具体改动位置 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10___具体改动位置 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19752994425860353 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8869
+  hit@10=true recall@10=1.0000 ndcg@10=2.5212
+- section_lookup_19752994425860353_development_notes_2026-04-29 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752994425860353_development_notes_2026-04-29 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19752994425860353_development_notes_2026-04-29___今日确认的开发规范 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752994425860353_development_notes_2026-04-29___今日确认的开发规范 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19752996455903489 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.9307
+  hit@10=true recall@10=1.0000 ndcg@10=2.8685
+- section_lookup_19752996455903489_development_notes_2026-04-30 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752996455903489_development_notes_2026-04-30 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19752996455903489_development_notes_2026-04-30___今日联调结论 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19752996455903489_development_notes_2026-04-30___今日联调结论 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753003384893697 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=3.0917
+- section_lookup_19753003384893697_development_notes_2026-05-01 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753003384893697_development_notes_2026-05-01 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753003384893697_development_notes_2026-05-01___今天确认下来的工程结论 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753003384893697_development_notes_2026-05-01___今天确认下来的工程结论 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753005196833025 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5616
+  hit@10=true recall@10=1.0000 ndcg@10=3.2104
+- section_lookup_19753005196833025_development_notes_-_2026-05-02___ingestion_进展___9._ingestion_模块骨架、持久化与最小执行链路落地 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.4307
+  hit@10=true recall@10=1.0000 ndcg@10=1.4307
+- section_semantic_19753005196833025_development_notes_-_2026-05-02___ingestion_进展___9._ingestion_模块骨架、持久化与最小执行链路落地 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.9558
+  hit@5=true recall@5=1.0000 ndcg@5=0.9558
+  hit@10=true recall@10=1.0000 ndcg@10=0.9558
+- section_lookup_19753005196833025_development_notes_-_2026-05-02 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753005196833025_development_notes_-_2026-05-02 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753006773891329 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8869
+  hit@10=true recall@10=1.0000 ndcg@10=2.5441
+- section_lookup_19753006773891329_development_notes_-_2026-05-04___本次新增___2._indexer_写入重试与补偿 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=2.1309
+- section_semantic_19753006773891329_development_notes_-_2026-05-04___本次新增___2._indexer_写入重试与补偿 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753006773891329_development_notes_-_2026-05-04___本次新增___3._rag_检索置信度回退 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=1.6309
+  hit@10=true recall@10=1.0000 ndcg@10=1.9871
+- section_semantic_19753006773891329_development_notes_-_2026-05-04___本次新增___3._rag_检索置信度回退 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.6667 ndcg@3=0.8557
+  hit@5=true recall@5=1.0000 ndcg@5=0.9800
+  hit@10=true recall@10=1.0000 ndcg@10=0.9800
+- file_lookup_19753007763747073 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753007763747073_development_notes_-_2026-05-05___本次新增___1._ingestion_metrics_api_落地 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.3869
+  hit@10=true recall@10=1.0000 ndcg@10=1.7431
+- section_semantic_19753007763747073_development_notes_-_2026-05-05___本次新增___1._ingestion_metrics_api_落地 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753007763747073_development_notes_-_2026-05-05___当前验证状态 target=section rr=0.2500 firstRelevantRank=4
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=true recall@5=1.0000 ndcg@5=0.8175
+  hit@10=true recall@10=1.0000 ndcg@10=0.8175
+- section_semantic_19753007763747073_development_notes_-_2026-05-05___当前验证状态 target=chunk rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.3936
+  hit@5=true recall@5=0.5000 ndcg@5=0.3936
+  hit@10=true recall@10=1.0000 ndcg@10=0.5137
+- file_lookup_19753009005261057 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0616
+  hit@10=true recall@10=1.0000 ndcg@10=3.0402
+- section_lookup_19753009005261057_development_notes_-_2026-05-07___追加进展（同日补充）___19._继续补强了_`document___task___trace`_诊断质量 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.3869
+  hit@10=true recall@10=1.0000 ndcg@10=1.7202
+- section_semantic_19753009005261057_development_notes_-_2026-05-07___追加进展（同日补充）___19._继续补强了_`document___task___trace`_诊断质量 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.6667 ndcg@3=0.8557
+  hit@5=true recall@5=1.0000 ndcg@5=0.9800
+  hit@10=true recall@10=1.0000 ndcg@10=0.9800
+- section_lookup_19753009005261057_development_notes_-_2026-05-07___后续建议___p1 target=section rr=0.1667 firstRelevantRank=6
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=false recall@5=0.0000 ndcg@5=0.0000
+  hit@10=true recall@10=1.0000 ndcg@10=0.6895
+- section_semantic_19753009005261057_development_notes_-_2026-05-07___后续建议___p1 target=chunk rr=0.0000 firstRelevantRank=0
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=false recall@5=0.0000 ndcg@5=0.0000
+  hit@10=false recall@10=0.0000 ndcg@10=0.0000
+- file_lookup_19753011907719425 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0616
+  hit@10=true recall@10=1.0000 ndcg@10=3.0343
+- section_lookup_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___f._落地了_ingestion_对账规则与后台_reconcile_入口 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.4307
+  hit@10=true recall@10=1.0000 ndcg@10=1.7461
+- section_semantic_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___f._落地了_ingestion_对账规则与后台_reconcile_入口 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.6667 ndcg@3=0.8557
+  hit@5=true recall@5=1.0000 ndcg@5=0.9673
+  hit@10=true recall@10=1.0000 ndcg@10=0.9673
+- section_lookup_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___g._补齐了_trace___tool___fallback_可观测性展示链路 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.9307
+  hit@10=true recall@10=1.0000 ndcg@10=1.9307
+- section_semantic_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___g._补齐了_trace___tool___fallback_可观测性展示链路 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.3333 ndcg@3=0.6735
+  hit@5=true recall@5=1.0000 ndcg@5=0.9095
+  hit@10=true recall@10=1.0000 ndcg@10=0.9095
+- file_lookup_19753015196053761 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5178
+  hit@10=true recall@10=1.0000 ndcg@10=3.1402
+- section_lookup_19753015196053761_development_notes_-_2026-05-09___验证 target=section rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.5000
+  hit@5=true recall@5=1.0000 ndcg@5=0.8869
+  hit@10=true recall@10=1.0000 ndcg@10=1.5357
+- section_semantic_19753015196053761_development_notes_-_2026-05-09___验证 target=chunk rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=0.2500 ndcg@3=0.4250
+  hit@5=true recall@5=0.2500 ndcg@5=0.3780
+  hit@10=true recall@10=0.2500 ndcg@10=0.3780
+- section_lookup_19753015196053761_development_notes_-_2026-05-09___本次改动___1._做了一版_ingestion_最小收口 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.3869
+  hit@10=true recall@10=1.0000 ndcg@10=1.3869
+- section_semantic_19753015196053761_development_notes_-_2026-05-09___本次改动___1._做了一版_ingestion_最小收口 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.7872
+  hit@5=true recall@5=0.5000 ndcg@5=0.7872
+  hit@10=true recall@10=1.0000 ndcg@10=0.9073
+- file_lookup_19753017075101953 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=3.0917
+- section_lookup_19753017075101953_development_notes_-_2026-05-10___llmobserver_补充记录 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.9307
+  hit@10=true recall@10=1.0000 ndcg@10=1.9307
+- section_semantic_19753017075101953_development_notes_-_2026-05-10___llmobserver_补充记录 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.6667 ndcg@3=0.8557
+  hit@5=true recall@5=0.6667 ndcg@5=0.8557
+  hit@10=true recall@10=1.0000 ndcg@10=0.9585
+- section_lookup_19753017075101953_development_notes_-_2026-05-10___本次改动___5._根据联调反馈，优化了诊断回答中的“证据”表达 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.5000
+  hit@10=true recall@10=1.0000 ndcg@10=1.5000
+- section_semantic_19753017075101953_development_notes_-_2026-05-10___本次改动___5._根据联调反馈，优化了诊断回答中的“证据”表达 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.7872
+  hit@5=true recall@5=1.0000 ndcg@5=0.9177
+  hit@10=true recall@10=1.0000 ndcg@10=0.9177
+- file_lookup_19753024054423809 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8869
+  hit@10=true recall@10=1.0000 ndcg@10=2.5357
+- section_lookup_19753024054423809_development_notes_2026-05-11 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753024054423809_development_notes_2026-05-11 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753024054423809_development_notes_2026-05-11___agentstate_合并简化 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753024054423809_development_notes_2026-05-11___agentstate_合并简化 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753025161720065 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5178
+  hit@10=true recall@10=1.0000 ndcg@10=3.1521
+- section_lookup_19753025161720065_development_notes_2026-05-12___验证状态 target=section rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.5000
+  hit@5=true recall@5=1.0000 ndcg@5=0.5000
+  hit@10=true recall@10=1.0000 ndcg@10=1.1895
+- section_semantic_19753025161720065_development_notes_2026-05-12___验证状态 target=chunk rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=0.3333 ndcg@3=0.4250
+  hit@5=true recall@5=0.3333 ndcg@5=0.4250
+  hit@10=true recall@10=0.3333 ndcg@10=0.4250
+- section_lookup_19753025161720065_development_notes_2026-05-12 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753025161720065_development_notes_2026-05-12 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753027695079681 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8869
+  hit@10=true recall@10=1.0000 ndcg@10=2.5441
+- section_lookup_19753027695079681_development_notes_2026-05-15 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753027695079681_development_notes_2026-05-15 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753027695079681_development_notes_2026-05-15___chat_检索前置路由：由_rewrite_判断是否需要_retrieval target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753027695079681_development_notes_2026-05-15___chat_检索前置路由：由_rewrite_判断是否需要_retrieval target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753031134408961 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8869
+  hit@10=true recall@10=1.0000 ndcg@10=2.8103
+- section_lookup_19753031134408961_flagembedding_语料库集成方案___集成方案___方案：t2retrieval_抽取子集_→_知识库_→_retrieve-eval___step_1：获取数据（python_脚本） target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=1.6309
+  hit@10=true recall@10=1.0000 ndcg@10=1.6309
+- section_semantic_19753031134408961_flagembedding_语料库集成方案___集成方案___方案：t2retrieval_抽取子集_→_知识库_→_retrieve-eval___step_1：获取数据（python_脚本） target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.6667 ndcg@3=0.8557
+  hit@5=true recall@5=1.0000 ndcg@5=0.9800
+  hit@10=true recall@10=1.0000 ndcg@10=0.9800
+- section_lookup_19753031134408961_flagembedding_语料库集成方案 target=section rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.5000
+  hit@5=true recall@5=1.0000 ndcg@5=0.5000
+  hit@10=true recall@10=1.0000 ndcg@10=0.5000
+- section_semantic_19753031134408961_flagembedding_语料库集成方案 target=chunk rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.5000
+  hit@5=true recall@5=1.0000 ndcg@5=0.5000
+  hit@10=true recall@10=1.0000 ndcg@10=0.5000
+- file_lookup_19753032862462209 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5178
+  hit@10=true recall@10=1.0000 ndcg@10=3.1521
+- section_lookup_19753032862462209_ingestion_target_direction target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753032862462209_ingestion_target_direction target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753032862462209_ingestion_target_direction___中期待办 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753032862462209_ingestion_target_direction___中期待办 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753034288525569 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.5000
+  hit@10=true recall@10=1.0000 ndcg@10=2.4786
+- section_lookup_19753034288525569_rag___agent_总入口与主链路 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753034288525569_rag___agent_总入口与主链路 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753034288525569_rag___agent_总入口与主链路___主链路是怎么跑起来的 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753034288525569_rag___agent_总入口与主链路___主链路是怎么跑起来的 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753036620558593 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5616
+  hit@10=true recall@10=1.0000 ndcg@10=3.5402
+- section_lookup_19753036620558593_trace___sse_可观测性 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753036620558593_trace___sse_可观测性 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753036620558593_trace___sse_可观测性___chattracer_是怎么工作的 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753036620558593_trace___sse_可观测性___chattracer_是怎么工作的 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753039019700481 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5178
+  hit@10=true recall@10=1.0000 ndcg@10=3.4676
+- section_lookup_19753039019700481_retrieve_merge_合并逻辑 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753039019700481_retrieve_merge_合并逻辑 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753039019700481_retrieve_merge_合并逻辑___`mergeresults(...)`_是怎么工作的 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753039019700481_retrieve_merge_合并逻辑___`mergeresults(...)`_是怎么工作的 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753041938936065 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5616
+  hit@10=true recall@10=1.0000 ndcg@10=3.5343
+- section_lookup_19753041938936065_infra-ai_模型选择、路由执行与熔断 target=section rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.5000
+  hit@5=true recall@5=1.0000 ndcg@5=0.5000
+  hit@10=true recall@10=1.0000 ndcg@10=0.5000
+- section_semantic_19753041938936065_infra-ai_模型选择、路由执行与熔断 target=chunk rr=0.3333 firstRelevantRank=3
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.5000
+  hit@5=true recall@5=1.0000 ndcg@5=0.5000
+  hit@10=true recall@10=1.0000 ndcg@10=0.5000
+- section_lookup_19753041938936065_infra-ai_模型选择、路由执行与熔断___`routingllmservice`_扮演什么角色 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753041938936065_infra-ai_模型选择、路由执行与熔断___`routingllmservice`_扮演什么角色 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753045042721025 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0178
+  hit@10=true recall@10=1.0000 ndcg@10=2.9412
+- section_lookup_19753045042721025_流式聊天、首包探测与取消 target=section rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_semantic_19753045042721025_流式聊天、首包探测与取消 target=chunk rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_lookup_19753045042721025_流式聊天、首包探测与取消___`probestreambridge`_是怎么解决这个问题的 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753045042721025_流式聊天、首包探测与取消___`probestreambridge`_是怎么解决这个问题的 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753048867926273 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.5000
+  hit@10=true recall@10=1.0000 ndcg@10=2.4607
+- section_lookup_19753048867926273_ingestion_流水线与执行架构___observer：为什么执行和落库要拆开___`repositorytaskobserver` target=section rr=0.2500 firstRelevantRank=4
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=true recall@5=1.0000 ndcg@5=0.4307
+  hit@10=true recall@10=1.0000 ndcg@10=0.7461
+- section_semantic_19753048867926273_ingestion_流水线与执行架构___observer：为什么执行和落库要拆开___`repositorytaskobserver` target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753048867926273_ingestion_流水线与执行架构___runtime_装配：为什么它能说明整体架构 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.3333
+- section_semantic_19753048867926273_ingestion_流水线与执行架构___runtime_装配：为什么它能说明整体架构 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.7872
+  hit@5=true recall@5=0.5000 ndcg@5=0.7872
+  hit@10=true recall@10=1.0000 ndcg@10=0.9073
+- file_lookup_19753052391141633 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8869
+  hit@10=true recall@10=1.0000 ndcg@10=2.8367
+- section_lookup_19753052391141633_07_tool_与_agent_loop_面试题整理 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753052391141633_07_tool_与_agent_loop_面试题整理 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753052391141633_07_tool_与_agent_loop_面试题整理___一句话版本 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753052391141633_07_tool_与_agent_loop_面试题整理___一句话版本 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753054739951873 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0616
+  hit@10=true recall@10=1.0000 ndcg@10=3.3557
+- section_lookup_19753054739951873_08_tool_与_agent_loop_面试问答版 target=section rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_semantic_19753054739951873_08_tool_与_agent_loop_面试问答版 target=chunk rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_lookup_19753054739951873_08_tool_与_agent_loop_面试问答版___3_个建议重点练的例子 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753054739951873_08_tool_与_agent_loop_面试问答版___3_个建议重点练的例子 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753058464493825 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5616
+  hit@10=true recall@10=1.0000 ndcg@10=3.5343
+- section_lookup_19753058464493825_09_tool_与_agent_loop_高质量问题清单 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753058464493825_09_tool_与_agent_loop_高质量问题清单 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753058464493825_09_tool_与_agent_loop_高质量问题清单___使用建议 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753058464493825_09_tool_与_agent_loop_高质量问题清单___使用建议 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753059504681217 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=3.1036
+- section_lookup_19753059504681217_10_tool_与_agent_loop_top_10_标准回答 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753059504681217_10_tool_与_agent_loop_top_10_标准回答 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753059504681217_10_tool_与_agent_loop_top_10_标准回答___1._为什么需要_`behavior`，不用它会怎样？ target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753059504681217_10_tool_与_agent_loop_top_10_标准回答___1._为什么需要_`behavior`，不用它会怎样？ target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753061199180033 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0178
+  hit@10=true recall@10=1.0000 ndcg@10=2.3740
+- section_lookup_19753061199180033_interview_深度复习目录 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753061199180033_interview_深度复习目录 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753061199180033_interview_深度复习目录___当前已整理模块 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753061199180033_interview_深度复习目录___当前已整理模块 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753062004486401 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0616
+  hit@10=true recall@10=1.0000 ndcg@10=3.0343
+- section_lookup_19753062004486401_interview_review_progress___2026-05-15_additional_review_update__agentloop_deep_dive___今天新增掌握 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.6895
+- section_semantic_19753062004486401_interview_review_progress___2026-05-15_additional_review_update__agentloop_deep_dive___今天新增掌握 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=0.3333 ndcg@3=0.6735
+  hit@5=true recall@5=0.6667 ndcg@5=0.7979
+  hit@10=true recall@10=1.0000 ndcg@10=0.8941
+- section_lookup_19753062004486401_interview_review_progress target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753062004486401_interview_review_progress target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753065292820737 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0616
+  hit@10=true recall@10=1.0000 ndcg@10=3.0522
+- section_lookup_19753065292820737_project_progress_context___当前验证状态 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0616
+  hit@10=true recall@10=1.0000 ndcg@10=2.9995
+- section_semantic_19753065292820737_project_progress_context___当前验证状态 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.1667 ndcg@1=1.0000
+  hit@3=true recall@3=0.1667 ndcg@3=0.6735
+  hit@5=true recall@5=0.1667 ndcg@5=0.5449
+  hit@10=true recall@10=0.1667 ndcg@10=0.5031
+- section_lookup_19753065292820737_project_progress_context___最新进展___2026-05-12___5._p0_收口：结果视图层、执行语义与_capability_trace_元数据 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.6309
+  hit@5=true recall@5=1.0000 ndcg@5=2.0178
+  hit@10=true recall@10=1.0000 ndcg@10=2.3511
+- section_semantic_19753065292820737_project_progress_context___最新进展___2026-05-12___5._p0_收口：结果视图层、执行语义与_capability_trace_元数据 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.2500 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.8557
+  hit@5=true recall@5=0.7500 ndcg@5=0.8716
+  hit@10=true recall@10=1.0000 ndcg@10=0.9526
+- file_lookup_19753073530433793 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.4307
+  hit@10=true recall@10=1.0000 ndcg@10=2.4212
+- section_lookup_19753073530433793_schedule_模块深度设计文档___二、整体架构___2.1_分层视图 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=2.0050
+- section_semantic_19753073530433793_schedule_模块深度设计文档___二、整体架构___2.1_分层视图 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.2500 ndcg@1=1.0000
+  hit@3=true recall@3=0.2500 ndcg@3=0.6735
+  hit@5=true recall@5=0.2500 ndcg@5=0.5991
+  hit@10=true recall@10=0.5000 ndcg@10=0.6846
+- section_lookup_19753073530433793_schedule_模块深度设计文档___六、刷新管线（refreshprocessor）___6.1_完整状态机 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8175
+  hit@10=true recall@10=1.0000 ndcg@10=2.1509
+- section_semantic_19753073530433793_schedule_模块深度设计文档___六、刷新管线（refreshprocessor）___6.1_完整状态机 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.2500 ndcg@1=1.0000
+  hit@3=true recall@3=0.5000 ndcg@3=0.8179
+  hit@5=true recall@5=0.7500 ndcg@5=0.8268
+  hit@10=true recall@10=1.0000 ndcg@10=0.9123
+- file_lookup_19753078160945409 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.1309
+  hit@10=true recall@10=1.0000 ndcg@10=3.1359
+- section_lookup_19753078160945409_t2retrieval_a_b_experiments（2026-05-17） target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753078160945409_t2retrieval_a_b_experiments（2026-05-17） target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753078160945409_t2retrieval_a_b_experiments（2026-05-17）___下一步建议 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753078160945409_t2retrieval_a_b_experiments（2026-05-17）___下一步建议 target=chunk rr=0.2500 firstRelevantRank=4
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=true recall@5=1.0000 ndcg@5=0.4307
+  hit@10=true recall@10=1.0000 ndcg@10=0.4307
+- file_lookup_19753079201132801 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8175
+  hit@10=true recall@10=1.0000 ndcg@10=2.4519
+- section_lookup_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17） target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17） target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17）___关键发现 target=section rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=0.6309
+  hit@10=true recall@10=1.0000 ndcg@10=0.6309
+- section_semantic_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17）___关键发现 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753081365393665 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=2.1309
+  hit@5=true recall@5=1.0000 ndcg@5=2.5616
+  hit@10=true recall@10=1.0000 ndcg@10=3.2333
+- section_lookup_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17)___commands target=section rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=1.0616
+  hit@10=true recall@10=1.0000 ndcg@10=1.4178
+- section_semantic_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17)___commands target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.3333 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_lookup_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17) target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- section_semantic_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17) target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.0000
+  hit@10=true recall@10=1.0000 ndcg@10=1.0000
+- file_lookup_19753084334960897 target=source_file_name rr=0.5000 firstRelevantRank=2
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.6309
+  hit@5=true recall@5=1.0000 ndcg@5=1.0616
+  hit@10=true recall@10=1.0000 ndcg@10=2.0402
+- section_lookup_19753084334960897_tool_模块深度设计文档___三、工具分类 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.3869
+  hit@10=true recall@10=1.0000 ndcg@10=2.0441
+- section_semantic_19753084334960897_tool_模块深度设计文档___三、工具分类 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.2500 ndcg@1=1.0000
+  hit@3=true recall@3=0.2500 ndcg@3=0.6735
+  hit@5=true recall@5=0.2500 ndcg@5=0.5991
+  hit@10=true recall@10=1.0000 ndcg@10=0.8457
+- section_lookup_19753084334960897_tool_模块深度设计文档___二、整体架构___2.3_核心_agent_loop target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.9307
+  hit@10=true recall@10=1.0000 ndcg@10=2.2640
+- section_semantic_19753084334960897_tool_模块深度设计文档___二、整体架构___2.3_核心_agent_loop target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.2500 ndcg@1=1.0000
+  hit@3=true recall@3=0.2500 ndcg@3=0.6735
+  hit@5=true recall@5=0.2500 ndcg@5=0.5991
+  hit@10=true recall@10=0.2500 ndcg@10=0.5991
+- file_lookup_19753087203864833 target=source_file_name rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.5000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8869
+  hit@10=true recall@10=1.0000 ndcg@10=2.8247
+- section_lookup_19753087203864833_tool_包健康度评估与优化计划___二、当前架构回顾___2.1_分层结构 target=section rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=1.0000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=1.0000
+  hit@5=true recall@5=1.0000 ndcg@5=1.8175
+  hit@10=true recall@10=1.0000 ndcg@10=2.1509
+- section_semantic_19753087203864833_tool_包健康度评估与优化计划___二、当前架构回顾___2.1_分层结构 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.2500 ndcg@1=1.0000
+  hit@3=true recall@3=0.2500 ndcg@3=0.6735
+  hit@5=true recall@5=0.5000 ndcg@5=0.6984
+  hit@10=true recall@10=1.0000 ndcg@10=0.8613
+- section_lookup_19753087203864833_tool_包健康度评估与优化计划___三、问题清单（按严重程度排列）___p0_—_代码重复（双重维护风险）___3.1_`nextaction*`_函数在两处重复定义 target=section rr=0.2500 firstRelevantRank=4
+  hit@1=false recall@1=0.0000 ndcg@1=0.0000
+  hit@3=false recall@3=0.0000 ndcg@3=0.0000
+  hit@5=true recall@5=1.0000 ndcg@5=0.8175
+  hit@10=true recall@10=1.0000 ndcg@10=0.8175
+- section_semantic_19753087203864833_tool_包健康度评估与优化计划___三、问题清单（按严重程度排列）___p0_—_代码重复（双重维护风险）___3.1_`nextaction*`_函数在两处重复定义 target=chunk rr=1.0000 firstRelevantRank=1
+  hit@1=true recall@1=0.5000 ndcg@1=1.0000
+  hit@3=true recall@3=1.0000 ndcg@3=0.9558
+  hit@5=true recall@5=1.0000 ndcg@5=0.9558
+  hit@10=true recall@10=1.0000 ndcg@10=0.9558

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
 func TestDocumentIngestionDiagnoseBehaviorNextObserveAndGuidance(t *testing.T) {
@@ -125,7 +127,7 @@ func TestGraphBehaviorsProvideGuidanceAndCompletion(t *testing.T) {
 		}},
 	}
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -180,7 +182,7 @@ func TestDocumentDiagnoseWithSearchBehaviorGuidance(t *testing.T) {
 		Family:              "graph",
 	}, DocumentDiagnoseWithSearchBehavior()).Module())
 
-	guidance := BuildAnswerGuidanceWithRegistry(registry, []Result{result})
+	guidance := ragruntime.BuildAnswerGuidanceWithRegistry(registry, []Result{result})
 	if !strings.Contains(guidance, "connection refused troubleshooting") {
 		t.Fatalf("expected search query in diagnose+search guidance, got %q", guidance)
 	}

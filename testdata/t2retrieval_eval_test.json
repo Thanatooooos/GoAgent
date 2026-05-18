@@ -1,0 +1,79 @@
+{
+  "samples": [
+    {
+      "name": "test_159475",
+      "query": "passage 159475",
+      "tags": [
+        "t2retrieval",
+        "test"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19620272135074049"
+      ],
+      "retrieved": [],
+      "searchMode": "hybrid",
+      "topK": 5
+    },
+    {
+      "name": "test_219110",
+      "query": "passage 219110",
+      "tags": [
+        "t2retrieval",
+        "test"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19620272151851265"
+      ],
+      "retrieved": [],
+      "searchMode": "hybrid",
+      "topK": 5
+    },
+    {
+      "name": "test_221806",
+      "query": "passage 221806",
+      "tags": [
+        "t2retrieval",
+        "test"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19620272151982337"
+      ],
+      "retrieved": [],
+      "searchMode": "hybrid",
+      "topK": 5
+    },
+    {
+      "name": "test_464464",
+      "query": "passage 464464",
+      "tags": [
+        "t2retrieval",
+        "test"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19620272168628481"
+      ],
+      "retrieved": [],
+      "searchMode": "hybrid",
+      "topK": 5
+    },
+    {
+      "name": "test_190963",
+      "query": "passage 190963",
+      "tags": [
+        "t2retrieval",
+        "test"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19620272185405697"
+      ],
+      "retrieved": [],
+      "searchMode": "hybrid",
+      "topK": 5
+    }
+  ]
+}

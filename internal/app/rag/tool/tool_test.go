@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	ragcore "local/rag-project/internal/app/rag/tool/core"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 	"local/rag-project/internal/framework/convention"
 )
 
@@ -226,7 +228,7 @@ func TestExecutorExecuteSuccess(t *testing.T) {
 		t.Fatalf("register tool: %v", err)
 	}
 
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	result, err := executor.Execute(context.Background(), Call{
 		Name: "document_query",
 		Arguments: map[string]any{
@@ -271,7 +273,7 @@ func TestExecutorExecuteFailure(t *testing.T) {
 		t.Fatalf("register tool: %v", err)
 	}
 
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	result, err := executor.Execute(context.Background(), Call{Name: "trace_node_query"})
 	if err == nil {
 		t.Fatal("expected execution error")
@@ -285,7 +287,7 @@ func TestExecutorExecuteFailure(t *testing.T) {
 }
 
 func TestExecutorExecuteUnknownTool(t *testing.T) {
-	executor := NewExecutor(NewRegistry())
+	executor := ragruntime.NewExecutor(NewRegistry())
 	result, err := executor.Execute(context.Background(), Call{Name: "missing_tool"})
 	if err == nil {
 		t.Fatal("expected unknown tool error")
@@ -763,22 +765,22 @@ func TestDeriveWorkflowControlFallsBackToLegacyToolSpec(t *testing.T) {
 }
 
 func TestFirstMatchedIDRequiresStructuredIdentifiers(t *testing.T) {
-	if got := firstMatchedID(documentIDPattern, "document doc_run_01 对应的最新 ingestion task 现在是什么状态？"); got != "doc_run_01" {
+	if got := ragcore.FirstMatchedID(ragcore.DocumentIDPattern, "document doc_run_01 对应的最新 ingestion task 现在是什么状态？"); got != "doc_run_01" {
 		t.Fatalf("expected doc_run_01, got %q", got)
 	}
-	if got := firstMatchedID(documentIDPattern, "document 当前状态是什么"); got != "" {
+	if got := ragcore.FirstMatchedID(ragcore.DocumentIDPattern, "document 当前状态是什么"); got != "" {
 		t.Fatalf("expected plain keyword document to not be treated as id, got %q", got)
 	}
-	if got := firstMatchedID(taskIDPattern, "task task_run_01 当前还在运行吗"); got != "task_run_01" {
+	if got := ragcore.FirstMatchedID(ragcore.TaskIDPattern, "task task_run_01 当前还在运行吗"); got != "task_run_01" {
 		t.Fatalf("expected task_run_01, got %q", got)
 	}
-	if got := firstMatchedID(taskIDPattern, "task 当前状态是什么"); got != "" {
+	if got := ragcore.FirstMatchedID(ragcore.TaskIDPattern, "task 当前状态是什么"); got != "" {
 		t.Fatalf("expected plain keyword task to not be treated as id, got %q", got)
 	}
-	if got := firstMatchedID(traceIDPattern, "trace trace_bad_01 为什么检索效果差"); got != "trace_bad_01" {
+	if got := ragcore.FirstMatchedID(ragcore.TraceIDPattern, "trace trace_bad_01 为什么检索效果差"); got != "trace_bad_01" {
 		t.Fatalf("expected trace_bad_01, got %q", got)
 	}
-	if got := firstMatchedID(traceIDPattern, "trace 当前情况如何"); got != "" {
+	if got := ragcore.FirstMatchedID(ragcore.TraceIDPattern, "trace 当前情况如何"); got != "" {
 		t.Fatalf("expected plain keyword trace to not be treated as id, got %q", got)
 	}
 }

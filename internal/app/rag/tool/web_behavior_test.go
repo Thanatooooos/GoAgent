@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
 func TestWebSearchBehaviorDecodeAndNext(t *testing.T) {
@@ -183,7 +185,7 @@ func TestRuleObserverUsesRegistryBehaviorForExternalEvidenceWorkflow(t *testing.
 		Family:              "web",
 	}, ExternalEvidenceWorkflowBehavior()).Module())
 
-	observation, err := NewRuleObserver().Observe(context.Background(), ObserveInput{
+	observation, err := ragruntime.NewRuleObserver().Observe(context.Background(), ObserveInput{
 		RoundResults: []Result{{
 			Name:    "external_evidence_workflow",
 			Status:  CallStatusSuccess,
@@ -269,7 +271,7 @@ func TestAgentLoopWebModulesUseBehaviorDrivenContinuation(t *testing.T) {
 		},
 	}
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{

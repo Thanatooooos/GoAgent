@@ -1,0 +1,5511 @@
+{
+  "meta": {
+    "dataset": "C-MTEB/T2Retrieval",
+    "output_prefix": "t2retrieval_10k",
+    "passage_count": 10000,
+    "passage_avg_chars": 590.9,
+    "sample_count": 222,
+    "avg_relevant_per_sample": 4.8,
+    "candidate_query_count": 2227,
+    "sample_strategy": "stratified",
+    "seed": 20260516,
+    "top_k": 10,
+    "passage_filters": {
+      "min_len": 80,
+      "max_len": 2000,
+      "skipped_short": 581,
+      "skipped_long": 1145
+    },
+    "candidate_bucket_distribution": {
+      "1": 401,
+      "2-3": 662,
+      "4-7": 789,
+      "8+": 375
+    },
+    "selected_bucket_distribution": {
+      "1": 56,
+      "2-3": 56,
+      "4-7": 55,
+      "8+": 55
+    },
+    "relevance_grades": [
+      1
+    ]
+  },
+  "samples": [
+    {
+      "name": "t2_1387",
+      "query": "海口新港的水有多深",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "582845"
+      ],
+      "expectedRelevance": {
+        "582845": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_272",
+      "query": "牛肉炖板栗是生的吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "260716",
+        "293247",
+        "572454"
+      ],
+      "expectedRelevance": {
+        "260716": 1,
+        "293247": 1,
+        "572454": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1560",
+      "query": "麒麟芯片和美国有什么关系",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "2273",
+        "349895",
+        "662575",
+        "72975"
+      ],
+      "expectedRelevance": {
+        "2273": 1,
+        "349895": 1,
+        "662575": 1,
+        "72975": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2437",
+      "query": "过量酒精令血糖浓度下降的原因",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "150706",
+        "175498",
+        "175499",
+        "207676",
+        "41892",
+        "595089",
+        "600236",
+        "86854"
+      ],
+      "expectedRelevance": {
+        "150706": 1,
+        "175498": 1,
+        "175499": 1,
+        "207676": 1,
+        "41892": 1,
+        "595089": 1,
+        "600236": 1,
+        "86854": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2700",
+      "query": "如何在网上兼职赚钱",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "287961"
+      ],
+      "expectedRelevance": {
+        "287961": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2276",
+      "query": "尿在子宫里好不好",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "328046",
+        "3365"
+      ],
+      "expectedRelevance": {
+        "328046": 1,
+        "3365": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_84",
+      "query": "月有阴晴圆缺的意义",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "131",
+        "415427",
+        "435952",
+        "539147",
+        "664404",
+        "711438",
+        "711440"
+      ],
+      "expectedRelevance": {
+        "131": 1,
+        "415427": 1,
+        "435952": 1,
+        "539147": 1,
+        "664404": 1,
+        "711438": 1,
+        "711440": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2075",
+      "query": "今天为什么拉防空警报",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "109534",
+        "461621",
+        "575076",
+        "59293",
+        "649296",
+        "649297",
+        "739094",
+        "739096"
+      ],
+      "expectedRelevance": {
+        "109534": 1,
+        "461621": 1,
+        "575076": 1,
+        "59293": 1,
+        "649296": 1,
+        "649297": 1,
+        "739094": 1,
+        "739096": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1107",
+      "query": "我们相爱吧第二季评价",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "140622"
+      ],
+      "expectedRelevance": {
+        "140622": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1101",
+      "query": "植骨三个月后走路疼正常吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "321075",
+        "328816",
+        "459857"
+      ],
+      "expectedRelevance": {
+        "321075": 1,
+        "328816": 1,
+        "459857": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_853",
+      "query": "750w电源推荐",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "201353",
+        "231299",
+        "406659",
+        "680031"
+      ],
+      "expectedRelevance": {
+        "201353": 1,
+        "231299": 1,
+        "406659": 1,
+        "680031": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_600",
+      "query": "刺鼻的塑料味和甲胎蛋白偏高有关",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "104406",
+        "192848",
+        "358370",
+        "365126",
+        "478398",
+        "711593",
+        "711594",
+        "873"
+      ],
+      "expectedRelevance": {
+        "104406": 1,
+        "192848": 1,
+        "358370": 1,
+        "365126": 1,
+        "478398": 1,
+        "711593": 1,
+        "711594": 1,
+        "873": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1308",
+      "query": "东北 疑问句",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "45850"
+      ],
+      "expectedRelevance": {
+        "45850": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_487",
+      "query": "预算盈余bs公式",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "237512",
+        "471129",
+        "634181"
+      ],
+      "expectedRelevance": {
+        "237512": 1,
+        "471129": 1,
+        "634181": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1647",
+      "query": "延长石油榆林煤化公司待遇怎样",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "121528",
+        "170449",
+        "2412",
+        "286708",
+        "374516",
+        "403085"
+      ],
+      "expectedRelevance": {
+        "121528": 1,
+        "170449": 1,
+        "2412": 1,
+        "286708": 1,
+        "374516": 1,
+        "403085": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1048",
+      "query": "发际线高了怎么恢复",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1528",
+        "26813",
+        "276924",
+        "27914",
+        "366598",
+        "366601",
+        "478772",
+        "642546",
+        "6885",
+        "757656"
+      ],
+      "expectedRelevance": {
+        "1528": 1,
+        "26813": 1,
+        "276924": 1,
+        "27914": 1,
+        "366598": 1,
+        "366601": 1,
+        "478772": 1,
+        "642546": 1,
+        "6885": 1,
+        "757656": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1438",
+      "query": "谭诺是什么牌的鞋",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "289177"
+      ],
+      "expectedRelevance": {
+        "289177": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2174",
+      "query": "石材切割加工费",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "160288",
+        "160289",
+        "3196"
+      ],
+      "expectedRelevance": {
+        "160288": 1,
+        "160289": 1,
+        "3196": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_943",
+      "query": "美的洗衣机排水泵拆解图",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1366",
+        "20145",
+        "223398",
+        "229383",
+        "488671",
+        "488672",
+        "669641"
+      ],
+      "expectedRelevance": {
+        "1366": 1,
+        "20145": 1,
+        "223398": 1,
+        "229383": 1,
+        "488671": 1,
+        "488672": 1,
+        "669641": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1736",
+      "query": "红酒和田七可以一起吃吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "138905",
+        "212049",
+        "212052",
+        "342924",
+        "505897",
+        "593763",
+        "652528",
+        "70846"
+      ],
+      "expectedRelevance": {
+        "138905": 1,
+        "212049": 1,
+        "212052": 1,
+        "342924": 1,
+        "505897": 1,
+        "593763": 1,
+        "652528": 1,
+        "70846": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1546",
+      "query": "5天中药对精子有效果吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "2255"
+      ],
+      "expectedRelevance": {
+        "2255": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_586",
+      "query": "和街机一样人物的电影",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "366669",
+        "856"
+      ],
+      "expectedRelevance": {
+        "366669": 1,
+        "856": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2338",
+      "query": "微信难一点的密码6位数",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "293267",
+        "322963",
+        "444187",
+        "714826"
+      ],
+      "expectedRelevance": {
+        "293267": 1,
+        "322963": 1,
+        "444187": 1,
+        "714826": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1840",
+      "query": "大虾的营养价值及功效",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "106494",
+        "120707",
+        "120708",
+        "158927",
+        "2681",
+        "2682",
+        "284274",
+        "367005",
+        "435114",
+        "513939",
+        "513940",
+        "710842",
+        "710843"
+      ],
+      "expectedRelevance": {
+        "106494": 1,
+        "120707": 1,
+        "120708": 1,
+        "158927": 1,
+        "2681": 1,
+        "2682": 1,
+        "284274": 1,
+        "367005": 1,
+        "435114": 1,
+        "513939": 1,
+        "513940": 1,
+        "710842": 1,
+        "710843": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1664",
+      "query": "心累了欠别人钱好想自寻短见怎么办",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "335162"
+      ],
+      "expectedRelevance": {
+        "335162": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_318",
+      "query": "吃甲亢药大便绿色",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "171249",
+        "696804",
+        "711748"
+      ],
+      "expectedRelevance": {
+        "171249": 1,
+        "696804": 1,
+        "711748": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2391",
+      "query": "中山妇科炎症严重吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "196006",
+        "279292",
+        "299950",
+        "416187",
+        "416188"
+      ],
+      "expectedRelevance": {
+        "196006": 1,
+        "279292": 1,
+        "299950": 1,
+        "416187": 1,
+        "416188": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_273",
+      "query": "显示屏大小怎么算尺寸",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "193512",
+        "273592",
+        "33886",
+        "404",
+        "651067",
+        "683384",
+        "697301",
+        "9118"
+      ],
+      "expectedRelevance": {
+        "193512": 1,
+        "273592": 1,
+        "33886": 1,
+        "404": 1,
+        "651067": 1,
+        "683384": 1,
+        "697301": 1,
+        "9118": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_480",
+      "query": "10号染色体增多,17号染色体减少",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "282095"
+      ],
+      "expectedRelevance": {
+        "282095": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1143",
+      "query": "蜡烛位置不同燃烧时间不一样为什么",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1653",
+        "736998"
+      ],
+      "expectedRelevance": {
+        "1653": 1,
+        "736998": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2462",
+      "query": "淘宝特价版线下开店",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "358720",
+        "3642",
+        "523304",
+        "604618"
+      ],
+      "expectedRelevance": {
+        "358720": 1,
+        "3642": 1,
+        "523304": 1,
+        "604618": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_535",
+      "query": "婴儿出生三天有什么讲究",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "127069",
+        "481330",
+        "567868",
+        "567869",
+        "572060",
+        "648488",
+        "708030",
+        "775"
+      ],
+      "expectedRelevance": {
+        "127069": 1,
+        "481330": 1,
+        "567868": 1,
+        "567869": 1,
+        "572060": 1,
+        "648488": 1,
+        "708030": 1,
+        "775": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_62",
+      "query": "游戏主播七喵是男的还是女的",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "171426"
+      ],
+      "expectedRelevance": {
+        "171426": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1285",
+      "query": "星露谷家旁边的箱子上干嘛的",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "290088",
+        "56978"
+      ],
+      "expectedRelevance": {
+        "290088": 1,
+        "56978": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1538",
+      "query": "建设单位竣工验收注意事项",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "158942",
+        "2246",
+        "366514",
+        "486476",
+        "535368",
+        "84913"
+      ],
+      "expectedRelevance": {
+        "158942": 1,
+        "2246": 1,
+        "366514": 1,
+        "486476": 1,
+        "535368": 1,
+        "84913": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2456",
+      "query": "八仙的实力和孙悟空",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "114953",
+        "132246",
+        "192631",
+        "314020",
+        "3635",
+        "364866",
+        "463393",
+        "636409",
+        "684460"
+      ],
+      "expectedRelevance": {
+        "114953": 1,
+        "132246": 1,
+        "192631": 1,
+        "314020": 1,
+        "3635": 1,
+        "364866": 1,
+        "463393": 1,
+        "636409": 1,
+        "684460": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1537",
+      "query": "坐牢一年多回来折腾我一晚上",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "372181"
+      ],
+      "expectedRelevance": {
+        "372181": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1867",
+      "query": "好喝的海鲜粥",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "289451",
+        "754925"
+      ],
+      "expectedRelevance": {
+        "289451": 1,
+        "754925": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2046",
+      "query": "完全平方公式",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "118377",
+        "151097",
+        "309402",
+        "309414",
+        "660719",
+        "752644"
+      ],
+      "expectedRelevance": {
+        "118377": 1,
+        "151097": 1,
+        "309402": 1,
+        "309414": 1,
+        "660719": 1,
+        "752644": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2261",
+      "query": "宝鸡的葡萄啥时候熟",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "149007",
+        "3341",
+        "549415",
+        "558089",
+        "594826",
+        "99299",
+        "99507",
+        "99508"
+      ],
+      "expectedRelevance": {
+        "149007": 1,
+        "3341": 1,
+        "549415": 1,
+        "558089": 1,
+        "594826": 1,
+        "99299": 1,
+        "99507": 1,
+        "99508": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1069",
+      "query": "草头天子打一肖",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "306769"
+      ],
+      "expectedRelevance": {
+        "306769": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_494",
+      "query": "小蓝软件app叫什么名字",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "453275",
+        "571941",
+        "571942"
+      ],
+      "expectedRelevance": {
+        "453275": 1,
+        "571941": 1,
+        "571942": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2133",
+      "query": "机芯手表种类",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "129267",
+        "13726",
+        "367460",
+        "71010",
+        "725287"
+      ],
+      "expectedRelevance": {
+        "129267": 1,
+        "13726": 1,
+        "367460": 1,
+        "71010": 1,
+        "725287": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1413",
+      "query": "菲律宾水果特产",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "138054",
+        "144006",
+        "144007",
+        "145702",
+        "145703",
+        "194237",
+        "194239",
+        "2048",
+        "401017",
+        "403458",
+        "403463",
+        "403464",
+        "403465",
+        "411302",
+        "591895"
+      ],
+      "expectedRelevance": {
+        "138054": 1,
+        "144006": 1,
+        "144007": 1,
+        "145702": 1,
+        "145703": 1,
+        "194237": 1,
+        "194239": 1,
+        "2048": 1,
+        "401017": 1,
+        "403458": 1,
+        "403463": 1,
+        "403464": 1,
+        "403465": 1,
+        "411302": 1,
+        "591895": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_20517",
+      "query": "啤酒花的功效与作用",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "554649"
+      ],
+      "expectedRelevance": {
+        "554649": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_551",
+      "query": "120救护车是手动挡还是自动挡",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "494083",
+        "641841"
+      ],
+      "expectedRelevance": {
+        "494083": 1,
+        "641841": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1407",
+      "query": "网上成人用品是真的吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "34430",
+        "34431",
+        "34441",
+        "613120",
+        "648756"
+      ],
+      "expectedRelevance": {
+        "34430": 1,
+        "34431": 1,
+        "34441": 1,
+        "613120": 1,
+        "648756": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1835",
+      "query": "长沙中考加分政策2021",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "198814",
+        "224459",
+        "224460",
+        "282145",
+        "417198",
+        "53483",
+        "680262",
+        "708949"
+      ],
+      "expectedRelevance": {
+        "198814": 1,
+        "224459": 1,
+        "224460": 1,
+        "282145": 1,
+        "417198": 1,
+        "53483": 1,
+        "680262": 1,
+        "708949": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1371",
+      "query": "开户许可证变成一张纸",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "390501"
+      ],
+      "expectedRelevance": {
+        "390501": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1192",
+      "query": "什么样的粽子动词形容",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "140751",
+        "650816"
+      ],
+      "expectedRelevance": {
+        "140751": 1,
+        "650816": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_755",
+      "query": "花韭和风雨兰区别",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1097",
+        "204269",
+        "252427",
+        "302837",
+        "302838",
+        "313710",
+        "618744"
+      ],
+      "expectedRelevance": {
+        "1097": 1,
+        "204269": 1,
+        "252427": 1,
+        "302837": 1,
+        "302838": 1,
+        "313710": 1,
+        "618744": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1620",
+      "query": "孕妇水痘的症状和治疗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "173705",
+        "174685",
+        "174686",
+        "174687",
+        "174688",
+        "194606",
+        "215699",
+        "251733",
+        "282640",
+        "596148",
+        "650316",
+        "741109"
+      ],
+      "expectedRelevance": {
+        "173705": 1,
+        "174685": 1,
+        "174686": 1,
+        "174687": 1,
+        "174688": 1,
+        "194606": 1,
+        "215699": 1,
+        "251733": 1,
+        "282640": 1,
+        "596148": 1,
+        "650316": 1,
+        "741109": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_766",
+      "query": "陈乔恩版笑傲江湖令狐冲第几集杀东方不败",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "544941"
+      ],
+      "expectedRelevance": {
+        "544941": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_862",
+      "query": "pos机可以连续刷卡吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1246",
+        "58265"
+      ],
+      "expectedRelevance": {
+        "1246": 1,
+        "58265": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2301",
+      "query": "正常人偶尔吃一次金戈的感受",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "212094",
+        "249052",
+        "403024",
+        "467797",
+        "469177",
+        "571071",
+        "77056"
+      ],
+      "expectedRelevance": {
+        "212094": 1,
+        "249052": 1,
+        "403024": 1,
+        "467797": 1,
+        "469177": 1,
+        "571071": 1,
+        "77056": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1845",
+      "query": "袋鼠妈妈的护肤品怎么样",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "136681",
+        "150709",
+        "150710",
+        "174021",
+        "177666",
+        "2690",
+        "2691",
+        "2693",
+        "2694",
+        "2696",
+        "2697",
+        "2698",
+        "343250",
+        "536879",
+        "630233",
+        "636698"
+      ],
+      "expectedRelevance": {
+        "136681": 1,
+        "150709": 1,
+        "150710": 1,
+        "174021": 1,
+        "177666": 1,
+        "2690": 1,
+        "2691": 1,
+        "2693": 1,
+        "2694": 1,
+        "2696": 1,
+        "2697": 1,
+        "2698": 1,
+        "343250": 1,
+        "536879": 1,
+        "630233": 1,
+        "636698": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2259",
+      "query": "顺义货车禁行分类吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "21710"
+      ],
+      "expectedRelevance": {
+        "21710": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_444",
+      "query": "女孩说110是什么意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "27607",
+        "646"
+      ],
+      "expectedRelevance": {
+        "27607": 1,
+        "646": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_997",
+      "query": "孕十二周做完nt后,腹部疼痛",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1450",
+        "172767",
+        "457576",
+        "470073"
+      ],
+      "expectedRelevance": {
+        "1450": 1,
+        "172767": 1,
+        "457576": 1,
+        "470073": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1555",
+      "query": "空腹吃完榴莲可以喝牛奶吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "206319",
+        "2265",
+        "256642",
+        "269946",
+        "353207",
+        "391789",
+        "560042",
+        "562455"
+      ],
+      "expectedRelevance": {
+        "206319": 1,
+        "2265": 1,
+        "256642": 1,
+        "269946": 1,
+        "353207": 1,
+        "391789": 1,
+        "560042": 1,
+        "562455": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1606",
+      "query": "安医开的洗发水品牌",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "85597"
+      ],
+      "expectedRelevance": {
+        "85597": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1615",
+      "query": "老公每天给你做早饭是爱你吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "591655",
+        "643361"
+      ],
+      "expectedRelevance": {
+        "591655": 1,
+        "643361": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2403",
+      "query": "鲁大师有硬盘检测工具么",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "304965",
+        "3553",
+        "409999",
+        "410326",
+        "432841",
+        "470623",
+        "658952"
+      ],
+      "expectedRelevance": {
+        "304965": 1,
+        "3553": 1,
+        "409999": 1,
+        "410326": 1,
+        "432841": 1,
+        "470623": 1,
+        "658952": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_621",
+      "query": "发朋友圈晒礼物的短语",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "39238",
+        "403346",
+        "407397",
+        "435314",
+        "476549",
+        "543840",
+        "612088",
+        "907",
+        "93764"
+      ],
+      "expectedRelevance": {
+        "39238": 1,
+        "403346": 1,
+        "407397": 1,
+        "435314": 1,
+        "476549": 1,
+        "543840": 1,
+        "612088": 1,
+        "907": 1,
+        "93764": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1241",
+      "query": "今年开考焊工证的省份",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "573015"
+      ],
+      "expectedRelevance": {
+        "573015": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1559",
+      "query": "大学生实习地方可以经常请假吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "175745",
+        "2271",
+        "648354"
+      ],
+      "expectedRelevance": {
+        "175745": 1,
+        "2271": 1,
+        "648354": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1248",
+      "query": "楼房的水管冻了用泵可以喝上水来吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "167060",
+        "167061",
+        "173102",
+        "248419",
+        "312167"
+      ],
+      "expectedRelevance": {
+        "167060": 1,
+        "167061": 1,
+        "173102": 1,
+        "248419": 1,
+        "312167": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_376",
+      "query": "回老家扫墓的说说",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "108804",
+        "114655",
+        "264908",
+        "542279",
+        "557",
+        "558",
+        "591610",
+        "679352",
+        "754586",
+        "754587",
+        "754588"
+      ],
+      "expectedRelevance": {
+        "108804": 1,
+        "114655": 1,
+        "264908": 1,
+        "542279": 1,
+        "557": 1,
+        "558": 1,
+        "591610": 1,
+        "679352": 1,
+        "754586": 1,
+        "754587": 1,
+        "754588": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1857",
+      "query": "华为自带的播放器为何播放的过程中经常停止呢",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "367778"
+      ],
+      "expectedRelevance": {
+        "367778": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_990",
+      "query": "古代七国地图分布",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "141518",
+        "733662"
+      ],
+      "expectedRelevance": {
+        "141518": 1,
+        "733662": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1337",
+      "query": "质保书岗位对司机的态度",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1942",
+        "288654",
+        "288655",
+        "759907"
+      ],
+      "expectedRelevance": {
+        "1942": 1,
+        "288654": 1,
+        "288655": 1,
+        "759907": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_678",
+      "query": "城商银行好吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "154047",
+        "250948",
+        "314902",
+        "52696",
+        "630912",
+        "718544",
+        "718546",
+        "718548",
+        "718549",
+        "718550",
+        "997"
+      ],
+      "expectedRelevance": {
+        "154047": 1,
+        "250948": 1,
+        "314902": 1,
+        "52696": 1,
+        "630912": 1,
+        "718544": 1,
+        "718546": 1,
+        "718548": 1,
+        "718549": 1,
+        "718550": 1,
+        "997": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1301",
+      "query": "平板分辨率能升级吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "310197"
+      ],
+      "expectedRelevance": {
+        "310197": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1569",
+      "query": "左侧颈内动脉瘤开颅手术需要开多大的口",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "136491",
+        "713634"
+      ],
+      "expectedRelevance": {
+        "136491": 1,
+        "713634": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_126",
+      "query": "祝朋友2020年越来越好的句子",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "179977",
+        "188",
+        "368387",
+        "601005",
+        "601006"
+      ],
+      "expectedRelevance": {
+        "179977": 1,
+        "188": 1,
+        "368387": 1,
+        "601005": 1,
+        "601006": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_574",
+      "query": "希望老师与家长多沟通",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "403466",
+        "403467",
+        "412845",
+        "412847",
+        "591897",
+        "612460",
+        "6158",
+        "641864",
+        "641865",
+        "732953",
+        "762067",
+        "835"
+      ],
+      "expectedRelevance": {
+        "403466": 1,
+        "403467": 1,
+        "412845": 1,
+        "412847": 1,
+        "591897": 1,
+        "612460": 1,
+        "6158": 1,
+        "641864": 1,
+        "641865": 1,
+        "732953": 1,
+        "762067": 1,
+        "835": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2302",
+      "query": "半泽直树 百度网盘",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "289393"
+      ],
+      "expectedRelevance": {
+        "289393": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1087",
+      "query": "还房算共同财产吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "198967",
+        "284191",
+        "621906"
+      ],
+      "expectedRelevance": {
+        "198967": 1,
+        "284191": 1,
+        "621906": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1112",
+      "query": "组织生活会流程",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1618",
+        "272835",
+        "383444",
+        "658778",
+        "69296"
+      ],
+      "expectedRelevance": {
+        "1618": 1,
+        "272835": 1,
+        "383444": 1,
+        "658778": 1,
+        "69296": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_150",
+      "query": "什么是红色革命",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "335996",
+        "335997",
+        "393004",
+        "393005",
+        "393006",
+        "393007",
+        "393008",
+        "535362",
+        "700089",
+        "701015",
+        "734111"
+      ],
+      "expectedRelevance": {
+        "335996": 1,
+        "335997": 1,
+        "393004": 1,
+        "393005": 1,
+        "393006": 1,
+        "393007": 1,
+        "393008": 1,
+        "535362": 1,
+        "700089": 1,
+        "701015": 1,
+        "734111": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_312",
+      "query": "佳明导航仪 保修政策怎么样",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "467331"
+      ],
+      "expectedRelevance": {
+        "467331": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2056",
+      "query": "事故树作图是常用的图形符号有三种他们分别是",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "18072",
+        "574125"
+      ],
+      "expectedRelevance": {
+        "18072": 1,
+        "574125": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1106",
+      "query": "病毒病哪种农药最好",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1612",
+        "185875",
+        "40540",
+        "496889",
+        "668891"
+      ],
+      "expectedRelevance": {
+        "1612": 1,
+        "185875": 1,
+        "40540": 1,
+        "496889": 1,
+        "668891": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1200",
+      "query": "pta是什么",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "277986",
+        "277992",
+        "277997",
+        "400005",
+        "404874",
+        "454331",
+        "486844",
+        "491946"
+      ],
+      "expectedRelevance": {
+        "277986": 1,
+        "277992": 1,
+        "277997": 1,
+        "400005": 1,
+        "404874": 1,
+        "454331": 1,
+        "486844": 1,
+        "491946": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_970",
+      "query": "脸注真光有什么好处",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "282645"
+      ],
+      "expectedRelevance": {
+        "282645": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_790",
+      "query": "全美一天花费多少钱",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "259262",
+        "451428"
+      ],
+      "expectedRelevance": {
+        "259262": 1,
+        "451428": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1749",
+      "query": "附加税减免政策2021年",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "159132",
+        "20011",
+        "229248",
+        "421862",
+        "53010"
+      ],
+      "expectedRelevance": {
+        "159132": 1,
+        "20011": 1,
+        "229248": 1,
+        "421862": 1,
+        "53010": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_203",
+      "query": "更年期燥热可以吃逍遥丸缓解吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "109176",
+        "141140",
+        "282",
+        "559828",
+        "591902",
+        "679103",
+        "757339",
+        "757340",
+        "91385"
+      ],
+      "expectedRelevance": {
+        "109176": 1,
+        "141140": 1,
+        "282": 1,
+        "559828": 1,
+        "591902": 1,
+        "679103": 1,
+        "757339": 1,
+        "757340": 1,
+        "91385": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_129",
+      "query": "醉赤壁哪个电视剧插曲",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "503961"
+      ],
+      "expectedRelevance": {
+        "503961": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_85",
+      "query": "短途飞机有免费吃的吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "277171",
+        "484213",
+        "758047"
+      ],
+      "expectedRelevance": {
+        "277171": 1,
+        "484213": 1,
+        "758047": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_859",
+      "query": "怎么提加工资怎么开头",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "231561",
+        "379933",
+        "404425",
+        "467183",
+        "572527",
+        "75113"
+      ],
+      "expectedRelevance": {
+        "231561": 1,
+        "379933": 1,
+        "404425": 1,
+        "467183": 1,
+        "572527": 1,
+        "75113": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1146",
+      "query": "美容院做耳疗的好处",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "140665",
+        "1657",
+        "165958",
+        "172954",
+        "333173",
+        "446409",
+        "559279",
+        "622007"
+      ],
+      "expectedRelevance": {
+        "140665": 1,
+        "1657": 1,
+        "165958": 1,
+        "172954": 1,
+        "333173": 1,
+        "446409": 1,
+        "559279": 1,
+        "622007": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1228",
+      "query": "营业部注销起诉总公司",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "351727"
+      ],
+      "expectedRelevance": {
+        "351727": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_635",
+      "query": "abandoned的动词",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "158844",
+        "185930"
+      ],
+      "expectedRelevance": {
+        "158844": 1,
+        "185930": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1886",
+      "query": "玉强的含义",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "298005",
+        "444740",
+        "643745",
+        "86004"
+      ],
+      "expectedRelevance": {
+        "298005": 1,
+        "444740": 1,
+        "643745": 1,
+        "86004": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_95",
+      "query": "儿菜的营养价值及功效",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "155",
+        "172837",
+        "192229",
+        "27118",
+        "359156",
+        "359157",
+        "363372",
+        "365815",
+        "365816",
+        "516529",
+        "532337",
+        "667653"
+      ],
+      "expectedRelevance": {
+        "155": 1,
+        "172837": 1,
+        "192229": 1,
+        "27118": 1,
+        "359156": 1,
+        "359157": 1,
+        "363372": 1,
+        "365815": 1,
+        "365816": 1,
+        "516529": 1,
+        "532337": 1,
+        "667653": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1483",
+      "query": "可以在朋友圈发民生频道的截图不",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "164292"
+      ],
+      "expectedRelevance": {
+        "164292": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_159",
+      "query": "可以喝的花汁",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "228",
+        "597730",
+        "656359"
+      ],
+      "expectedRelevance": {
+        "228": 1,
+        "597730": 1,
+        "656359": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1622",
+      "query": "周边公园那里比较好玩",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "132835",
+        "142637",
+        "194396",
+        "397222"
+      ],
+      "expectedRelevance": {
+        "132835": 1,
+        "142637": 1,
+        "194396": 1,
+        "397222": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1259",
+      "query": "毛衣缩水了怎么恢复正常",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "111246",
+        "125187",
+        "1829",
+        "2040",
+        "2041",
+        "283364",
+        "356960",
+        "388784",
+        "450665",
+        "529985",
+        "549244"
+      ],
+      "expectedRelevance": {
+        "111246": 1,
+        "125187": 1,
+        "1829": 1,
+        "2040": 1,
+        "2041": 1,
+        "283364": 1,
+        "356960": 1,
+        "388784": 1,
+        "450665": 1,
+        "529985": 1,
+        "549244": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_12304",
+      "query": "改造方案结尾怎么写",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "482514"
+      ],
+      "expectedRelevance": {
+        "482514": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2051",
+      "query": "一盒一分硬币是多少枚",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "119900",
+        "350770",
+        "643984"
+      ],
+      "expectedRelevance": {
+        "119900": 1,
+        "350770": 1,
+        "643984": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1623",
+      "query": "描述几种抽象为图结构的数据或场景",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "149331",
+        "149332",
+        "149333",
+        "176212",
+        "226294"
+      ],
+      "expectedRelevance": {
+        "149331": 1,
+        "149332": 1,
+        "149333": 1,
+        "176212": 1,
+        "226294": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1859",
+      "query": "总觉得睡不够",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "120089",
+        "123216",
+        "237745",
+        "2713",
+        "483573",
+        "561327",
+        "592150",
+        "96195"
+      ],
+      "expectedRelevance": {
+        "120089": 1,
+        "123216": 1,
+        "237745": 1,
+        "2713": 1,
+        "483573": 1,
+        "561327": 1,
+        "592150": 1,
+        "96195": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1774",
+      "query": "抚养费为什么两个账号",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "415477"
+      ],
+      "expectedRelevance": {
+        "415477": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_604",
+      "query": "如何判断是否烧冷却液",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "273335",
+        "468911",
+        "533770"
+      ],
+      "expectedRelevance": {
+        "273335": 1,
+        "468911": 1,
+        "533770": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2262",
+      "query": "乌兰察布疫苗去哪打",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "360643",
+        "471819",
+        "52079",
+        "714715"
+      ],
+      "expectedRelevance": {
+        "360643": 1,
+        "471819": 1,
+        "52079": 1,
+        "714715": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1093",
+      "query": "招财猫放高处还是低处",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1586",
+        "21891",
+        "354744",
+        "399373",
+        "411919",
+        "461248",
+        "461249",
+        "57292",
+        "600346",
+        "738719",
+        "738720"
+      ],
+      "expectedRelevance": {
+        "1586": 1,
+        "21891": 1,
+        "354744": 1,
+        "399373": 1,
+        "411919": 1,
+        "461248": 1,
+        "461249": 1,
+        "57292": 1,
+        "600346": 1,
+        "738719": 1,
+        "738720": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_11945",
+      "query": "中药材石斛的作用",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "24619"
+      ],
+      "expectedRelevance": {
+        "24619": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2217",
+      "query": "院子里墙用黑色线条好吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "13539",
+        "714644"
+      ],
+      "expectedRelevance": {
+        "13539": 1,
+        "714644": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_361",
+      "query": "资政通鉴哪个版本好",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "197439",
+        "313950",
+        "479461",
+        "554350",
+        "617061",
+        "77606"
+      ],
+      "expectedRelevance": {
+        "197439": 1,
+        "313950": 1,
+        "479461": 1,
+        "554350": 1,
+        "617061": 1,
+        "77606": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_18",
+      "query": "不破楼兰终不还是哪首古诗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1168",
+        "193117",
+        "29",
+        "510668",
+        "623576",
+        "651086",
+        "655144",
+        "678842"
+      ],
+      "expectedRelevance": {
+        "1168": 1,
+        "193117": 1,
+        "29": 1,
+        "510668": 1,
+        "623576": 1,
+        "651086": 1,
+        "655144": 1,
+        "678842": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1153",
+      "query": "雅马哈钢琴yu1x是什么档次的钢琴",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "621129"
+      ],
+      "expectedRelevance": {
+        "621129": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_650",
+      "query": "双色球6红球计算公式",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "612609",
+        "612610",
+        "612611"
+      ],
+      "expectedRelevance": {
+        "612609": 1,
+        "612610": 1,
+        "612611": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1881",
+      "query": "我好久没有烧晚饭了说说",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "137026",
+        "165566",
+        "231235",
+        "258306",
+        "480472",
+        "487369"
+      ],
+      "expectedRelevance": {
+        "137026": 1,
+        "165566": 1,
+        "231235": 1,
+        "258306": 1,
+        "480472": 1,
+        "487369": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_649",
+      "query": "胎停是什么意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "189954",
+        "189957",
+        "189959",
+        "189960",
+        "203088",
+        "210436",
+        "288485",
+        "325707",
+        "376641",
+        "948"
+      ],
+      "expectedRelevance": {
+        "189954": 1,
+        "189957": 1,
+        "189959": 1,
+        "189960": 1,
+        "203088": 1,
+        "210436": 1,
+        "288485": 1,
+        "325707": 1,
+        "376641": 1,
+        "948": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2353",
+      "query": "开学的日子老舍好句",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "473542"
+      ],
+      "expectedRelevance": {
+        "473542": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_593",
+      "query": "微信的手机号是以前注销的",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "296642",
+        "380237"
+      ],
+      "expectedRelevance": {
+        "296642": 1,
+        "380237": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_958",
+      "query": "三家村札记的作者",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "124946",
+        "1390",
+        "172712",
+        "270950",
+        "377887"
+      ],
+      "expectedRelevance": {
+        "124946": 1,
+        "1390": 1,
+        "172712": 1,
+        "270950": 1,
+        "377887": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1828",
+      "query": "手指肚脱皮干裂是什么原因",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "117348",
+        "123729",
+        "149471",
+        "2663",
+        "35759",
+        "410368",
+        "513978",
+        "549793",
+        "714035",
+        "719152"
+      ],
+      "expectedRelevance": {
+        "117348": 1,
+        "123729": 1,
+        "149471": 1,
+        "2663": 1,
+        "35759": 1,
+        "410368": 1,
+        "513978": 1,
+        "549793": 1,
+        "714035": 1,
+        "719152": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2195",
+      "query": "天秤座学业成绩",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "3240"
+      ],
+      "expectedRelevance": {
+        "3240": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_493",
+      "query": "王者荣耀世界冠军冠军获得着",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "565964",
+        "691492",
+        "717961"
+      ],
+      "expectedRelevance": {
+        "565964": 1,
+        "691492": 1,
+        "717961": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1866",
+      "query": "护理执业证类别",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "2723",
+        "580784",
+        "580788",
+        "721700"
+      ],
+      "expectedRelevance": {
+        "2723": 1,
+        "580784": 1,
+        "580788": 1,
+        "721700": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2100",
+      "query": "男生夏天大腿根有红疙瘩",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "232522",
+        "275651",
+        "362145",
+        "475977",
+        "534039",
+        "565577",
+        "644061",
+        "723748"
+      ],
+      "expectedRelevance": {
+        "232522": 1,
+        "275651": 1,
+        "362145": 1,
+        "475977": 1,
+        "534039": 1,
+        "565577": 1,
+        "644061": 1,
+        "723748": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1246",
+      "query": "照片16:9与18:9的区别",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "512362"
+      ],
+      "expectedRelevance": {
+        "512362": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1131",
+      "query": "95017发短信说零钱支付",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1640",
+        "208081"
+      ],
+      "expectedRelevance": {
+        "1640": 1,
+        "208081": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1725",
+      "query": "优秀教师对师范生的作用",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "20569",
+        "350662",
+        "455127",
+        "455130",
+        "664237",
+        "747602"
+      ],
+      "expectedRelevance": {
+        "20569": 1,
+        "350662": 1,
+        "455127": 1,
+        "455130": 1,
+        "664237": 1,
+        "747602": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2486",
+      "query": "怎么样可以挣钱",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "107611",
+        "107612",
+        "150599",
+        "228580",
+        "239320",
+        "246389",
+        "3688",
+        "3689",
+        "444391",
+        "479260",
+        "602985",
+        "602987",
+        "602989",
+        "708918",
+        "81775",
+        "88039"
+      ],
+      "expectedRelevance": {
+        "107611": 1,
+        "107612": 1,
+        "150599": 1,
+        "228580": 1,
+        "239320": 1,
+        "246389": 1,
+        "3688": 1,
+        "3689": 1,
+        "444391": 1,
+        "479260": 1,
+        "602985": 1,
+        "602987": 1,
+        "602989": 1,
+        "708918": 1,
+        "81775": 1,
+        "88039": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_863",
+      "query": "核聚变飞船最大速度",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "415125"
+      ],
+      "expectedRelevance": {
+        "415125": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_710",
+      "query": "谷圈 捆是什么意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "386102",
+        "720510"
+      ],
+      "expectedRelevance": {
+        "386102": 1,
+        "720510": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2291",
+      "query": "白玉菇怎么炒",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "292501",
+        "3383",
+        "496187",
+        "544913",
+        "579572",
+        "94714"
+      ],
+      "expectedRelevance": {
+        "292501": 1,
+        "3383": 1,
+        "496187": 1,
+        "544913": 1,
+        "579572": 1,
+        "94714": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1655",
+      "query": "北京医务人员免票旅游景点有哪些",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "105728",
+        "123507",
+        "145096",
+        "217108",
+        "367875",
+        "598708",
+        "607698",
+        "607701",
+        "628494",
+        "654814",
+        "95395"
+      ],
+      "expectedRelevance": {
+        "105728": 1,
+        "123507": 1,
+        "145096": 1,
+        "217108": 1,
+        "367875": 1,
+        "598708": 1,
+        "607698": 1,
+        "607701": 1,
+        "628494": 1,
+        "654814": 1,
+        "95395": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1994",
+      "query": "乐江电剪刀片65#怎么买",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "271520"
+      ],
+      "expectedRelevance": {
+        "271520": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_816",
+      "query": "aq代表什么航班",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "113383",
+        "307655"
+      ],
+      "expectedRelevance": {
+        "113383": 1,
+        "307655": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_141",
+      "query": "一个月挣多少钱算正常",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "187135",
+        "232721",
+        "282557",
+        "283398",
+        "757256",
+        "91145"
+      ],
+      "expectedRelevance": {
+        "187135": 1,
+        "232721": 1,
+        "282557": 1,
+        "283398": 1,
+        "757256": 1,
+        "91145": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1632",
+      "query": "子宫内膜癌会突然发胖吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "113545",
+        "127129",
+        "146810",
+        "146811",
+        "201397",
+        "2395",
+        "339409",
+        "378081",
+        "434638",
+        "546479",
+        "726952",
+        "85750"
+      ],
+      "expectedRelevance": {
+        "113545": 1,
+        "127129": 1,
+        "146810": 1,
+        "146811": 1,
+        "201397": 1,
+        "2395": 1,
+        "339409": 1,
+        "378081": 1,
+        "434638": 1,
+        "546479": 1,
+        "726952": 1,
+        "85750": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1633",
+      "query": "基金百分之二十收益是多少比如1万元",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "487868"
+      ],
+      "expectedRelevance": {
+        "487868": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2429",
+      "query": "系统振荡的危害",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "207663",
+        "725309"
+      ],
+      "expectedRelevance": {
+        "207663": 1,
+        "725309": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2076",
+      "query": "王力宏唱片销量",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "3050",
+        "367372",
+        "599605",
+        "65695"
+      ],
+      "expectedRelevance": {
+        "3050": 1,
+        "367372": 1,
+        "599605": 1,
+        "65695": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_316",
+      "query": "说明文的顺序",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "155471",
+        "160770",
+        "190061",
+        "610107",
+        "621078",
+        "641534",
+        "641535",
+        "718032"
+      ],
+      "expectedRelevance": {
+        "155471": 1,
+        "160770": 1,
+        "190061": 1,
+        "610107": 1,
+        "621078": 1,
+        "641534": 1,
+        "641535": 1,
+        "718032": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_427",
+      "query": "卖车人不在场需要怎么公证",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "623"
+      ],
+      "expectedRelevance": {
+        "623": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2321",
+      "query": "三七分合伙开甜品店 怎么分帐",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "672303",
+        "672304"
+      ],
+      "expectedRelevance": {
+        "672303": 1,
+        "672304": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1973",
+      "query": "扁腺切除伪膜什么时候脱落",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "125649",
+        "233146",
+        "2891",
+        "530016",
+        "53312",
+        "719568",
+        "91542"
+      ],
+      "expectedRelevance": {
+        "125649": 1,
+        "233146": 1,
+        "2891": 1,
+        "530016": 1,
+        "53312": 1,
+        "719568": 1,
+        "91542": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1548",
+      "query": "梦到隔壁租房怀孕",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "123334",
+        "251614",
+        "295515",
+        "345787",
+        "471597",
+        "486948",
+        "544330",
+        "599737",
+        "655349",
+        "705265"
+      ],
+      "expectedRelevance": {
+        "123334": 1,
+        "251614": 1,
+        "295515": 1,
+        "345787": 1,
+        "471597": 1,
+        "486948": 1,
+        "544330": 1,
+        "599737": 1,
+        "655349": 1,
+        "705265": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1430",
+      "query": "废气中硫化氢采样方法",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "649009"
+      ],
+      "expectedRelevance": {
+        "649009": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1453",
+      "query": "电话备注掌门人啥意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "396307",
+        "702632"
+      ],
+      "expectedRelevance": {
+        "396307": 1,
+        "702632": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2408",
+      "query": "古筝材料用桐木还是黑檀木好",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "174898",
+        "174899",
+        "226933",
+        "305740",
+        "9708"
+      ],
+      "expectedRelevance": {
+        "174898": 1,
+        "174899": 1,
+        "226933": 1,
+        "305740": 1,
+        "9708": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2459",
+      "query": "梦到自己哥的企业着火了",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "11763",
+        "11764",
+        "11765",
+        "183068",
+        "195678",
+        "3639",
+        "367972",
+        "370910",
+        "635920"
+      ],
+      "expectedRelevance": {
+        "11763": 1,
+        "11764": 1,
+        "11765": 1,
+        "183068": 1,
+        "195678": 1,
+        "3639": 1,
+        "367972": 1,
+        "370910": 1,
+        "635920": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1469",
+      "query": "梧州平浪公租房能租多久",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "494246"
+      ],
+      "expectedRelevance": {
+        "494246": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2623",
+      "query": "外阴瘙痒阴唇有小疙瘩很痒",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "181592",
+        "2947"
+      ],
+      "expectedRelevance": {
+        "181592": 1,
+        "2947": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_486",
+      "query": "假期游客遗失物排行榜",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "149728",
+        "149730",
+        "149731",
+        "25938",
+        "25939",
+        "321240",
+        "632038"
+      ],
+      "expectedRelevance": {
+        "149728": 1,
+        "149730": 1,
+        "149731": 1,
+        "25938": 1,
+        "25939": 1,
+        "321240": 1,
+        "632038": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_719",
+      "query": "日出江花红胜火春来江水绿如蓝的意思是什么",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1046",
+        "1047",
+        "193047",
+        "349135",
+        "518663",
+        "518664",
+        "599715",
+        "599716",
+        "599717",
+        "707670",
+        "81108"
+      ],
+      "expectedRelevance": {
+        "1046": 1,
+        "1047": 1,
+        "193047": 1,
+        "349135": 1,
+        "518663": 1,
+        "518664": 1,
+        "599715": 1,
+        "599716": 1,
+        "599717": 1,
+        "707670": 1,
+        "81108": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2010",
+      "query": "coco奶茶训练员的主要工作",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "542625"
+      ],
+      "expectedRelevance": {
+        "542625": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_425",
+      "query": "新四军的兵源是怎么凑够一个军",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "315921",
+        "61509",
+        "61832"
+      ],
+      "expectedRelevance": {
+        "315921": 1,
+        "61509": 1,
+        "61832": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1186",
+      "query": "拘留和死刑的区别",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "15868",
+        "165722",
+        "181893",
+        "231986",
+        "231990",
+        "495583",
+        "532635"
+      ],
+      "expectedRelevance": {
+        "15868": 1,
+        "165722": 1,
+        "181893": 1,
+        "231986": 1,
+        "231990": 1,
+        "495583": 1,
+        "532635": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_526",
+      "query": "元宵节包饺子的意义",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "103344",
+        "108787",
+        "108788",
+        "134103",
+        "172311",
+        "447504",
+        "489027",
+        "489039",
+        "489051",
+        "765",
+        "81546",
+        "81547"
+      ],
+      "expectedRelevance": {
+        "103344": 1,
+        "108787": 1,
+        "108788": 1,
+        "134103": 1,
+        "172311": 1,
+        "447504": 1,
+        "489027": 1,
+        "489039": 1,
+        "489051": 1,
+        "765": 1,
+        "81546": 1,
+        "81547": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_5046",
+      "query": "10种情况不能打新冠疫苗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "295722"
+      ],
+      "expectedRelevance": {
+        "295722": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_562",
+      "query": "芝罘中学的学区房该不该买",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "210263",
+        "592367",
+        "815"
+      ],
+      "expectedRelevance": {
+        "210263": 1,
+        "592367": 1,
+        "815": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2063",
+      "query": "缩阴产品有哪些副作用",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "134592",
+        "3024",
+        "372915",
+        "492711",
+        "681214",
+        "761326"
+      ],
+      "expectedRelevance": {
+        "134592": 1,
+        "3024": 1,
+        "372915": 1,
+        "492711": 1,
+        "681214": 1,
+        "761326": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_252",
+      "query": "城市的养老保障能力是什么",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "121470",
+        "121472",
+        "121474",
+        "121475",
+        "121477",
+        "210666",
+        "290725",
+        "374270",
+        "374271",
+        "38767",
+        "481907",
+        "572195",
+        "711677",
+        "730019"
+      ],
+      "expectedRelevance": {
+        "121470": 1,
+        "121472": 1,
+        "121474": 1,
+        "121475": 1,
+        "121477": 1,
+        "210666": 1,
+        "290725": 1,
+        "374270": 1,
+        "374271": 1,
+        "38767": 1,
+        "481907": 1,
+        "572195": 1,
+        "711677": 1,
+        "730019": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_280",
+      "query": "m1h是什么材质管道",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "204412"
+      ],
+      "expectedRelevance": {
+        "204412": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_712",
+      "query": "重结晶时,如果被提纯物质中含有有色杂质该如何处理",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "443037",
+        "443038",
+        "45235"
+      ],
+      "expectedRelevance": {
+        "443037": 1,
+        "443038": 1,
+        "45235": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1720",
+      "query": "请柬席设什么意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "278848",
+        "329049",
+        "635051",
+        "76347"
+      ],
+      "expectedRelevance": {
+        "278848": 1,
+        "329049": 1,
+        "635051": 1,
+        "76347": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1448",
+      "query": "乳腺结节是啥",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "151709",
+        "151710",
+        "2099",
+        "229401",
+        "405317",
+        "422001",
+        "531581",
+        "573329",
+        "591334",
+        "591335"
+      ],
+      "expectedRelevance": {
+        "151709": 1,
+        "151710": 1,
+        "2099": 1,
+        "229401": 1,
+        "405317": 1,
+        "422001": 1,
+        "531581": 1,
+        "573329": 1,
+        "591334": 1,
+        "591335": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_180",
+      "query": "一天吃深海鱼油一天吃卵磷脂可以吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "379364"
+      ],
+      "expectedRelevance": {
+        "379364": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_192",
+      "query": "2020年还有多久能凉快广东",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "122139",
+        "225570",
+        "53784"
+      ],
+      "expectedRelevance": {
+        "122139": 1,
+        "225570": 1,
+        "53784": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_385",
+      "query": "肝的救星是什么",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "184714",
+        "184720",
+        "187354",
+        "566",
+        "591662",
+        "638915",
+        "72696"
+      ],
+      "expectedRelevance": {
+        "184714": 1,
+        "184720": 1,
+        "187354": 1,
+        "566": 1,
+        "591662": 1,
+        "638915": 1,
+        "72696": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2039",
+      "query": "一换季 头皮屑",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "104319",
+        "174309",
+        "203189",
+        "334515",
+        "340053",
+        "489128",
+        "663021",
+        "715766"
+      ],
+      "expectedRelevance": {
+        "104319": 1,
+        "174309": 1,
+        "203189": 1,
+        "334515": 1,
+        "340053": 1,
+        "489128": 1,
+        "663021": 1,
+        "715766": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1781",
+      "query": "1/[(x^2+3*x+2)^3]不定积分",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "494019"
+      ],
+      "expectedRelevance": {
+        "494019": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_603",
+      "query": "switch塞尔达传说攻略",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "216416",
+        "73624"
+      ],
+      "expectedRelevance": {
+        "216416": 1,
+        "73624": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1746",
+      "query": "春雨是什么样的一年级",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "123587",
+        "173842",
+        "174412",
+        "407565",
+        "412540"
+      ],
+      "expectedRelevance": {
+        "123587": 1,
+        "173842": 1,
+        "174412": 1,
+        "407565": 1,
+        "412540": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_21",
+      "query": "学生会女生部简介",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "132955",
+        "280772",
+        "280786",
+        "298584",
+        "32",
+        "419809",
+        "422871",
+        "603235",
+        "7938"
+      ],
+      "expectedRelevance": {
+        "132955": 1,
+        "280772": 1,
+        "280786": 1,
+        "298584": 1,
+        "32": 1,
+        "419809": 1,
+        "422871": 1,
+        "603235": 1,
+        "7938": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1181",
+      "query": "一个手机里最多能下多少个香肠派对",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "173800"
+      ],
+      "expectedRelevance": {
+        "173800": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_135",
+      "query": "富士xt200好不好",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "536786",
+        "660584",
+        "684138"
+      ],
+      "expectedRelevance": {
+        "536786": 1,
+        "660584": 1,
+        "684138": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_926",
+      "query": "冥钱包封怎么写",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "195712",
+        "511906",
+        "541630",
+        "595127",
+        "630578",
+        "680137",
+        "712670"
+      ],
+      "expectedRelevance": {
+        "195712": 1,
+        "511906": 1,
+        "541630": 1,
+        "595127": 1,
+        "630578": 1,
+        "680137": 1,
+        "712670": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_883",
+      "query": "猫爪草煲瘦肉功效",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1274",
+        "151181",
+        "266436",
+        "266437",
+        "282747",
+        "282752",
+        "282754",
+        "316621",
+        "437664",
+        "712606",
+        "735547"
+      ],
+      "expectedRelevance": {
+        "1274": 1,
+        "151181": 1,
+        "266436": 1,
+        "266437": 1,
+        "282747": 1,
+        "282752": 1,
+        "282754": 1,
+        "316621": 1,
+        "437664": 1,
+        "712606": 1,
+        "735547": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1280",
+      "query": "学校不得查学生日记通讯等",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "625233"
+      ],
+      "expectedRelevance": {
+        "625233": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_988",
+      "query": "新颖小品标题",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "231772",
+        "704734"
+      ],
+      "expectedRelevance": {
+        "231772": 1,
+        "704734": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_277",
+      "query": "腕劳是什么病",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "330604",
+        "409",
+        "419023",
+        "711694",
+        "723321"
+      ],
+      "expectedRelevance": {
+        "330604": 1,
+        "409": 1,
+        "419023": 1,
+        "711694": 1,
+        "723321": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_982",
+      "query": "杨桃什么味道",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "133747",
+        "1422",
+        "333039",
+        "334017",
+        "426379",
+        "584330",
+        "665274",
+        "686107",
+        "712735"
+      ],
+      "expectedRelevance": {
+        "133747": 1,
+        "1422": 1,
+        "333039": 1,
+        "334017": 1,
+        "426379": 1,
+        "584330": 1,
+        "665274": 1,
+        "686107": 1,
+        "712735": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2322",
+      "query": "男人是不是都看不起离婚的女人",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "86652"
+      ],
+      "expectedRelevance": {
+        "86652": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_839",
+      "query": "小度如何计时",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "193987",
+        "41158"
+      ],
+      "expectedRelevance": {
+        "193987": 1,
+        "41158": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1779",
+      "query": "国药疫苗和辉瑞疫苗的区别",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "120508",
+        "157381",
+        "402568",
+        "402569",
+        "405745",
+        "492831",
+        "681346"
+      ],
+      "expectedRelevance": {
+        "120508": 1,
+        "157381": 1,
+        "402568": 1,
+        "402569": 1,
+        "405745": 1,
+        "492831": 1,
+        "681346": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1911",
+      "query": "羽毛球发球姿势有几种",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "116228",
+        "231968",
+        "231969",
+        "2776",
+        "425662",
+        "515698",
+        "571926",
+        "571927",
+        "597609",
+        "621223",
+        "655795",
+        "655800"
+      ],
+      "expectedRelevance": {
+        "116228": 1,
+        "231968": 1,
+        "231969": 1,
+        "2776": 1,
+        "425662": 1,
+        "515698": 1,
+        "571926": 1,
+        "571927": 1,
+        "597609": 1,
+        "621223": 1,
+        "655795": 1,
+        "655800": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1042",
+      "query": "什么地趴着填空",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "332709"
+      ],
+      "expectedRelevance": {
+        "332709": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2166",
+      "query": "杯套怎么钩视频全过程",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "395118",
+        "444516",
+        "631900"
+      ],
+      "expectedRelevance": {
+        "395118": 1,
+        "444516": 1,
+        "631900": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1887",
+      "query": "快手迷人的陈三简介",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "2746",
+        "370399",
+        "385352",
+        "406083",
+        "536621",
+        "92226",
+        "92227"
+      ],
+      "expectedRelevance": {
+        "2746": 1,
+        "370399": 1,
+        "385352": 1,
+        "406083": 1,
+        "536621": 1,
+        "92226": 1,
+        "92227": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_263",
+      "query": "白发如何治疗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "150009",
+        "210227",
+        "255008",
+        "255009",
+        "255010",
+        "392",
+        "408552",
+        "473210",
+        "495762",
+        "576562",
+        "591872",
+        "62908",
+        "684244"
+      ],
+      "expectedRelevance": {
+        "150009": 1,
+        "210227": 1,
+        "255008": 1,
+        "255009": 1,
+        "255010": 1,
+        "392": 1,
+        "408552": 1,
+        "473210": 1,
+        "495762": 1,
+        "576562": 1,
+        "591872": 1,
+        "62908": 1,
+        "684244": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_15142",
+      "query": "之前有过胸膜炎可以接种新冠疫苗吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "32991"
+      ],
+      "expectedRelevance": {
+        "32991": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1667",
+      "query": "重庆哪里买房子性价比高",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "170343",
+        "462309",
+        "643476"
+      ],
+      "expectedRelevance": {
+        "170343": 1,
+        "462309": 1,
+        "643476": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2473",
+      "query": "加密的word公司电脑可以打开",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "225587",
+        "276714",
+        "33745",
+        "365667",
+        "3666",
+        "644637"
+      ],
+      "expectedRelevance": {
+        "225587": 1,
+        "276714": 1,
+        "33745": 1,
+        "365667": 1,
+        "3666": 1,
+        "644637": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2192",
+      "query": "吃过兔子肉后胃一阵一阵疼痛怎么回事",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "117589",
+        "117590",
+        "195276",
+        "289986",
+        "3236",
+        "3237",
+        "578553",
+        "662947"
+      ],
+      "expectedRelevance": {
+        "117589": 1,
+        "117590": 1,
+        "195276": 1,
+        "289986": 1,
+        "3236": 1,
+        "3237": 1,
+        "578553": 1,
+        "662947": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_75",
+      "query": "介绍家人工作的英语短篇作文",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "403865"
+      ],
+      "expectedRelevance": {
+        "403865": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1170",
+      "query": "109天婴儿正常身高体重",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "20968",
+        "358165",
+        "397685"
+      ],
+      "expectedRelevance": {
+        "20968": 1,
+        "358165": 1,
+        "397685": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2327",
+      "query": "大米干饭馊了还有营养吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "146251",
+        "257795",
+        "3446",
+        "515901",
+        "628388",
+        "79084",
+        "96540"
+      ],
+      "expectedRelevance": {
+        "146251": 1,
+        "257795": 1,
+        "3446": 1,
+        "515901": 1,
+        "628388": 1,
+        "79084": 1,
+        "96540": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1399",
+      "query": "编程猫是学什么的",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "2027",
+        "214012",
+        "214016",
+        "278472",
+        "35665",
+        "400294",
+        "494140",
+        "726802",
+        "726803",
+        "86379"
+      ],
+      "expectedRelevance": {
+        "2027": 1,
+        "214012": 1,
+        "214016": 1,
+        "278472": 1,
+        "35665": 1,
+        "400294": 1,
+        "494140": 1,
+        "726802": 1,
+        "726803": 1,
+        "86379": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1816",
+      "query": "名为完全败北之鞭怎么获得",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "232974"
+      ],
+      "expectedRelevance": {
+        "232974": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2439",
+      "query": "现在疫情期间河北石家庄的奶粉还能不能买",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "175503",
+        "406725",
+        "495820"
+      ],
+      "expectedRelevance": {
+        "175503": 1,
+        "406725": 1,
+        "495820": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_581",
+      "query": "不喜欢调皮的婴儿",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "158632",
+        "16984",
+        "200422",
+        "484885",
+        "512809"
+      ],
+      "expectedRelevance": {
+        "158632": 1,
+        "16984": 1,
+        "200422": 1,
+        "484885": 1,
+        "512809": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1111",
+      "query": "bt啥子意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "133677",
+        "274527",
+        "275656",
+        "500885",
+        "538516",
+        "756025",
+        "756026",
+        "756027",
+        "756028",
+        "82454",
+        "82455"
+      ],
+      "expectedRelevance": {
+        "133677": 1,
+        "274527": 1,
+        "275656": 1,
+        "500885": 1,
+        "538516": 1,
+        "756025": 1,
+        "756026": 1,
+        "756027": 1,
+        "756028": 1,
+        "82454": 1,
+        "82455": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1581",
+      "query": "问男朋友有多少存款",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "2310"
+      ],
+      "expectedRelevance": {
+        "2310": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1393",
+      "query": "ps镜面效果",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "691486",
+        "709214"
+      ],
+      "expectedRelevance": {
+        "691486": 1,
+        "709214": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2458",
+      "query": "水凝膜是什么傻逼膜撕都撕不下来",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "169787",
+        "252917",
+        "601140",
+        "601141"
+      ],
+      "expectedRelevance": {
+        "169787": 1,
+        "252917": 1,
+        "601140": 1,
+        "601141": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_356",
+      "query": "睡向与地球自转方向",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "231357",
+        "281970",
+        "46746",
+        "528",
+        "529",
+        "711814",
+        "711816",
+        "711817",
+        "712030",
+        "90016",
+        "90022"
+      ],
+      "expectedRelevance": {
+        "231357": 1,
+        "281970": 1,
+        "46746": 1,
+        "528": 1,
+        "529": 1,
+        "711814": 1,
+        "711816": 1,
+        "711817": 1,
+        "712030": 1,
+        "90016": 1,
+        "90022": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1193",
+      "query": "女子敬回德打一数字",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "537460"
+      ],
+      "expectedRelevance": {
+        "537460": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_688",
+      "query": "携来百侣曾游下一句",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "182289",
+        "616998",
+        "684928"
+      ],
+      "expectedRelevance": {
+        "182289": 1,
+        "616998": 1,
+        "684928": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_777",
+      "query": "英语有标点符号吗",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1128",
+        "128376",
+        "214788",
+        "214789",
+        "380964",
+        "380965"
+      ],
+      "expectedRelevance": {
+        "1128": 1,
+        "128376": 1,
+        "214788": 1,
+        "214789": 1,
+        "380964": 1,
+        "380965": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_93",
+      "query": "属龙的处女座2020年运势",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "152",
+        "235582",
+        "318837",
+        "337731",
+        "479775",
+        "485021",
+        "485022",
+        "489476",
+        "52430",
+        "529086",
+        "529087",
+        "529088",
+        "529089",
+        "534119",
+        "534121",
+        "534122",
+        "683149",
+        "683150",
+        "683155",
+        "683157"
+      ],
+      "expectedRelevance": {
+        "152": 1,
+        "235582": 1,
+        "318837": 1,
+        "337731": 1,
+        "479775": 1,
+        "485021": 1,
+        "485022": 1,
+        "489476": 1,
+        "52430": 1,
+        "529086": 1,
+        "529087": 1,
+        "529088": 1,
+        "529089": 1,
+        "534119": 1,
+        "534121": 1,
+        "534122": 1,
+        "683149": 1,
+        "683150": 1,
+        "683155": 1,
+        "683157": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1338",
+      "query": "procreate笔刷大小",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "660369"
+      ],
+      "expectedRelevance": {
+        "660369": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_420",
+      "query": "什么时而淡泊",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "387331",
+        "436596",
+        "518383"
+      ],
+      "expectedRelevance": {
+        "387331": 1,
+        "436596": 1,
+        "518383": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2360",
+      "query": "却顾所来径,苍苍横翠微",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "104969",
+        "222046",
+        "337170",
+        "368608",
+        "59120",
+        "624591",
+        "81618"
+      ],
+      "expectedRelevance": {
+        "104969": 1,
+        "222046": 1,
+        "337170": 1,
+        "368608": 1,
+        "59120": 1,
+        "624591": 1,
+        "81618": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_136",
+      "query": "电解液是什么",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "191400",
+        "199",
+        "20143",
+        "366034",
+        "38596",
+        "38598",
+        "472385",
+        "698667"
+      ],
+      "expectedRelevance": {
+        "191400": 1,
+        "199": 1,
+        "20143": 1,
+        "366034": 1,
+        "38596": 1,
+        "38598": 1,
+        "472385": 1,
+        "698667": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_363",
+      "query": "德邦|a证半挂长途司机",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "578680"
+      ],
+      "expectedRelevance": {
+        "578680": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1582",
+      "query": "整粘米粉蛋饼粘米粉与水的比例",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "201186",
+        "206366",
+        "516267"
+      ],
+      "expectedRelevance": {
+        "201186": 1,
+        "206366": 1,
+        "516267": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_2127",
+      "query": "醉星手游职业介绍",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "118214",
+        "174175",
+        "223510",
+        "274101",
+        "518591",
+        "673092"
+      ],
+      "expectedRelevance": {
+        "118214": 1,
+        "174175": 1,
+        "223510": 1,
+        "274101": 1,
+        "518591": 1,
+        "673092": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1869",
+      "query": "莫扎特的作者是谁",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "233973",
+        "233978",
+        "316156",
+        "316158",
+        "365158",
+        "464276",
+        "513809",
+        "513810",
+        "513812",
+        "594239",
+        "600580",
+        "600585"
+      ],
+      "expectedRelevance": {
+        "233973": 1,
+        "233978": 1,
+        "316156": 1,
+        "316158": 1,
+        "365158": 1,
+        "464276": 1,
+        "513809": 1,
+        "513810": 1,
+        "513812": 1,
+        "594239": 1,
+        "600580": 1,
+        "600585": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_9497",
+      "query": "剧本杀几个人",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "348164"
+      ],
+      "expectedRelevance": {
+        "348164": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_1465",
+      "query": "沿程水头损失得出了什么结论",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "2128",
+        "2130",
+        "454556"
+      ],
+      "expectedRelevance": {
+        "2128": 1,
+        "2130": 1,
+        "454556": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_742",
+      "query": "命人是什么意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1079",
+        "1081",
+        "254333",
+        "254334"
+      ],
+      "expectedRelevance": {
+        "1079": 1,
+        "1081": 1,
+        "254333": 1,
+        "254334": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_53",
+      "query": "杜仲泡水喝功效与作用",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "253684",
+        "253685",
+        "259282",
+        "348465",
+        "426466",
+        "426467",
+        "452738",
+        "539503",
+        "539504",
+        "571388",
+        "678884",
+        "702000",
+        "712594",
+        "713104",
+        "80",
+        "81"
+      ],
+      "expectedRelevance": {
+        "253684": 1,
+        "253685": 1,
+        "259282": 1,
+        "348465": 1,
+        "426466": 1,
+        "426467": 1,
+        "452738": 1,
+        "539503": 1,
+        "539504": 1,
+        "571388": 1,
+        "678884": 1,
+        "702000": 1,
+        "712594": 1,
+        "713104": 1,
+        "80": 1,
+        "81": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_818",
+      "query": "千牛待评价是什么意思",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "1191"
+      ],
+      "expectedRelevance": {
+        "1191": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    },
+    {
+      "name": "t2_592",
+      "query": "歌颂雷锋精神的诗歌",
+      "tags": [
+        "t2retrieval",
+        "c-mteb"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "163300",
+        "861"
+      ],
+      "expectedRelevance": {
+        "163300": 1,
+        "861": 1
+      },
+      "searchMode": "hybrid",
+      "topK": 10
+    }
+  ]
+}

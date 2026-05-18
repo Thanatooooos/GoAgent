@@ -1,0 +1,4800 @@
+{
+  "samples": [
+    {
+      "name": "file_lookup_19752977514426625",
+      "query": "查找文件 agent_capability_expansion_plan.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "agent_capability_expansion_plan.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752977514426625_agent_能力扩展建设方案",
+      "query": "查找 Agent 能力扩展建设方案 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent 能力扩展建设方案"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752977514426625_agent_能力扩展建设方案",
+      "query": "Agent 能力扩展建设方案 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752977581535489"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752977581535489": 3
+      }
+    },
+    {
+      "name": "section_lookup_19752977514426625_agent_能力扩展建设方案___一、文档目的",
+      "query": "查找 Agent 能力扩展建设方案 \u003e 一、文档目的 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent 能力扩展建设方案 \u003e 一、文档目的"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752977514426625_agent_能力扩展建设方案___一、文档目的",
+      "query": "一、文档目的 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752977581601025"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752977581601025": 3
+      }
+    },
+    {
+      "name": "file_lookup_19752981138305281",
+      "query": "查找文件 agent_loop_architecture_review.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "agent_loop_architecture_review.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752981138305281_agent_loop_架构评估与优化方向___一、当前架构",
+      "query": "查找 Agent Loop 架构评估与优化方向 \u003e 一、当前架构 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent Loop 架构评估与优化方向 \u003e 一、当前架构"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752981138305281_agent_loop_架构评估与优化方向___一、当前架构",
+      "query": "一、当前架构 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752981188702465",
+        "19752981188768001"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752981188702465": 3,
+        "19752981188768001": 2
+      }
+    },
+    {
+      "name": "section_lookup_19752981138305281_agent_loop_架构评估与优化方向",
+      "query": "查找 Agent Loop 架构评估与优化方向 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent Loop 架构评估与优化方向"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752981138305281_agent_loop_架构评估与优化方向",
+      "query": "Agent Loop 架构评估与优化方向 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752981188636929"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752981188636929": 3
+      }
+    },
+    {
+      "name": "file_lookup_19752984409862401",
+      "query": "查找文件 agent_loop_optimization_plan.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "agent_loop_optimization_plan.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752984409862401_agent_loop_优化执行计划",
+      "query": "查找 Agent Loop 优化执行计划 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent Loop 优化执行计划"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752984409862401_agent_loop_优化执行计划",
+      "query": "Agent Loop 优化执行计划 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752984443482369"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752984443482369": 3
+      }
+    },
+    {
+      "name": "section_lookup_19752984409862401_agent_loop_优化执行计划___assumptions",
+      "query": "查找 Agent Loop 优化执行计划 \u003e Assumptions 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent Loop 优化执行计划 \u003e Assumptions"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752984409862401_agent_loop_优化执行计划___assumptions",
+      "query": "Assumptions 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752984444006657"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752984444006657": 3
+      }
+    },
+    {
+      "name": "file_lookup_19752985869480193",
+      "query": "查找文件 architecture_review_2026-05-11.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "architecture_review_2026-05-11.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752985869480193_agent_架构复盘_\u0026_检索模式简化_\u0026_eino_接入评估___一、agent_架构现状评估___1.1_架构总览",
+      "query": "查找 Agent 架构复盘 \u0026 检索模式简化 \u0026 Eino 接入评估 \u003e 一、Agent 架构现状评估 \u003e 1.1 架构总览 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent 架构复盘 \u0026 检索模式简化 \u0026 Eino 接入评估 \u003e 一、Agent 架构现状评估 \u003e 1.1 架构总览"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752985869480193_agent_架构复盘_\u0026_检索模式简化_\u0026_eino_接入评估___一、agent_架构现状评估___1.1_架构总览",
+      "query": "1.1 架构总览 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752985919942913",
+        "19752985920008449",
+        "19752985920073985"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752985919942913": 3,
+        "19752985920008449": 2,
+        "19752985920073985": 2
+      }
+    },
+    {
+      "name": "section_lookup_19752985869480193_agent_架构复盘_\u0026_检索模式简化_\u0026_eino_接入评估___一、agent_架构现状评估___1.3_存在的结构性问题___问题_2：plancallsfromresults_和_ruleobserver_的状态机逻辑重复",
+      "query": "查找 Agent 架构复盘 \u0026 检索模式简化 \u0026 Eino 接入评估 \u003e 一、Agent 架构现状评估 \u003e 1.3 存在的结构性问题 \u003e 问题 2：planCallsFromResults 和 RuleObserver 的状态机逻辑重复 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agent 架构复盘 \u0026 检索模式简化 \u0026 Eino 接入评估 \u003e 一、Agent 架构现状评估 \u003e 1.3 存在的结构性问题 \u003e 问题 2：planCallsFromResults 和 RuleObserver 的状态机逻辑重复"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752985869480193_agent_架构复盘_\u0026_检索模式简化_\u0026_eino_接入评估___一、agent_架构现状评估___1.3_存在的结构性问题___问题_2：plancallsfromresults_和_ruleobserver_的状态机逻辑重复",
+      "query": "问题 2：planCallsFromResults 和 RuleObserver 的状态机逻辑重复 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752985920598273",
+        "19752985920663809"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752985920598273": 3,
+        "19752985920663809": 2
+      }
+    },
+    {
+      "name": "file_lookup_19752989610799361",
+      "query": "查找文件 chunk_retrieve_eval_plan.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "chunk_retrieve_eval_plan.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752989610799361_chunk_\u0026_retrieve_质量评估方案___方案___phase_3：样本生成（~200_行，1-2_天）",
+      "query": "查找 Chunk \u0026 Retrieve 质量评估方案 \u003e 方案 \u003e Phase 3：样本生成（~200 行，1-2 天） 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Chunk \u0026 Retrieve 质量评估方案 \u003e 方案 \u003e Phase 3：样本生成（~200 行，1-2 天）"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752989610799361_chunk_\u0026_retrieve_质量评估方案___方案___phase_3：样本生成（~200_行，1-2_天）",
+      "query": "Phase 3：样本生成（~200 行，1-2 天） 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752989661851905",
+        "19752989661917441"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752989661851905": 3,
+        "19752989661917441": 2
+      }
+    },
+    {
+      "name": "section_lookup_19752989610799361_chunk_\u0026_retrieve_质量评估方案",
+      "query": "查找 Chunk \u0026 Retrieve 质量评估方案 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Chunk \u0026 Retrieve 质量评估方案"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752989610799361_chunk_\u0026_retrieve_质量评估方案",
+      "query": "Chunk \u0026 Retrieve 质量评估方案 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752989661131009"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752989661131009": 3
+      }
+    },
+    {
+      "name": "file_lookup_19752990818758913",
+      "query": "查找文件 chunk_retrieve_eval_summary_2026-05-16.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "chunk_retrieve_eval_summary_2026-05-16.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752990818758913_chunk_\u0026_retrieve_评估总结",
+      "query": "查找 Chunk \u0026 Retrieve 评估总结 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Chunk \u0026 Retrieve 评估总结"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752990818758913_chunk_\u0026_retrieve_评估总结",
+      "query": "Chunk \u0026 Retrieve 评估总结 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752990852378881"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752990852378881": 3
+      }
+    },
+    {
+      "name": "section_lookup_19752990818758913_chunk_\u0026_retrieve_评估总结___结果",
+      "query": "查找 Chunk \u0026 Retrieve 评估总结 \u003e 结果 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Chunk \u0026 Retrieve 评估总结 \u003e 结果"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752990818758913_chunk_\u0026_retrieve_评估总结___结果",
+      "query": "结果 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752990852575489"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752990852575489": 3
+      }
+    },
+    {
+      "name": "file_lookup_19752991909277953",
+      "query": "查找文件 daliy__agentic_chat_debug_summary_2026-05-10.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__agentic_chat_debug_summary_2026-05-10.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10",
+      "query": "查找 Agentic Chat 联调问题总结 - 2026-05-10 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agentic Chat 联调问题总结 - 2026-05-10"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10",
+      "query": "Agentic Chat 联调问题总结 - 2026-05-10 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752991942832385"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752991942832385": 3
+      }
+    },
+    {
+      "name": "section_lookup_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10___具体改动位置",
+      "query": "查找 Agentic Chat 联调问题总结 - 2026-05-10 \u003e 具体改动位置 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Agentic Chat 联调问题总结 - 2026-05-10 \u003e 具体改动位置"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752991909277953_agentic_chat_联调问题总结_-_2026-05-10___具体改动位置",
+      "query": "具体改动位置 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752991943618817"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752991943618817": 3
+      }
+    },
+    {
+      "name": "file_lookup_19752994425860353",
+      "query": "查找文件 daliy__development_notes_2026-04-29.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-04-29.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752994425860353_development_notes_2026-04-29",
+      "query": "查找 Development Notes 2026-04-29 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-04-29"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752994425860353_development_notes_2026-04-29",
+      "query": "Development Notes 2026-04-29 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752994459480321"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752994459480321": 3
+      }
+    },
+    {
+      "name": "section_lookup_19752994425860353_development_notes_2026-04-29___今日确认的开发规范",
+      "query": "查找 Development Notes 2026-04-29 \u003e 今日确认的开发规范 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-04-29 \u003e 今日确认的开发规范"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752994425860353_development_notes_2026-04-29___今日确认的开发规范",
+      "query": "今日确认的开发规范 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752994459545857"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752994459545857": 3
+      }
+    },
+    {
+      "name": "file_lookup_19752996455903489",
+      "query": "查找文件 daliy__development_notes_2026-04-30.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-04-30.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19752996455903489_development_notes_2026-04-30",
+      "query": "查找 Development Notes 2026-04-30 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-04-30"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752996455903489_development_notes_2026-04-30",
+      "query": "Development Notes 2026-04-30 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752996506235137"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752996506235137": 3
+      }
+    },
+    {
+      "name": "section_lookup_19752996455903489_development_notes_2026-04-30___今日联调结论",
+      "query": "查找 Development Notes 2026-04-30 \u003e 今日联调结论 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-04-30 \u003e 今日联调结论"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19752996455903489_development_notes_2026-04-30___今日联调结论",
+      "query": "今日联调结论 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19752996506824961"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19752996506824961": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753003384893697",
+      "query": "查找文件 daliy__development_notes_2026-05-01.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-01.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753003384893697_development_notes_2026-05-01",
+      "query": "查找 Development Notes 2026-05-01 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-01"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753003384893697_development_notes_2026-05-01",
+      "query": "Development Notes 2026-05-01 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753003435225345"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753003435225345": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753003384893697_development_notes_2026-05-01___今天确认下来的工程结论",
+      "query": "查找 Development Notes 2026-05-01 \u003e 今天确认下来的工程结论 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-01 \u003e 今天确认下来的工程结论"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753003384893697_development_notes_2026-05-01___今天确认下来的工程结论",
+      "query": "今天确认下来的工程结论 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753003436404993"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753003436404993": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753005196833025",
+      "query": "查找文件 daliy__development_notes_2026-05-02.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-02.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753005196833025_development_notes_-_2026-05-02___ingestion_进展___9._ingestion_模块骨架、持久化与最小执行链路落地",
+      "query": "查找 Development Notes - 2026-05-02 \u003e Ingestion 进展 \u003e 9. ingestion 模块骨架、持久化与最小执行链路落地 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-02 \u003e Ingestion 进展 \u003e 9. ingestion 模块骨架、持久化与最小执行链路落地"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753005196833025_development_notes_-_2026-05-02___ingestion_进展___9._ingestion_模块骨架、持久化与最小执行链路落地",
+      "query": "9. ingestion 模块骨架、持久化与最小执行链路落地 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753005248213249",
+        "19753005248278785"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753005248213249": 3,
+        "19753005248278785": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753005196833025_development_notes_-_2026-05-02",
+      "query": "查找 Development Notes - 2026-05-02 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-02"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753005196833025_development_notes_-_2026-05-02",
+      "query": "Development Notes - 2026-05-02 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753005247164673"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753005247164673": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753006773891329",
+      "query": "查找文件 daliy__development_notes_2026-05-04.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-04.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753006773891329_development_notes_-_2026-05-04___本次新增___2._indexer_写入重试与补偿",
+      "query": "查找 Development Notes - 2026-05-04 \u003e 本次新增 \u003e 2. Indexer 写入重试与补偿 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-04 \u003e 本次新增 \u003e 2. Indexer 写入重试与补偿"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753006773891329_development_notes_-_2026-05-04___本次新增___2._indexer_写入重试与补偿",
+      "query": "2. Indexer 写入重试与补偿 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753006807773441",
+        "19753006807838977",
+        "19753006807904513"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753006807773441": 3,
+        "19753006807838977": 2,
+        "19753006807904513": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753006773891329_development_notes_-_2026-05-04___本次新增___3._rag_检索置信度回退",
+      "query": "查找 Development Notes - 2026-05-04 \u003e 本次新增 \u003e 3. RAG 检索置信度回退 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-04 \u003e 本次新增 \u003e 3. RAG 检索置信度回退"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753006773891329_development_notes_-_2026-05-04___本次新增___3._rag_检索置信度回退",
+      "query": "3. RAG 检索置信度回退 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753006807970049",
+        "19753006808035585",
+        "19753006808101121"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753006807970049": 3,
+        "19753006808035585": 2,
+        "19753006808101121": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753007763747073",
+      "query": "查找文件 daliy__development_notes_2026-05-05.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-05.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753007763747073_development_notes_-_2026-05-05___本次新增___1._ingestion_metrics_api_落地",
+      "query": "查找 Development Notes - 2026-05-05 \u003e 本次新增 \u003e 1. Ingestion Metrics API 落地 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-05 \u003e 本次新增 \u003e 1. Ingestion Metrics API 落地"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753007763747073_development_notes_-_2026-05-05___本次新增___1._ingestion_metrics_api_落地",
+      "query": "1. Ingestion Metrics API 落地 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753007797498113",
+        "19753007797563649",
+        "19753007797629185"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753007797498113": 3,
+        "19753007797563649": 2,
+        "19753007797629185": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753007763747073_development_notes_-_2026-05-05___当前验证状态",
+      "query": "查找 Development Notes - 2026-05-05 \u003e 当前验证状态 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-05 \u003e 当前验证状态"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753007763747073_development_notes_-_2026-05-05___当前验证状态",
+      "query": "当前验证状态 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753007797956865",
+        "19753007798022401"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753007797956865": 3,
+        "19753007798022401": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753009005261057",
+      "query": "查找文件 daliy__development_notes_2026-05-07.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-07.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753009005261057_development_notes_-_2026-05-07___追加进展（同日补充）___19._继续补强了_`document___task___trace`_诊断质量",
+      "query": "查找 Development Notes - 2026-05-07 \u003e 追加进展（同日补充） \u003e 19. 继续补强了 `document / task / trace` 诊断质量 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-07 \u003e 追加进展（同日补充） \u003e 19. 继续补强了 `document / task / trace` 诊断质量"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753009005261057_development_notes_-_2026-05-07___追加进展（同日补充）___19._继续补强了_`document___task___trace`_诊断质量",
+      "query": "19. 继续补强了 `document / task / trace` 诊断质量 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753009057886465",
+        "19753009057952001",
+        "19753009058017537"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753009057886465": 3,
+        "19753009057952001": 2,
+        "19753009058017537": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753009005261057_development_notes_-_2026-05-07___后续建议___p1",
+      "query": "查找 Development Notes - 2026-05-07 \u003e 后续建议 \u003e P1 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-07 \u003e 后续建议 \u003e P1"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753009005261057_development_notes_-_2026-05-07___后续建议___p1",
+      "query": "P1 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753009056968961",
+        "19753009057034497"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753009056968961": 3,
+        "19753009057034497": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753011907719425",
+      "query": "查找文件 daliy__development_notes_2026-05-08.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-08.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___f._落地了_ingestion_对账规则与后台_reconcile_入口",
+      "query": "查找 Development Notes - 2026-05-08 \u003e 补充更新（本轮） \u003e F. 落地了 ingestion 对账规则与后台 reconcile 入口 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-08 \u003e 补充更新（本轮） \u003e F. 落地了 ingestion 对账规则与后台 reconcile 入口"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___f._落地了_ingestion_对账规则与后台_reconcile_入口",
+      "query": "F. 落地了 ingestion 对账规则与后台 reconcile 入口 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753011958509825",
+        "19753011958575361",
+        "19753011958640897"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753011958509825": 3,
+        "19753011958575361": 2,
+        "19753011958640897": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___g._补齐了_trace___tool___fallback_可观测性展示链路",
+      "query": "查找 Development Notes - 2026-05-08 \u003e 补充更新（本轮） \u003e G. 补齐了 trace / tool / fallback 可观测性展示链路 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-08 \u003e 补充更新（本轮） \u003e G. 补齐了 trace / tool / fallback 可观测性展示链路"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753011907719425_development_notes_-_2026-05-08___补充更新（本轮）___g._补齐了_trace___tool___fallback_可观测性展示链路",
+      "query": "G. 补齐了 trace / tool / fallback 可观测性展示链路 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753011958706433",
+        "19753011958771969",
+        "19753011958837505"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753011958706433": 3,
+        "19753011958771969": 2,
+        "19753011958837505": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753015196053761",
+      "query": "查找文件 daliy__development_notes_2026-05-09.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-09.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753015196053761_development_notes_-_2026-05-09___验证",
+      "query": "查找 Development Notes - 2026-05-09 \u003e 验证 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-09 \u003e 验证"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753015196053761_development_notes_-_2026-05-09___验证",
+      "query": "验证 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753015247433985",
+        "19753015247499521",
+        "19753015247565057",
+        "19753015247630593"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753015247433985": 3,
+        "19753015247499521": 2,
+        "19753015247565057": 2,
+        "19753015247630593": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753015196053761_development_notes_-_2026-05-09___本次改动___1._做了一版_ingestion_最小收口",
+      "query": "查找 Development Notes - 2026-05-09 \u003e 本次改动 \u003e 1. 做了一版 ingestion 最小收口 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-09 \u003e 本次改动 \u003e 1. 做了一版 ingestion 最小收口"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753015196053761_development_notes_-_2026-05-09___本次改动___1._做了一版_ingestion_最小收口",
+      "query": "1. 做了一版 ingestion 最小收口 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753015246582017",
+        "19753015246647553"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753015246582017": 3,
+        "19753015246647553": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753017075101953",
+      "query": "查找文件 daliy__development_notes_2026-05-10.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-10.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753017075101953_development_notes_-_2026-05-10___llmobserver_补充记录",
+      "query": "查找 Development Notes - 2026-05-10 \u003e LLMObserver 补充记录 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-10 \u003e LLMObserver 补充记录"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753017075101953_development_notes_-_2026-05-10___llmobserver_补充记录",
+      "query": "LLMObserver 补充记录 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753017127137537",
+        "19753017127203073",
+        "19753017127268609"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753017127137537": 3,
+        "19753017127203073": 2,
+        "19753017127268609": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753017075101953_development_notes_-_2026-05-10___本次改动___5._根据联调反馈，优化了诊断回答中的“证据”表达",
+      "query": "查找 Development Notes - 2026-05-10 \u003e 本次改动 \u003e 5. 根据联调反馈，优化了诊断回答中的“证据”表达 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes - 2026-05-10 \u003e 本次改动 \u003e 5. 根据联调反馈，优化了诊断回答中的“证据”表达"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753017075101953_development_notes_-_2026-05-10___本次改动___5._根据联调反馈，优化了诊断回答中的“证据”表达",
+      "query": "5. 根据联调反馈，优化了诊断回答中的“证据”表达 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753017126088961",
+        "19753017126154497"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753017126088961": 3,
+        "19753017126154497": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753024054423809",
+      "query": "查找文件 daliy__development_notes_2026-05-11.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-11.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753024054423809_development_notes_2026-05-11",
+      "query": "查找 Development Notes 2026-05-11 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-11"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753024054423809_development_notes_2026-05-11",
+      "query": "Development Notes 2026-05-11 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753024088043777"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753024088043777": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753024054423809_development_notes_2026-05-11___agentstate_合并简化",
+      "query": "查找 Development Notes 2026-05-11 \u003e AgentState 合并简化 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-11 \u003e AgentState 合并简化"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753024054423809_development_notes_2026-05-11___agentstate_合并简化",
+      "query": "AgentState 合并简化 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753024088371457"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753024088371457": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753025161720065",
+      "query": "查找文件 daliy__development_notes_2026-05-12.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-12.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753025161720065_development_notes_2026-05-12___验证状态",
+      "query": "查找 Development Notes 2026-05-12 \u003e 验证状态 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-12 \u003e 验证状态"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753025161720065_development_notes_2026-05-12___验证状态",
+      "query": "验证状态 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753025196323073",
+        "19753025196388609",
+        "19753025196454145"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753025196323073": 3,
+        "19753025196388609": 2,
+        "19753025196454145": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753025161720065_development_notes_2026-05-12",
+      "query": "查找 Development Notes 2026-05-12 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-12"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753025161720065_development_notes_2026-05-12",
+      "query": "Development Notes 2026-05-12 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753025195340033"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753025195340033": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753027695079681",
+      "query": "查找文件 daliy__development_notes_2026-05-15.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "daliy__development_notes_2026-05-15.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753027695079681_development_notes_2026-05-15",
+      "query": "查找 Development Notes 2026-05-15 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-15"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753027695079681_development_notes_2026-05-15",
+      "query": "Development Notes 2026-05-15 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753027745411329"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753027745411329": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753027695079681_development_notes_2026-05-15___chat_检索前置路由：由_rewrite_判断是否需要_retrieval",
+      "query": "查找 Development Notes 2026-05-15 \u003e Chat 检索前置路由：由 Rewrite 判断是否需要 Retrieval 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Development Notes 2026-05-15 \u003e Chat 检索前置路由：由 Rewrite 判断是否需要 Retrieval"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753027695079681_development_notes_2026-05-15___chat_检索前置路由：由_rewrite_判断是否需要_retrieval",
+      "query": "Chat 检索前置路由：由 Rewrite 判断是否需要 Retrieval 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753027745739009"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753027745739009": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753031134408961",
+      "query": "查找文件 flagembedding_integration_plan.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "flagembedding_integration_plan.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753031134408961_flagembedding_语料库集成方案___集成方案___方案：t2retrieval_抽取子集_→_知识库_→_retrieve-eval___step_1：获取数据（python_脚本）",
+      "query": "查找 FlagEmbedding 语料库集成方案 \u003e 集成方案 \u003e 方案：T2Retrieval 抽取子集 → 知识库 → retrieve-eval \u003e Step 1：获取数据（Python 脚本） 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "FlagEmbedding 语料库集成方案 \u003e 集成方案 \u003e 方案：T2Retrieval 抽取子集 → 知识库 → retrieve-eval \u003e Step 1：获取数据（Python 脚本）"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753031134408961_flagembedding_语料库集成方案___集成方案___方案：t2retrieval_抽取子集_→_知识库_→_retrieve-eval___step_1：获取数据（python_脚本）",
+      "query": "Step 1：获取数据（Python 脚本） 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753031168618753",
+        "19753031168684289",
+        "19753031168749825"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753031168618753": 3,
+        "19753031168684289": 2,
+        "19753031168749825": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753031134408961_flagembedding_语料库集成方案",
+      "query": "查找 FlagEmbedding 语料库集成方案 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "FlagEmbedding 语料库集成方案"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753031134408961_flagembedding_语料库集成方案",
+      "query": "FlagEmbedding 语料库集成方案 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753031168028929"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753031168028929": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753032862462209",
+      "query": "查找文件 ingestion__target_direction.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "ingestion__target_direction.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753032862462209_ingestion_target_direction",
+      "query": "查找 Ingestion Target Direction 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Ingestion Target Direction"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753032862462209_ingestion_target_direction",
+      "query": "Ingestion Target Direction 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753032896082177"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753032896082177": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753032862462209_ingestion_target_direction___中期待办",
+      "query": "查找 Ingestion Target Direction \u003e 中期待办 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Ingestion Target Direction \u003e 中期待办"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753032862462209_ingestion_target_direction___中期待办",
+      "query": "中期待办 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753032896999681"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753032896999681": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753034288525569",
+      "query": "查找文件 interview__01_rag_agent_main_flow.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__01_rag_agent_main_flow.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753034288525569_rag___agent_总入口与主链路",
+      "query": "查找 RAG / Agent 总入口与主链路 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "RAG / Agent 总入口与主链路"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753034288525569_rag___agent_总入口与主链路",
+      "query": "RAG / Agent 总入口与主链路 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753034338857217"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753034338857217": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753034288525569_rag___agent_总入口与主链路___主链路是怎么跑起来的",
+      "query": "查找 RAG / Agent 总入口与主链路 \u003e 主链路是怎么跑起来的 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "RAG / Agent 总入口与主链路 \u003e 主链路是怎么跑起来的"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753034288525569_rag___agent_总入口与主链路___主链路是怎么跑起来的",
+      "query": "主链路是怎么跑起来的 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753034339905793"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753034339905793": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753036620558593",
+      "query": "查找文件 interview__02_trace_sse_observability.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__02_trace_sse_observability.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753036620558593_trace___sse_可观测性",
+      "query": "查找 Trace / SSE 可观测性 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Trace / SSE 可观测性"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753036620558593_trace___sse_可观测性",
+      "query": "Trace / SSE 可观测性 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753036670890241"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753036670890241": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753036620558593_trace___sse_可观测性___chattracer_是怎么工作的",
+      "query": "查找 Trace / SSE 可观测性 \u003e ChatTracer 是怎么工作的 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Trace / SSE 可观测性 \u003e ChatTracer 是怎么工作的"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753036620558593_trace___sse_可观测性___chattracer_是怎么工作的",
+      "query": "ChatTracer 是怎么工作的 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753036671938817"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753036671938817": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753039019700481",
+      "query": "查找文件 interview__03_retrieve_merge.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__03_retrieve_merge.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753039019700481_retrieve_merge_合并逻辑",
+      "query": "查找 Retrieve Merge 合并逻辑 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Retrieve Merge 合并逻辑"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753039019700481_retrieve_merge_合并逻辑",
+      "query": "Retrieve Merge 合并逻辑 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753039053320449"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753039053320449": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753039019700481_retrieve_merge_合并逻辑___`mergeresults(...)`_是怎么工作的",
+      "query": "查找 Retrieve Merge 合并逻辑 \u003e `MergeResults(...)` 是怎么工作的 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Retrieve Merge 合并逻辑 \u003e `MergeResults(...)` 是怎么工作的"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753039019700481_retrieve_merge_合并逻辑___`mergeresults(...)`_是怎么工作的",
+      "query": "`MergeResults(...)` 是怎么工作的 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753039070687489"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753039070687489": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753041938936065",
+      "query": "查找文件 interview__04_infra_ai_routing_and_circuit_breaker.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__04_infra_ai_routing_and_circuit_breaker.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753041938936065_infra-ai_模型选择、路由执行与熔断",
+      "query": "查找 Infra-AI 模型选择、路由执行与熔断 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Infra-AI 模型选择、路由执行与熔断"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753041938936065_infra-ai_模型选择、路由执行与熔断",
+      "query": "Infra-AI 模型选择、路由执行与熔断 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753041989267713"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753041989267713": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753041938936065_infra-ai_模型选择、路由执行与熔断___`routingllmservice`_扮演什么角色",
+      "query": "查找 Infra-AI 模型选择、路由执行与熔断 \u003e `RoutingLLmService` 扮演什么角色 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Infra-AI 模型选择、路由执行与熔断 \u003e `RoutingLLmService` 扮演什么角色"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753041938936065_infra-ai_模型选择、路由执行与熔断___`routingllmservice`_扮演什么角色",
+      "query": "`RoutingLLmService` 扮演什么角色 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753041991495937"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753041991495937": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753045042721025",
+      "query": "查找文件 interview__05_streaming_chat_and_cancellation.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__05_streaming_chat_and_cancellation.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753045042721025_流式聊天、首包探测与取消",
+      "query": "查找 流式聊天、首包探测与取消 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "流式聊天、首包探测与取消"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753045042721025_流式聊天、首包探测与取消",
+      "query": "流式聊天、首包探测与取消 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753045076275457"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753045076275457": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753045042721025_流式聊天、首包探测与取消___`probestreambridge`_是怎么解决这个问题的",
+      "query": "查找 流式聊天、首包探测与取消 \u003e `ProbeStreamBridge` 是怎么解决这个问题的 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "流式聊天、首包探测与取消 \u003e `ProbeStreamBridge` 是怎么解决这个问题的"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753045042721025_流式聊天、首包探测与取消___`probestreambridge`_是怎么解决这个问题的",
+      "query": "`ProbeStreamBridge` 是怎么解决这个问题的 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753045077717249"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753045077717249": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753048867926273",
+      "query": "查找文件 interview__06_ingestion_pipeline.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__06_ingestion_pipeline.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753048867926273_ingestion_流水线与执行架构___observer：为什么执行和落库要拆开___`repositorytaskobserver`",
+      "query": "查找 Ingestion 流水线与执行架构 \u003e Observer：为什么执行和落库要拆开 \u003e `RepositoryTaskObserver` 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Ingestion 流水线与执行架构 \u003e Observer：为什么执行和落库要拆开 \u003e `RepositoryTaskObserver`"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753048867926273_ingestion_流水线与执行架构___observer：为什么执行和落库要拆开___`repositorytaskobserver`",
+      "query": "`RepositoryTaskObserver` 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753048902791425",
+        "19753048902856961"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753048902791425": 3,
+        "19753048902856961": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753048867926273_ingestion_流水线与执行架构___runtime_装配：为什么它能说明整体架构",
+      "query": "查找 Ingestion 流水线与执行架构 \u003e Runtime 装配：为什么它能说明整体架构 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Ingestion 流水线与执行架构 \u003e Runtime 装配：为什么它能说明整体架构"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753048867926273_ingestion_流水线与执行架构___runtime_装配：为什么它能说明整体架构",
+      "query": "Runtime 装配：为什么它能说明整体架构 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753048904233217",
+        "19753048904298753"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753048904233217": 3,
+        "19753048904298753": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753052391141633",
+      "query": "查找文件 interview__07_tool_agent_loop_interview.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__07_tool_agent_loop_interview.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753052391141633_07_tool_与_agent_loop_面试题整理",
+      "query": "查找 07 Tool 与 Agent Loop 面试题整理 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "07 Tool 与 Agent Loop 面试题整理"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753052391141633_07_tool_与_agent_loop_面试题整理",
+      "query": "07 Tool 与 Agent Loop 面试题整理 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753052441473281"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753052441473281": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753052391141633_07_tool_与_agent_loop_面试题整理___一句话版本",
+      "query": "查找 07 Tool 与 Agent Loop 面试题整理 \u003e 一句话版本 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "07 Tool 与 Agent Loop 面试题整理 \u003e 一句话版本"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753052391141633_07_tool_与_agent_loop_面试题整理___一句话版本",
+      "query": "一句话版本 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753052441604353"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753052441604353": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753054739951873",
+      "query": "查找文件 interview__08_tool_agent_loop_interview_qa.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__08_tool_agent_loop_interview_qa.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753054739951873_08_tool_与_agent_loop_面试问答版",
+      "query": "查找 08 Tool 与 Agent Loop 面试问答版 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "08 Tool 与 Agent Loop 面试问答版"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753054739951873_08_tool_与_agent_loop_面试问答版",
+      "query": "08 Tool 与 Agent Loop 面试问答版 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753054773506305"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753054773506305": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753054739951873_08_tool_与_agent_loop_面试问答版___3_个建议重点练的例子",
+      "query": "查找 08 Tool 与 Agent Loop 面试问答版 \u003e 3 个建议重点练的例子 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "08 Tool 与 Agent Loop 面试问答版 \u003e 3 个建议重点练的例子"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753054739951873_08_tool_与_agent_loop_面试问答版___3_个建议重点练的例子",
+      "query": "3 个建议重点练的例子 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753054775341313"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753054775341313": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753058464493825",
+      "query": "查找文件 interview__09_tool_agent_loop_question_bank.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__09_tool_agent_loop_question_bank.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753058464493825_09_tool_与_agent_loop_高质量问题清单",
+      "query": "查找 09 Tool 与 Agent Loop 高质量问题清单 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "09 Tool 与 Agent Loop 高质量问题清单"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753058464493825_09_tool_与_agent_loop_高质量问题清单",
+      "query": "09 Tool 与 Agent Loop 高质量问题清单 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753058514825473"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753058514825473": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753058464493825_09_tool_与_agent_loop_高质量问题清单___使用建议",
+      "query": "查找 09 Tool 与 Agent Loop 高质量问题清单 \u003e 使用建议 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "09 Tool 与 Agent Loop 高质量问题清单 \u003e 使用建议"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753058464493825_09_tool_与_agent_loop_高质量问题清单___使用建议",
+      "query": "使用建议 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753058515546369"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753058515546369": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753059504681217",
+      "query": "查找文件 interview__10_tool_agent_loop_top10_answers.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__10_tool_agent_loop_top10_answers.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753059504681217_10_tool_与_agent_loop_top_10_标准回答",
+      "query": "查找 10 Tool 与 Agent Loop Top 10 标准回答 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "10 Tool 与 Agent Loop Top 10 标准回答"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753059504681217_10_tool_与_agent_loop_top_10_标准回答",
+      "query": "10 Tool 与 Agent Loop Top 10 标准回答 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753059555012865"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753059555012865": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753059504681217_10_tool_与_agent_loop_top_10_标准回答___1._为什么需要_`behavior`，不用它会怎样？",
+      "query": "查找 10 Tool 与 Agent Loop Top 10 标准回答 \u003e 1. 为什么需要 `Behavior`，不用它会怎样？ 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "10 Tool 与 Agent Loop Top 10 标准回答 \u003e 1. 为什么需要 `Behavior`，不用它会怎样？"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753059504681217_10_tool_与_agent_loop_top_10_标准回答___1._为什么需要_`behavior`，不用它会怎样？",
+      "query": "1. 为什么需要 `Behavior`，不用它会怎样？ 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753059555143937"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753059555143937": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753061199180033",
+      "query": "查找文件 interview__README.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview__README.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753061199180033_interview_深度复习目录",
+      "query": "查找 Interview 深度复习目录 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Interview 深度复习目录"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753061199180033_interview_深度复习目录",
+      "query": "Interview 深度复习目录 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753061249511681"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753061249511681": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753061199180033_interview_深度复习目录___当前已整理模块",
+      "query": "查找 Interview 深度复习目录 \u003e 当前已整理模块 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Interview 深度复习目录 \u003e 当前已整理模块"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753061199180033_interview_深度复习目录___当前已整理模块",
+      "query": "当前已整理模块 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753061249642753"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753061249642753": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753062004486401",
+      "query": "查找文件 interview_review_progress.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "interview_review_progress.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753062004486401_interview_review_progress___2026-05-15_additional_review_update__agentloop_deep_dive___今天新增掌握",
+      "query": "查找 Interview Review Progress \u003e 2026-05-15 Additional Review Update: AgentLoop Deep Dive \u003e 今天新增掌握 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Interview Review Progress \u003e 2026-05-15 Additional Review Update: AgentLoop Deep Dive \u003e 今天新增掌握"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753062004486401_interview_review_progress___2026-05-15_additional_review_update__agentloop_deep_dive___今天新增掌握",
+      "query": "今天新增掌握 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753062074413313",
+        "19753062074478849",
+        "19753062074544385"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753062074413313": 3,
+        "19753062074478849": 2,
+        "19753062074544385": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753062004486401_interview_review_progress",
+      "query": "查找 Interview Review Progress 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Interview Review Progress"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753062004486401_interview_review_progress",
+      "query": "Interview Review Progress 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753062071595265"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753062071595265": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753065292820737",
+      "query": "查找文件 project_progress_context.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "project_progress_context.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753065292820737_project_progress_context___当前验证状态",
+      "query": "查找 Project Progress Context \u003e 当前验证状态 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Project Progress Context \u003e 当前验证状态"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753065292820737_project_progress_context___当前验证状态",
+      "query": "当前验证状态 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753065347674369",
+        "19753065347739905",
+        "19753065347805441",
+        "19753065347870977",
+        "19753065347936513",
+        "19753065348002049"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753065347674369": 3,
+        "19753065347739905": 2,
+        "19753065347805441": 2,
+        "19753065347870977": 2,
+        "19753065347936513": 2,
+        "19753065348002049": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753065292820737_project_progress_context___最新进展___2026-05-12___5._p0_收口：结果视图层、执行语义与_capability_trace_元数据",
+      "query": "查找 Project Progress Context \u003e 最新进展 \u003e 2026-05-12 \u003e 5. P0 收口：结果视图层、执行语义与 capability trace 元数据 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Project Progress Context \u003e 最新进展 \u003e 2026-05-12 \u003e 5. P0 收口：结果视图层、执行语义与 capability trace 元数据"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753065292820737_project_progress_context___最新进展___2026-05-12___5._p0_收口：结果视图层、执行语义与_capability_trace_元数据",
+      "query": "5. P0 收口：结果视图层、执行语义与 capability trace 元数据 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753065346494721",
+        "19753065346560257",
+        "19753065346625793",
+        "19753065346691329"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753065346494721": 3,
+        "19753065346560257": 2,
+        "19753065346625793": 2,
+        "19753065346691329": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753073530433793",
+      "query": "查找文件 schedule_module_review.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "schedule_module_review.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753073530433793_schedule_模块深度设计文档___二、整体架构___2.1_分层视图",
+      "query": "查找 Schedule 模块深度设计文档 \u003e 二、整体架构 \u003e 2.1 分层视图 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Schedule 模块深度设计文档 \u003e 二、整体架构 \u003e 2.1 分层视图"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753073530433793_schedule_模块深度设计文档___二、整体架构___2.1_分层视图",
+      "query": "2.1 分层视图 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753073580962049",
+        "19753073581027585",
+        "19753073581093121",
+        "19753073581158657"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753073580962049": 3,
+        "19753073581027585": 2,
+        "19753073581093121": 2,
+        "19753073581158657": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753073530433793_schedule_模块深度设计文档___六、刷新管线（refreshprocessor）___6.1_完整状态机",
+      "query": "查找 Schedule 模块深度设计文档 \u003e 六、刷新管线（RefreshProcessor） \u003e 6.1 完整状态机 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Schedule 模块深度设计文档 \u003e 六、刷新管线（RefreshProcessor） \u003e 6.1 完整状态机"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753073530433793_schedule_模块深度设计文档___六、刷新管线（refreshprocessor）___6.1_完整状态机",
+      "query": "6.1 完整状态机 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753073582928129",
+        "19753073582993665",
+        "19753073583059201",
+        "19753073583124737"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753073582928129": 3,
+        "19753073582993665": 2,
+        "19753073583059201": 2,
+        "19753073583124737": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753078160945409",
+      "query": "查找文件 t2retrieval_ab_experiments_2026-05-17.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "t2retrieval_ab_experiments_2026-05-17.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753078160945409_t2retrieval_a_b_experiments（2026-05-17）",
+      "query": "查找 T2Retrieval A/B Experiments（2026-05-17） 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "T2Retrieval A/B Experiments（2026-05-17）"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753078160945409_t2retrieval_a_b_experiments（2026-05-17）",
+      "query": "T2Retrieval A/B Experiments（2026-05-17） 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753078211277057"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753078211277057": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753078160945409_t2retrieval_a_b_experiments（2026-05-17）___下一步建议",
+      "query": "查找 T2Retrieval A/B Experiments（2026-05-17） \u003e 下一步建议 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "T2Retrieval A/B Experiments（2026-05-17） \u003e 下一步建议"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753078160945409_t2retrieval_a_b_experiments（2026-05-17）___下一步建议",
+      "query": "下一步建议 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753078212260097"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753078212260097": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753079201132801",
+      "query": "查找文件 t2retrieval_diagnostic_summary_2026-05-17.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "t2retrieval_diagnostic_summary_2026-05-17.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17）",
+      "query": "查找 T2Retrieval 10K 分层评估诊断总结（2026-05-17） 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "T2Retrieval 10K 分层评估诊断总结（2026-05-17）"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17）",
+      "query": "T2Retrieval 10K 分层评估诊断总结（2026-05-17） 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753079234752769"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753079234752769": 3
+      }
+    },
+    {
+      "name": "section_lookup_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17）___关键发现",
+      "query": "查找 T2Retrieval 10K 分层评估诊断总结（2026-05-17） \u003e 关键发现 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "T2Retrieval 10K 分层评估诊断总结（2026-05-17） \u003e 关键发现"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753079201132801_t2retrieval_10k_分层评估诊断总结（2026-05-17）___关键发现",
+      "query": "关键发现 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753079234883841"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753079234883841": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753081365393665",
+      "query": "查找文件 t2retrieval_search_mode_comparison_2026-05-17.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "t2retrieval_search_mode_comparison_2026-05-17.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17)___commands",
+      "query": "查找 T2Retrieval Search Mode Comparison (2026-05-17) \u003e Commands 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "T2Retrieval Search Mode Comparison (2026-05-17) \u003e Commands"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17)___commands",
+      "query": "Commands 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753081415856385",
+        "19753081415921921",
+        "19753081415987457"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753081415856385": 3,
+        "19753081415921921": 2,
+        "19753081415987457": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17)",
+      "query": "查找 T2Retrieval Search Mode Comparison (2026-05-17) 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "T2Retrieval Search Mode Comparison (2026-05-17)"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753081365393665_t2retrieval_search_mode_comparison_(2026-05-17)",
+      "query": "T2Retrieval Search Mode Comparison (2026-05-17) 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753081415725313"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753081415725313": 3
+      }
+    },
+    {
+      "name": "file_lookup_19753084334960897",
+      "query": "查找文件 tool_module_review.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "tool_module_review.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753084334960897_tool_模块深度设计文档___三、工具分类",
+      "query": "查找 Tool 模块深度设计文档 \u003e 三、工具分类 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Tool 模块深度设计文档 \u003e 三、工具分类"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753084334960897_tool_模块深度设计文档___三、工具分类",
+      "query": "三、工具分类 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753084386013441",
+        "19753084386078977",
+        "19753084386144513",
+        "19753084386210049"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753084386013441": 3,
+        "19753084386078977": 2,
+        "19753084386144513": 2,
+        "19753084386210049": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753084334960897_tool_模块深度设计文档___二、整体架构___2.3_核心_agent_loop",
+      "query": "查找 Tool 模块深度设计文档 \u003e 二、整体架构 \u003e 2.3 核心 Agent Loop 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Tool 模块深度设计文档 \u003e 二、整体架构 \u003e 2.3 核心 Agent Loop"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753084334960897_tool_模块深度设计文档___二、整体架构___2.3_核心_agent_loop",
+      "query": "2.3 核心 Agent Loop 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753084385751297",
+        "19753084385816833",
+        "19753084385882369",
+        "19753084385947905"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753084385751297": 3,
+        "19753084385816833": 2,
+        "19753084385882369": 2,
+        "19753084385947905": 2
+      }
+    },
+    {
+      "name": "file_lookup_19753087203864833",
+      "query": "查找文件 tool_package_health_plan.md",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "file_name",
+        "metadata_title"
+      ],
+      "target": "source_file_name",
+      "expectedIds": [
+        "tool_package_health_plan.md"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_lookup_19753087203864833_tool_包健康度评估与优化计划___二、当前架构回顾___2.1_分层结构",
+      "query": "查找 Tool 包健康度评估与优化计划 \u003e 二、当前架构回顾 \u003e 2.1 分层结构 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Tool 包健康度评估与优化计划 \u003e 二、当前架构回顾 \u003e 2.1 分层结构"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753087203864833_tool_包健康度评估与优化计划___二、当前架构回顾___2.1_分层结构",
+      "query": "2.1 分层结构 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753087254524161",
+        "19753087254589697",
+        "19753087254655233",
+        "19753087254720769"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753087254524161": 3,
+        "19753087254589697": 2,
+        "19753087254655233": 2,
+        "19753087254720769": 2
+      }
+    },
+    {
+      "name": "section_lookup_19753087203864833_tool_包健康度评估与优化计划___三、问题清单（按严重程度排列）___p0_—_代码重复（双重维护风险）___3.1_`nextaction*`_函数在两处重复定义",
+      "query": "查找 Tool 包健康度评估与优化计划 \u003e 三、问题清单（按严重程度排列） \u003e P0 — 代码重复（双重维护风险） \u003e 3.1 `nextAction*` 函数在两处重复定义 这一节",
+      "tags": [
+        "markdown",
+        "markdown",
+        "keyword",
+        "section",
+        "metadata_title"
+      ],
+      "target": "section",
+      "expectedIds": [
+        "Tool 包健康度评估与优化计划 \u003e 三、问题清单（按严重程度排列） \u003e P0 — 代码重复（双重维护风险） \u003e 3.1 `nextAction*` 函数在两处重复定义"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "keyword",
+      "topK": 10,
+      "chunkStrategy": "markdown"
+    },
+    {
+      "name": "section_semantic_19753087203864833_tool_包健康度评估与优化计划___三、问题清单（按严重程度排列）___p0_—_代码重复（双重维护风险）___3.1_`nextaction*`_函数在两处重复定义",
+      "query": "3.1 `nextAction*` 函数在两处重复定义 主要讲什么",
+      "tags": [
+        "markdown",
+        "markdown",
+        "semantic",
+        "section"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "19753087255048449",
+        "19753087255113985"
+      ],
+      "retrieved": null,
+      "knowledgeBaseIds": [
+        "19752977497649409"
+      ],
+      "searchMode": "semantic",
+      "topK": 10,
+      "chunkStrategy": "markdown",
+      "expectedRelevance": {
+        "19753087255048449": 3,
+        "19753087255113985": 2
+      }
+    }
+  ]
+}

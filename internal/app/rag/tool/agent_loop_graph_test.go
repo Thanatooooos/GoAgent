@@ -7,6 +7,7 @@ import (
 
 	. "local/rag-project/internal/app/rag/tool"
 	raggraph "local/rag-project/internal/app/rag/tool/invokers/graph"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
 // countingTool is a tool stub that counts invocations.
@@ -234,7 +235,7 @@ func setupGraphTestRegistry() *Registry {
 // and the agent loop completes in a single round.
 func TestGraphToolDocFailScenario(t *testing.T) {
 	registry := setupGraphTestRegistry()
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -294,7 +295,7 @@ func TestGraphToolDocRunScenario(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -320,7 +321,7 @@ func TestGraphToolDocRunScenario(t *testing.T) {
 // do NOT route to the graph tool.
 func TestGraphToolNotInvokedForChunkLogQuery(t *testing.T) {
 	registry := setupGraphTestRegistry()
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -346,7 +347,7 @@ func TestGraphToolNotInvokedForChunkLogQuery(t *testing.T) {
 // route to discovery tools (document_list), not the graph tool.
 func TestGraphToolNotInvokedForOpenEndedQuestion(t *testing.T) {
 	registry := setupGraphTestRegistry()
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -372,7 +373,7 @@ func TestGraphToolNotInvokedForOpenEndedQuestion(t *testing.T) {
 // still routes to task_ingestion_diagnose, not the document graph tool.
 func TestGraphToolTaskDiagnosisNotAffected(t *testing.T) {
 	registry := setupGraphTestRegistry()
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -454,7 +455,7 @@ func TestGraphToolRealChainExecution(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	graphTool, err := raggraph.NewDiagnosisGraphTool(executor)
 	if err != nil {
 		t.Fatalf("create real diagnosis graph tool: %v", err)
@@ -469,7 +470,7 @@ func TestGraphToolRealChainExecution(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -528,7 +529,7 @@ func TestGraphToolDegradedFallback(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -570,7 +571,7 @@ func TestGraphToolObserverNodeLevel(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -606,7 +607,7 @@ func TestGraphToolObserverUnknownDepth(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -669,14 +670,14 @@ func TestFullDiagnoseSearchChain(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	searchTool, err := raggraph.NewDiagnoseSearchGraphTool(executor)
 	if err != nil {
 		t.Fatalf("create real diagnose-search graph tool: %v", err)
 	}
 	registry.MustRegister(searchTool)
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -733,7 +734,7 @@ func TestDiagnoseSearchNotTriggeredForPlainDiagnosis(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{

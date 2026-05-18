@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
 func TestTaskListBehaviorObserveNextAndRender(t *testing.T) {
@@ -173,7 +174,7 @@ func TestAgentLoopTaskModulesUseBehaviorDrivenContinuation(t *testing.T) {
 		},
 	}
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{

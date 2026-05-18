@@ -1,6 +1,6 @@
 # Project Progress Context
 
-更新时间：2026-05-12
+更新时间：2026-05-18
 
 这份文档用于维护 `goagent` 当前项目进度，帮助后续开发快速对齐当前阶段、已完成能力、最新进展、验证状态、已知风险和下一步计划。
 
@@ -159,7 +159,7 @@
   - 诊断类：`document_ingestion_diagnose`（含 live task node 补齐）、`task_ingestion_diagnose`、`trace_retrieval_diagnose`
   - 查询类：`document_query`、`document_chunk_log_query`、`ingestion_task_query`、`ingestion_task_node_query`、`trace_node_query`
   - 发现类：`document_list`（按 status/query 分页）、`task_list`（按 status/pipelineId 分页）
-  - 外部类：`web_search`（可配置 SearchProvider：DuckDuckGo / Tavily）、`web_fetch`（网页正文提取，并发支持）
+  - 外部类：`web_search`（可配置 SearchProvider：DuckDuckGo / Tavily / Tavily MCP，支持 MCP 主路 + API fallback）、`web_fetch`（网页正文提取，并发支持）
   - 元工具：`think`（推理记录，无副作用）
   - Graph：`document_root_cause_diagnosis`、`document_diagnose_with_search`、`external_evidence_workflow`
 - 已实现能力
@@ -171,8 +171,62 @@
   - baseRules 开放问题处理（"最近哪些文档失败了？" → `document_list`）
   - SSE `tool / tool_start / tool_result / agent_think` 事件
   - trace `agent_round / tool_call / agent_observation` 落库
+  - 通用 MCP 基础设施首版：stdio `Manager`、懒启动 session、`ListTools / CallTool`、runtime 生命周期回收
+  - Tavily MCP 接入：`web_search` 可走 `tavily-mcp -> tavily/duckduckgo fallback`
 
 ## 最新进展
+
+### 2026-05-18
+
+#### 1. Tool 模块 P0 收口推进了一轮
+
+- 新增 `docs/tool_module_constraints.md`，明确后续改造遵循：
+  - `module-first`
+  - 显式依赖注入优先
+  - 顶层 `tool` compat 层不再继续承载新语义
+  - assembly 失败优先降级而不是 `panic`
+- 主生产路径进一步去全局化：
+  - `AgentLoop` / workflow control 推断链路改为优先走显式 registry
+  - assembly 默认 workflow 组装不再依赖包级 registry setter
+- graph tool 装配失败从 `panic` 改为 warning + skip，对复杂 family 的降级更友好
+- 顶层 compat 继续瘦身，已删除：
+  - `agent_loop_forward.go`
+  - `runtime_forward.go`
+- 图工具对 `Executor` 的依赖也已切到 `runtime.Executor` 真源，减少 facade 依赖面
+
+#### 2. 落地了 Tavily MCP 与通用 MCP 底座（首版）
+
+- 新增 `internal/infra-mcp`
+  - `Manager`
+  - `ServerConfig`
+  - stdio command transport 懒连接
+  - `ListTools / CallTool / Close`
+- `bootstrap/rag.Runtime` 现在会创建并持有 `mcpManager`，关闭 runtime 时统一回收 MCP 资源
+- `config` 扩展：
+  - `rag.mcp.servers.<name>`
+  - `rag.search.web-search.fallback-provider`
+  - `rag.search.web-search.mcp.server`
+  - `rag.search.web-search.mcp.search-tool`
+- `web_search` provider 层完成三件事：
+  - 新增 `TavilyMCPProvider`
+  - 新增 `FallbackSearchProvider`
+  - `buildSearchProvider(...)` 支持 `tavily-mcp`
+- 当前默认策略已调整为：
+  - `provider=tavily-mcp`
+  - `fallback-provider=tavily`
+- `web_search` 对上层契约保持不变，但结果 metadata 现在可显式表达：
+  - `provider=tavily-mcp`
+  - `providerActual=tavily`
+  - `providerFallbackUsed=true/false`
+
+#### 3. 回归验证
+
+- `go test ./internal/infra-mcp ./internal/app/rag/tool/... ./internal/bootstrap/rag ./internal/framework/config -count=1` PASS
+- `go test ./... -run Test^$ -count=1` PASS
+- Tool 行为未回退：
+  - `web_search -> web_fetch`
+  - `external_evidence_workflow`
+  - `document_diagnose_with_search`
 
 ### 2026-05-10
 

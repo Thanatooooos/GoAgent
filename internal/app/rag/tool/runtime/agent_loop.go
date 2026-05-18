@@ -270,11 +270,11 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 		Used:           len(allResults) > 0,
 		Context:        RenderContextWithRegistry(w.executor.registry, allResults),
 		AnswerGuidance: BuildAnswerGuidanceWithRegistry(w.executor.registry, allResults),
-		Control:        deriveWorkflowControl(input, allResults),
+		Control:        deriveWorkflowControlWithRegistry(input, allResults, w.executor.registry),
 		Calls:          allCalls,
 		Rounds:         rounds,
 	}
-	workflowResult.TraceMeta = buildWorkflowTraceMeta(workflowResult.Control, input.RetrieveResult, allResults)
+	workflowResult.TraceMeta = buildWorkflowTraceMetaWithRegistry(workflowResult.Control, input.RetrieveResult, allResults, w.executor.registry)
 	if len(degradeReasons) > 0 {
 		workflowResult.Degraded = true
 		workflowResult.DegradeReason = strings.Join(uniqueStrings(degradeReasons), "; ")

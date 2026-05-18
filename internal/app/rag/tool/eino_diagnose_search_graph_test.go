@@ -7,6 +7,7 @@ import (
 
 	. "local/rag-project/internal/app/rag/tool"
 	raggraph "local/rag-project/internal/app/rag/tool/invokers/graph"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
 // setupDiagnoseSearchRegistry creates a registry with document_root_cause_diagnosis + web_search stubs.
@@ -85,7 +86,7 @@ func TestDiagnoseSearchGraphToolRequiresDocumentId(t *testing.T) {
 // diagnose finds error → keyword extracted → web_search called.
 func TestDiagnoseSearchGraphWithError(t *testing.T) {
 	registry := setupDiagnoseSearchRegistry()
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	tool, err := raggraph.NewDiagnoseSearchGraphTool(executor)
 	if err != nil {
 		t.Fatalf("create tool: %v", err)
@@ -145,7 +146,7 @@ func TestDiagnoseSearchGraphSkipsSearchWhenNoError(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	tool, err := raggraph.NewDiagnoseSearchGraphTool(executor)
 	if err != nil {
 		t.Fatalf("create tool: %v", err)
@@ -191,7 +192,7 @@ func TestDiagnoseSearchGraphDiagnoseFails(t *testing.T) {
 		},
 	})
 
-	executor := NewExecutor(registry)
+	executor := ragruntime.NewExecutor(registry)
 	tool, err := raggraph.NewDiagnoseSearchGraphTool(executor)
 	if err != nil {
 		t.Fatalf("create tool: %v", err)

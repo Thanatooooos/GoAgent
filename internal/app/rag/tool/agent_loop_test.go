@@ -9,6 +9,11 @@ import (
 	"time"
 
 	ragcore "local/rag-project/internal/app/rag/tool/core"
+	graphmod "local/rag-project/internal/app/rag/tool/modules/graph"
+	metamod "local/rag-project/internal/app/rag/tool/modules/meta"
+	systemmod "local/rag-project/internal/app/rag/tool/modules/system"
+	tracemod "local/rag-project/internal/app/rag/tool/modules/trace"
+	webmod "local/rag-project/internal/app/rag/tool/modules/web"
 	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
@@ -37,22 +42,22 @@ func setupTestRegistry() *Registry {
 	webSpec := ToolSpec{Capability: CapabilitySearch, EvidenceSources: []string{EvidenceSourceExternalWeb}, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "web"}
 	traceSpec := ToolSpec{Capability: CapabilityDiagnosis, EvidenceSources: []string{EvidenceSourceRAGTrace}, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "trace"}
 
-	register("think", ToolSpec{Capability: CapabilityGeneral, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "system"}, ThinkBehavior())
-	register("web_search", webSpec, WebSearchBehavior())
-	register("web_fetch", webSpec, WebFetchBehavior())
-	register("external_evidence_workflow", webSpec, ExternalEvidenceWorkflowBehavior())
-	register("document_list", systemSpec, DocumentListBehavior())
-	register("task_list", systemSpec, TaskListBehavior())
-	register("document_query", systemSpec, DocumentQueryBehavior())
-	register("document_chunk_log_query", systemSpec, DocumentChunkLogQueryBehavior())
-	register("document_ingestion_diagnose", systemSpec, DocumentIngestionDiagnoseBehavior())
-	register("ingestion_task_query", systemSpec, IngestionTaskQueryBehavior())
-	register("ingestion_task_node_query", systemSpec, IngestionTaskNodeQueryBehavior())
-	register("task_ingestion_diagnose", systemSpec, TaskIngestionDiagnoseBehavior())
-	register("trace_node_query", traceSpec, TraceNodeQueryBehavior())
-	register("trace_retrieval_diagnose", traceSpec, TraceRetrievalDiagnoseBehavior())
-	register("document_root_cause_diagnosis", systemSpec, DocumentRootCauseDiagnosisBehavior())
-	register("document_diagnose_with_search", systemSpec, DocumentDiagnoseWithSearchBehavior())
+	register("think", ToolSpec{Capability: CapabilityGeneral, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "system"}, metamod.ThinkBehavior())
+	register("web_search", webSpec, webmod.WebSearchBehavior())
+	register("web_fetch", webSpec, webmod.WebFetchBehavior())
+	register("external_evidence_workflow", webSpec, webmod.ExternalEvidenceWorkflowBehavior())
+	register("document_list", systemSpec, systemmod.DocumentListBehavior())
+	register("task_list", systemSpec, systemmod.TaskListBehavior())
+	register("document_query", systemSpec, systemmod.DocumentQueryBehavior())
+	register("document_chunk_log_query", systemSpec, systemmod.DocumentChunkLogQueryBehavior())
+	register("document_ingestion_diagnose", systemSpec, systemmod.DocumentIngestionDiagnoseBehavior())
+	register("ingestion_task_query", systemSpec, systemmod.IngestionTaskQueryBehavior())
+	register("ingestion_task_node_query", systemSpec, systemmod.IngestionTaskNodeQueryBehavior())
+	register("task_ingestion_diagnose", systemSpec, systemmod.TaskIngestionDiagnoseBehavior())
+	register("trace_node_query", traceSpec, tracemod.TraceNodeQueryBehavior())
+	register("trace_retrieval_diagnose", traceSpec, tracemod.TraceRetrievalDiagnoseBehavior())
+	register("document_root_cause_diagnosis", systemSpec, graphmod.DocumentRootCauseDiagnosisBehavior())
+	register("document_diagnose_with_search", systemSpec, graphmod.DocumentDiagnoseWithSearchBehavior())
 
 	ragruntime.SetNextActionRegistry(r)
 	ragruntime.SetWorkflowControlRegistry(r)
@@ -181,7 +186,7 @@ func TestAgentLoopRunsMultipleRounds(t *testing.T) {
 	}
 	sink := &eventSinkRecorder{}
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -230,7 +235,7 @@ func TestAgentLoopRunsMultipleRounds(t *testing.T) {
 }
 
 func TestPlanCallsFromHintParsesStructuredHint(t *testing.T) {
-	calls := planCallsFromHint("tool:ingestion_task_query|taskId=task-1|includeNodes=true", []Definition{{
+	calls := ragruntime.PlanCallsFromHint("tool:ingestion_task_query|taskId=task-1|includeNodes=true", []Definition{{
 		Name: "ingestion_task_query",
 		Parameters: []ParameterDefinition{
 			{Name: "taskId", Type: ParamTypeString, Required: true},
@@ -253,7 +258,7 @@ func TestPlanCallsFromHintParsesStructuredHint(t *testing.T) {
 }
 
 func TestPlanCallsFromHintCallsUsesStructuredArguments(t *testing.T) {
-	calls := planCallsFromHintCalls([]HintCall{{
+	calls := ragruntime.PlanCallsFromHintCalls([]HintCall{{
 		Name: "ingestion_task_query",
 		Arguments: map[string]any{
 			"taskId":       "task-1",
@@ -279,7 +284,7 @@ func TestPlanCallsFromHintCallsUsesStructuredArguments(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromDocumentQuery(t *testing.T) {
-	calls := planCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResults([]Result{
 		{
 			Name: "document_query",
 			Data: map[string]any{
@@ -301,9 +306,9 @@ func TestPlanCallsFromResultsFallsBackFromDocumentQuery(t *testing.T) {
 }
 
 func TestPlanWithBaseRulesUsesDocumentDiagnosisForRunningQuestion(t *testing.T) {
-	calls := planWithBaseRules(WorkflowInput{
+	calls := ragruntime.PlanWithBaseRules(WorkflowInput{
 		Question: "document doc_run_01 现在还在运行吗？",
-	}, defaultMaxIterations)
+	}, ragruntime.DefaultMaxIterations)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
@@ -313,9 +318,9 @@ func TestPlanWithBaseRulesUsesDocumentDiagnosisForRunningQuestion(t *testing.T) 
 }
 
 func TestPlanWithBaseRulesUsesDocumentDiagnosisForCurrentNodeQuestion(t *testing.T) {
-	calls := planWithBaseRules(WorkflowInput{
+	calls := ragruntime.PlanWithBaseRules(WorkflowInput{
 		Question: "帮我看看 doc_run_01 现在跑到哪个节点了",
-	}, defaultMaxIterations)
+	}, ragruntime.DefaultMaxIterations)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
@@ -325,10 +330,10 @@ func TestPlanWithBaseRulesUsesDocumentDiagnosisForCurrentNodeQuestion(t *testing
 }
 
 func TestPlanWithBaseRulesOpenEndedDocumentsFailed(t *testing.T) {
-	calls := planWithBaseRules(WorkflowInput{
+	calls := ragruntime.PlanWithBaseRules(WorkflowInput{
 		Question:         "最近有哪些文档导入失败了？",
 		KnowledgeBaseIDs: []string{"kb-1"},
-	}, defaultMaxIterations)
+	}, ragruntime.DefaultMaxIterations)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
@@ -344,9 +349,9 @@ func TestPlanWithBaseRulesOpenEndedDocumentsFailed(t *testing.T) {
 }
 
 func TestPlanWithBaseRulesOpenEndedTasksRunning(t *testing.T) {
-	calls := planWithBaseRules(WorkflowInput{
+	calls := ragruntime.PlanWithBaseRules(WorkflowInput{
 		Question: "哪些ingestion任务还在运行中？",
-	}, defaultMaxIterations)
+	}, ragruntime.DefaultMaxIterations)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
@@ -359,9 +364,9 @@ func TestPlanWithBaseRulesOpenEndedTasksRunning(t *testing.T) {
 }
 
 func TestPlanWithBaseRulesOpenEndedDocumentsFailedNoDefaultKB(t *testing.T) {
-	calls := planWithBaseRules(WorkflowInput{
+	calls := ragruntime.PlanWithBaseRules(WorkflowInput{
 		Question: "最近有哪些文档导入失败了？",
-	}, defaultMaxIterations)
+	}, ragruntime.DefaultMaxIterations)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
@@ -379,9 +384,9 @@ func TestPlanWithBaseRulesOpenEndedDocumentsFailedNoDefaultKB(t *testing.T) {
 
 func TestPlanWithBaseRulesOpenEndedNotTriggeredForSpecificID(t *testing.T) {
 	// Should NOT fall into open-ended path when a specific doc ID is present.
-	calls := planWithBaseRules(WorkflowInput{
+	calls := ragruntime.PlanWithBaseRules(WorkflowInput{
 		Question: "doc_fail_01 这个失败的文档什么情况？",
-	}, defaultMaxIterations)
+	}, ragruntime.DefaultMaxIterations)
 	if len(calls) == 0 {
 		t.Fatal("expected at least 1 call for specific doc ID")
 	}
@@ -393,7 +398,7 @@ func TestPlanWithBaseRulesOpenEndedNotTriggeredForSpecificID(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromChunkLogToTaskQuery(t *testing.T) {
-	calls := planCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResults([]Result{
 		{
 			Name: "document_chunk_log_query",
 			Data: map[string]any{
@@ -420,7 +425,7 @@ func TestPlanCallsFromResultsFallsBackFromChunkLogToTaskQuery(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromTaskQueryToNodeQuery(t *testing.T) {
-	calls := planCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResults([]Result{
 		{
 			Name: "ingestion_task_query",
 			Data: map[string]any{
@@ -448,7 +453,7 @@ func TestPlanCallsFromResultsFallsBackFromTaskQueryToNodeQuery(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromWebSearchToWebFetch(t *testing.T) {
-	calls := planCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResults([]Result{
 		{
 			Name: "web_search",
 			Data: map[string]any{
@@ -475,7 +480,7 @@ func TestPlanCallsFromResultsFallsBackFromWebSearchToWebFetch(t *testing.T) {
 }
 
 func TestObserveDocumentDiagnosisKeepsDrillingWhenOnlyLogErrorExists(t *testing.T) {
-	observation := observeDocumentDiagnosis(Result{
+	observation, _ := systemmod.DocumentIngestionDiagnoseBehavior().Observe(Result{
 		Name: "document_ingestion_diagnose",
 		Data: map[string]any{
 			"conclusion":     "document ingestion failed, but no failed node was captured",
@@ -483,7 +488,7 @@ func TestObserveDocumentDiagnosisKeepsDrillingWhenOnlyLogErrorExists(t *testing.
 			"latestTaskId":   "task-1",
 			"latestLogError": "indexer failed after retries",
 		},
-	})
+	}, ObserveInput{})
 	if observation.Done {
 		t.Fatal("expected observer to continue when only task/log-level error exists")
 	}
@@ -493,7 +498,7 @@ func TestObserveDocumentDiagnosisKeepsDrillingWhenOnlyLogErrorExists(t *testing.
 }
 
 func TestObserveDocumentDiagnosisStopsOnNodeLevelError(t *testing.T) {
-	observation := observeDocumentDiagnosis(Result{
+	observation, _ := systemmod.DocumentIngestionDiagnoseBehavior().Observe(Result{
 		Name: "document_ingestion_diagnose",
 		Data: map[string]any{
 			"conclusion":      "document ingestion failed at node indexer",
@@ -502,14 +507,14 @@ func TestObserveDocumentDiagnosisStopsOnNodeLevelError(t *testing.T) {
 			"latestNodeId":    "indexer",
 			"latestNodeError": "connection refused: vector store unavailable",
 		},
-	})
+	}, ObserveInput{})
 	if !observation.Done {
 		t.Fatal("expected observer to stop when node-level error already exists")
 	}
 }
 
 func TestPlanCallsFromHintCallsSupportsNewToolDefinitionsWithoutHardcodedSwitch(t *testing.T) {
-	calls := planCallsFromHintCalls([]HintCall{{
+	calls := ragruntime.PlanCallsFromHintCalls([]HintCall{{
 		Name: "metric_query",
 		Arguments: map[string]any{
 			"metricName": "ingestion_failures",
@@ -538,14 +543,14 @@ func TestPlanCallsFromHintCallsSupportsNewToolDefinitionsWithoutHardcodedSwitch(
 }
 
 func TestObserveDocumentDiagnosisRunningKeepsVerifyingTaskState(t *testing.T) {
-	observation := observeDocumentDiagnosis(Result{
+	observation, _ := systemmod.DocumentIngestionDiagnoseBehavior().Observe(Result{
 		Name: "document_ingestion_diagnose",
 		Data: map[string]any{
 			"conclusion":   "document ingestion task is still running",
 			"confidence":   "medium",
 			"latestTaskId": "task-run-1",
 		},
-	})
+	}, ObserveInput{})
 	if observation.Done {
 		t.Fatal("expected running document diagnosis to continue")
 	}
@@ -558,14 +563,14 @@ func TestObserveDocumentDiagnosisRunningKeepsVerifyingTaskState(t *testing.T) {
 }
 
 func TestObserveTaskDiagnosisRunningKeepsVerifyingTaskState(t *testing.T) {
-	observation := observeTaskDiagnosis(Result{
+	observation, _ := systemmod.TaskIngestionDiagnoseBehavior().Observe(Result{
 		Name: "task_ingestion_diagnose",
 		Data: map[string]any{
 			"taskId":     "task-run-1",
 			"conclusion": "task is still running and no failed node has been confirmed yet",
 			"confidence": "medium",
 		},
-	})
+	}, ObserveInput{})
 	if observation.Done {
 		t.Fatal("expected running task diagnosis to continue")
 	}
@@ -578,7 +583,7 @@ func TestObserveTaskDiagnosisRunningKeepsVerifyingTaskState(t *testing.T) {
 }
 
 func TestObserveTaskQueryRunningNodeUsesVerificationInsteadOfFailureDrilldown(t *testing.T) {
-	observation := observeTaskQuery(Result{
+	observation, _ := systemmod.IngestionTaskQueryBehavior().Observe(Result{
 		Name: "ingestion_task_query",
 		Data: map[string]any{
 			"taskId": "task-run-1",
@@ -588,7 +593,7 @@ func TestObserveTaskQueryRunningNodeUsesVerificationInsteadOfFailureDrilldown(t 
 				{"nodeId": "indexer", "status": "running"},
 			},
 		},
-	})
+	}, ObserveInput{})
 	if observation.Done {
 		t.Fatal("expected running task query to continue")
 	}
@@ -604,7 +609,7 @@ func TestObserveTaskQueryRunningNodeUsesVerificationInsteadOfFailureDrilldown(t 
 }
 
 func TestObserveWebFetchUsesCombinedTextFromPages(t *testing.T) {
-	observation := observeWebFetch(Result{
+	observation, _ := webmod.WebFetchBehavior().Observe(Result{
 		Name:   "web_fetch",
 		Status: CallStatusSuccess,
 		Data: map[string]any{
@@ -616,7 +621,7 @@ func TestObserveWebFetchUsesCombinedTextFromPages(t *testing.T) {
 				},
 			},
 		},
-	})
+	}, ObserveInput{})
 	if !observation.Done {
 		t.Fatal("expected web_fetch observation to finish")
 	}
@@ -717,7 +722,7 @@ func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetMaxIterations(4)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -801,7 +806,7 @@ func TestAgentLoopTaskRunScenarioStaysInVerificationPath(t *testing.T) {
 		},
 	})
 
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
 		Question: "task-run-1 当前还在运行吗？",
@@ -900,7 +905,7 @@ func TestAgentLoopThinkToolCapturesReasoningInTrace(t *testing.T) {
 		},
 	}
 	sink := &eventSinkRecorder{}
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -1017,7 +1022,7 @@ func TestAgentLoopRejectsPlannerCallWithInventedNodeID(t *testing.T) {
 			{Calls: []Call{{Name: "ingestion_task_node_query", Arguments: map[string]any{"taskId": "task-1", "nodeId": "node_0"}}}},
 		},
 	}
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
@@ -1077,7 +1082,7 @@ func TestAgentLoopParallelToolCallsPreserveEventOrder(t *testing.T) {
 		}},
 	}
 	sink := &eventSinkRecorder{}
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 	loop.SetParallelToolCalls(true, 2)
 
@@ -1151,7 +1156,7 @@ func TestAgentLoopParallelToolCallsExecuteConcurrently(t *testing.T) {
 			},
 		}},
 	}
-	loop := NewAgentLoop(NewExecutor(registry))
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 	loop.SetPlanner(planner)
 	loop.SetParallelToolCalls(true, 2)
 
@@ -1167,7 +1172,7 @@ func TestAgentLoopParallelToolCallsExecuteConcurrently(t *testing.T) {
 }
 
 func TestAgentLoopParallelToolCallsImproveWallClockDuration(t *testing.T) {
-	buildLoop := func(parallel bool) *AgentLoop {
+	buildLoop := func(parallel bool) *ragruntime.AgentLoop {
 		registry := NewRegistry()
 		registry.MustRegister(staticTool{
 			definition: Definition{
@@ -1197,7 +1202,7 @@ func TestAgentLoopParallelToolCallsImproveWallClockDuration(t *testing.T) {
 				},
 			}},
 		}
-		loop := NewAgentLoop(NewExecutor(registry))
+		loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
 		loop.SetPlanner(planner)
 		loop.SetParallelToolCalls(parallel, 2)
 		return loop

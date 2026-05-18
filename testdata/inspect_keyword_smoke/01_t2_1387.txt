@@ -1,0 +1,8 @@
+[1] t2_1387
+query=海口新港的水有多深
+expected=1 firstRelevantRank=0 mrr=0.0000 hit@1=false recall@10=0.0000 ndcg@10=0.0000
+channels=keyword,metadata_title
+channel_stats:
+  - keyword chunks=0 latencyMs=6 metadata={"expandedTopK":20,"multiplier":2,"topK":10}
+  - metadata_title chunks=0 latencyMs=40 metadata={"expandedTopK":20,"fields":["document_name","source_file_name","section"],"multiplier":2,"topK":10}
+top_chunks:

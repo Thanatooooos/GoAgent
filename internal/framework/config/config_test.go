@@ -45,4 +45,16 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Rag.Search.WebSearch.SourcePolicy.DenyDomains[0] != "quora.com" {
 		t.Fatalf("expected web search source policy deny-domains to load, got %+v", cfg.Rag.Search.WebSearch.SourcePolicy.DenyDomains)
 	}
+	if cfg.Rag.Search.WebSearch.Provider != "tavily-mcp" {
+		t.Fatalf("unexpected web search provider: %q", cfg.Rag.Search.WebSearch.Provider)
+	}
+	if cfg.Rag.Search.WebSearch.FallbackProvider != "tavily" {
+		t.Fatalf("unexpected web search fallback provider: %q", cfg.Rag.Search.WebSearch.FallbackProvider)
+	}
+	if cfg.Rag.Search.WebSearch.MCP.Server != "tavily" {
+		t.Fatalf("unexpected web search MCP server: %q", cfg.Rag.Search.WebSearch.MCP.Server)
+	}
+	if _, ok := cfg.Rag.MCP.Servers["tavily"]; !ok {
+		t.Fatalf("expected rag.mcp.servers.tavily to load, got %+v", cfg.Rag.MCP.Servers)
+	}
 }

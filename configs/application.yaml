@@ -93,13 +93,25 @@ rag:
 
   mcp:
     servers:
-      - name: default
-        url: http://localhost:9099
+      tavily:
+        enabled: false
+        transport: stdio
+        command: npx
+        args:
+          - -y
+          - tavily-mcp
+        env: {}
+        startup-timeout-ms: 10000
+        call-timeout-ms: 15000
 
   search:
     web-search:
-      provider: tavily          # "duckduckgo" (default, blocked in mainland China) or "tavily"
+      provider: tavily-mcp      # "duckduckgo", "tavily", or "tavily-mcp"
+      fallback-provider: tavily # optional fallback when the primary provider fails
       api-key: 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       # required for tavily, sign up at https://app.tavily.com
+      mcp:
+        server: tavily
+        search-tool: tavily-search
       source-policy:
         allow-domains:
           - go.dev
@@ -120,6 +132,13 @@ rag:
       intent-directed:
         min-intent-score: 0.4
         top-k-multiplier: 2
+      keyword:
+        enabled-fallback-trgm: true
+      metadata-title:
+        enabled-fallback-trgm: true
+        section-weight: 3.0
+        document-name-weight: 1.4
+        source-file-name-weight: 1.8
 
   trace:
     enabled: true

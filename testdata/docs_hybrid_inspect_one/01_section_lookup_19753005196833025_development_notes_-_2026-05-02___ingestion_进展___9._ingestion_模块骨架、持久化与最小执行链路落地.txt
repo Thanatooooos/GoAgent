@@ -1,0 +1,29 @@
+[1] section_lookup_19753005196833025_development_notes_-_2026-05-02___ingestion_进展___9._ingestion_模块骨架、持久化与最小执行链路落地
+query=查找 Development Notes - 2026-05-02 > Ingestion 进展 > 9. ingestion 模块骨架、持久化与最小执行链路落地 这一节
+expected=1 firstRelevantRank=1 mrr=1.0000 hit@1=true recall@10=1.0000 ndcg@10=1.0000
+channels=keyword,metadata_title,vector_global
+channel_stats:
+  - keyword chunks=10 latencyMs=41 metadata={"expandedTopK":20,"multiplier":2,"topK":10}
+  - metadata_title chunks=20 latencyMs=35 metadata={"expandedTopK":20,"fields":["document_name","source_file_name","section"],"multiplier":2,"topK":10}
+  - vector_global chunks=30 latencyMs=775 metadata={"expandedTopK":30,"multiplier":3,"topK":10}
+top_chunks:
+   #1 score=0.0325 chunk=19753005248213249 doc=daliy__development_notes_2026-05-02.md section=Development Notes - 2026-05-02 > Ingestion 进展 > 9. ingestion 模块骨架、持久化与最小执行链路落地
+     ### 9. ingestion 模块骨架、持久化与最小执行链路落地  本轮新增：  - `docs/ingestion_module_goal.md` - `docs/ing...
+   #2 score=0.0320 chunk=19753007797301505 doc=daliy__development_notes_2026-05-05.md section=Development Notes - 2026-05-05
+     # Development Notes - 2026-05-05
+   #3 score=0.0320 chunk=19753005248147713 doc=daliy__development_notes_2026-05-02.md section=Development Notes - 2026-05-02 > Ingestion 进展
+     ## Ingestion 进展
+   #4 score=0.0315 chunk=19753005247164673 doc=daliy__development_notes_2026-05-02.md section=Development Notes - 2026-05-02
+     # Development Notes - 2026-05-02
+   #5 score=0.0308 chunk=19753006807445761 doc=daliy__development_notes_2026-05-04.md section=Development Notes - 2026-05-04
+     # Development Notes - 2026-05-04
+   #6 score=0.0308 chunk=19753009055592705 doc=daliy__development_notes_2026-05-07.md section=Development Notes - 2026-05-07
+     # Development Notes - 2026-05-07
+   #7 score=0.0301 chunk=19753011958051073 doc=daliy__development_notes_2026-05-08.md section=Development Notes - 2026-05-08
+     # Development Notes - 2026-05-08
+   #8 score=0.0296 chunk=19753015246385409 doc=daliy__development_notes_2026-05-09.md section=Development Notes - 2026-05-09
+     # Development Notes - 2026-05-09
+   #9 score=0.0283 chunk=19753017125433601 doc=daliy__development_notes_2026-05-10.md section=Development Notes - 2026-05-10
+     # Development Notes - 2026-05-10
+   #10 score=0.0282 chunk=19753024088043777 doc=daliy__development_notes_2026-05-11.md section=Development Notes 2026-05-11
+     # Development Notes 2026-05-11

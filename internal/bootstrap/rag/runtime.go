@@ -2,7 +2,9 @@ package rag
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -19,6 +21,7 @@ import (
 	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
 	"local/rag-project/internal/framework/config"
 	infraai "local/rag-project/internal/infra-ai"
+	inframcp "local/rag-project/internal/infra-mcp"
 )
 
 // RuntimeOptions 描述 RAG runtime 的装配选项。
@@ -33,6 +36,7 @@ type RuntimeOptions struct {
 type Runtime struct {
 	DB           *gorm.DB
 	ownsDB       bool
+	mcpManager   *inframcp.Manager
 	Retrieve     ragretrieve.Service
 	Conversation *ragservice.ConversationService
 	Message      *ragservice.ConversationMessageService
@@ -128,6 +132,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	feedbackService := ragservice.NewMessageFeedbackService(messageRepo, feedbackRepo)
 	traceService := ragservice.NewTraceService(traceRunRepo, traceNodeRepo, userRepo)
 	tracer := ragservice.NewChatTracer(traceRunRepo, traceNodeRepo)
+	mcpManager := buildMCPManager(cfg)
 	chatService := ragservice.NewRagChatService(
 		conversationService,
 		messageService,
@@ -142,11 +147,12 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	if cfg != nil {
 		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
 	}
-	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, aiRuntime.Chat))
+	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, mcpManager, aiRuntime.Chat))
 
 	return &Runtime{
 		DB:           db,
 		ownsDB:       ownsDB,
+		mcpManager:   mcpManager,
 		Retrieve:     retrieveService,
 		Conversation: conversationService,
 		Message:      messageService,
@@ -158,10 +164,17 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 
 // Close 关闭 runtime 持有的数据库资源。
 func (r *Runtime) Close() error {
-	if r == nil || r.DB == nil || !r.ownsDB {
+	if r == nil {
 		return nil
 	}
-	return closeRuntimeDB(r.DB)
+	var err error
+	if r.mcpManager != nil {
+		err = errors.Join(err, r.mcpManager.Close())
+	}
+	if r.DB == nil || !r.ownsDB {
+		return err
+	}
+	return errors.Join(err, closeRuntimeDB(r.DB))
 }
 
 // ragRequiredTables RAG 模块依赖的数据表。
@@ -189,4 +202,51 @@ func closeRuntimeDB(db *gorm.DB) error {
 		return err
 	}
 	return sqlDB.Close()
+}
+
+func buildMCPManager(cfg *config.Config) *inframcp.Manager {
+	if cfg == nil {
+		return nil
+	}
+	servers := make(map[string]inframcp.ServerConfig, len(cfg.Rag.MCP.Servers))
+	for name, serverCfg := range cfg.Rag.MCP.Servers {
+		servers[strings.TrimSpace(name)] = inframcp.ServerConfig{
+			Enabled:          serverCfg.Enabled,
+			Transport:        serverCfg.Transport,
+			Command:          serverCfg.Command,
+			Args:             append([]string(nil), serverCfg.Args...),
+			Env:              cloneMCPEnv(serverCfg.Env),
+			StartupTimeoutMs: serverCfg.StartupTimeoutMs,
+			CallTimeoutMs:    serverCfg.CallTimeoutMs,
+		}
+	}
+
+	serverName := strings.TrimSpace(cfg.Rag.Search.WebSearch.MCP.Server)
+	if serverName == "" {
+		serverName = "tavily"
+	}
+	apiKey := strings.TrimSpace(cfg.Rag.Search.WebSearch.ApiKey)
+	if apiKey != "" {
+		if serverCfg, ok := servers[serverName]; ok {
+			if serverCfg.Env == nil {
+				serverCfg.Env = map[string]string{}
+			}
+			if strings.TrimSpace(serverCfg.Env["TAVILY_API_KEY"]) == "" {
+				serverCfg.Env["TAVILY_API_KEY"] = apiKey
+			}
+			servers[serverName] = serverCfg
+		}
+	}
+	return inframcp.NewManager(servers)
+}
+
+func cloneMCPEnv(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }

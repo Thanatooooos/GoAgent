@@ -28,3 +28,7 @@ Thumbs.db
 .gocache
 
 .gocache-agent
+
+.gomodcache
+
+.gopath

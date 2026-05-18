@@ -1,0 +1,33 @@
+{
+  "dataset": "C-MTEB/T2Retrieval",
+  "output_prefix": "t2retrieval_10k",
+  "passage_count": 10000,
+  "passage_avg_chars": 590.9,
+  "sample_count": 222,
+  "avg_relevant_per_sample": 4.8,
+  "candidate_query_count": 2227,
+  "sample_strategy": "stratified",
+  "seed": 20260516,
+  "top_k": 10,
+  "passage_filters": {
+    "min_len": 80,
+    "max_len": 2000,
+    "skipped_short": 581,
+    "skipped_long": 1145
+  },
+  "candidate_bucket_distribution": {
+    "1": 401,
+    "2-3": 662,
+    "4-7": 789,
+    "8+": 375
+  },
+  "selected_bucket_distribution": {
+    "1": 56,
+    "2-3": 56,
+    "4-7": 55,
+    "8+": 55
+  },
+  "relevance_grades": [
+    1
+  ]
+}

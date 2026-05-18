@@ -7,6 +7,7 @@ import (
 
 	ragtool "local/rag-project/internal/app/rag/tool"
 	ragcore "local/rag-project/internal/app/rag/tool/core"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 	"local/rag-project/internal/framework/log"
 
 	"github.com/cloudwego/eino/compose"
@@ -30,7 +31,7 @@ type DiagnosisGraphTool struct {
 
 // NewDiagnosisGraphTool creates an Eino Graph that chains the 3-hop diagnosis.
 // executor is used by each lambda node to invoke individual tools.
-func NewDiagnosisGraphTool(executor *ragtool.Executor) (*DiagnosisGraphTool, error) {
+func NewDiagnosisGraphTool(executor *ragruntime.Executor) (*DiagnosisGraphTool, error) {
 	if executor == nil {
 		return nil, fmt.Errorf("executor with registry is required")
 	}

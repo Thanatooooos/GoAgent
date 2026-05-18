@@ -9,6 +9,7 @@ import (
 
 	ragtool "local/rag-project/internal/app/rag/tool"
 	ragcore "local/rag-project/internal/app/rag/tool/core"
+	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/log"
 	aichat "local/rag-project/internal/infra-ai/chat"
@@ -88,7 +89,7 @@ type ExternalEvidenceWorkflowTool struct {
 	runner compose.Runnable[*externalEvidenceState, *externalEvidenceState]
 }
 
-func NewExternalEvidenceWorkflowTool(executor *ragtool.Executor, chatService aichat.LLMService) (*ExternalEvidenceWorkflowTool, error) {
+func NewExternalEvidenceWorkflowTool(executor *ragruntime.Executor, chatService aichat.LLMService) (*ExternalEvidenceWorkflowTool, error) {
 	if executor == nil {
 		return nil, fmt.Errorf("executor with registry is required")
 	}

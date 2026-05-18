@@ -16,16 +16,18 @@ import (
 
 // SearchResult is a single web search result returned by any provider.
 type SearchResult struct {
-	Title         string
-	URL           string
-	Snippet       string
-	Domain        string
-	Provider      string
-	ProviderScore *float64
-	SourceType    string
-	Policy        string
-	RiskFlags     []string
-	Reasons       []string
+	Title          string
+	URL            string
+	Snippet        string
+	Domain         string
+	Provider       string
+	ActualProvider string
+	FallbackUsed   bool
+	ProviderScore  *float64
+	SourceType     string
+	Policy         string
+	RiskFlags      []string
+	Reasons        []string
 }
 
 // SearchProvider abstracts an external web search backend.
@@ -98,11 +100,17 @@ func (t *WebSearchTool) Invoke(_ context.Context, call ragtool.Call) (ragtool.Re
 	items := make([]map[string]any, 0, len(results))
 	fetchableURLs := make([]string, 0, len(results))
 	providerName := searchProviderName(t.provider)
+	actualProvider := ""
+	fallbackUsed := false
 	allowedCount := 0
 	neutralCount := 0
 	deniedCount := 0
 	for _, r := range results {
 		result := t.enrichResult(r, providerName)
+		if strings.TrimSpace(result.ActualProvider) != "" && actualProvider == "" {
+			actualProvider = strings.TrimSpace(result.ActualProvider)
+		}
+		fallbackUsed = fallbackUsed || result.FallbackUsed
 		if result.Policy == SourcePolicyDeny {
 			deniedCount++
 		} else if result.Policy == SourcePolicyAllow {
@@ -135,14 +143,16 @@ func (t *WebSearchTool) Invoke(_ context.Context, call ragtool.Call) (ragtool.Re
 			len(results), query, allowedCount, neutralCount, deniedCount,
 		),
 		Data: map[string]any{
-			"query":        query,
-			"provider":     providerName,
-			"results":      items,
-			"resultCount":  len(results),
-			"allowedCount": allowedCount,
-			"neutralCount": neutralCount,
-			"deniedCount":  deniedCount,
-			"urls":         fetchableURLs,
+			"query":                query,
+			"provider":             providerName,
+			"providerActual":       actualProvider,
+			"results":              items,
+			"resultCount":          len(results),
+			"allowedCount":         allowedCount,
+			"neutralCount":         neutralCount,
+			"deniedCount":          deniedCount,
+			"urls":                 fetchableURLs,
+			"providerFallbackUsed": fallbackUsed,
 		},
 	}, nil
 }
@@ -166,9 +176,16 @@ func (t *WebSearchTool) enrichResult(result SearchResult, providerName string) S
 }
 
 func searchProviderName(provider SearchProvider) string {
+	if named, ok := provider.(interface{ ProviderName() string }); ok {
+		if name := strings.TrimSpace(named.ProviderName()); name != "" {
+			return name
+		}
+	}
 	switch provider.(type) {
 	case *TavilyProvider:
 		return "tavily"
+	case *TavilyMCPProvider:
+		return "tavily-mcp"
 	case *DuckDuckGoProvider:
 		return "duckduckgo"
 	default:
