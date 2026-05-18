@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -10,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	rageval "local/rag-project/internal/app/rag/evaluation"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	rageval "local/rag-project/internal/app/rag/evaluation"
 	ragbootstrap "local/rag-project/internal/bootstrap/rag"
 	"local/rag-project/internal/framework/config"
 )
@@ -26,10 +27,14 @@ func main() {
 	execute := flag.Bool("execute", false, "execute real retrieve requests for each sample before evaluation")
 	configDir := flag.String("config-dir", "configs", "config directory used with -execute")
 	jsonOutput := flag.Bool("json", false, "print evaluation summary as JSON")
+	outputPath := flag.String("output", "", "write evaluation summary to a file instead of stdout")
+	rerankModel := flag.String("rerank-model", "", "optional rerank model override, e.g. qwen3-rerank or rerank-noop")
+	vectorTopKMultiplier := flag.Int("vector-topk-multiplier", 0, "optional override for rag.search.channels.vector-global.top-k-multiplier")
+	searchModeOverride := flag.String("search-mode", "", "optional retrieval mode override: semantic, keyword, hybrid, auto")
 	flag.Parse()
 
 	if strings.TrimSpace(*inputPath) == "" {
-		fmt.Fprintln(os.Stderr, "usage: go run ./cmd/retrieve-eval -input <samples.json> [-k 1,3,5] [-json]")
+		fmt.Fprintln(os.Stderr, "usage: go run ./cmd/retrieve-eval -input <samples.json> [-k 1,3,5] [-json] [-output result.json]")
 		os.Exit(1)
 	}
 
@@ -50,6 +55,7 @@ func main() {
 	}
 
 	if *execute {
+		applyExperimentOverrides(strings.TrimSpace(*rerankModel), *vectorTopKMultiplier)
 		if err := config.LoadConfig(*configDir); err != nil {
 			fmt.Fprintf(os.Stderr, "load config failed: %v\n", err)
 			os.Exit(1)
@@ -61,7 +67,7 @@ func main() {
 		}
 		defer func() { _ = runtime.Close() }()
 
-		if err := executeSamples(context.Background(), runtime, samples); err != nil {
+		if err := executeSamples(context.Background(), runtime, samples, strings.TrimSpace(*searchModeOverride)); err != nil {
 			fmt.Fprintf(os.Stderr, "execute retrieval samples failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -73,29 +79,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *jsonOutput {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(summary); err != nil {
-			fmt.Fprintf(os.Stderr, "encode summary failed: %v\n", err)
-			os.Exit(1)
-		}
-		return
+	if err := emitSummary(summary, *jsonOutput, strings.TrimSpace(*outputPath)); err != nil {
+		fmt.Fprintf(os.Stderr, "emit summary failed: %v\n", err)
+		os.Exit(1)
 	}
-
-	printSummary(summary)
 }
 
-func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples []rageval.Sample) error {
+func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples []rageval.Sample, searchModeOverride string) error {
 	if runtime == nil || runtime.Retrieve == nil {
 		return fmt.Errorf("rag retrieve runtime is required")
 	}
 
 	for i := range samples {
+		searchMode := strings.TrimSpace(samples[i].SearchMode)
+		if searchModeOverride != "" {
+			searchMode = searchModeOverride
+		}
 		request := ragretrieve.Request{
 			Query:            strings.TrimSpace(samples[i].Query),
 			KnowledgeBaseIDs: append([]string(nil), samples[i].KnowledgeBaseIDs...),
-			SearchMode:       strings.TrimSpace(samples[i].SearchMode),
+			SearchMode:       searchMode,
 			TopK:             samples[i].TopK,
 		}
 		result, err := runtime.Retrieve.Retrieve(ctx, request)
@@ -156,29 +159,85 @@ func parseKs(raw string) ([]int, error) {
 	return result, nil
 }
 
-func printSummary(summary rageval.Summary) {
-	fmt.Printf("samples=%d mrr=%.4f\n", summary.Overall.SampleCount, summary.Overall.MRR)
-	for _, k := range summary.Ks {
-		fmt.Printf("hit@%d=%.4f recall@%d=%.4f\n", k, summary.Overall.HitRateAtK[k], k, summary.Overall.AverageRecallAtK[k])
+func applyExperimentOverrides(rerankModel string, vectorTopKMultiplier int) {
+	if rerankModel != "" {
+		_ = os.Setenv("AI_RERANK_DEFAULT_MODEL", rerankModel)
 	}
-	fmt.Println()
+	if vectorTopKMultiplier > 0 {
+		_ = os.Setenv("RAG_SEARCH_CHANNELS_VECTOR_GLOBAL_TOP_K_MULTIPLIER", strconv.Itoa(vectorTopKMultiplier))
+	}
+}
+
+func emitSummary(summary rageval.Summary, jsonOutput bool, outputPath string) error {
+	var (
+		data []byte
+		err  error
+	)
+	if jsonOutput {
+		data, err = marshalSummaryJSON(summary)
+	} else {
+		data = []byte(renderSummaryText(summary))
+	}
+	if err != nil {
+		return err
+	}
+
+	if outputPath == "" {
+		_, err = os.Stdout.Write(data)
+		return err
+	}
+
+	if err := os.WriteFile(outputPath, data, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "summary written to %s\n", outputPath)
+	return nil
+}
+
+func marshalSummaryJSON(summary rageval.Summary) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(summary); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func renderSummaryText(summary rageval.Summary) string {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "samples=%d mrr=%.4f\n", summary.Overall.SampleCount, summary.Overall.MRR)
+	for _, k := range summary.Ks {
+		fmt.Fprintf(&buf, "hit@%d=%.4f recall@%d=%.4f ndcg@%d=%.4f\n",
+			k, summary.Overall.HitRateAtK[k],
+			k, summary.Overall.AverageRecallAtK[k],
+			k, summary.Overall.AverageNDCGAtK[k])
+	}
+	fmt.Fprintln(&buf)
 
 	if len(summary.ByTag) > 0 {
-		fmt.Println("by_tag:")
+		fmt.Fprintln(&buf, "by_tag:")
 		for _, item := range summary.ByTag {
-			fmt.Printf("- %s samples=%d mrr=%.4f\n", item.Tag, item.Metrics.SampleCount, item.Metrics.MRR)
+			fmt.Fprintf(&buf, "- %s samples=%d mrr=%.4f\n", item.Tag, item.Metrics.SampleCount, item.Metrics.MRR)
 			for _, k := range summary.Ks {
-				fmt.Printf("  hit@%d=%.4f recall@%d=%.4f\n", k, item.Metrics.HitRateAtK[k], k, item.Metrics.AverageRecallAtK[k])
+				fmt.Fprintf(&buf, "  hit@%d=%.4f recall@%d=%.4f ndcg@%d=%.4f\n",
+					k, item.Metrics.HitRateAtK[k],
+					k, item.Metrics.AverageRecallAtK[k],
+					k, item.Metrics.AverageNDCGAtK[k])
 			}
 		}
-		fmt.Println()
+		fmt.Fprintln(&buf)
 	}
 
-	fmt.Println("samples_detail:")
+	fmt.Fprintln(&buf, "samples_detail:")
 	for _, sample := range summary.Samples {
-		fmt.Printf("- %s target=%s rr=%.4f firstRelevantRank=%d\n", sample.Name, sample.Target, sample.ReciprocalRank, sample.FirstRelevantRank)
+		fmt.Fprintf(&buf, "- %s target=%s rr=%.4f firstRelevantRank=%d\n", sample.Name, sample.Target, sample.ReciprocalRank, sample.FirstRelevantRank)
 		for _, k := range summary.Ks {
-			fmt.Printf("  hit@%d=%t recall@%d=%.4f\n", k, sample.HitAtK[k], k, sample.RecallAtK[k])
+			fmt.Fprintf(&buf, "  hit@%d=%t recall@%d=%.4f ndcg@%d=%.4f\n",
+				k, sample.HitAtK[k],
+				k, sample.RecallAtK[k],
+				k, sample.NDCGAtK[k])
 		}
 	}
+	return buf.String()
 }

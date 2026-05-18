@@ -104,7 +104,7 @@ func TestDocumentListBehaviorObserveNextAndRender(t *testing.T) {
 	if !strings.Contains(rendered, "Document list") || !strings.Contains(rendered, "API Guide") {
 		t.Fatalf("expected rendered list detail, got %q", rendered)
 	}
-	if observation.Done && len(observation.NextHintCalls) == 0 {
+	if observation.Done && len(observation.State.NextHintCalls) == 0 {
 		// acceptable fallback when KB insufficiency helper does not trigger
 	}
 }

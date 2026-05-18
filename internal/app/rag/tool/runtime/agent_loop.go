@@ -14,6 +14,19 @@ import (
 
 const DefaultMaxIterations = 3
 
+const (
+	planningSourceLLM            = "llm"
+	planningSourceHintCalls      = "hint_calls"
+	planningSourceResultFallback = "result_fallback"
+	planningSourceBaseRules      = "base_rules"
+)
+
+type planningDecision struct {
+	Calls             []Call
+	Source            string
+	LLMPlannerSkipped bool
+}
+
 // AgentLoop executes a multi-round Plan -> Act -> Observe tool loop.
 type AgentLoop struct {
 	executor             *Executor
@@ -85,18 +98,38 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 	agentState := AgentState{}
 
 	for round := 1; round <= w.maxIterations; round++ {
-		plannedCalls := w.planCalls(ctx, input, agentState, allResults, executed)
+		currentState := agentState.Normalize()
+		planning := w.planCalls(ctx, round, input, agentState, allResults, executed)
+		plannedCalls := planning.Calls
+		log.Infof(
+			"[agent] round %d planning: source=%s llmPlannerSkipped=%v nextHintCallCount=%d previousResults=%d plannedCalls=%d",
+			round,
+			strings.TrimSpace(planning.Source),
+			planning.LLMPlannerSkipped,
+			len(currentState.NextHintCalls),
+			len(allResults),
+			len(plannedCalls),
+		)
 		if len(plannedCalls) == 0 {
 			if round > 1 && !agentState.Empty() {
-				log.Infof("[agent] round %d: planner produced no new calls, stopping", round)
+				normalizedState := agentState.Normalize()
+				log.Infof(
+					"[agent] round %d: planner produced no new calls, stopping (source=%s llmPlannerSkipped=%v)",
+					round,
+					strings.TrimSpace(planning.Source),
+					planning.LLMPlannerSkipped,
+				)
 				rounds = append(rounds, RoundSummary{
-					Round:         round,
-					Done:          true,
-					Reasoning:     "planning produced no new tool calls, so the agent loop stops here.",
-					NextHintCalls: append([]HintCall(nil), agentState.NextHintCalls...),
-					NextHint:      agentState.NextHint,
-					Confidence:    agentState.Confidence,
-					State:         agentState.Normalize(),
+					Round:             round,
+					Done:              true,
+					Reasoning:         "planning produced no new tool calls, so the agent loop stops here.",
+					NextHintCalls:     append([]HintCall(nil), normalizedState.NextHintCalls...),
+					NextHint:          normalizedState.NextHint,
+					Confidence:        normalizedState.Confidence,
+					State:             normalizedState,
+					PlanningSource:    strings.TrimSpace(planning.Source),
+					LLMPlannerSkipped: planning.LLMPlannerSkipped,
+					NextHintCallCount: len(normalizedState.NextHintCalls),
 				})
 			}
 			break
@@ -136,7 +169,17 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 			observeInput.ReachedMaxLoop = true
 		}
 
-		observation := ObserveResult{Done: true}
+		observation := ObserveResult{
+			Done: true,
+			State: AgentState{
+				Phase:         agentState.Phase,
+				Hypothesis:    agentState.Hypothesis,
+				Confidence:    agentState.Confidence,
+				OpenQuestions: append([]string(nil), agentState.OpenQuestions...),
+				CheckedTools:  append([]string(nil), agentState.CheckedTools...),
+				NextHintCalls: append([]HintCall(nil), agentState.NextHintCalls...),
+			}.Normalize(),
+		}
 		if w.observer != nil {
 			obs, err := w.observer.Observe(ctx, observeInput)
 			if err != nil {
@@ -151,36 +194,34 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 						OpenQuestions: append([]string(nil), agentState.OpenQuestions...),
 						CheckedTools:  append([]string(nil), agentState.CheckedTools...),
 						NextHintCalls: append([]HintCall(nil), agentState.NextHintCalls...),
-						NextHint:      agentState.NextHint,
 					}.Normalize(),
 				}
 			} else {
 				observation = obs
 			}
 		}
-
-		if observation.State.Empty() {
-			observation.State = AgentState{
-				Confidence:    observation.Confidence,
-				NextHintCalls: append([]HintCall(nil), observation.NextHintCalls...),
-				NextHint:      observation.NextHint,
+		state := observation.State.Normalize()
+		if state.Empty() {
+			state = AgentState{
+				Phase:         agentState.Phase,
+				Hypothesis:    agentState.Hypothesis,
+				Confidence:    agentState.Confidence,
+				OpenQuestions: append([]string(nil), agentState.OpenQuestions...),
+				CheckedTools:  append([]string(nil), agentState.CheckedTools...),
+				NextHintCalls: append([]HintCall(nil), agentState.NextHintCalls...),
 			}.Normalize()
 		}
-		if len(observation.NextHintCalls) == 0 && strings.TrimSpace(observation.NextHint) == "" {
-			observation.NextHintCalls = append([]HintCall(nil), observation.State.NextHintCalls...)
+		if observation.Done {
+			state.NextHintCalls = nil
+			state.NextHint = ""
+			if strings.TrimSpace(state.Phase) == "" {
+				state.Phase = "complete"
+			}
+		} else if strings.TrimSpace(state.Phase) == "" {
+			state.Phase = "deep_dive"
 		}
-		if strings.TrimSpace(observation.NextHint) == "" {
-			observation.NextHint = observation.State.NextHint
-		}
-		observation.Confidence = clampConfidence(firstNonZeroFloat(observation.Confidence, observation.State.Confidence))
-		observation.State.Confidence = observation.Confidence
-		if len(observation.State.NextHintCalls) == 0 && len(observation.NextHintCalls) > 0 {
-			observation.State.NextHintCalls = append([]HintCall(nil), observation.NextHintCalls...)
-		}
-		observation.State.NextHint = strings.TrimSpace(firstNonEmpty(observation.State.NextHint, observation.NextHint))
-		observation.State = observation.State.Normalize()
-		observation.NextHintCalls = append([]HintCall(nil), observation.State.NextHintCalls...)
-		observation.NextHint = observation.State.NextHint
+		state = state.Normalize()
+		observation.State = state
 
 		totalToolDurationMs := int64(0)
 		for _, call := range roundCalls {
@@ -192,11 +233,14 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 			Calls:               roundCalls,
 			Done:                observation.Done,
 			Reasoning:           strings.TrimSpace(observation.Reasoning),
-			NextHintCalls:       append([]HintCall(nil), observation.NextHintCalls...),
-			NextHint:            strings.TrimSpace(observation.NextHint),
-			Confidence:          observation.Confidence,
-			State:               observation.State,
+			NextHintCalls:       append([]HintCall(nil), state.NextHintCalls...),
+			NextHint:            strings.TrimSpace(state.NextHint),
+			Confidence:          state.Confidence,
+			State:               state,
 			ExecutionMode:       w.roundExecutionMode(len(plannedCalls)),
+			PlanningSource:      strings.TrimSpace(planning.Source),
+			LLMPlannerSkipped:   planning.LLMPlannerSkipped,
+			NextHintCallCount:   len(state.NextHintCalls),
 			WallClockDurationMs: roundWallClockDurationMs,
 			ToolCallCount:       len(roundCalls),
 			TotalToolDurationMs: totalToolDurationMs,
@@ -204,13 +248,13 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 		rounds = append(rounds, roundSummary)
 
 		if observation.Done {
-			log.Infof("[agent] round %d observer: DONE (confidence=%.2f, wallClock=%dms)", round, observation.Confidence, roundWallClockDurationMs)
+			log.Infof("[agent] round %d observer: DONE (confidence=%.2f, wallClock=%dms)", round, state.Confidence, roundWallClockDurationMs)
 		} else {
-			nextNames := make([]string, len(observation.NextHintCalls))
-			for i, h := range observation.NextHintCalls {
+			nextNames := make([]string, len(state.NextHintCalls))
+			for i, h := range state.NextHintCalls {
 				nextNames[i] = strings.TrimSpace(h.Name)
 			}
-			log.Infof("[agent] round %d observer: CONTINUE (confidence=%.2f) -> hint: %s", round, observation.Confidence, strings.Join(nextNames, ", "))
+			log.Infof("[agent] round %d observer: CONTINUE (confidence=%.2f) -> hint: %s", round, state.Confidence, strings.Join(nextNames, ", "))
 		}
 
 		if !observation.Done && strings.TrimSpace(observation.Reasoning) != "" && input.EventSink != nil {
@@ -219,7 +263,7 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 		if observation.Done {
 			break
 		}
-		agentState = observation.State
+		agentState = state
 	}
 
 	workflowResult := WorkflowResult{
@@ -239,19 +283,62 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 		workflowResult.Degraded = true
 		workflowResult.DegradeReason = strings.TrimSpace(firstNonEmpty(workflowResult.DegradeReason, "agent loop reached max iterations"))
 	}
+	logPlanningMetrics(rounds)
 	log.Infof("[agent] done: %d round(s), %d call(s), degraded=%v", len(rounds), len(allCalls), workflowResult.Degraded)
 	return workflowResult, nil
 }
 
-func (w *AgentLoop) planCalls(ctx context.Context, input WorkflowInput, agentState AgentState, previousResults []Result, executed map[string]struct{}) []Call {
-	calls := []Call{}
+func logPlanningMetrics(rounds []RoundSummary) {
+	if len(rounds) == 0 {
+		return
+	}
+	sourceCounts := map[string]int{
+		planningSourceLLM:            0,
+		planningSourceHintCalls:      0,
+		planningSourceResultFallback: 0,
+		planningSourceBaseRules:      0,
+	}
+	llmPlannerSkippedRounds := 0
+	for _, round := range rounds {
+		source := strings.TrimSpace(round.PlanningSource)
+		if source != "" {
+			sourceCounts[source]++
+		}
+		if round.LLMPlannerSkipped {
+			llmPlannerSkippedRounds++
+		}
+	}
+	log.Infof(
+		"[agent] planning metrics: llm=%d hint_calls=%d result_fallback=%d base_rules=%d llmPlannerSkippedRounds=%d totalRounds=%d",
+		sourceCounts[planningSourceLLM],
+		sourceCounts[planningSourceHintCalls],
+		sourceCounts[planningSourceResultFallback],
+		sourceCounts[planningSourceBaseRules],
+		llmPlannerSkippedRounds,
+		len(rounds),
+	)
+}
+
+func (w *AgentLoop) planCalls(ctx context.Context, round int, input WorkflowInput, agentState AgentState, previousResults []Result, executed map[string]struct{}) planningDecision {
+	normalizedState := agentState.Normalize()
+	if round > 1 && len(normalizedState.NextHintCalls) > 0 {
+		if calls := filterNewCalls(PlanCallsFromHintCalls(normalizedState.NextHintCalls, w.executor.registry.ListDefinitions()), executed); len(calls) > 0 {
+			return planningDecision{Calls: calls, Source: planningSourceHintCalls, LLMPlannerSkipped: true}
+		}
+		fallback := w.planWithRules(input, previousResults, executed)
+		fallback.LLMPlannerSkipped = true
+		if strings.TrimSpace(fallback.Source) == "" {
+			fallback.Source = planningSourceHintCalls
+		}
+		return fallback
+	}
+
 	if w.planner != nil {
-		calls = w.planWithLLM(ctx, input, agentState, previousResults, executed)
+		if calls := w.planWithLLM(ctx, input, normalizedState, previousResults, executed); len(calls) > 0 {
+			return planningDecision{Calls: calls, Source: planningSourceLLM}
+		}
 	}
-	if len(calls) == 0 {
-		calls = w.planWithRules(input, agentState, previousResults, executed)
-	}
-	return calls
+	return w.planWithRules(input, previousResults, executed)
 }
 
 func (w *AgentLoop) planWithLLM(ctx context.Context, input WorkflowInput, agentState AgentState, previousResults []Result, executed map[string]struct{}) []Call {
@@ -287,15 +374,14 @@ func (w *AgentLoop) planWithLLM(ctx context.Context, input WorkflowInput, agentS
 	return available
 }
 
-func (w *AgentLoop) planWithRules(input WorkflowInput, agentState AgentState, previousResults []Result, executed map[string]struct{}) []Call {
-	if agentState.Empty() || len(agentState.NextHintCalls) == 0 {
-		return filterNewCalls(PlanWithBaseRules(input, DefaultMaxIterations), executed)
+func (w *AgentLoop) planWithRules(input WorkflowInput, previousResults []Result, executed map[string]struct{}) planningDecision {
+	if calls := filterNewCalls(planCallsFromResultsWithRegistry(previousResults, input, w.executor.registry), executed); len(calls) > 0 {
+		return planningDecision{Calls: calls, Source: planningSourceResultFallback}
 	}
-	hintCalls := PlanCallsFromHintCalls(agentState.NextHintCalls, w.executor.registry.ListDefinitions())
-	if len(hintCalls) > 0 {
-		return filterNewCalls(hintCalls, executed)
+	if calls := filterNewCalls(PlanWithBaseRules(input, DefaultMaxIterations), executed); len(calls) > 0 {
+		return planningDecision{Calls: calls, Source: planningSourceBaseRules}
 	}
-	return filterNewCalls(planCallsFromResultsWithRegistry(previousResults, input, w.executor.registry), executed)
+	return planningDecision{Source: planningSourceBaseRules}
 }
 
 func PlanWithBaseRules(input WorkflowInput, maxCalls int) []Call {
@@ -357,9 +443,9 @@ var (
 		"chunk log", "chunklog", "chunk", "ingestion", "pipeline",
 		"diagnose", "failure", "排查", "诊断", "失败",
 	}
-	docKeywords  = []string{"document", "doc", "文档"}
-	taskKeywords = []string{"ingestion", "task", "任务", "导入任务"}
-	traceKeywords = []string{"trace", "chain", "retrieval", "链路", "检索", "召回"}
+	docKeywords            = []string{"document", "doc", "文档"}
+	taskKeywords           = []string{"ingestion", "task", "任务", "导入任务"}
+	traceKeywords          = []string{"trace", "chain", "retrieval", "链路", "检索", "召回"}
 	traceDiagnosisKeywords = []string{
 		"diagnose", "failure", "why", "bad", "poor", "failed",
 		"排查", "诊断", "失败", "原因", "效果差", "召回差",
@@ -369,17 +455,23 @@ var (
 var documentBaseRules = []baseRouteRule{
 	{
 		requireAll: [][]string{docKeywords, diagnosisKeywords, solutionKeywords},
-		buildCall:  func(id string) Call { return Call{Name: "document_diagnose_with_search", Arguments: map[string]any{"documentId": id}} },
+		buildCall: func(id string) Call {
+			return Call{Name: "document_diagnose_with_search", Arguments: map[string]any{"documentId": id}}
+		},
 	},
 	{
 		requireAll: [][]string{docKeywords, diagnosisKeywords},
 		exclude:    solutionKeywords,
-		buildCall:  func(id string) Call { return Call{Name: "document_root_cause_diagnosis", Arguments: map[string]any{"documentId": id}} },
+		buildCall: func(id string) Call {
+			return Call{Name: "document_root_cause_diagnosis", Arguments: map[string]any{"documentId": id}}
+		},
 	},
 	{
 		requireAll: [][]string{docKeywords, chunkLogKeywords},
 		exclude:    diagnosisKeywords,
-		buildCall:  func(id string) Call { return Call{Name: "document_chunk_log_query", Arguments: map[string]any{"documentId": id}} },
+		buildCall: func(id string) Call {
+			return Call{Name: "document_chunk_log_query", Arguments: map[string]any{"documentId": id}}
+		},
 	},
 	{
 		requireAll: [][]string{docKeywords},
@@ -390,11 +482,15 @@ var documentBaseRules = []baseRouteRule{
 var taskBaseRules = []baseRouteRule{
 	{
 		requireAll: [][]string{taskKeywords, diagnosisKeywords},
-		buildCall:  func(id string) Call { return Call{Name: "task_ingestion_diagnose", Arguments: map[string]any{"taskId": id}} },
+		buildCall: func(id string) Call {
+			return Call{Name: "task_ingestion_diagnose", Arguments: map[string]any{"taskId": id}}
+		},
 	},
 	{
 		requireAll: [][]string{taskKeywords},
-		buildCall:  func(id string) Call { return Call{Name: "ingestion_task_query", Arguments: map[string]any{"taskId": id, "includeNodes": true}} },
+		buildCall: func(id string) Call {
+			return Call{Name: "ingestion_task_query", Arguments: map[string]any{"taskId": id, "includeNodes": true}}
+		},
 	},
 }
 

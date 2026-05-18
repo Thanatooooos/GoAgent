@@ -48,13 +48,11 @@ func (s AgentState) Normalize() AgentState {
 	s.Confidence = ClampConfidence(s.Confidence)
 	s.OpenQuestions = UniqueTrimmedStrings(s.OpenQuestions)
 	s.CheckedTools = UniqueTrimmedStrings(s.CheckedTools)
-	s.NextHint = strings.TrimSpace(s.NextHint)
 	s.NextHintCalls = NormalizeHintCalls(s.NextHintCalls)
-	if len(s.NextHintCalls) == 0 && s.NextHint != "" {
-		s.NextHintCalls = ParseHintCallsFromLegacyString(s.NextHint)
-	}
 	if len(s.NextHintCalls) > 0 {
 		s.NextHint = SerializeHintCalls(s.NextHintCalls)
+	} else {
+		s.NextHint = ""
 	}
 	return s
 }
@@ -164,6 +162,9 @@ type RoundSummary struct {
 	Confidence          float64
 	State               AgentState
 	ExecutionMode       string
+	PlanningSource      string
+	LLMPlannerSkipped   bool
+	NextHintCallCount   int
 	WallClockDurationMs int64
 	ToolCallCount       int
 	TotalToolDurationMs int64

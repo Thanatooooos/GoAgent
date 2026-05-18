@@ -88,7 +88,7 @@ func TestExecutorRetriesNodeOnTransientFailure(t *testing.T) {
 	observer := newRetryTaskObserverStub()
 
 	svc := NewExecutorService(ExecutorServiceOptions{
-		WorkflowBuilder: NewLinearWorkflowBuilder(),
+		WorkflowBuilder: NewEinoGraphWorkflowBuilder(),
 		NodeRunners:     registry,
 		TaskObserver:    observer,
 		MaxConcurrent:   1,
@@ -134,7 +134,7 @@ func TestExecutorFailsAfterMaxRetries(t *testing.T) {
 	observer := newRetryTaskObserverStub()
 
 	svc := NewExecutorService(ExecutorServiceOptions{
-		WorkflowBuilder: NewLinearWorkflowBuilder(),
+		WorkflowBuilder: NewEinoGraphWorkflowBuilder(),
 		NodeRunners:     registry,
 		TaskObserver:    observer,
 		MaxConcurrent:   1,
@@ -180,7 +180,7 @@ func TestExecutorRetryWithNodeLevelSettings(t *testing.T) {
 	observer := newRetryTaskObserverStub()
 
 	svc := NewExecutorService(ExecutorServiceOptions{
-		WorkflowBuilder: NewLinearWorkflowBuilder(),
+		WorkflowBuilder: NewEinoGraphWorkflowBuilder(),
 		NodeRunners:     registry,
 		TaskObserver:    observer,
 		MaxConcurrent:   1,
@@ -233,7 +233,7 @@ func TestExecutorRetryCanceledContext(t *testing.T) {
 	observer := newRetryTaskObserverStub()
 
 	svc := NewExecutorService(ExecutorServiceOptions{
-		WorkflowBuilder: NewLinearWorkflowBuilder(),
+		WorkflowBuilder: NewEinoGraphWorkflowBuilder(),
 		NodeRunners:     registry,
 		TaskObserver:    observer,
 		MaxConcurrent:   1,
@@ -272,8 +272,8 @@ func TestExecutorRetryCanceledContext(t *testing.T) {
 	}
 }
 
-func TestLinearWorkflowBuilderBuildsOrderedNodes(t *testing.T) {
-	builder := NewLinearWorkflowBuilder()
+func TestEinoGraphWorkflowBuilderBuildsOrderedNodes(t *testing.T) {
+	builder := NewEinoGraphWorkflowBuilder()
 	pipeline := domain.Pipeline{
 		ID:   "p-1",
 		Name: "test",

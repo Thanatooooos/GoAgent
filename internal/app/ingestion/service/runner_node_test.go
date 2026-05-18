@@ -48,6 +48,136 @@ func TestFetcherNodeRunnerReadsLocalFile(t *testing.T) {
 	}
 }
 
+func TestEnhancerNodeRunnerAddsContextAndMetadata(t *testing.T) {
+	runner := NewEnhancerNodeRunner()
+
+	state, output, err := runner.Run(context.Background(), ExecutionState{
+		Task: domain.Task{ID: "task-enhancer"},
+		Source: SourcePayload{
+			Type:        domain.TaskSourceTypeFile,
+			FileName:    "guide.md",
+			ContentType: "text/markdown",
+		},
+		Parsed: ParsedDocument{
+			Title:   "RAG 指南",
+			Content: "RAG 用于将检索与生成结合，帮助知识库问答提升准确率。",
+		},
+	}, domain.PipelineNode{
+		NodeID:   "enhance-1",
+		NodeType: domain.PipelineNodeTypeEnhancer,
+		Settings: map[string]any{
+			"tasks": []any{
+				map[string]any{"type": "context_enhance"},
+				map[string]any{"type": "keywords"},
+				map[string]any{"type": "questions"},
+				map[string]any{"type": "metadata"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(state.Parsed.Content, "标题: RAG 指南") {
+		t.Fatalf("expected enhanced content to include title header, got %q", state.Parsed.Content)
+	}
+	if len(state.Parsed.Metadata["keywords"].([]string)) == 0 {
+		t.Fatalf("expected parsed keywords metadata, got %#v", state.Parsed.Metadata["keywords"])
+	}
+	if len(state.Parsed.Metadata["questions"].([]string)) == 0 {
+		t.Fatalf("expected parsed questions metadata, got %#v", state.Parsed.Metadata["questions"])
+	}
+	if output["mode"] != "heuristic" {
+		t.Fatalf("expected heuristic mode, got %#v", output["mode"])
+	}
+	if _, ok := state.Artifacts["enhancer"]; !ok {
+		t.Fatalf("expected enhancer artifact to be populated")
+	}
+}
+
+func TestEnricherNodeRunnerAddsChunkMetadata(t *testing.T) {
+	runner := NewEnricherNodeRunner()
+
+	state, output, err := runner.Run(context.Background(), ExecutionState{
+		Task: domain.Task{ID: "task-enricher"},
+		Source: SourcePayload{
+			Type:        domain.TaskSourceTypeFile,
+			FileName:    "guide.md",
+			ContentType: "text/markdown",
+		},
+		Parsed: ParsedDocument{
+			Title:   "RAG 指南",
+			Content: "RAG 用于将检索与生成结合，帮助知识库问答提升准确率。",
+			Metadata: map[string]any{
+				"document_owner": "team-rag",
+			},
+		},
+		Chunks: []ChunkPayload{
+			{Index: 0, Content: "第一块内容介绍 RAG 的作用。"},
+			{Index: 1, Content: "第二块内容介绍检索增强生成的流程。"},
+		},
+	}, domain.PipelineNode{
+		NodeID:   "enrich-1",
+		NodeType: domain.PipelineNodeTypeEnricher,
+		Settings: map[string]any{
+			"attachDocumentMetadata": true,
+			"tasks": []any{
+				map[string]any{"type": "keywords"},
+				map[string]any{"type": "summary"},
+				map[string]any{"type": "metadata"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	first := state.Chunks[0].Metadata
+	if first["document_owner"] != "team-rag" {
+		t.Fatalf("expected attached document metadata, got %#v", first["document_owner"])
+	}
+	if _, ok := first["summary"].(string); !ok {
+		t.Fatalf("expected summary metadata, got %#v", first["summary"])
+	}
+	if _, ok := first["keywords"].([]string); !ok {
+		t.Fatalf("expected keywords metadata, got %#v", first["keywords"])
+	}
+	if output["attachDocumentMetadata"] != true {
+		t.Fatalf("expected attachDocumentMetadata=true, got %#v", output["attachDocumentMetadata"])
+	}
+	if _, ok := state.Artifacts["enricher"]; !ok {
+		t.Fatalf("expected enricher artifact to be populated")
+	}
+}
+
+func TestSyncBuiltInArtifactsRefreshesChunksAfterEnricher(t *testing.T) {
+	state := &ExecutionState{
+		Chunks: []ChunkPayload{
+			{
+				Index:   0,
+				Content: "chunk content",
+				Metadata: map[string]any{
+					"summary": "chunk summary",
+				},
+			},
+		},
+		Artifacts: map[string]any{},
+	}
+	syncBuiltInArtifacts(state, WorkflowNodeSpec{
+		Node: domain.PipelineNode{
+			NodeID:   "enrich-1",
+			NodeType: domain.PipelineNodeTypeEnricher,
+		},
+	})
+
+	rawChunks, ok := state.Artifacts["chunks"].([]map[string]any)
+	if !ok || len(rawChunks) != 1 {
+		t.Fatalf("expected chunk artifacts after enricher, got %#v", state.Artifacts["chunks"])
+	}
+	metadata, ok := rawChunks[0]["metadata"].(map[string]any)
+	if !ok || metadata["summary"] != "chunk summary" {
+		t.Fatalf("expected refreshed chunk metadata in artifacts, got %#v", rawChunks[0]["metadata"])
+	}
+}
+
 func TestIndexerNodeRunnerWritesKnowledgeChunksAndVectors(t *testing.T) {
 	chunkRepo := &indexerChunkRepoStub{}
 	vectorStore := &indexerVectorStoreStub{}

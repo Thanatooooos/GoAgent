@@ -79,11 +79,11 @@ func TestLLMObserverUsesLLMDecision(t *testing.T) {
 	if result.Done {
 		t.Fatal("expected llm observer to continue")
 	}
-	if result.NextHint != "tool:ingestion_task_node_query|taskId=task-1|nodeId=indexer" {
-		t.Fatalf("unexpected next hint: %q", result.NextHint)
+	if result.State.NextHint != "tool:ingestion_task_node_query|taskId=task-1|nodeId=indexer" {
+		t.Fatalf("unexpected next hint: %q", result.State.NextHint)
 	}
-	if len(result.NextHintCalls) != 1 || result.NextHintCalls[0].Name != "ingestion_task_node_query" {
-		t.Fatalf("expected structured next hint calls, got %+v", result.NextHintCalls)
+	if len(result.State.NextHintCalls) != 1 || result.State.NextHintCalls[0].Name != "ingestion_task_node_query" {
+		t.Fatalf("expected structured next hint calls, got %+v", result.State.NextHintCalls)
 	}
 	if result.State.Phase != "deep_dive" {
 		t.Fatalf("unexpected phase: %q", result.State.Phase)
@@ -132,8 +132,8 @@ func TestLLMObserverFallsBackOnInvalidJSON(t *testing.T) {
 	if result.Done {
 		t.Fatal("expected fallback observer to continue")
 	}
-	if result.NextHint != "tool:ingestion_task_query|taskId=task-1|includeNodes=true" {
-		t.Fatalf("unexpected fallback next hint: %q", result.NextHint)
+	if result.State.NextHint != "tool:ingestion_task_query|taskId=task-1|includeNodes=true" {
+		t.Fatalf("unexpected fallback next hint: %q", result.State.NextHint)
 	}
 }
 
@@ -162,8 +162,8 @@ func TestLLMObserverFallsBackWhenNextHintMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("observe: %v", err)
 	}
-	if result.NextHint != "tool:ingestion_task_node_query|taskId=task-1|nodeId=indexer" {
-		t.Fatalf("expected fallback to node query, got %q", result.NextHint)
+	if result.State.NextHint != "tool:ingestion_task_node_query|taskId=task-1|nodeId=indexer" {
+		t.Fatalf("expected fallback to node query, got %q", result.State.NextHint)
 	}
 }
 
@@ -195,8 +195,8 @@ func TestLLMObserverFallsBackWhenNextHintInventsNodeID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("observe: %v", err)
 	}
-	if result.NextHint != "tool:ingestion_task_node_query|taskId=task-1|nodeId=indexer" {
-		t.Fatalf("expected fallback to evidence-backed node id, got %q", result.NextHint)
+	if result.State.NextHint != "tool:ingestion_task_node_query|taskId=task-1|nodeId=indexer" {
+		t.Fatalf("expected fallback to evidence-backed node id, got %q", result.State.NextHint)
 	}
 }
 
@@ -272,14 +272,14 @@ func TestLLMObserverAcceptsMultipleNextHintCalls(t *testing.T) {
 	if result.Done {
 		t.Fatal("expected not done with multiple hints")
 	}
-	if len(result.NextHintCalls) != 2 {
-		t.Fatalf("expected 2 nextHintCalls, got %d", len(result.NextHintCalls))
+	if len(result.State.NextHintCalls) != 2 {
+		t.Fatalf("expected 2 nextHintCalls, got %d", len(result.State.NextHintCalls))
 	}
-	if result.NextHintCalls[0].Name != "ingestion_task_node_query" {
-		t.Fatalf("unexpected first hint: %s", result.NextHintCalls[0].Name)
+	if result.State.NextHintCalls[0].Name != "ingestion_task_node_query" {
+		t.Fatalf("unexpected first hint: %s", result.State.NextHintCalls[0].Name)
 	}
-	if result.NextHintCalls[1].Name != "trace_node_query" {
-		t.Fatalf("unexpected second hint: %s", result.NextHintCalls[1].Name)
+	if result.State.NextHintCalls[1].Name != "trace_node_query" {
+		t.Fatalf("unexpected second hint: %s", result.State.NextHintCalls[1].Name)
 	}
 	if result.State.Phase != "deep_dive" {
 		t.Fatalf("expected deep_dive phase, got %q", result.State.Phase)

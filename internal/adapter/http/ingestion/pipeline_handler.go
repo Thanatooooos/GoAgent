@@ -16,9 +16,17 @@ import (
 )
 
 type pipelinePayload struct {
-	Name        string               `json:"name"`
-	Description string               `json:"description"`
-	Nodes       []pipelineNodeVOItem `json:"nodes"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	Definition  *pipelineDefinitionVO `json:"definition,omitempty"`
+	Nodes       []pipelineNodeVOItem  `json:"nodes"`
+}
+
+type pipelineDefinitionVO struct {
+	Version      string               `json:"version"`
+	EntryNodeIDs []string             `json:"entryNodeIds"`
+	Nodes        []pipelineNodeVOItem `json:"nodes"`
+	Edges        []pipelineEdgeVOItem `json:"edges"`
 }
 
 type pipelineNodeVOItem struct {
@@ -29,14 +37,39 @@ type pipelineNodeVOItem struct {
 	NextNodeID string         `json:"nextNodeId,omitempty"`
 }
 
+type pipelineEdgeVOItem struct {
+	EdgeID      string         `json:"edgeId"`
+	FromNodeID  string         `json:"fromNodeId"`
+	ToNodeID    string         `json:"toNodeId"`
+	Condition   map[string]any `json:"condition,omitempty"`
+	Priority    int            `json:"priority,omitempty"`
+	Description string         `json:"description,omitempty"`
+}
+
 type pipelineVO struct {
-	ID          string               `json:"id"`
-	Name        string               `json:"name"`
-	Description string               `json:"description,omitempty"`
-	CreatedBy   string               `json:"createdBy,omitempty"`
-	Nodes       []pipelineNodeVOItem `json:"nodes,omitempty"`
-	CreateTime  *time.Time           `json:"createTime,omitempty"`
-	UpdateTime  *time.Time           `json:"updateTime,omitempty"`
+	ID          string                `json:"id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description,omitempty"`
+	CreatedBy   string                `json:"createdBy,omitempty"`
+	Definition  *pipelineDefinitionVO `json:"definition,omitempty"`
+	Nodes       []pipelineNodeVOItem  `json:"nodes,omitempty"`
+	CreateTime  *time.Time            `json:"createTime,omitempty"`
+	UpdateTime  *time.Time            `json:"updateTime,omitempty"`
+}
+
+type pipelineNodeRequirementVO struct {
+	AnyOf       []string `json:"anyOf"`
+	Description string   `json:"description,omitempty"`
+}
+
+type pipelineNodeContractVO struct {
+	NodeType      string                      `json:"nodeType"`
+	DisplayName   string                      `json:"displayName,omitempty"`
+	Summary       string                      `json:"summary,omitempty"`
+	Category      string                      `json:"category,omitempty"`
+	SupportsEntry bool                        `json:"supportsEntry"`
+	Requires      []pipelineNodeRequirementVO `json:"requires,omitempty"`
+	Produces      []string                    `json:"produces,omitempty"`
 }
 
 type pipelinePageVO struct {
@@ -50,6 +83,7 @@ type pipelinePageVO struct {
 // RegisterPipelineRoutes 注册 ingestion pipeline 路由。
 func RegisterPipelineRoutes(r gin.IRouter, service *ingestionservice.PipelineService) {
 	handler := &PipelineHandler{service: service}
+	r.GET("/ingestion/pipelines/contracts", handler.Contracts)
 	r.GET("/ingestion/pipelines", handler.Page)
 	r.GET("/ingestion/pipelines/:id", handler.Get)
 	r.POST("/ingestion/pipelines", handler.Create)
@@ -60,6 +94,11 @@ func RegisterPipelineRoutes(r gin.IRouter, service *ingestionservice.PipelineSer
 // PipelineHandler 负责 pipeline HTTP 接口。
 type PipelineHandler struct {
 	service *ingestionservice.PipelineService
+}
+
+// Contracts returns built-in node input/output contracts for pipeline editors.
+func (h *PipelineHandler) Contracts(c *gin.Context) {
+	writeSuccess(c, toPipelineNodeContractVOs(ingestionservice.ListNodeIOContracts()))
 }
 
 // Page 分页查询 pipeline 列表。
@@ -114,6 +153,7 @@ func (h *PipelineHandler) Create(c *gin.Context) {
 	item, err := h.service.Create(c.Request.Context(), ingestionservice.CreatePipelineInput{
 		Name:        req.Name,
 		Description: req.Description,
+		Definition:  toPipelineDefinition(req.Definition),
 		Nodes:       toPipelineNodes(req.Nodes),
 		CreatedBy:   user.UserID,
 	})
@@ -139,6 +179,7 @@ func (h *PipelineHandler) Update(c *gin.Context) {
 		ID:          c.Param("id"),
 		Name:        req.Name,
 		Description: req.Description,
+		Definition:  toPipelineDefinition(req.Definition),
 		Nodes:       toPipelineNodes(req.Nodes),
 		UpdatedBy:   user.UserID,
 	})
@@ -158,6 +199,18 @@ func (h *PipelineHandler) Delete(c *gin.Context) {
 	writeSuccess[any](c, nil)
 }
 
+func toPipelineDefinition(item *pipelineDefinitionVO) domain.PipelineDefinition {
+	if item == nil {
+		return domain.PipelineDefinition{}
+	}
+	return domain.PipelineDefinition{
+		Version:      item.Version,
+		EntryNodeIDs: append([]string(nil), item.EntryNodeIDs...),
+		Nodes:        toPipelineNodes(item.Nodes),
+		Edges:        toPipelineEdges(item.Edges),
+	}
+}
+
 // toPipelineNodes 把请求节点转换为领域节点。
 func toPipelineNodes(items []pipelineNodeVOItem) []domain.PipelineNode {
 	if len(items) == 0 {
@@ -171,6 +224,24 @@ func toPipelineNodes(items []pipelineNodeVOItem) []domain.PipelineNode {
 			Settings:   item.Settings,
 			Condition:  item.Condition,
 			NextNodeID: item.NextNodeID,
+		})
+	}
+	return result
+}
+
+func toPipelineEdges(items []pipelineEdgeVOItem) []domain.PipelineEdge {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]domain.PipelineEdge, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.PipelineEdge{
+			EdgeID:      item.EdgeID,
+			FromNodeID:  item.FromNodeID,
+			ToNodeID:    item.ToNodeID,
+			Condition:   item.Condition,
+			Priority:    item.Priority,
+			Description: item.Description,
 		})
 	}
 	return result
@@ -195,9 +266,22 @@ func toPipelineVO(item domain.Pipeline) pipelineVO {
 		Name:        item.Name,
 		Description: item.Description,
 		CreatedBy:   item.CreatedBy,
+		Definition:  toPipelineDefinitionVO(item.Definition),
 		Nodes:       toPipelineNodeVOs(item.Nodes),
 		CreateTime:  timePointer(item.CreatedAt),
 		UpdateTime:  timePointer(item.UpdatedAt),
+	}
+}
+
+func toPipelineDefinitionVO(item domain.PipelineDefinition) *pipelineDefinitionVO {
+	if len(item.Nodes) == 0 {
+		return nil
+	}
+	return &pipelineDefinitionVO{
+		Version:      item.Version,
+		EntryNodeIDs: append([]string(nil), item.EntryNodeIDs...),
+		Nodes:        toPipelineNodeVOs(item.Nodes),
+		Edges:        toPipelineEdgeVOs(item.Edges),
 	}
 }
 
@@ -214,6 +298,57 @@ func toPipelineNodeVOs(items []domain.PipelineNode) []pipelineNodeVOItem {
 			Settings:   item.Settings,
 			Condition:  item.Condition,
 			NextNodeID: item.NextNodeID,
+		})
+	}
+	return result
+}
+
+func toPipelineEdgeVOs(items []domain.PipelineEdge) []pipelineEdgeVOItem {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]pipelineEdgeVOItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, pipelineEdgeVOItem{
+			EdgeID:      item.EdgeID,
+			FromNodeID:  item.FromNodeID,
+			ToNodeID:    item.ToNodeID,
+			Condition:   item.Condition,
+			Priority:    item.Priority,
+			Description: item.Description,
+		})
+	}
+	return result
+}
+
+func toPipelineNodeContractVOs(items []ingestionservice.NodeIOContract) []pipelineNodeContractVO {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]pipelineNodeContractVO, 0, len(items))
+	for _, item := range items {
+		result = append(result, pipelineNodeContractVO{
+			NodeType:      item.NodeType,
+			DisplayName:   item.DisplayName,
+			Summary:       item.Summary,
+			Category:      item.Category,
+			SupportsEntry: item.SupportsEntry,
+			Requires:      toPipelineNodeRequirementVOs(item.Requires),
+			Produces:      append([]string(nil), item.Produces...),
+		})
+	}
+	return result
+}
+
+func toPipelineNodeRequirementVOs(items []ingestionservice.NodeInputRequirement) []pipelineNodeRequirementVO {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]pipelineNodeRequirementVO, 0, len(items))
+	for _, item := range items {
+		result = append(result, pipelineNodeRequirementVO{
+			AnyOf:       append([]string(nil), item.AnyOf...),
+			Description: item.Description,
 		})
 	}
 	return result

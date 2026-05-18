@@ -30,10 +30,7 @@ type ObserveInput struct {
 
 // ObserveResult describes the decision produced by the observe phase.
 type ObserveResult struct {
-	Done          bool
-	Reasoning     string
-	NextHintCalls []HintCall
-	NextHint      string
-	Confidence    float64
-	State         AgentState
+	Done      bool
+	Reasoning string
+	State     AgentState
 }

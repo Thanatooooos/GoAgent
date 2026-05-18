@@ -22,11 +22,20 @@ type Pipeline struct {
 	ID          string
 	Name        string
 	Description string
+	Definition  PipelineDefinition
 	Nodes       []PipelineNode
 	CreatedBy   string
 	UpdatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+// PipelineDefinition describes a DAG-style ingestion pipeline definition.
+type PipelineDefinition struct {
+	Version      string
+	EntryNodeIDs []string
+	Nodes        []PipelineNode
+	Edges        []PipelineEdge
 }
 
 // PipelineNode 描述 pipeline 中的单个节点定义。
@@ -36,4 +45,14 @@ type PipelineNode struct {
 	Settings   map[string]any
 	Condition  map[string]any
 	NextNodeID string
+}
+
+// PipelineEdge describes a directed edge between two pipeline nodes.
+type PipelineEdge struct {
+	EdgeID      string
+	FromNodeID  string
+	ToNodeID    string
+	Condition   map[string]any
+	Priority    int
+	Description string
 }

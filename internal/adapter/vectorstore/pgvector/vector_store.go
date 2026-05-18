@@ -2,6 +2,7 @@ package pgvector
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -38,24 +39,36 @@ func (s *VectorStore) UpsertDocumentChunks(ctx context.Context, chunks []port.Ch
 		if len(chunk.Embedding) == 0 {
 			return fmt.Errorf("chunk embedding is required: chunkID=%s", chunk.ChunkID)
 		}
-		metadata, err := json.Marshal(normalizeMetadata(chunk.Metadata))
+
+		normalizedMetadata := normalizeMetadata(chunk.Metadata)
+		metadata, err := json.Marshal(normalizedMetadata)
 		if err != nil {
 			return fmt.Errorf("marshal vector metadata: %w", err)
 		}
-		if err := s.db.WithContext(ctx).Exec(`
-INSERT INTO t_knowledge_chunk_vector
-    (chunk_id, doc_id, kb_id, chunk_index, content, embedding, metadata, create_time, update_time)
-VALUES
-    (?, ?, ?, ?, ?, CAST(? AS vector), CAST(? AS jsonb), ?, ?)
-ON CONFLICT (chunk_id) DO UPDATE SET
-    doc_id = EXCLUDED.doc_id,
-    kb_id = EXCLUDED.kb_id,
-    chunk_index = EXCLUDED.chunk_index,
-    content = EXCLUDED.content,
-    embedding = EXCLUDED.embedding,
-    metadata = EXCLUDED.metadata,
-    update_time = EXCLUDED.update_time
-`,
+
+		payload := BuildLexicalPayload(chunk.Text, normalizedMetadata)
+		err = s.db.WithContext(ctx).Exec(`
+	INSERT INTO t_knowledge_chunk_vector
+	    (
+	        chunk_id, doc_id, kb_id, chunk_index, content, embedding, metadata,
+	        content_lexemes, metadata_document_name_lexemes, metadata_source_file_name_lexemes, metadata_section_lexemes,
+	        create_time, update_time
+	    )
+	VALUES
+	    (?, ?, ?, ?, ?, CAST(? AS vector), CAST(? AS jsonb), ?, ?, ?, ?, ?, ?)
+	ON CONFLICT (chunk_id) DO UPDATE SET
+	    doc_id = EXCLUDED.doc_id,
+	    kb_id = EXCLUDED.kb_id,
+	    chunk_index = EXCLUDED.chunk_index,
+	    content = EXCLUDED.content,
+	    embedding = EXCLUDED.embedding,
+	    metadata = EXCLUDED.metadata,
+	    content_lexemes = EXCLUDED.content_lexemes,
+	    metadata_document_name_lexemes = EXCLUDED.metadata_document_name_lexemes,
+	    metadata_source_file_name_lexemes = EXCLUDED.metadata_source_file_name_lexemes,
+	    metadata_section_lexemes = EXCLUDED.metadata_section_lexemes,
+	    update_time = EXCLUDED.update_time
+	`,
 			chunk.ChunkID,
 			chunk.DocumentID,
 			chunk.KnowledgeBaseID,
@@ -63,9 +76,20 @@ ON CONFLICT (chunk_id) DO UPDATE SET
 			chunk.Text,
 			formatVector(chunk.Embedding),
 			string(metadata),
+			payload.ContentLexemes,
+			payload.DocumentNameLexemes,
+			payload.SourceFileNameLexemes,
+			payload.SectionLexemes,
 			now,
 			now,
-		).Error; err != nil {
+		).Error
+		if err != nil {
+			if isUndefinedColumnError(err, "content_lexemes", "metadata_document_name_lexemes", "metadata_source_file_name_lexemes", "metadata_section_lexemes") {
+				if legacyErr := s.upsertDocumentChunkLegacy(ctx, chunk, string(metadata), now); legacyErr != nil {
+					return fmt.Errorf("upsert legacy document chunk vector: %w", legacyErr)
+				}
+				continue
+			}
 			return fmt.Errorf("upsert document chunk vector: %w", err)
 		}
 	}
@@ -129,7 +153,6 @@ func (s *VectorStore) DeleteChunks(ctx context.Context, chunkIDs []string) error
 	return nil
 }
 
-// SearchByKeyword 使用 pg_trgm 的 word_similarity 做中文关键词模糊检索。
 func (s *VectorStore) SearchByKeyword(ctx context.Context, query string, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("postgres vector store db is required")
@@ -142,51 +165,27 @@ func (s *VectorStore) SearchByKeyword(ctx context.Context, query string, knowled
 		topK = 5
 	}
 
-	sqlBuilder := strings.Builder{}
-	sqlBuilder.WriteString(`
-SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata, word_similarity(content, ?) AS score
-FROM t_knowledge_chunk_vector
-WHERE word_similarity(content, ?) > 0
-`)
-	args := []any{query, query}
-	if len(knowledgeBaseIDs) > 0 {
-		sqlBuilder.WriteString("AND kb_id IN ?\n")
-		args = append(args, knowledgeBaseIDs)
-	}
-	sqlBuilder.WriteString("ORDER BY score DESC\nLIMIT ?")
-	args = append(args, topK)
-
-	queryResult := s.db.WithContext(ctx).Raw(sqlBuilder.String(), args...)
-
-	rows, err := queryResult.Rows()
-	if err != nil {
-		return nil, fmt.Errorf("keyword search chunks: %w", err)
-	}
-	defer rows.Close()
-
-	result := make([]corevector.SearchHit, 0, topK)
-	for rows.Next() {
-		var (
-			chunkID    string
-			documentID string
-			kbID       string
-			index      int
-			content    string
-			metadata   []byte
-			score      float32
-		)
-		if err := rows.Scan(&chunkID, &documentID, &kbID, &index, &content, &metadata, &score); err != nil {
-			return nil, fmt.Errorf("scan keyword search hit: %w", err)
+	lexicalQuery := buildLexicalQuery(query)
+	if lexicalQuery.TSQuery == "" {
+		if lexicalKeywordFallbackEnabled() {
+			return s.searchByKeywordFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
 		}
-		result = append(result, corevector.SearchHit{
-			ChunkID:         chunkID,
-			DocumentID:      documentID,
-			KnowledgeBaseID: kbID,
-			Index:           index,
-			Text:            content,
-			Score:           score,
-			Metadata:        unmarshalMetadata(metadata),
-		})
+		return []corevector.SearchHit{}, nil
+	}
+
+	if buildShortIdentifierFallbackQuery(query) && lexicalKeywordFallbackEnabled() {
+		return s.searchByKeywordFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
+	}
+
+	result, err := s.searchByKeywordLexical(ctx, lexicalQuery, knowledgeBaseIDs, topK)
+	if err != nil {
+		if lexicalKeywordFallbackEnabled() && isUndefinedColumnError(err, "content_lexemes") {
+			return s.searchByKeywordFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
+		}
+		return nil, err
+	}
+	if len(result) == 0 && lexicalKeywordFallbackEnabled() {
+		return s.searchByKeywordFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
 	}
 	return result, nil
 }
@@ -203,66 +202,28 @@ func (s *VectorStore) SearchByMetadata(ctx context.Context, query string, knowle
 		topK = 5
 	}
 
-	sqlBuilder := strings.Builder{}
-	sqlBuilder.WriteString(`
-SELECT
-    chunk_id,
-    doc_id,
-    kb_id,
-    chunk_index,
-    content,
-    metadata,
-    GREATEST(
-        word_similarity(COALESCE(metadata->>'document_name', ''), ?),
-        word_similarity(COALESCE(metadata->>'source_file_name', ''), ?),
-        word_similarity(COALESCE(metadata->>'section', ''), ?)
-    ) AS score
-FROM t_knowledge_chunk_vector
-WHERE GREATEST(
-    word_similarity(COALESCE(metadata->>'document_name', ''), ?),
-    word_similarity(COALESCE(metadata->>'source_file_name', ''), ?),
-    word_similarity(COALESCE(metadata->>'section', ''), ?)
-) > 0
-`)
-	args := []any{query, query, query, query, query, query}
-	if len(knowledgeBaseIDs) > 0 {
-		sqlBuilder.WriteString("AND kb_id IN ?\n")
-		args = append(args, knowledgeBaseIDs)
-	}
-	sqlBuilder.WriteString("ORDER BY score DESC\nLIMIT ?")
-	args = append(args, topK)
-
-	queryResult := s.db.WithContext(ctx).Raw(sqlBuilder.String(), args...)
-
-	rows, err := queryResult.Rows()
-	if err != nil {
-		return nil, fmt.Errorf("metadata search chunks: %w", err)
-	}
-	defer rows.Close()
-
-	result := make([]corevector.SearchHit, 0, topK)
-	for rows.Next() {
-		var (
-			chunkID    string
-			documentID string
-			kbID       string
-			index      int
-			content    string
-			metadata   []byte
-			score      float32
-		)
-		if err := rows.Scan(&chunkID, &documentID, &kbID, &index, &content, &metadata, &score); err != nil {
-			return nil, fmt.Errorf("scan metadata search hit: %w", err)
+	lexicalQuery := buildLexicalQuery(query)
+	if lexicalQuery.TSQuery == "" {
+		if lexicalMetadataFallbackEnabled() {
+			return s.searchByMetadataFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
 		}
-		result = append(result, corevector.SearchHit{
-			ChunkID:         chunkID,
-			DocumentID:      documentID,
-			KnowledgeBaseID: kbID,
-			Index:           index,
-			Text:            content,
-			Score:           score,
-			Metadata:        unmarshalMetadata(metadata),
-		})
+		return []corevector.SearchHit{}, nil
+	}
+
+	if buildShortIdentifierFallbackQuery(query) && lexicalMetadataFallbackEnabled() {
+		return s.searchByMetadataFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
+	}
+
+	result, err := s.searchByMetadataLexical(ctx, lexicalQuery, knowledgeBaseIDs, topK)
+	if err != nil {
+		if lexicalMetadataFallbackEnabled() &&
+			isUndefinedColumnError(err, "metadata_document_name_lexemes", "metadata_source_file_name_lexemes", "metadata_section_lexemes") {
+			return s.searchByMetadataFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
+		}
+		return nil, err
+	}
+	if len(result) == 0 && lexicalMetadataFallbackEnabled() {
+		return s.searchByMetadataFallbackTrgm(ctx, query, knowledgeBaseIDs, topK)
 	}
 	return result, nil
 }
@@ -287,9 +248,9 @@ func (s *VectorStore) Search(ctx context.Context, request corevector.SearchReque
 	vectorLiteral := formatVector(request.Vector)
 	sqlBuilder := strings.Builder{}
 	sqlBuilder.WriteString(`
-SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata, 1 - (embedding <=> CAST(? AS vector)) AS score
-FROM t_knowledge_chunk_vector
-`)
+	SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata, 1 - (embedding <=> CAST(? AS vector)) AS score
+	FROM t_knowledge_chunk_vector
+	`)
 	args := []any{vectorLiteral}
 	if len(request.KnowledgeBaseIDs) > 0 {
 		sqlBuilder.WriteString("WHERE kb_id IN ?\n")
@@ -298,9 +259,7 @@ FROM t_knowledge_chunk_vector
 	sqlBuilder.WriteString("ORDER BY embedding <=> CAST(? AS vector)\nLIMIT ?")
 	args = append(args, vectorLiteral, topK)
 
-	query := s.db.WithContext(ctx).Raw(sqlBuilder.String(), args...)
-
-	rows, err := query.Rows()
+	rows, err := s.db.WithContext(ctx).Raw(sqlBuilder.String(), args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("search knowledge chunk vectors: %w", err)
 	}
@@ -337,6 +296,218 @@ FROM t_knowledge_chunk_vector
 	return result, nil
 }
 
+func (s *VectorStore) searchByKeywordLexical(ctx context.Context, query lexicalQuery, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
+	var sqlStr string
+	var args []any
+	if len(knowledgeBaseIDs) > 0 {
+		sqlStr = `
+	SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata,
+	       ts_rank_cd(to_tsvector('simple', content_lexemes), to_tsquery('simple', ?)) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE to_tsvector('simple', content_lexemes) @@ to_tsquery('simple', ?)
+	  AND kb_id IN ?
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{query.TSQuery, query.TSQuery, knowledgeBaseIDs, topK}
+	} else {
+		sqlStr = `
+	SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata,
+	       ts_rank_cd(to_tsvector('simple', content_lexemes), to_tsquery('simple', ?)) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE to_tsvector('simple', content_lexemes) @@ to_tsquery('simple', ?)
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{query.TSQuery, query.TSQuery, topK}
+	}
+
+	rows, err := s.db.WithContext(ctx).Raw(sqlStr, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("keyword lexical search chunks: %w", err)
+	}
+	defer rows.Close()
+
+	return collectSearchHits(rows, topK, "scan keyword lexical search hit")
+}
+
+func (s *VectorStore) searchByKeywordFallbackTrgm(ctx context.Context, query string, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
+	if err := s.db.WithContext(ctx).Exec("SET pg_trgm.word_similarity_threshold = 0.05").Error; err != nil {
+		return nil, fmt.Errorf("set word_similarity_threshold: %w", err)
+	}
+
+	var sqlStr string
+	var args []any
+	if len(knowledgeBaseIDs) > 0 {
+		sqlStr = `
+	SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata, word_similarity(content, ?) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE content % ? AND kb_id IN ?
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{query, query, knowledgeBaseIDs, topK}
+	} else {
+		sqlStr = `
+	SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata, word_similarity(content, ?) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE content % ?
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{query, query, topK}
+	}
+
+	rows, err := s.db.WithContext(ctx).Raw(sqlStr, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("keyword fallback search chunks: %w", err)
+	}
+	defer rows.Close()
+
+	return collectSearchHits(rows, topK, "scan keyword fallback search hit")
+}
+
+func (s *VectorStore) searchByMetadataLexical(ctx context.Context, query lexicalQuery, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
+	sectionWeight, documentNameWeight, sourceFileNameWeight := metadataTitleWeights()
+
+	var sqlStr string
+	var args []any
+	if len(knowledgeBaseIDs) > 0 {
+		sqlStr = `
+	SELECT
+	    chunk_id, doc_id, kb_id, chunk_index, content, metadata,
+	    (
+	        ts_rank_cd(to_tsvector('simple', metadata_section_lexemes), to_tsquery('simple', ?)) * ?
+	        + ts_rank_cd(to_tsvector('simple', metadata_document_name_lexemes), to_tsquery('simple', ?)) * ?
+	        + ts_rank_cd(to_tsvector('simple', metadata_source_file_name_lexemes), to_tsquery('simple', ?)) * ?
+	    ) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE (
+	    to_tsvector('simple', metadata_section_lexemes) @@ to_tsquery('simple', ?)
+	    OR to_tsvector('simple', metadata_document_name_lexemes) @@ to_tsquery('simple', ?)
+	    OR to_tsvector('simple', metadata_source_file_name_lexemes) @@ to_tsquery('simple', ?)
+	) AND kb_id IN ?
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{
+			query.TSQuery, sectionWeight,
+			query.TSQuery, documentNameWeight,
+			query.TSQuery, sourceFileNameWeight,
+			query.TSQuery, query.TSQuery, query.TSQuery,
+			knowledgeBaseIDs, topK,
+		}
+	} else {
+		sqlStr = `
+	SELECT
+	    chunk_id, doc_id, kb_id, chunk_index, content, metadata,
+	    (
+	        ts_rank_cd(to_tsvector('simple', metadata_section_lexemes), to_tsquery('simple', ?)) * ?
+	        + ts_rank_cd(to_tsvector('simple', metadata_document_name_lexemes), to_tsquery('simple', ?)) * ?
+	        + ts_rank_cd(to_tsvector('simple', metadata_source_file_name_lexemes), to_tsquery('simple', ?)) * ?
+	    ) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE (
+	    to_tsvector('simple', metadata_section_lexemes) @@ to_tsquery('simple', ?)
+	    OR to_tsvector('simple', metadata_document_name_lexemes) @@ to_tsquery('simple', ?)
+	    OR to_tsvector('simple', metadata_source_file_name_lexemes) @@ to_tsquery('simple', ?)
+	)
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{
+			query.TSQuery, sectionWeight,
+			query.TSQuery, documentNameWeight,
+			query.TSQuery, sourceFileNameWeight,
+			query.TSQuery, query.TSQuery, query.TSQuery,
+			topK,
+		}
+	}
+
+	rows, err := s.db.WithContext(ctx).Raw(sqlStr, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("metadata lexical search chunks: %w", err)
+	}
+	defer rows.Close()
+
+	return collectSearchHits(rows, topK, "scan metadata lexical search hit")
+}
+
+func (s *VectorStore) searchByMetadataFallbackTrgm(ctx context.Context, query string, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
+	if err := s.db.WithContext(ctx).Exec("SET pg_trgm.word_similarity_threshold = 0.05").Error; err != nil {
+		return nil, fmt.Errorf("set word_similarity_threshold: %w", err)
+	}
+
+	var sqlStr string
+	var args []any
+	if len(knowledgeBaseIDs) > 0 {
+		sqlStr = `
+	SELECT
+	    chunk_id, doc_id, kb_id, chunk_index, content, metadata,
+	    GREATEST(
+	        word_similarity(COALESCE(metadata->>'document_name', ''), ?),
+	        word_similarity(COALESCE(metadata->>'source_file_name', ''), ?),
+	        word_similarity(COALESCE(metadata->>'section', ''), ?)
+	    ) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE (
+	    COALESCE(metadata->>'document_name', '') % ?
+	    OR COALESCE(metadata->>'source_file_name', '') % ?
+	    OR COALESCE(metadata->>'section', '') % ?
+	) AND kb_id IN ?
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{query, query, query, query, query, query, knowledgeBaseIDs, topK}
+	} else {
+		sqlStr = `
+	SELECT
+	    chunk_id, doc_id, kb_id, chunk_index, content, metadata,
+	    GREATEST(
+	        word_similarity(COALESCE(metadata->>'document_name', ''), ?),
+	        word_similarity(COALESCE(metadata->>'source_file_name', ''), ?),
+	        word_similarity(COALESCE(metadata->>'section', ''), ?)
+	    ) AS score
+	FROM t_knowledge_chunk_vector
+	WHERE (
+	    COALESCE(metadata->>'document_name', '') % ?
+	    OR COALESCE(metadata->>'source_file_name', '') % ?
+	    OR COALESCE(metadata->>'section', '') % ?
+	)
+	ORDER BY score DESC
+	LIMIT ?`
+		args = []any{query, query, query, query, query, query, topK}
+	}
+
+	rows, err := s.db.WithContext(ctx).Raw(sqlStr, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("metadata fallback search chunks: %w", err)
+	}
+	defer rows.Close()
+
+	return collectSearchHits(rows, topK, "scan metadata fallback search hit")
+}
+
+func (s *VectorStore) upsertDocumentChunkLegacy(ctx context.Context, chunk port.ChunkVector, metadata string, now time.Time) error {
+	return s.db.WithContext(ctx).Exec(`
+	INSERT INTO t_knowledge_chunk_vector
+	    (chunk_id, doc_id, kb_id, chunk_index, content, embedding, metadata, create_time, update_time)
+	VALUES
+	    (?, ?, ?, ?, ?, CAST(? AS vector), CAST(? AS jsonb), ?, ?)
+	ON CONFLICT (chunk_id) DO UPDATE SET
+	    doc_id = EXCLUDED.doc_id,
+	    kb_id = EXCLUDED.kb_id,
+	    chunk_index = EXCLUDED.chunk_index,
+	    content = EXCLUDED.content,
+	    embedding = EXCLUDED.embedding,
+	    metadata = EXCLUDED.metadata,
+	    update_time = EXCLUDED.update_time
+	`,
+		chunk.ChunkID,
+		chunk.DocumentID,
+		chunk.KnowledgeBaseID,
+		chunk.Index,
+		chunk.Text,
+		formatVector(chunk.Embedding),
+		metadata,
+		now,
+		now,
+	).Error
+}
+
 func formatVector(values []float32) string {
 	if len(values) == 0 {
 		return "[]"
@@ -353,6 +524,50 @@ func normalizeMetadata(metadata map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return metadata
+}
+
+func collectSearchHits(rows *sql.Rows, topK int, scanContext string) ([]corevector.SearchHit, error) {
+	result := make([]corevector.SearchHit, 0, topK)
+	for rows.Next() {
+		var (
+			chunkID    string
+			documentID string
+			kbID       string
+			index      int
+			content    string
+			metadata   []byte
+			score      float32
+		)
+		if err := rows.Scan(&chunkID, &documentID, &kbID, &index, &content, &metadata, &score); err != nil {
+			return nil, fmt.Errorf("%s: %w", scanContext, err)
+		}
+		result = append(result, corevector.SearchHit{
+			ChunkID:         chunkID,
+			DocumentID:      documentID,
+			KnowledgeBaseID: kbID,
+			Index:           index,
+			Text:            content,
+			Score:           score,
+			Metadata:        unmarshalMetadata(metadata),
+		})
+	}
+	return result, nil
+}
+
+func isUndefinedColumnError(err error, columns ...string) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	if !strings.Contains(text, "does not exist") {
+		return false
+	}
+	for _, column := range columns {
+		if strings.Contains(text, strings.ToLower(column)) {
+			return true
+		}
+	}
+	return false
 }
 
 func unmarshalMetadata(raw []byte) map[string]any {

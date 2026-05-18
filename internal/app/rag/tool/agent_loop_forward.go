@@ -4,6 +4,10 @@ import (
 	"regexp"
 
 	ragcore "local/rag-project/internal/app/rag/tool/core"
+	graphmod "local/rag-project/internal/app/rag/tool/modules/graph"
+	systemmod "local/rag-project/internal/app/rag/tool/modules/system"
+	tracemod "local/rag-project/internal/app/rag/tool/modules/trace"
+	webmod "local/rag-project/internal/app/rag/tool/modules/web"
 	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
 
@@ -50,17 +54,31 @@ func planWithBaseRules(input WorkflowInput, maxCalls int) []Call {
 }
 
 func observeDocumentDiagnosis(result Result) ObserveResult {
-	return ragruntime.ObserveDocumentDiagnosis(result)
+	observation, _ := systemmod.DocumentIngestionDiagnoseBehavior().Observe(result, ObserveInput{})
+	return observation
 }
 
 func observeTaskDiagnosis(result Result) ObserveResult {
-	return ragruntime.ObserveTaskDiagnosis(result)
+	observation, _ := systemmod.TaskIngestionDiagnoseBehavior().Observe(result, ObserveInput{})
+	return observation
 }
 
 func observeTaskQuery(result Result) ObserveResult {
-	return ragruntime.ObserveTaskQuery(result)
+	observation, _ := systemmod.IngestionTaskQueryBehavior().Observe(result, ObserveInput{})
+	return observation
 }
 
 func observeWebFetch(result Result) ObserveResult {
-	return ragruntime.ObserveWebFetch(result)
+	observation, _ := webmod.WebFetchBehavior().Observe(result, ObserveInput{})
+	return observation
+}
+
+func observeTraceRetrievalDiagnose(result Result) ObserveResult {
+	observation, _ := tracemod.TraceRetrievalDiagnoseBehavior().Observe(result, ObserveInput{})
+	return observation
+}
+
+func observeDocumentRootCauseDiagnosis(result Result) ObserveResult {
+	observation, _ := graphmod.DocumentRootCauseDiagnosisBehavior().Observe(result, ObserveInput{})
+	return observation
 }

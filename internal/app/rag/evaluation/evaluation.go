@@ -2,6 +2,7 @@ package evaluation
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -34,26 +35,30 @@ type Sample struct {
 	KnowledgeBaseIDs []string        `json:"knowledgeBaseIds,omitempty"`
 	SearchMode       string          `json:"searchMode,omitempty"`
 	TopK             int             `json:"topK,omitempty"`
+	ChunkStrategy    string          `json:"chunkStrategy,omitempty"`
+	ExpectedRelevance map[string]int `json:"expectedRelevance,omitempty"`
 }
 
 type SampleResult struct {
-	Name              string           `json:"name"`
-	Query             string           `json:"query"`
-	Tags              []string         `json:"tags,omitempty"`
-	Target            Target           `json:"target"`
-	ExpectedIDs       []string         `json:"expectedIds"`
-	RetrievedCount    int              `json:"retrievedCount"`
-	FirstRelevantRank int              `json:"firstRelevantRank,omitempty"`
-	ReciprocalRank    float64          `json:"reciprocalRank"`
-	HitAtK            map[int]bool     `json:"hitAtK"`
-	RecallAtK         map[int]float64  `json:"recallAtK"`
+	Name              string          `json:"name"`
+	Query             string          `json:"query"`
+	Tags              []string        `json:"tags,omitempty"`
+	Target            Target          `json:"target"`
+	ExpectedIDs       []string        `json:"expectedIds"`
+	RetrievedCount    int             `json:"retrievedCount"`
+	FirstRelevantRank int             `json:"firstRelevantRank,omitempty"`
+	ReciprocalRank    float64         `json:"reciprocalRank"`
+	HitAtK            map[int]bool    `json:"hitAtK"`
+	RecallAtK         map[int]float64 `json:"recallAtK"`
+	NDCGAtK           map[int]float64 `json:"ndcgAtK"`
 }
 
 type AggregateMetrics struct {
-	SampleCount     int              `json:"sampleCount"`
-	HitRateAtK      map[int]float64  `json:"hitRateAtK"`
-	AverageRecallAtK map[int]float64 `json:"averageRecallAtK"`
-	MRR             float64          `json:"mrr"`
+	SampleCount      int              `json:"sampleCount"`
+	HitRateAtK       map[int]float64  `json:"hitRateAtK"`
+	AverageRecallAtK map[int]float64  `json:"averageRecallAtK"`
+	AverageNDCGAtK   map[int]float64  `json:"averageNdcgAtK"`
+	MRR              float64          `json:"mrr"`
 }
 
 type TagSummary struct {
@@ -103,6 +108,7 @@ func evaluateSample(sample Sample, ks []int) (SampleResult, error) {
 	}
 
 	expectedSet := map[string]struct{}{}
+	relevance := normalizeRelevance(sample.ExpectedRelevance, sample.ExpectedIDs)
 	for _, id := range sample.ExpectedIDs {
 		id = strings.TrimSpace(id)
 		if id != "" {
@@ -157,6 +163,8 @@ func evaluateSample(sample Sample, ks []int) (SampleResult, error) {
 		reciprocalRank = 1.0 / float64(firstRelevantRank)
 	}
 
+	ndcgAtK := computeNDCG(rankedIDs, relevance, ks)
+
 	return SampleResult{
 		Name:              name,
 		Query:             strings.TrimSpace(sample.Query),
@@ -168,6 +176,7 @@ func evaluateSample(sample Sample, ks []int) (SampleResult, error) {
 		ReciprocalRank:    reciprocalRank,
 		HitAtK:            hitAtK,
 		RecallAtK:         recallAtK,
+		NDCGAtK:           ndcgAtK,
 	}, nil
 }
 
@@ -176,6 +185,7 @@ func aggregate(results []SampleResult, ks []int) AggregateMetrics {
 		SampleCount:      len(results),
 		HitRateAtK:       make(map[int]float64, len(ks)),
 		AverageRecallAtK: make(map[int]float64, len(ks)),
+		AverageNDCGAtK:   make(map[int]float64, len(ks)),
 	}
 	if len(results) == 0 {
 		return metrics
@@ -188,6 +198,7 @@ func aggregate(results []SampleResult, ks []int) AggregateMetrics {
 				metrics.HitRateAtK[k]++
 			}
 			metrics.AverageRecallAtK[k] += result.RecallAtK[k]
+			metrics.AverageNDCGAtK[k] += result.NDCGAtK[k]
 		}
 	}
 
@@ -196,6 +207,7 @@ func aggregate(results []SampleResult, ks []int) AggregateMetrics {
 	for _, k := range ks {
 		metrics.HitRateAtK[k] /= total
 		metrics.AverageRecallAtK[k] /= total
+		metrics.AverageNDCGAtK[k] /= total
 	}
 	return metrics
 }
@@ -318,3 +330,96 @@ func sortedKeys(items map[string]struct{}) []string {
 	sort.Strings(result)
 	return result
 }
+
+// normalizeRelevance builds a grade map from ExpectedRelevance, falling back to
+// binary relevance from ExpectedIDs (present=1, absent=0).
+func normalizeRelevance(provided map[string]int, expectedIDs []string) map[string]int {
+	if len(provided) > 0 {
+		result := make(map[string]int, len(provided))
+		for id, grade := range provided {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if grade < 0 {
+				grade = 0
+			}
+			result[id] = grade
+		}
+		// ensure all expected IDs have at least grade 1
+		for _, id := range expectedIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, ok := result[id]; !ok {
+				result[id] = 1
+			}
+		}
+		return result
+	}
+	result := make(map[string]int, len(expectedIDs))
+	for _, id := range expectedIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			result[id] = 1
+		}
+	}
+	return result
+}
+
+// computeNDCG computes NDCG@K for every k in ks.
+func computeNDCG(rankedIDs []string, relevance map[string]int, ks []int) map[int]float64 {
+	result := make(map[int]float64, len(ks))
+	if len(rankedIDs) == 0 || len(relevance) == 0 {
+		for _, k := range ks {
+			result[k] = 0
+		}
+		return result
+	}
+
+	// ideal DCG: sort all expected items by grade descending, truncate to top K
+	for _, k := range ks {
+		idealGrades := make([]int, 0, len(relevance))
+		for _, grade := range relevance {
+			if grade > 0 {
+				idealGrades = append(idealGrades, grade)
+			}
+		}
+		sort.Sort(sort.Reverse(sort.IntSlice(idealGrades)))
+		idcg := dcgAtK(idealGrades, k)
+
+		gains := make([]int, min(k, len(rankedIDs)))
+		for i := 0; i < len(gains); i++ {
+			if grade, ok := relevance[rankedIDs[i]]; ok {
+				gains[i] = grade
+			}
+		}
+		dcg := dcgAtK(gains, k)
+		if idcg == 0 {
+			result[k] = 0
+		} else {
+			result[k] = dcg / idcg
+		}
+	}
+	return result
+}
+
+// dcgAtK computes DCG@K = Σ(i=1 to min(K,len(gains))) (2^gains[i-1] - 1) / log2(i + 1).
+func dcgAtK(gains []int, k int) float64 {
+	limit := k
+	if limit > len(gains) {
+		limit = len(gains)
+	}
+	var total float64
+	for i := 0; i < limit; i++ {
+		if gains[i] <= 0 {
+			continue
+		}
+		numerator := math.Pow(2, float64(gains[i])) - 1
+		denominator := math.Log2(float64(i + 2)) // i+2 because index is 0-based, rank is 1-based
+		total += numerator / denominator
+	}
+	return total
+}
+

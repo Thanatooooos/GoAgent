@@ -45,6 +45,7 @@ type ExecutionState struct {
 	Parsed      ParsedDocument
 	Chunks      []ChunkPayload
 	IndexResult IndexResult
+	Artifacts   map[string]any
 	NodeOutputs map[string]map[string]any
 	Error       error
 	StartedAt   time.Time
@@ -57,6 +58,12 @@ func (s ExecutionState) Clone() ExecutionState {
 	if len(s.Chunks) > 0 {
 		cloned.Chunks = append([]ChunkPayload(nil), s.Chunks...)
 	}
+	if len(s.Artifacts) > 0 {
+		cloned.Artifacts = make(map[string]any, len(s.Artifacts))
+		for key, value := range s.Artifacts {
+			cloned.Artifacts[key] = value
+		}
+	}
 	if len(s.NodeOutputs) > 0 {
 		cloned.NodeOutputs = make(map[string]map[string]any, len(s.NodeOutputs))
 		for key, value := range s.NodeOutputs {
@@ -68,13 +75,26 @@ func (s ExecutionState) Clone() ExecutionState {
 
 // WorkflowSpec 描述由 pipeline 转换得到的最小可执行工作流定义。
 type WorkflowSpec struct {
-	TaskID    string
-	Pipeline  domain.Pipeline
-	NodeOrder []WorkflowNodeSpec
+	TaskID        string
+	Pipeline      domain.Pipeline
+	Definition    domain.PipelineDefinition
+	CacheKey      string
+	EntryNodeIDs  []string
+	NodeOrder     []WorkflowNodeSpec
+	EdgesBySource map[string][]WorkflowEdgeSpec
 }
 
 // WorkflowNodeSpec 描述工作流中的单个节点。
 type WorkflowNodeSpec struct {
 	Order int
 	Node  domain.PipelineNode
+}
+
+// WorkflowEdgeSpec describes a normalized workflow edge.
+type WorkflowEdgeSpec struct {
+	EdgeID     string
+	FromNodeID string
+	ToNodeID   string
+	Condition  map[string]any
+	Priority   int
 }

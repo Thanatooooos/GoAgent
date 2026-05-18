@@ -17,11 +17,43 @@ export interface IngestionPipelineNode {
   nextNodeId?: string | null;
 }
 
+export interface IngestionPipelineEdge {
+  edgeId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  condition?: Record<string, unknown> | null;
+  priority?: number | null;
+  description?: string | null;
+}
+
+export interface IngestionPipelineDefinition {
+  version: string;
+  entryNodeIds: string[];
+  nodes: IngestionPipelineNode[];
+  edges: IngestionPipelineEdge[];
+}
+
+export interface IngestionNodeRequirement {
+  anyOf: string[];
+  description?: string | null;
+}
+
+export interface IngestionNodeContract {
+  nodeType: string;
+  displayName?: string | null;
+  summary?: string | null;
+  category?: string | null;
+  supportsEntry: boolean;
+  requires?: IngestionNodeRequirement[] | null;
+  produces?: string[] | null;
+}
+
 export interface IngestionPipeline {
   id: string;
   name: string;
   description?: string | null;
   createdBy?: string | null;
+  definition?: IngestionPipelineDefinition | null;
   nodes?: IngestionPipelineNode[];
   createTime?: string;
   updateTime?: string;
@@ -30,6 +62,7 @@ export interface IngestionPipeline {
 export interface IngestionPipelinePayload {
   name: string;
   description?: string | null;
+  definition?: IngestionPipelineDefinition | null;
   nodes?: Array<{
     nodeId: string;
     nodeType: string;
@@ -140,6 +173,12 @@ export async function getIngestionPipelines(pageNo = 1, pageSize = 10, keyword?:
 
 export async function getIngestionPipeline(id: string) {
   return api.get<IngestionPipeline, IngestionPipeline>(`/ingestion/pipelines/${id}`);
+}
+
+export async function getIngestionPipelineContracts() {
+  return api.get<IngestionNodeContract[], IngestionNodeContract[]>(
+    "/ingestion/pipelines/contracts"
+  );
 }
 
 export async function createIngestionPipeline(payload: IngestionPipelinePayload) {

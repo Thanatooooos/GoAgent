@@ -33,6 +33,7 @@ type ExecutorService struct {
 	taskRepo        port.TaskRepository
 	taskNodeRepo    port.TaskNodeRepository
 	workflowBuilder WorkflowBuilder
+	graphExecutor   *EinoGraphExecutor
 	nodeRunners     *NodeRunnerRegistry
 	taskObserver    TaskObserver
 	metrics         *MetricsService
@@ -53,7 +54,7 @@ type ExecutorService struct {
 func NewExecutorService(options ExecutorServiceOptions) *ExecutorService {
 	builder := options.WorkflowBuilder
 	if builder == nil {
-		builder = NewLinearWorkflowBuilder()
+		builder = NewEinoGraphWorkflowBuilder()
 	}
 
 	maxConcurrent := options.MaxConcurrent
@@ -73,7 +74,7 @@ func NewExecutorService(options ExecutorServiceOptions) *ExecutorService {
 	}
 	asyncCtx, asyncCancel := context.WithCancel(context.Background())
 
-	return &ExecutorService{
+	service := &ExecutorService{
 		taskRepo:        options.TaskRepo,
 		taskNodeRepo:    options.TaskNodeRepo,
 		workflowBuilder: builder,
@@ -87,6 +88,8 @@ func NewExecutorService(options ExecutorServiceOptions) *ExecutorService {
 		asyncCancel:     asyncCancel,
 		slots:           make(chan struct{}, maxConcurrent),
 	}
+	service.graphExecutor = NewEinoGraphExecutor(service)
+	return service
 }
 
 // Submit 提供 task 提交边界，并完成最小编排准备。
@@ -174,6 +177,7 @@ func (s *ExecutorService) newExecutionState(task domain.Task, pipeline domain.Pi
 	return ExecutionState{
 		Task:        task,
 		Pipeline:    pipeline,
+		Artifacts:   map[string]any{},
 		NodeOutputs: map[string]map[string]any{},
 		StartedAt:   s.now(),
 	}
@@ -277,152 +281,7 @@ func (s *ExecutorService) runWorkflow(ctx context.Context, workflow WorkflowSpec
 		}
 	}
 
-	current := state
-	var execErr error
-	for _, item := range workflow.NodeOrder {
-		select {
-		case <-ctx.Done():
-			execErr = exception.NewServiceException("workflow execution canceled", ctx.Err())
-			break
-		default:
-		}
-
-		runner, ok := s.RunnerForNode(item.Node.NodeType)
-		if !ok {
-			execErr = exception.NewClientException("node runner not found for node type: "+item.Node.NodeType, nil)
-			break
-		}
-
-		log.Infow("ingestion node started",
-			"taskId", task.ID,
-			"nodeId", item.Node.NodeID,
-			"nodeType", item.Node.NodeType,
-			"order", item.Order,
-		)
-		if s.taskObserver != nil {
-			if err := s.taskObserver.OnNodeStarted(ctx, task, item); err != nil {
-				execErr = exception.NewServiceException("failed to mark ingestion node running", err)
-				break
-			}
-		}
-
-		// 读取节点级重试配置，回退到 executor 全局默认值。
-		nodeRetryCount := s.maxRetries
-		if val, ok := item.Node.Settings["retryCount"].(float64); ok {
-			nodeRetryCount = int(val)
-		}
-		if nodeRetryCount < 0 {
-			nodeRetryCount = 0
-		}
-		if nodeRetryCount > 5 {
-			nodeRetryCount = 5
-		}
-		nodeRetryBackoffMs := s.retryBackoffMs
-		if val, ok := item.Node.Settings["retryBackoffMs"].(float64); ok {
-			nodeRetryBackoffMs = int(val)
-		}
-		if nodeRetryBackoffMs <= 0 {
-			nodeRetryBackoffMs = 1000
-		}
-
-		// 带重试的节点执行。
-		var nextState ExecutionState
-		var output map[string]any
-		var runErr error
-		var totalDuration time.Duration
-		for attempt := 0; attempt <= nodeRetryCount; attempt++ {
-			// 重试前检查 context 是否已取消。
-			if attempt > 0 {
-				// 使用独立的 cancelErr 避免被上一轮 runErr 残留值干扰。
-				var cancelErr error
-				select {
-				case <-ctx.Done():
-					cancelErr = exception.NewServiceException("workflow execution canceled during retry", ctx.Err())
-				default:
-				}
-				if cancelErr != nil {
-					runErr = cancelErr
-					break
-				}
-				backoff := time.Duration(nodeRetryBackoffMs*(1<<(attempt-1))) * time.Millisecond
-				log.Infow("ingestion node retrying",
-					"taskId", task.ID,
-					"nodeId", item.Node.NodeID,
-					"nodeType", item.Node.NodeType,
-					"attempt", attempt,
-					"maxRetries", nodeRetryCount,
-					"backoffMs", backoff.Milliseconds(),
-				)
-				if s.taskObserver != nil {
-					if err := s.taskObserver.OnNodeRetry(ctx, task, item, attempt, backoff, runErr); err != nil {
-						runErr = exception.NewServiceException("failed to record ingestion node retry", err)
-						break
-					}
-				}
-				select {
-				case <-ctx.Done():
-					cancelErr = exception.NewServiceException("workflow execution canceled during retry backoff", ctx.Err())
-				case <-time.After(backoff):
-				}
-				if cancelErr != nil {
-					runErr = cancelErr
-					break
-				}
-			}
-
-			attemptStart := s.now()
-			nextState, output, runErr = runner.Run(ctx, current, item.Node)
-			attemptDuration := s.now().Sub(attemptStart)
-			totalDuration += attemptDuration
-			if runErr == nil {
-				break
-			}
-			log.Errorw("ingestion node attempt failed",
-				"taskId", task.ID,
-				"nodeId", item.Node.NodeID,
-				"nodeType", item.Node.NodeType,
-				"attempt", attempt,
-				"maxRetries", nodeRetryCount,
-				"durationMs", attemptDuration.Milliseconds(),
-				"error", runErr.Error(),
-			)
-		}
-
-		if s.taskObserver != nil {
-			if observeErr := s.taskObserver.OnNodeCompleted(ctx, task, item, output, totalDuration, runErr); observeErr != nil && runErr == nil {
-				runErr = exception.NewServiceException("failed to persist ingestion node result", observeErr)
-			}
-		}
-		if runErr != nil {
-			log.Errorw("ingestion node failed",
-				"taskId", task.ID,
-				"nodeId", item.Node.NodeID,
-				"nodeType", item.Node.NodeType,
-				"order", item.Order,
-				"durationMs", totalDuration.Milliseconds(),
-				"error", runErr.Error(),
-			)
-			execErr = runErr
-			break
-		}
-		log.Infow("ingestion node completed",
-			"taskId", task.ID,
-			"nodeId", item.Node.NodeID,
-			"nodeType", item.Node.NodeType,
-			"order", item.Order,
-			"durationMs", totalDuration.Milliseconds(),
-		)
-		if nextState.NodeOutputs == nil {
-			nextState.NodeOutputs = current.NodeOutputs
-		}
-		if nextState.NodeOutputs == nil {
-			nextState.NodeOutputs = map[string]map[string]any{}
-		}
-		if output != nil {
-			nextState.NodeOutputs[item.Node.NodeID] = output
-		}
-		current = nextState
-	}
+	current, execErr := s.graphExecutor.Execute(ctx, workflow, state)
 
 	completedAt := s.now()
 	task.CompletedAt = &completedAt
@@ -458,6 +317,151 @@ func (s *ExecutorService) runWorkflow(ctx context.Context, workflow WorkflowSpec
 			)
 		}
 	}
+}
+
+func (s *ExecutorService) executeWorkflowNode(ctx context.Context, runtime *einoTaskRuntime, item WorkflowNodeSpec) error {
+	if s == nil {
+		return exception.NewServiceException("ingestion executor service is required", nil)
+	}
+	select {
+	case <-ctx.Done():
+		return exception.NewServiceException("workflow execution canceled", ctx.Err())
+	default:
+	}
+
+	current := runtime.Snapshot()
+	runner, ok := s.RunnerForNode(item.Node.NodeType)
+	if !ok {
+		return exception.NewClientException("node runner not found for node type: "+item.Node.NodeType, nil)
+	}
+	task := current.Task
+	log.Infow("ingestion node started",
+		"taskId", task.ID,
+		"nodeId", item.Node.NodeID,
+		"nodeType", item.Node.NodeType,
+		"order", item.Order,
+	)
+	if s.taskObserver != nil {
+		if err := s.taskObserver.OnNodeStarted(ctx, task, item); err != nil {
+			return exception.NewServiceException("failed to mark ingestion node running", err)
+		}
+	}
+
+	nodeRetryCount, nodeRetryBackoffMs := s.resolveNodeRetrySettings(item)
+	var nextState ExecutionState
+	var output map[string]any
+	var runErr error
+	var totalDuration time.Duration
+	for attempt := 0; attempt <= nodeRetryCount; attempt++ {
+		if attempt > 0 {
+			var cancelErr error
+			select {
+			case <-ctx.Done():
+				cancelErr = exception.NewServiceException("workflow execution canceled during retry", ctx.Err())
+			default:
+			}
+			if cancelErr != nil {
+				runErr = cancelErr
+				break
+			}
+			backoff := time.Duration(nodeRetryBackoffMs*(1<<(attempt-1))) * time.Millisecond
+			log.Infow("ingestion node retrying",
+				"taskId", task.ID,
+				"nodeId", item.Node.NodeID,
+				"nodeType", item.Node.NodeType,
+				"attempt", attempt,
+				"maxRetries", nodeRetryCount,
+				"backoffMs", backoff.Milliseconds(),
+			)
+			if s.taskObserver != nil {
+				if err := s.taskObserver.OnNodeRetry(ctx, task, item, attempt, backoff, runErr); err != nil {
+					runErr = exception.NewServiceException("failed to record ingestion node retry", err)
+					break
+				}
+			}
+			select {
+			case <-ctx.Done():
+				cancelErr = exception.NewServiceException("workflow execution canceled during retry backoff", ctx.Err())
+			case <-time.After(backoff):
+			}
+			if cancelErr != nil {
+				runErr = cancelErr
+				break
+			}
+		}
+
+		attemptState := runtime.Snapshot()
+		attemptStart := s.now()
+		nextState, output, runErr = runner.Run(ctx, attemptState, item.Node)
+		attemptDuration := s.now().Sub(attemptStart)
+		totalDuration += attemptDuration
+		if runErr == nil {
+			break
+		}
+		log.Errorw("ingestion node attempt failed",
+			"taskId", task.ID,
+			"nodeId", item.Node.NodeID,
+			"nodeType", item.Node.NodeType,
+			"attempt", attempt,
+			"maxRetries", nodeRetryCount,
+			"durationMs", attemptDuration.Milliseconds(),
+			"error", runErr.Error(),
+		)
+	}
+
+	if s.taskObserver != nil {
+		if observeErr := s.taskObserver.OnNodeCompleted(ctx, task, item, output, totalDuration, runErr); observeErr != nil && runErr == nil {
+			runErr = exception.NewServiceException("failed to persist ingestion node result", observeErr)
+		}
+	}
+	if runErr != nil {
+		log.Errorw("ingestion node failed",
+			"taskId", task.ID,
+			"nodeId", item.Node.NodeID,
+			"nodeType", item.Node.NodeType,
+			"order", item.Order,
+			"durationMs", totalDuration.Milliseconds(),
+			"error", runErr.Error(),
+		)
+		return runErr
+	}
+	log.Infow("ingestion node completed",
+		"taskId", task.ID,
+		"nodeId", item.Node.NodeID,
+		"nodeType", item.Node.NodeType,
+		"order", item.Order,
+		"durationMs", totalDuration.Milliseconds(),
+	)
+	if nextState.NodeOutputs == nil {
+		nextState.NodeOutputs = map[string]map[string]any{}
+	}
+	if output != nil {
+		nextState.NodeOutputs[item.Node.NodeID] = output
+	}
+	syncBuiltInArtifacts(&nextState, item)
+	runtime.Commit(item, nextState, output)
+	return nil
+}
+
+func (s *ExecutorService) resolveNodeRetrySettings(item WorkflowNodeSpec) (int, int) {
+	nodeRetryCount := s.maxRetries
+	if val, ok := item.Node.Settings["retryCount"].(float64); ok {
+		nodeRetryCount = int(val)
+	}
+	if nodeRetryCount < 0 {
+		nodeRetryCount = 0
+	}
+	if nodeRetryCount > 5 {
+		nodeRetryCount = 5
+	}
+	nodeRetryBackoffMs := s.retryBackoffMs
+	if val, ok := item.Node.Settings["retryBackoffMs"].(float64); ok {
+		nodeRetryBackoffMs = int(val)
+	}
+	if nodeRetryBackoffMs <= 0 {
+		nodeRetryBackoffMs = 1000
+	}
+	return nodeRetryCount, nodeRetryBackoffMs
 }
 
 // MaxConcurrent 返回执行器最大并发数。

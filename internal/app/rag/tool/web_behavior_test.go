@@ -59,7 +59,7 @@ func TestWebFetchBehaviorObserveRenderAndGuidance(t *testing.T) {
 	if !handled {
 		t.Fatal("expected web_fetch observe hook to handle the result")
 	}
-	if !observation.Done || observation.Confidence != 0.7 {
+	if !observation.Done || observation.State.Confidence != 0.7 {
 		t.Fatalf("unexpected observation: %+v", observation)
 	}
 

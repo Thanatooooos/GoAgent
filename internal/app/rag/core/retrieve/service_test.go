@@ -111,6 +111,40 @@ func TestRetrieveSemanticModeDefault(t *testing.T) {
 	}
 }
 
+func TestRetrieveSemanticModeExplicit(t *testing.T) {
+	searcher := &mockSearcher{
+		hits: []corevector.SearchHit{
+			{ChunkID: "v1", Text: "vector only", Score: 0.95},
+		},
+		keywordHits: []corevector.SearchHit{
+			{ChunkID: "k1", Text: "keyword result", Score: 1.0},
+		},
+		metadataHits: []corevector.SearchHit{
+			{ChunkID: "m1", Text: "metadata result", Score: 1.0},
+		},
+	}
+	embedding := &mockEmbedding{vector: []float32{0.1, 0.2}}
+
+	engine := NewEngine(searcher, embedding, nil)
+
+	result, err := engine.Retrieve(context.Background(), Request{
+		Query:      "semantic test",
+		SearchMode: SearchModeSemantic,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Chunks) != 1 || result.Chunks[0].ID != "v1" {
+		t.Fatalf("unexpected semantic result: %+v", result)
+	}
+	if len(result.SearchChannels) != 1 || result.SearchChannels[0] != ChannelVectorGlobal {
+		t.Fatalf("unexpected semantic search channels: %+v", result.SearchChannels)
+	}
+	if len(result.ChannelStats) != 1 || result.ChannelStats[0].Name != ChannelVectorGlobal {
+		t.Fatalf("unexpected semantic channel stats: %+v", result.ChannelStats)
+	}
+}
+
 func TestRetrieveKeywordMode(t *testing.T) {
 	searcher := &mockSearcher{
 		keywordHits: []corevector.SearchHit{

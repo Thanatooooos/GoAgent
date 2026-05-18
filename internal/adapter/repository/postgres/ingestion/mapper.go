@@ -8,7 +8,7 @@ import (
 )
 
 func toPipelineModel(item domain.Pipeline) (models.PipelineModel, error) {
-	nodesJSON, err := marshalPipelineNodes(item.Nodes)
+	definitionJSON, err := marshalPipelineDefinition(item.Definition, item.Nodes)
 	if err != nil {
 		return models.PipelineModel{}, err
 	}
@@ -16,7 +16,7 @@ func toPipelineModel(item domain.Pipeline) (models.PipelineModel, error) {
 		ID:          item.ID,
 		Name:        item.Name,
 		Description: item.Description,
-		NodesJSON:   nodesJSON,
+		NodesJSON:   definitionJSON,
 		CreatedBy:   item.CreatedBy,
 		UpdatedBy:   item.UpdatedBy,
 		CreateTime:  item.CreatedAt,
@@ -25,7 +25,7 @@ func toPipelineModel(item domain.Pipeline) (models.PipelineModel, error) {
 }
 
 func toPipelineDomain(item models.PipelineModel) (domain.Pipeline, error) {
-	nodes, err := unmarshalPipelineNodes(item.NodesJSON)
+	definition, err := unmarshalPipelineDefinition(item.NodesJSON)
 	if err != nil {
 		return domain.Pipeline{}, err
 	}
@@ -33,7 +33,8 @@ func toPipelineDomain(item models.PipelineModel) (domain.Pipeline, error) {
 		ID:          item.ID,
 		Name:        item.Name,
 		Description: item.Description,
-		Nodes:       nodes,
+		Definition:  definition,
+		Nodes:       domain.ClonePipelineNodes(definition.Nodes),
 		CreatedBy:   item.CreatedBy,
 		UpdatedBy:   item.UpdatedBy,
 		CreatedAt:   item.CreateTime,

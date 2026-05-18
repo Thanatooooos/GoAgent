@@ -72,7 +72,7 @@ func TestPipelineFetcherNotFound(t *testing.T) {
 	executor := ingestionservice.NewExecutorService(ingestionservice.ExecutorServiceOptions{
 		TaskRepo:        taskRepo,
 		TaskNodeRepo:    taskNodeRepo,
-		WorkflowBuilder: ingestionservice.NewLinearWorkflowBuilder(),
+		WorkflowBuilder: ingestionservice.NewEinoGraphWorkflowBuilder(),
 		NodeRunners:     nodeRunners,
 		TaskObserver: ingestionservice.NewMultiTaskObserver(
 			ingestionservice.NewRepositoryTaskObserver(taskRepo, taskNodeRepo),
@@ -287,7 +287,7 @@ func TestPipelineIndexerMissingDependency(t *testing.T) {
 	executor := ingestionservice.NewExecutorService(ingestionservice.ExecutorServiceOptions{
 		TaskRepo:        taskRepo,
 		TaskNodeRepo:    taskNodeRepo,
-		WorkflowBuilder: ingestionservice.NewLinearWorkflowBuilder(),
+		WorkflowBuilder: ingestionservice.NewEinoGraphWorkflowBuilder(),
 		NodeRunners:     nodeRunners,
 		TaskObserver: ingestionservice.NewMultiTaskObserver(
 			ingestionservice.NewRepositoryTaskObserver(taskRepo, taskNodeRepo),

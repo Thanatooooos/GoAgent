@@ -809,6 +809,18 @@ $env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/tool -count
 
 ## 下一步计划
 
+### 2026-05-17：Memory 架构设计讨论
+
+详见 [memory_architecture_design.md](docs/memory_architecture_design.md)。
+
+核心结论：
+- **短期/长期记忆分层**：短期用 conversation_message + 上下文直传，长期走 knowledge document + vector retrieve
+- **长消息处理**：写时摘要优于读时，规则优先 + LLM 补充，接入点在 `AddMessage` 入库前
+- **长期记忆入库识别**：三层漏斗（显式标记 → 异步 LLM 分类 → 会话结束聚合），第一层可立即落地
+- **长期记忆形态**：复用已有 ingestion pipeline，创建 knowledge document（sourceType=memory），打标签 memory_type=preference|knowledge|feedback
+
+待决策：全局 user_memory 知识库 vs 按项目隔离。
+
 ### P0
 
 - 联调验证 Agent Search 全链路

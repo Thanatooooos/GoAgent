@@ -226,7 +226,7 @@ func splitMarkdownBlocks(text string) []string {
 			}
 			if !inCodeFence {
 				flush()
-				fenceMarker = strings.TrimRight(trimmed, "` \t")[:3]
+				fenceMarker = codeFenceMarker(trimmed)
 				inCodeFence = true
 				current.WriteString(line)
 				continue
@@ -308,6 +308,24 @@ func parseHeading(block string) (int, string) {
 
 func isCodeFenceLine(line string) bool {
 	return strings.HasPrefix(line, "```")
+}
+
+func codeFenceMarker(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "```"
+	}
+	count := 0
+	for _, r := range line {
+		if r != '`' {
+			break
+		}
+		count++
+	}
+	if count < 3 {
+		return "```"
+	}
+	return strings.Repeat("`", count)
 }
 
 // detectCodeBlockLanguage 检测代码块的编程语言标签。

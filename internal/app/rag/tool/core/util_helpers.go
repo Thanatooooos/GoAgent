@@ -68,12 +68,9 @@ func ParseNextHint(hint string) (string, map[string]any) {
 func NewObserveResult(done bool, reasoning string, state AgentState) ObserveResult {
 	normalized := state.Normalize()
 	return ObserveResult{
-		Done:          done,
-		Reasoning:     strings.TrimSpace(reasoning),
-		NextHintCalls: append([]HintCall(nil), normalized.NextHintCalls...),
-		NextHint:      normalized.NextHint,
-		Confidence:    normalized.Confidence,
-		State:         normalized,
+		Done:      done,
+		Reasoning: strings.TrimSpace(reasoning),
+		State:     normalized,
 	}
 }
 

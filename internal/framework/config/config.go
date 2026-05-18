@@ -188,12 +188,25 @@ type RagWebSearchSourcePolicyConfig struct {
 type RagSearchChannels struct {
 	VectorGlobal   RagSearchChannel `mapstructure:"vector-global"`
 	IntentDirected RagSearchChannel `mapstructure:"intent-directed"`
+	Keyword        RagKeywordSearchChannelConfig       `mapstructure:"keyword"`
+	MetadataTitle  RagMetadataTitleSearchChannelConfig `mapstructure:"metadata-title"`
 }
 
 type RagSearchChannel struct {
 	ConfidenceThreshold float64 `mapstructure:"confidence-threshold"`
 	TopKMultiplier      int     `mapstructure:"top-k-multiplier"`
 	MinIntentScore      float64 `mapstructure:"min-intent-score"`
+}
+
+type RagKeywordSearchChannelConfig struct {
+	EnabledFallbackTrgm *bool `mapstructure:"enabled-fallback-trgm"`
+}
+
+type RagMetadataTitleSearchChannelConfig struct {
+	EnabledFallbackTrgm *bool   `mapstructure:"enabled-fallback-trgm"`
+	SectionWeight       float64 `mapstructure:"section-weight"`
+	DocumentNameWeight  float64 `mapstructure:"document-name-weight"`
+	SourceFileNameWeight float64 `mapstructure:"source-file-name-weight"`
 }
 
 type RagTraceConfig struct {

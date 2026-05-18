@@ -68,8 +68,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type {
   IngestionMetricsSnapshot,
+  IngestionNodeContract,
+  IngestionNodeRequirement,
   IngestionNodeMetrics,
   IngestionPipeline,
+  IngestionPipelineDefinition,
   IngestionPipelineNode,
   IngestionPipelinePayload,
   IngestionTask,
@@ -83,6 +86,7 @@ import {
   deleteIngestionPipeline,
   getIngestionMetrics,
   getIngestionPipeline,
+  getIngestionPipelineContracts,
   getIngestionPipelines,
   getIngestionTask,
   getIngestionTaskNodes,
@@ -186,8 +190,33 @@ const nodeStatusVariant = (status?: string | null) => {
   return "secondary";
 };
 
+const buildDefinitionFromLegacyNodes = (
+  nodes?: IngestionPipelineNode[] | null
+): IngestionPipelineDefinition => {
+  const normalizedNodes = nodes || [];
+  const edges = normalizedNodes
+    .filter((node) => node.nextNodeId)
+    .map((node, index) => ({
+      edgeId: `${node.nodeId}__to__${node.nextNodeId}`,
+      fromNodeId: node.nodeId,
+      toNodeId: String(node.nextNodeId),
+      condition: (node.condition as Record<string, unknown> | null) ?? null,
+      priority: index
+    }));
+  const inbound = new Set(edges.map((edge) => edge.toNodeId));
+  const entryNodeIds = normalizedNodes
+    .map((node) => node.nodeId)
+    .filter((nodeId) => !inbound.has(nodeId));
+  return {
+    version: "v1",
+    entryNodeIds,
+    nodes: normalizedNodes,
+    edges
+  };
+};
+
 const pipelineSchema = z.object({
-  name: z.string().min(1, "请输入流水线名称").max(60, "名称不能超过60个字符"),
+  name: z.string().min(1, "Enter pipeline name").max(60, "Name must be at most 60 characters"),
   description: z.string().optional(),
   nodesJson: z.string().optional()
 });
@@ -235,7 +264,7 @@ interface PipelineNodeForm {
 
 const taskSchema = z
   .object({
-    pipelineId: z.string().min(1, "请选择流水线"),
+    pipelineId: z.string().min(1, "Select a pipeline"),
     sourceType: z.string().min(1, "请选择来源类型"),
     location: z.string().optional(),
     fileName: z.string().optional(),
@@ -275,7 +304,7 @@ export function IngestionPage() {
     pipeline: IngestionPipeline | null;
   }>({ open: false, pipeline: null });
   const [pipelineDeleteTarget, setPipelineDeleteTarget] = useState<IngestionPipeline | null>(null);
-
+  const [pipelineContracts, setPipelineContracts] = useState<IngestionNodeContract[]>([]);
   const [pipelineOptions, setPipelineOptions] = useState<IngestionPipeline[]>([]);
 
   const [taskPage, setTaskPage] = useState<PageResult<IngestionTask> | null>(null);
@@ -300,7 +329,7 @@ export function IngestionPage() {
       const data = await getIngestionPipelines(pageNo, PIPELINE_PAGE_SIZE, keyword || undefined);
       setPipelinePage(data);
     } catch (error) {
-      toast.error(getErrorMessage(error, "加载流水线失败"));
+      toast.error(getErrorMessage(error, "Failed to load pipelines"));
       console.error(error);
     } finally {
       setPipelineLoading(false);
@@ -311,6 +340,15 @@ export function IngestionPage() {
     try {
       const data = await getIngestionPipelines(1, 200);
       setPipelineOptions(data.records || []);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const loadPipelineContracts = async () => {
+    try {
+      const data = await getIngestionPipelineContracts();
+      setPipelineContracts(data || []);
     } catch (error) {
       console.error(error);
     }
@@ -358,6 +396,7 @@ export function IngestionPage() {
 
   useEffect(() => {
     loadPipelineOptions();
+    loadPipelineContracts();
   }, []);
 
   useEffect(() => {
@@ -419,7 +458,7 @@ export function IngestionPage() {
       const detail = await getIngestionPipeline(pipeline.id);
       setPipelineNodesDialog({ open: true, pipeline: detail });
     } catch (error) {
-      toast.error(getErrorMessage(error, "获取流水线详情失败"));
+      toast.error(getErrorMessage(error, "Failed to load pipeline details"));
       console.error(error);
     }
   };
@@ -440,8 +479,7 @@ export function IngestionPage() {
             onClick={() => handleTabChange("pipelines")}
           >
             <FolderKanban className="mr-2 h-4 w-4" />
-            流水线
-          </Button>
+            流水�?          </Button>
           <Button
             variant={activeTab === "tasks" ? "default" : "outline"}
             size="sm"
@@ -458,14 +496,14 @@ export function IngestionPage() {
           <CardHeader>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <CardTitle>通道流水线</CardTitle>
+                <CardTitle>Channel Pipelines</CardTitle>
                 <CardDescription>配置节点顺序与处理逻辑</CardDescription>
               </div>
               <div className="flex flex-1 items-center justify-end gap-2">
                 <Input
                   value={pipelineSearch}
                   onChange={(event) => setPipelineSearch(event.target.value)}
-                  placeholder="搜索流水线名称"
+                  placeholder="Search pipelines"
                   className="max-w-xs"
                 />
                 <Button variant="outline" onClick={handlePipelineSearch}>
@@ -480,24 +518,23 @@ export function IngestionPage() {
                   onClick={() => setPipelineDialog({ open: true, mode: "create", pipeline: null })}
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  新建流水线
-                </Button>
+                  新建流水�?                </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             {pipelineLoading ? (
-              <div className="py-10 text-center text-muted-foreground">加载中...</div>
+              <div className="py-10 text-center text-muted-foreground">加载�?..</div>
             ) : pipelines.length === 0 ? (
-              <div className="py-10 text-center text-muted-foreground">暂无流水线</div>
+              <div className="py-10 text-center text-muted-foreground">No pipelines</div>
             ) : (
               <Table className="min-w-[920px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[260px]">名称</TableHead>
                     <TableHead>描述</TableHead>
-                    <TableHead className="w-[90px]">节点数</TableHead>
-                    <TableHead className="w-[120px]">负责人</TableHead>
+                    <TableHead className="w-[90px]">Nodes</TableHead>
+                    <TableHead className="w-[120px]">Owner</TableHead>
                     <TableHead className="w-[170px]">更新时间</TableHead>
                     <TableHead className="w-[180px] text-left">操作</TableHead>
                   </TableRow>
@@ -570,28 +607,28 @@ export function IngestionPage() {
                 </div>
                 <Button variant="outline" onClick={() => loadMetrics()} disabled={metricsLoading}>
                   <RefreshCw className="mr-2 h-4 w-4" />
-                  {metricsLoading ? "刷新中..." : "刷新指标"}
+                  {metricsLoading ? "刷新�?.." : "刷新指标"}
                 </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <MetricsStatCard
-                  title="运行中任务"
+                  title="Running tasks"
                   value={String(metrics?.runningTasks ?? 0)}
-                  description={`已占用 ${metrics?.usedSlots ?? 0} / ${metrics?.maxConcurrent ?? 0} 并发`}
+                  description={`已占�?${metrics?.usedSlots ?? 0} / ${metrics?.maxConcurrent ?? 0} 并发`}
                   icon={<Activity className="h-4 w-4" />}
                 />
                 <MetricsStatCard
-                  title="任务成功率"
+                  title="Task success rate"
                   value={formatPercent(metrics?.rates.successRate)}
                   description={`成功 ${metrics?.totals.succeeded ?? 0} / 完成 ${(metrics?.totals.succeeded ?? 0) + (metrics?.totals.failed ?? 0) + (metrics?.totals.canceled ?? 0)}`}
                   icon={<Gauge className="h-4 w-4" />}
                 />
                 <MetricsStatCard
-                  title="失败与取消"
+                  title="Failures and cancels"
                   value={`${metrics?.totals.failed ?? 0} / ${metrics?.totals.canceled ?? 0}`}
-                  description={`失败率 ${formatPercent(metrics?.rates.failureRate)}`}
+                  description={`失败�?${formatPercent(metrics?.rates.failureRate)}`}
                   icon={<TriangleAlert className="h-4 w-4" />}
                 />
                 <MetricsStatCard
@@ -616,7 +653,7 @@ export function IngestionPage() {
                   </Badge>
                 </div>
                 {metricsLoading && !metrics ? (
-                  <div className="py-10 text-center text-muted-foreground">加载指标中...</div>
+                  <div className="py-10 text-center text-muted-foreground">加载指标�?..</div>
                 ) : !metrics?.nodes?.length ? (
                   <div className="py-10 text-center text-muted-foreground">暂无节点指标</div>
                 ) : (
@@ -659,10 +696,10 @@ export function IngestionPage() {
                     }}
                   >
                     <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="任务状态" />
+                      <SelectValue placeholder="Task status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">全部状态</SelectItem>
+                      <SelectItem value="all">All statuses</SelectItem>
                       {STATUS_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -690,7 +727,7 @@ export function IngestionPage() {
             </CardHeader>
             <CardContent>
               {taskLoading ? (
-                <div className="py-10 text-center text-muted-foreground">加载中...</div>
+                <div className="py-10 text-center text-muted-foreground">加载�?..</div>
               ) : tasks.length === 0 ? (
                 <div className="py-10 text-center text-muted-foreground">暂无任务</div>
               ) : (
@@ -699,9 +736,9 @@ export function IngestionPage() {
                     <TableRow>
                       <TableHead className="w-[220px]">任务ID</TableHead>
                       <TableHead>来源</TableHead>
-                      <TableHead className="w-[120px]">状态</TableHead>
-                      <TableHead className="w-[120px]">负责人</TableHead>
-                      <TableHead className="w-[90px]">分片数</TableHead>
+                      <TableHead className="w-[120px]">Status</TableHead>
+                      <TableHead className="w-[120px]">Owner</TableHead>
+                      <TableHead className="w-[90px]">Chunks</TableHead>
                       <TableHead className="w-[170px]">创建时间</TableHead>
                       <TableHead className="w-[140px] text-left">操作</TableHead>
                     </TableRow>
@@ -755,6 +792,7 @@ export function IngestionPage() {
       )}
 
       <PipelineDialog
+        contracts={pipelineContracts}
         open={pipelineDialog.open}
         mode={pipelineDialog.mode}
         pipeline={pipelineDialog.pipeline}
@@ -789,8 +827,7 @@ export function IngestionPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除流水线？</AlertDialogTitle>
             <AlertDialogDescription>
-              流水线 [{pipelineDeleteTarget?.name}] 将被永久删除。
-            </AlertDialogDescription>
+              流水�?[{pipelineDeleteTarget?.name}] 将被永久删除�?            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
@@ -816,7 +853,7 @@ export function IngestionPage() {
         }}
         onUpload={async (pipelineId, file) => {
           const result = await uploadIngestionTask(pipelineId, file);
-          toast.success(`上传成功：${result.taskId}`);
+          toast.success(`上传成功�?{result.taskId}`);
           setTaskDialogOpen(false);
           await loadTasks(1, taskStatus);
         }}
@@ -828,7 +865,7 @@ export function IngestionPage() {
         onOpenChange={setUploadDialogOpen}
         onSubmit={async (pipelineId, file) => {
           const result = await uploadIngestionTask(pipelineId, file);
-          toast.success(`上传成功：${result.taskId}`);
+          toast.success(`上传成功�?{result.taskId}`);
           setUploadDialogOpen(false);
           await loadTasks(1, taskStatus);
         }}
@@ -897,23 +934,22 @@ function Pagination({ current, pages, total, onPrev, onNext }: PaginationProps) 
   if (total === 0) return null;
   return (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
-      <span>共 {total} 条</span>
+      <span>Total {total}</span>
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onPrev} disabled={current <= 1}>
-          上一页
-        </Button>
+          上一�?        </Button>
         <span>
           {current} / {pages}
         </span>
         <Button variant="outline" size="sm" onClick={onNext} disabled={current >= pages}>
-          下一页
-        </Button>
+          下一�?        </Button>
       </div>
     </div>
   );
 }
 
 interface PipelineDialogProps {
+  contracts: IngestionNodeContract[];
   open: boolean;
   mode: "create" | "edit";
   pipeline: IngestionPipeline | null;
@@ -921,11 +957,116 @@ interface PipelineDialogProps {
   onSubmit: (payload: IngestionPipelinePayload, mode: "create" | "edit") => Promise<void>;
 }
 
-function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: PipelineDialogProps) {
+interface PipelineNodeContractPreview {
+  availableArtifacts: string[];
+  missingRequirements: string[];
+  entryError?: string;
+}
+
+const summarizeContractRequirement = (requirement: IngestionNodeRequirement) => {
+  if (requirement.description?.trim()) {
+    return requirement.description.trim();
+  }
+  return requirement.anyOf.join(" / ");
+};
+
+const buildNodeContractPreview = (
+  definition: IngestionPipelineDefinition | null | undefined,
+  contracts: IngestionNodeContract[]
+) => {
+  const previews = new Map<string, PipelineNodeContractPreview>();
+  if (!definition?.nodes?.length) return previews;
+
+  const contractByType = new Map(contracts.map((contract) => [contract.nodeType, contract]));
+  const adjacency = new Map<string, string[]>();
+  const predecessors = new Map<string, string[]>();
+  const inDegree = new Map<string, number>();
+  const nodeById = new Map(definition.nodes.map((node) => [node.nodeId, node]));
+  const availableAfter = new Map<string, Set<string>>();
+  const entryNodeIDs = new Set(definition.entryNodeIds || []);
+
+  for (const node of definition.nodes) {
+    adjacency.set(node.nodeId, []);
+    predecessors.set(node.nodeId, []);
+    inDegree.set(node.nodeId, 0);
+  }
+
+  for (const edge of definition.edges || []) {
+    if (!nodeById.has(edge.fromNodeId) || !nodeById.has(edge.toNodeId)) continue;
+    adjacency.set(edge.fromNodeId, [...(adjacency.get(edge.fromNodeId) || []), edge.toNodeId]);
+    predecessors.set(edge.toNodeId, [...(predecessors.get(edge.toNodeId) || []), edge.fromNodeId]);
+    inDegree.set(edge.toNodeId, (inDegree.get(edge.toNodeId) || 0) + 1);
+  }
+
+  const queue = definition.nodes
+    .map((node) => node.nodeId)
+    .filter((nodeId) => (inDegree.get(nodeId) || 0) === 0);
+
+  while (queue.length > 0) {
+    const nodeID = queue.shift();
+    if (!nodeID) continue;
+    const node = nodeById.get(nodeID);
+    if (!node) continue;
+
+    const availableBefore = new Set<string>();
+    if (entryNodeIDs.has(nodeID)) {
+      availableBefore.add("task");
+    }
+    for (const predecessorNodeID of predecessors.get(nodeID) || []) {
+      for (const artifact of availableAfter.get(predecessorNodeID) || []) {
+        availableBefore.add(artifact);
+      }
+    }
+
+    const contract = contractByType.get(node.nodeType);
+    const missingRequirements =
+      contract?.requires
+        ?.filter((requirement) => !requirement.anyOf.some((artifact) => availableBefore.has(artifact)))
+        .map(summarizeContractRequirement) || [];
+    const entryError =
+      contract && entryNodeIDs.has(nodeID) && !contract.supportsEntry
+        ? `${contract.displayName || contract.nodeType} cannot be used as an entry node.`
+        : undefined;
+
+    const availableNext = new Set(availableBefore);
+    for (const artifact of contract?.produces || []) {
+      availableNext.add(artifact);
+    }
+    availableAfter.set(nodeID, availableNext);
+    previews.set(nodeID, {
+      availableArtifacts: Array.from(availableBefore).sort(),
+      missingRequirements,
+      entryError
+    });
+
+    for (const nextNodeID of adjacency.get(nodeID) || []) {
+      const nextDegree = (inDegree.get(nextNodeID) || 0) - 1;
+      inDegree.set(nextNodeID, nextDegree);
+      if (nextDegree === 0) {
+        queue.push(nextNodeID);
+      }
+    }
+  }
+
+  return previews;
+};
+
+function PipelineDialog({
+  contracts,
+  open,
+  mode,
+  pipeline,
+  onOpenChange,
+  onSubmit
+}: PipelineDialogProps) {
   const [saving, setSaving] = useState(false);
   const [nodeMode, setNodeMode] = useState<"form" | "json">("form");
   const [nodes, setNodes] = useState<PipelineNodeForm[]>([]);
-  const defaultNodes = pipeline?.nodes?.length ? JSON.stringify(pipeline.nodes, null, 2) : "";
+  const defaultNodes = pipeline?.definition
+    ? JSON.stringify(pipeline.definition, null, 2)
+    : pipeline?.nodes?.length
+      ? JSON.stringify(buildDefinitionFromLegacyNodes(pipeline.nodes), null, 2)
+      : "";
 
   const form = useForm<PipelineFormValues>({
     resolver: zodResolver(pipelineSchema),
@@ -1036,6 +1177,38 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     return source.map(buildNodeForm);
   };
 
+  const buildNodesFromDefinition = (definition?: IngestionPipelineDefinition | null) => {
+    if (!definition?.nodes?.length) return [];
+    const firstEdgeBySource = new Map<string, { nextNodeId: string; condition: unknown }>();
+    for (const edge of definition.edges || []) {
+      if (!firstEdgeBySource.has(edge.fromNodeId)) {
+        firstEdgeBySource.set(edge.fromNodeId, {
+          nextNodeId: edge.toNodeId,
+          condition: edge.condition ?? null
+        });
+      }
+    }
+    return definition.nodes.map((node) => {
+      const next = firstEdgeBySource.get(node.nodeId);
+      const formNode = buildNodeForm(node);
+      formNode.nextNodeId = next?.nextNodeId || "";
+      formNode.condition = next?.condition ? JSON.stringify(next.condition, null, 2) : "";
+      return formNode;
+    });
+  };
+
+  const isComplexDefinition = (definition?: IngestionPipelineDefinition | null) => {
+    if (!definition?.nodes?.length) return false;
+    const outgoingCount = new Map<string, number>();
+    for (const edge of definition.edges || []) {
+      outgoingCount.set(edge.fromNodeId, (outgoingCount.get(edge.fromNodeId) || 0) + 1);
+    }
+    for (const count of outgoingCount.values()) {
+      if (count > 1) return true;
+    }
+    return false;
+  };
+
   const parseCondition = (raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed) return null;
@@ -1059,7 +1232,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     ) {
       return { rules: (parsed as { rules?: unknown }).rules };
     }
-    throw new Error("解析规则必须是数组或包含 rules 字段的对象");
+    throw new Error("Parser rules must be an array or an object with a rules field");
   };
 
   const buildSettings = (node: PipelineNodeForm) => {
@@ -1073,10 +1246,10 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
         const chunkSizeValue = chunkSize ? Number(chunkSize) : undefined;
         const overlapSizeValue = overlapSize ? Number(overlapSize) : undefined;
         if (chunkSizeValue !== undefined && Number.isNaN(chunkSizeValue)) {
-          throw new Error("chunkSize 必须是数字");
+          throw new Error("chunkSize must be a number");
         }
         if (overlapSizeValue !== undefined && Number.isNaN(overlapSizeValue)) {
-          throw new Error("overlapSize 必须是数字");
+          throw new Error("overlapSize must be a number");
         }
         return {
           strategy: node.chunker.strategy,
@@ -1179,6 +1352,34 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     return { ok: true as const, nodes: result };
   };
 
+  const buildDefinitionPayload = (sourceNodes: PipelineNodeForm[]) => {
+    const result = buildNodesPayload(sourceNodes);
+    if (!result.ok) return result;
+    return {
+      ok: true as const,
+      definition: buildDefinitionFromLegacyNodes(result.nodes as IngestionPipelineNode[])
+    };
+  };
+
+  const parseDefinitionJson = (raw: string | undefined) => {
+    if (!raw || !raw.trim()) {
+      return { ok: true as const, definition: null as IngestionPipelineDefinition | null };
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return { ok: false as const, message: "definition must be a JSON object" };
+      }
+      const definition = parsed as IngestionPipelineDefinition;
+      if (!Array.isArray(definition.nodes) || !Array.isArray(definition.edges)) {
+        return { ok: false as const, message: "definition must include nodes and edges arrays" };
+      }
+      return { ok: true as const, definition };
+    } catch (error) {
+      return { ok: false as const, message: "definition JSON 鏍煎紡閿欒" };
+    }
+  };
+
   const parseNodesJson = (raw: string | undefined) => {
     if (!raw || !raw.trim()) {
       return { ok: true as const, nodes: [] };
@@ -1195,73 +1396,100 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     }
   };
 
+  const parseGraphDefinitionJson = (raw: string | undefined) => {
+    if (!raw || !raw.trim()) {
+      return { ok: true as const, definition: null as IngestionPipelineDefinition | null };
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return { ok: false as const, message: "definition 必须�?JSON 对象" };
+      }
+      const definition = parsed as IngestionPipelineDefinition;
+      if (!Array.isArray(definition.entryNodeIds)) {
+        return { ok: false as const, message: "definition 必须包含 entryNodeIds 数组" };
+      }
+      if (!Array.isArray(definition.nodes) || !Array.isArray(definition.edges)) {
+        return { ok: false as const, message: "definition 必须包含 nodes �?edges 数组" };
+      }
+      return { ok: true as const, definition };
+    } catch (error) {
+      return { ok: false as const, message: "definition JSON 格式错误" };
+    }
+  };
+
+  void parseDefinitionJson;
+  void parseNodesJson;
+
   const switchMode = (nextMode: "form" | "json") => {
     if (nextMode === nodeMode) return;
     if (nextMode === "json") {
-      const result = buildNodesPayload(nodes);
+      const result = buildDefinitionPayload(nodes);
       if (!result.ok) {
         toast.error(result.message);
         return;
       }
-      form.setValue("nodesJson", JSON.stringify(result.nodes, null, 2));
+      form.setValue("nodesJson", JSON.stringify(result.definition, null, 2));
       setNodeMode("json");
       return;
     }
-    const parsed = parseNodesJson(form.getValues("nodesJson"));
+    const parsed = parseGraphDefinitionJson(form.getValues("nodesJson"));
     if (!parsed.ok) {
       toast.error(parsed.message);
       return;
     }
-    setNodes(parsed.nodes);
+    setNodes(buildNodesFromDefinition(parsed.definition));
     setNodeMode("form");
   };
 
   useEffect(() => {
     if (open) {
+      const definition = pipeline?.definition
+        ? pipeline.definition
+        : pipeline?.nodes?.length
+          ? buildDefinitionFromLegacyNodes(pipeline.nodes)
+          : null;
       form.reset({
         name: pipeline?.name || "",
         description: pipeline?.description || "",
         nodesJson: defaultNodes
       });
-      setNodes(buildNodesFromPipeline(pipeline?.nodes));
-      setNodeMode("form");
+      setNodes(definition ? buildNodesFromDefinition(definition) : buildNodesFromPipeline(pipeline?.nodes));
+      setNodeMode(isComplexDefinition(definition) ? "json" : "form");
     }
   }, [open, pipeline, defaultNodes, form]);
 
   const handleSubmit = async (values: PipelineFormValues) => {
+    let definitionPayload: IngestionPipelinePayload["definition"] | undefined;
     let nodesPayload: IngestionPipelinePayload["nodes"] | undefined;
     if (nodeMode === "json") {
-      if (values.nodesJson && values.nodesJson.trim()) {
-        try {
-          const parsed = JSON.parse(values.nodesJson);
-          if (!Array.isArray(parsed)) {
+      const parsed = parseGraphDefinitionJson(values.nodesJson);
+      if (!parsed.ok) {
+        form.setError("nodesJson", { message: parsed.message });
+        return;
+      }
+      definitionPayload = parsed.definition ?? undefined;
+      nodesPayload = definitionPayload?.nodes;
+      /*
             form.setError("nodesJson", { message: "节点配置必须是JSON数组" });
             return;
           }
-          nodesPayload = parsed.map((item) => ({
-            nodeId: String(item.nodeId || "").trim(),
-            nodeType: String(item.nodeType || "").trim(),
-            settings: item.settings ?? null,
-            condition: item.condition ?? null,
-            nextNodeId: item.nextNodeId ? String(item.nextNodeId) : null
-          }));
-          const invalid = nodesPayload.some((node) => !node.nodeId || !node.nodeType);
-          if (invalid) {
-            form.setError("nodesJson", { message: "每个节点必须包含 nodeId 与 nodeType" });
+            form.setError("nodesJson", { message: "每个节点必须包含 nodeId �?nodeType" });
             return;
           }
-        } catch (error) {
           form.setError("nodesJson", { message: "节点配置JSON格式错误" });
           return;
         }
       }
+      */
     } else {
-      const result = buildNodesPayload(nodes);
+      const result = buildDefinitionPayload(nodes);
       if (!result.ok) {
         toast.error(result.message);
         return;
       }
-      nodesPayload = result.nodes;
+      definitionPayload = result.definition;
+      nodesPayload = result.definition.nodes;
     }
 
     setSaving(true);
@@ -1269,6 +1497,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
       const payload: IngestionPipelinePayload = {
         name: values.name.trim(),
         description: values.description?.trim() || undefined,
+        definition: definitionPayload,
         nodes: nodesPayload
       };
       await onSubmit(payload, mode);
@@ -1280,11 +1509,18 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     }
   };
 
+  const contractByType = new Map(contracts.map((contract) => [contract.nodeType, contract]));
+  const previewResult = nodeMode === "form" ? buildDefinitionPayload(nodes) : null;
+  const nodePreviews =
+    nodeMode === "form" && previewResult?.ok
+      ? buildNodeContractPreview(previewResult.definition, contracts)
+      : new Map<string, PipelineNodeContractPreview>();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sidebar-scroll sm:max-w-[880px]">
         <DialogHeader>
-          <DialogTitle>{mode === "create" ? "新建流水线" : "编辑流水线"}</DialogTitle>
+          <DialogTitle>{mode === "create" ? "新建流水�? : "编辑流水�?}</DialogTitle>
           <DialogDescription>配置节点顺序与处理逻辑</DialogDescription>
         </DialogHeader>
 
@@ -1295,7 +1531,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>流水线名称</FormLabel>
+                  <FormLabel>Pipeline name</FormLabel>
                   <FormControl>
                     <Input placeholder="例如：通用文档通道" {...field} />
                   </FormControl>
@@ -1340,16 +1576,60 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
               </div>
             </div>
 
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">Node Contracts</Badge>
+                <span className="text-sm text-muted-foreground">
+                  Review entry eligibility and the required / produced artifacts for each node type.
+                </span>
+              </div>
+              {contracts.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No node contracts are available right now.
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {contracts.map((contract) => (
+                    <div key={contract.nodeType} className="rounded-md border bg-background p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium">
+                            {contract.displayName || contract.nodeType}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{contract.summary}</div>
+                        </div>
+                        <Badge variant={contract.supportsEntry ? "default" : "outline"}>
+                          {contract.supportsEntry ? "entry ok" : "non-entry"}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                        <div>
+                          <span className="font-medium text-foreground">Requires:</span>{" "}
+                          {contract.requires?.length
+                            ? contract.requires.map(summarizeContractRequirement).join(" | ")
+                            : "None"}
+                        </div>
+                        <div>
+                          <span className="font-medium text-foreground">Produces:</span>{" "}
+                          {contract.produces?.length ? contract.produces.join(", ") : "None"}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {nodeMode === "json" ? (
               <FormField
                 control={form.control}
                 name="nodesJson"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>节点配置（JSON 数组）</FormLabel>
+                    <FormLabel>Pipeline graph definition (JSON)</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder='[{"nodeId":"fetch","nodeType":"fetcher","settings":{},"nextNodeId":"parse"}]'
+                        placeholder='{"version":"v1","entryNodeIds":["fetch"],"nodes":[{"nodeId":"fetch","nodeType":"fetcher","settings":{}}],"edges":[{"edgeId":"fetch__to__parse","fromNodeId":"fetch","toNodeId":"parse","priority":0}]}'
                         rows={10}
                         {...field}
                       />
@@ -1368,6 +1648,70 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
 
                 {nodes.map((node, index) => (
                   <div key={node.id} className="rounded-lg border p-4 space-y-4">
+                    {(() => {
+                      const contract = contractByType.get(node.nodeType);
+                      const preview = nodePreviews.get(node.nodeId.trim());
+                      return (
+                        <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="secondary">
+                              {contract?.displayName || node.nodeType}
+                            </Badge>
+                            <Badge variant="outline">
+                              {contract?.supportsEntry ? "supports entry" : "non-entry"}
+                            </Badge>
+                          </div>
+                          {contract?.summary ? (
+                            <div className="text-sm text-muted-foreground">{contract.summary}</div>
+                          ) : null}
+                          <div className="grid gap-2 text-xs md:grid-cols-2">
+                            <div>
+                              <span className="font-medium text-foreground">Requires:</span>{" "}
+                              {contract?.requires?.length
+                                ? contract.requires.map(summarizeContractRequirement).join(" | ")
+                                : "None"}
+                            </div>
+                            <div>
+                              <span className="font-medium text-foreground">Produces:</span>{" "}
+                              {contract?.produces?.length
+                                ? contract.produces.join(", ")
+                                : "None"}
+                            </div>
+                          </div>
+                          {preview ? (
+                            <div className="grid gap-2 text-xs md:grid-cols-2">
+                              <div>
+                                <span className="font-medium text-foreground">
+                                  Available before node:
+                                </span>{" "}
+                                {preview.availableArtifacts.length
+                                  ? preview.availableArtifacts.join(", ")
+                                  : "None"}
+                              </div>
+                              <div>
+                                <span className="font-medium text-foreground">
+                                  Missing requirements:
+                                </span>{" "}
+                                {preview.missingRequirements.length
+                                  ? preview.missingRequirements.join(" | ")
+                                  : "None"}
+                              </div>
+                            </div>
+                          ) : null}
+                          {preview?.entryError || preview?.missingRequirements.length ? (
+                            <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div className="space-y-1">
+                                {preview.entryError ? <div>{preview.entryError}</div> : null}
+                                {preview.missingRequirements.length ? (
+                                  <div>Current form graph does not provide all required artifacts.</div>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{node.nodeType}</Badge>
@@ -1447,13 +1791,12 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
 
                     {node.nodeType === "fetcher" ? (
                       <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-                        Fetcher 无额外配置
-                      </div>
+                        Fetcher 无额外配�?                      </div>
                     ) : null}
 
                     {node.nodeType === "parser" ? (
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">解析规则（JSON）</label>
+                        <label className="text-sm font-medium">Parser rules (JSON)</label>
                         <Textarea
                           rows={5}
                           value={node.parser.rulesJson}
@@ -1519,7 +1862,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                 )
                               )
                             }
-                            placeholder="例如：512"
+                            placeholder="例如�?12"
                           />
                         </div>
                         <div className="space-y-2">
@@ -1542,7 +1885,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                 )
                               )
                             }
-                            placeholder="例如：128"
+                            placeholder="例如�?28"
                           />
                         </div>
                         <div className="space-y-2">
@@ -1561,7 +1904,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                 )
                               )
                             }
-                            placeholder="可选"
+                            placeholder="Optional"
                           />
                         </div>
                       </div>
@@ -1585,7 +1928,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                 )
                               )
                             }
-                            placeholder="可选"
+                            placeholder="Optional"
                           />
                         </div>
                         <div className="flex items-center justify-between">
@@ -1713,7 +2056,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                         )
                                       )
                                     }
-                                    placeholder="可选"
+                                    placeholder="Optional"
                                   />
                                 </div>
                                 <div className="space-y-2">
@@ -1743,7 +2086,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                         )
                                       )
                                     }
-                                    placeholder="可选"
+                                    placeholder="Optional"
                                   />
                                 </div>
                               </div>
@@ -1775,11 +2118,11 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                   )
                                 )
                               }
-                              placeholder="可选"
+                              placeholder="Optional"
                             />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">附加文档元数据</label>
+                            <label className="text-sm font-medium">Attach document metadata</label>
                             <Select
                               value={node.enricher.attachDocumentMetadata ? "true" : "false"}
                               onValueChange={(value) =>
@@ -1802,8 +2145,8 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                 <SelectValue placeholder="选择" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="true">是</SelectItem>
-                                <SelectItem value="false">否</SelectItem>
+                                <SelectItem value="true">Yes</SelectItem>
+                                <SelectItem value="false">No</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -1930,7 +2273,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                         )
                                       )
                                     }
-                                    placeholder="可选"
+                                    placeholder="Optional"
                                   />
                                 </div>
                                 <div className="space-y-2">
@@ -1960,7 +2303,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                         )
                                       )
                                     }
-                                    placeholder="可选"
+                                    placeholder="Optional"
                                   />
                                 </div>
                               </div>
@@ -1991,11 +2334,11 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                                 )
                               )
                             }
-                            placeholder="可选"
+                            placeholder="Optional"
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">元数据字段</label>
+                          <label className="text-sm font-medium">Metadata fields</label>
                           <Input
                             value={node.indexer.metadataFields}
                             onChange={(event) =>
@@ -2033,7 +2376,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                             )
                           )
                         }
-                        placeholder='{"field":"source_type","op":"eq","value":"file"} 或 #context.source.type == "file"'
+                        placeholder='{"field":"source_type","op":"eq","value":"file"} �?#context.source.type == "file"'
                       />
                     </div>
                   </div>
@@ -2060,7 +2403,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                 取消
               </Button>
               <Button type="submit" disabled={saving}>
-                {saving ? "保存中..." : "保存"}
+                {saving ? "保存�?.." : "保存"}
               </Button>
             </DialogFooter>
           </form>
@@ -2085,7 +2428,7 @@ function PipelineNodesDialog({ open, pipeline, onOpenChange }: PipelineNodesDial
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>流水线节点</DialogTitle>
+          <DialogTitle>Pipeline nodes</DialogTitle>
           <DialogDescription>{pipeline?.name || ""}</DialogDescription>
         </DialogHeader>
         {nodes.length === 0 ? (
@@ -2156,20 +2499,20 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
     switch (sourceType) {
       case "file":
         return {
-          locationPlaceholder: "/path/to/file 或 file://path/to/file",
-          locationHint: "支持本地文件路径或 file:// 协议",
+          locationPlaceholder: "/path/to/file �?file://path/to/file",
+          locationHint: "支持本地文件路径�?file:// 协议",
           credentialsHint: ""
         };
       case "feishu":
         return {
           locationPlaceholder: "https://open.feishu.cn/...",
           locationHint: "填写飞书文档链接",
-          credentialsHint: '{"tenantAccessToken":"..."} 或 {"app_id":"...","app_secret":"..."}'
+          credentialsHint: '{"tenantAccessToken":"..."} �?{"app_id":"...","app_secret":"..."}'
         };
       case "s3":
         return {
           locationPlaceholder: "s3://bucket/key",
-          locationHint: "填写 S3 路径，例如 s3://biz/file.md",
+          locationHint: "填写 S3 路径，例�?s3://biz/file.md",
           credentialsHint: ""
         };
       case "url":
@@ -2177,7 +2520,7 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
         return {
           locationPlaceholder: "https://example.com/file.pdf",
           locationHint: "支持 http/https 链接",
-          credentialsHint: '{"token":"xxx"} 或 {"Authorization":"Bearer xxx"}'
+          credentialsHint: '{"token":"xxx"} �?{"Authorization":"Bearer xxx"}'
         };
     }
   })();
@@ -2224,7 +2567,7 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
       }
       if (localFile.size > maxFileSize) {
         const sizeMB = Math.floor(maxFileSize / 1024 / 1024);
-        toast.error(`上传文件大小超过限制，最大允许 ${sizeMB}MB`);
+        toast.error(`上传文件大小超过限制，最大允�?${sizeMB}MB`);
         return;
       }
       setSaving(true);
@@ -2285,8 +2628,7 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
         <DialogHeader>
           <DialogTitle>新建通道任务</DialogTitle>
           <DialogDescription>
-            支持 Local File / URL / Feishu / S3 来源，Local File 会直接上传文件
-          </DialogDescription>
+            支持 Local File / URL / Feishu / S3 来源，Local File 会直接上传文�?          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form className="space-y-4" onSubmit={form.handleSubmit(handleSubmit)}>
@@ -2295,11 +2637,11 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
               name="pipelineId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>流水线</FormLabel>
+                  <FormLabel>Pipeline</FormLabel>
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="选择流水线" />
+                        <SelectValue placeholder="Select a pipeline" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -2432,7 +2774,7 @@ function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }:
                 取消
               </Button>
               <Button type="submit" disabled={saving}>
-                {saving ? "创建中..." : "创建任务"}
+                {saving ? "创建�?.." : "创建任务"}
               </Button>
             </DialogFooter>
           </form>
@@ -2467,7 +2809,7 @@ function UploadDialog({ open, pipelineOptions, onOpenChange, onSubmit }: UploadD
 
   const handleSubmit = async () => {
     if (!pipelineId) {
-      toast.error("请选择流水线");
+      toast.error("Select a pipeline");
       return;
     }
     if (!file) {
@@ -2476,7 +2818,7 @@ function UploadDialog({ open, pipelineOptions, onOpenChange, onSubmit }: UploadD
     }
     if (file.size > maxFileSize) {
       const sizeMB = Math.floor(maxFileSize / 1024 / 1024);
-      toast.error(`上传文件大小超过限制，最大允许 ${sizeMB}MB`);
+      toast.error(`上传文件大小超过限制，最大允�?${sizeMB}MB`);
       return;
     }
     setSaving(true);
@@ -2499,10 +2841,10 @@ function UploadDialog({ open, pipelineOptions, onOpenChange, onSubmit }: UploadD
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium">流水线</label>
+            <label className="text-sm font-medium">Pipeline</label>
             <Select value={pipelineId} onValueChange={setPipelineId}>
               <SelectTrigger className="mt-2">
-                <SelectValue placeholder="选择流水线" />
+                <SelectValue placeholder="Select a pipeline" />
               </SelectTrigger>
               <SelectContent>
                 {pipelineOptions.map((pipeline) => (
@@ -2527,7 +2869,7 @@ function UploadDialog({ open, pipelineOptions, onOpenChange, onSubmit }: UploadD
             取消
           </Button>
           <Button onClick={handleSubmit} disabled={saving}>
-            {saving ? "上传中..." : "上传"}
+            {saving ? "上传�?.." : "上传"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2580,7 +2922,7 @@ function TaskDetailDialog({ open, taskId, onOpenChange }: TaskDetailDialogProps)
           <DialogDescription>{taskId || ""}</DialogDescription>
         </DialogHeader>
         {loading || !task ? (
-          <div className="py-6 text-center text-muted-foreground">加载中...</div>
+          <div className="py-6 text-center text-muted-foreground">加载�?..</div>
         ) : (
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2">
@@ -2612,7 +2954,7 @@ function TaskDetailDialog({ open, taskId, onOpenChange }: TaskDetailDialogProps)
             ) : null}
 
             <div>
-              <h3 className="text-sm font-medium">任务元数据</h3>
+              <h3 className="text-sm font-medium">Task metadata</h3>
               <pre className="mt-2 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
                 {stringifyJson(task.metadata)}
               </pre>
@@ -2628,7 +2970,7 @@ function TaskDetailDialog({ open, taskId, onOpenChange }: TaskDetailDialogProps)
                     <TableRow>
                       <TableHead className="w-[180px]">节点</TableHead>
                       <TableHead className="w-[120px]">类型</TableHead>
-                      <TableHead className="w-[100px]">状态</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
                       <TableHead className="w-[110px]">耗时</TableHead>
                       <TableHead>消息</TableHead>
                     </TableRow>

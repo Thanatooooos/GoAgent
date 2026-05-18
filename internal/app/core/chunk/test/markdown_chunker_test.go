@@ -104,6 +104,32 @@ func TestMarkdownChunkerDetectsCodeLanguage(t *testing.T) {
 	}
 }
 
+func TestMarkdownChunkerHandlesPlainCodeFenceWithoutLanguage(t *testing.T) {
+	chunker := chunk.NewMarkdownChunker()
+	text := "# Title\n\n```\nplain code\n```\n\nAfter fence"
+
+	chunks, err := chunker.Chunk(text, chunk.Options{
+		Strategy:  chunk.StrategyMarkdown,
+		ChunkSize: 128,
+	})
+	if err != nil {
+		t.Fatalf("chunk returned error: %v", err)
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected non-empty chunks")
+	}
+	foundFence := false
+	for _, item := range chunks {
+		if strings.Contains(item.Text, "```\nplain code\n```") {
+			foundFence = true
+			break
+		}
+	}
+	if !foundFence {
+		t.Fatalf("expected a chunk to preserve the plain code fence, got %+v", chunks)
+	}
+}
+
 func TestMarkdownChunkerEmptyInput(t *testing.T) {
 	chunker := chunk.NewMarkdownChunker()
 	chunks, err := chunker.Chunk("", chunk.Options{})

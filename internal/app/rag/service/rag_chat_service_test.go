@@ -219,6 +219,21 @@ func TestShouldRunRetrieve(t *testing.T) {
 	}
 }
 
+func TestShouldRunToolWorkflow(t *testing.T) {
+	if shouldRunToolWorkflow(RagChatInput{Question: "你好"}, ragrewrite.Result{NeedRetrieval: false}, false) {
+		t.Fatal("expected no tool workflow for greeting without retrieval")
+	}
+	if !shouldRunToolWorkflow(RagChatInput{Question: "doc_fail_01 为什么失败"}, ragrewrite.Result{NeedRetrieval: false}, false) {
+		t.Fatal("expected tool workflow for structured document id question")
+	}
+	if !shouldRunToolWorkflow(RagChatInput{Question: "Go 泛型怎么用"}, ragrewrite.Result{NeedRetrieval: true}, false) {
+		t.Fatal("expected tool workflow for general retrieval-style question")
+	}
+	if !shouldRunToolWorkflow(RagChatInput{Question: "随便问问"}, ragrewrite.Result{NeedRetrieval: false}, true) {
+		t.Fatal("expected tool workflow when retrieval was used")
+	}
+}
+
 func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
 	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	result, err := svc.runToolWorkflowStage(
@@ -236,6 +251,34 @@ func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
 	}
 	if result.result.Used {
 		t.Fatal("expected empty workflow result when workflow is unset")
+	}
+}
+
+func TestRunToolWorkflowStageRunsForStructuredIDWithoutRetrieve(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	workflow := &toolWorkflowStub{
+		result: ragtool.WorkflowResult{Used: true},
+	}
+	svc.SetToolWorkflow(workflow)
+
+	result, err := svc.runToolWorkflowStage(
+		context.Background(),
+		RagChatInput{Question: "doc_fail_01 为什么导入失败", UserID: "u1"},
+		nil,
+		ragrewrite.Result{NeedRetrieval: false},
+		ragretrieve.Result{},
+		false,
+		"trace-1",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("runToolWorkflowStage: %v", err)
+	}
+	if !result.result.Used {
+		t.Fatal("expected workflow to run for structured id question")
+	}
+	if strings.TrimSpace(workflow.input.Question) != "doc_fail_01 为什么导入失败" {
+		t.Fatalf("unexpected workflow input question: %q", workflow.input.Question)
 	}
 }
 
@@ -357,6 +400,9 @@ func TestRecordAgentWorkflowTraceNodesUsesDatabaseSafeNames(t *testing.T) {
 				Round:               1,
 				Done:                true,
 				Reasoning:           "enough evidence",
+				PlanningSource:      "hint_calls",
+				LLMPlannerSkipped:   true,
+				NextHintCallCount:   1,
 				ExecutionMode:       "parallel",
 				WallClockDurationMs: 10,
 				ToolCallCount:       1,
@@ -394,6 +440,15 @@ func TestRecordAgentWorkflowTraceNodesUsesDatabaseSafeNames(t *testing.T) {
 	}
 	if payload["executionMode"] != "parallel" {
 		t.Fatalf("expected executionMode=parallel, got %+v", payload)
+	}
+	if payload["planningSource"] != "hint_calls" {
+		t.Fatalf("expected planningSource=hint_calls, got %+v", payload)
+	}
+	if payload["llmPlannerSkipped"] != true {
+		t.Fatalf("expected llmPlannerSkipped=true, got %+v", payload)
+	}
+	if payload["nextHintCallCount"] != float64(1) {
+		t.Fatalf("expected nextHintCallCount=1, got %+v", payload)
 	}
 	if payload["capability"] != ragtool.CapabilitySearch {
 		t.Fatalf("expected capability=search, got %+v", payload)

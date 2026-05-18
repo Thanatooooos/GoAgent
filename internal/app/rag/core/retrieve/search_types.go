@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	ChannelVectorGlobal = "vector_global"
-	ChannelKeyword      = "keyword"
+	ChannelVectorGlobal  = "vector_global"
+	ChannelKeyword       = "keyword"
 	ChannelMetadataTitle = "metadata_title"
 )
 
@@ -21,6 +21,7 @@ type SearchContext struct {
 	TopK             int
 	ScoreThreshold   *float32
 	RerankTopN       int
+	SearchMode       string
 	RouteHints       map[string]any
 	IntentCandidates []string
 }
@@ -66,13 +67,31 @@ func buildSearchContext(request Request) SearchContext {
 	if topK <= 0 {
 		topK = DefaultTopK
 	}
+	searchMode := normalizeSearchMode(request.SearchMode)
 	return SearchContext{
 		Query:            strings.TrimSpace(request.Query),
 		KnowledgeBaseIDs: append([]string(nil), request.KnowledgeBaseIDs...),
 		TopK:             topK,
 		ScoreThreshold:   request.ScoreThreshold,
 		RerankTopN:       request.RerankTopN,
+		SearchMode:       searchMode,
 		RouteHints:       map[string]any{},
+	}
+}
+
+func normalizeSearchMode(raw string) string {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	switch mode {
+	case "", SearchModeAuto:
+		return SearchModeAuto
+	case SearchModeSemantic:
+		return SearchModeSemantic
+	case SearchModeKeyword:
+		return SearchModeKeyword
+	case SearchModeHybrid:
+		return SearchModeHybrid
+	default:
+		return SearchModeAuto
 	}
 }
 

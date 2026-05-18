@@ -206,7 +206,6 @@ func (h *Handler) Chat(c *gin.Context) {
 		Question:         strings.TrimSpace(c.Query("question")),
 		KnowledgeBaseIDs: splitCommaValues(c.Query("knowledgeBaseId")),
 		DeepThinking:     parseBool(c.Query("deepThinking")),
-		SearchMode:       strings.TrimSpace(c.Query("searchMode")),
 	}, sink); err != nil {
 		return
 	}

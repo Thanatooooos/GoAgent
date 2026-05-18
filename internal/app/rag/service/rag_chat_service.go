@@ -874,7 +874,7 @@ func (s *RagChatService) runToolWorkflowStage(
 	traceID string,
 	sink RagChatEventSink,
 ) (ragChatToolStageResult, error) {
-	if s == nil || s.toolWorkflow == nil || !retrievalUsed {
+	if s == nil || s.toolWorkflow == nil || !shouldRunToolWorkflow(input, rewriteResult, retrievalUsed) {
 		return ragChatToolStageResult{}, nil
 	}
 
@@ -929,6 +929,26 @@ const defaultTopK = 5
 func shouldRunRetrieve(input RagChatInput, rewriteResult ragrewrite.Result) bool {
 	if len(input.KnowledgeBaseIDs) == 0 {
 		return false
+	}
+	return rewriteResult.NeedRetrieval
+}
+
+func shouldRunToolWorkflow(input RagChatInput, rewriteResult ragrewrite.Result, retrievalUsed bool) bool {
+	if retrievalUsed {
+		return true
+	}
+	question := strings.TrimSpace(input.Question)
+	if question == "" {
+		return false
+	}
+	if ragtool.FirstMatchedID(ragtool.DocumentIDPattern, question) != "" {
+		return true
+	}
+	if ragtool.FirstMatchedID(ragtool.TaskIDPattern, question) != "" {
+		return true
+	}
+	if ragtool.FirstMatchedID(ragtool.TraceIDPattern, question) != "" {
+		return true
 	}
 	return rewriteResult.NeedRetrieval
 }

@@ -100,13 +100,15 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	nodeRunners := ingestionservice.NewNodeRunnerRegistry(
 		fetcher,
 		ingestionservice.NewParserNodeRunner(coreparser.NewDefaultSelector(nil)),
+		ingestionservice.NewEnhancerNodeRunner(),
 		ingestionservice.NewChunkerNodeRunner(corechunk.NewDefaultSelector()),
+		ingestionservice.NewEnricherNodeRunner(),
 		ingestionservice.NewIndexerNodeRunner(baseRepo, chunkRepo, vectorStore, aiRuntime.Embedding),
 	)
 	executor := ingestionservice.NewExecutorService(ingestionservice.ExecutorServiceOptions{
 		TaskRepo:        taskRepo,
 		TaskNodeRepo:    taskNodeRepo,
-		WorkflowBuilder: ingestionservice.NewLinearWorkflowBuilder(),
+		WorkflowBuilder: ingestionservice.NewEinoGraphWorkflowBuilder(),
 		NodeRunners:     nodeRunners,
 		TaskObserver:    taskObserver,
 		Metrics:         metricsService,
@@ -119,7 +121,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	return &Runtime{
 		DB:       db,
 		ownsDB:   ownsDB,
-		Pipeline: ingestionservice.NewPipelineService(pipelineRepo),
+		Pipeline: ingestionservice.NewPipelineService(pipelineRepo, nodeRunners),
 		Task:     ingestionservice.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, executor),
 		Executor: executor,
 		Metrics:  metricsService,

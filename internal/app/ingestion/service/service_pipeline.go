@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino/compose"
+
 	"local/rag-project/internal/app/ingestion/domain"
 	"local/rag-project/internal/app/ingestion/port"
 	"local/rag-project/internal/framework/distributedid"
@@ -37,6 +39,7 @@ type PipelinePageResult struct {
 type CreatePipelineInput struct {
 	Name        string
 	Description string
+	Definition  domain.PipelineDefinition
 	Nodes       []domain.PipelineNode
 	CreatedBy   string
 }
@@ -46,21 +49,28 @@ type UpdatePipelineInput struct {
 	ID          string
 	Name        string
 	Description string
+	Definition  domain.PipelineDefinition
 	Nodes       []domain.PipelineNode
 	UpdatedBy   string
 }
 
 // PipelineService 负责 pipeline 的管理与校验。
 type PipelineService struct {
-	repo port.PipelineRepository
-	now  func() time.Time
+	repo        port.PipelineRepository
+	nodeRunners *NodeRunnerRegistry
+	now         func() time.Time
 }
 
 // NewPipelineService 创建 pipeline 服务。
-func NewPipelineService(repo port.PipelineRepository) *PipelineService {
+func NewPipelineService(repo port.PipelineRepository, nodeRunners ...*NodeRunnerRegistry) *PipelineService {
+	var registry *NodeRunnerRegistry
+	if len(nodeRunners) > 0 {
+		registry = nodeRunners[0]
+	}
 	return &PipelineService{
-		repo: repo,
-		now:  time.Now,
+		repo:        repo,
+		nodeRunners: registry,
+		now:         time.Now,
 	}
 }
 
@@ -121,7 +131,8 @@ func (s *PipelineService) Create(ctx context.Context, input CreatePipelineInput)
 	if s == nil || s.repo == nil {
 		return domain.Pipeline{}, exception.NewServiceException("ingestion pipeline repository is required", nil)
 	}
-	if err := validatePipelineDefinition(strings.TrimSpace(input.Name), input.Nodes); err != nil {
+	definition, err := s.normalizeDefinition(strings.TrimSpace(input.Name), input.Definition, input.Nodes)
+	if err != nil {
 		return domain.Pipeline{}, err
 	}
 
@@ -134,7 +145,8 @@ func (s *PipelineService) Create(ctx context.Context, input CreatePipelineInput)
 		ID:          fmt.Sprintf("%d", id),
 		Name:        strings.TrimSpace(input.Name),
 		Description: strings.TrimSpace(input.Description),
-		Nodes:       clonePipelineNodes(input.Nodes),
+		Definition:  definition,
+		Nodes:       domain.ClonePipelineNodes(definition.Nodes),
 		CreatedBy:   strings.TrimSpace(input.CreatedBy),
 		UpdatedBy:   strings.TrimSpace(input.CreatedBy),
 		CreatedAt:   now,
@@ -156,7 +168,8 @@ func (s *PipelineService) Update(ctx context.Context, input UpdatePipelineInput)
 	if id == "" {
 		return domain.Pipeline{}, exception.NewClientException("pipeline id is required", nil)
 	}
-	if err := validatePipelineDefinition(strings.TrimSpace(input.Name), input.Nodes); err != nil {
+	definition, err := s.normalizeDefinition(strings.TrimSpace(input.Name), input.Definition, input.Nodes)
+	if err != nil {
 		return domain.Pipeline{}, err
 	}
 
@@ -166,7 +179,8 @@ func (s *PipelineService) Update(ctx context.Context, input UpdatePipelineInput)
 	}
 	existing.Name = strings.TrimSpace(input.Name)
 	existing.Description = strings.TrimSpace(input.Description)
-	existing.Nodes = clonePipelineNodes(input.Nodes)
+	existing.Definition = definition
+	existing.Nodes = domain.ClonePipelineNodes(definition.Nodes)
 	existing.UpdatedBy = strings.TrimSpace(input.UpdatedBy)
 	existing.UpdatedAt = s.now()
 
@@ -192,21 +206,37 @@ func (s *PipelineService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// validatePipelineDefinition 校验 pipeline 的最小定义合法性。
-func validatePipelineDefinition(name string, nodes []domain.PipelineNode) error {
+func (s *PipelineService) normalizeDefinition(name string, definition domain.PipelineDefinition, nodes []domain.PipelineNode) (domain.PipelineDefinition, error) {
+	normalized := domain.NormalizePipelineDefinition(definition, nodes)
+	if err := s.validatePipelineDefinition(name, normalized); err != nil {
+		return domain.PipelineDefinition{}, err
+	}
+	return normalized, nil
+}
+
+// validatePipelineDefinition validates a DAG-style pipeline definition.
+func (s *PipelineService) validatePipelineDefinition(name string, definition domain.PipelineDefinition) error {
 	if strings.TrimSpace(name) == "" {
 		return exception.NewClientException("pipeline name is required", nil)
 	}
-	if len(nodes) == 0 {
-		return exception.NewClientException("pipeline nodes are required", nil)
+	if len(definition.Nodes) == 0 {
+		return exception.NewClientException("pipeline definition nodes are required", nil)
+	}
+	if len(definition.EntryNodeIDs) == 0 {
+		return exception.NewClientException("pipeline entry node ids are required", nil)
 	}
 
-	nodeIDs := make(map[string]struct{}, len(nodes))
-	for _, node := range nodes {
+	nodeIDs := make(map[string]struct{}, len(definition.Nodes))
+	nodesByID := make(map[string]domain.PipelineNode, len(definition.Nodes))
+	inDegree := make(map[string]int, len(definition.Nodes))
+	for _, node := range definition.Nodes {
 		nodeID := strings.TrimSpace(node.NodeID)
 		nodeType := strings.TrimSpace(node.NodeType)
 		if nodeID == "" {
 			return exception.NewClientException("pipeline node id is required", nil)
+		}
+		if nodeID == compose.START || nodeID == compose.END {
+			return exception.NewClientException("pipeline node id is reserved: "+nodeID, nil)
 		}
 		if nodeType == "" {
 			return exception.NewClientException("pipeline node type is required", nil)
@@ -215,36 +245,171 @@ func validatePipelineDefinition(name string, nodes []domain.PipelineNode) error 
 			return exception.NewClientException("pipeline node id must be unique", nil)
 		}
 		nodeIDs[nodeID] = struct{}{}
+		nodesByID[nodeID] = node
+		inDegree[nodeID] = 0
+		if s != nil && s.nodeRunners != nil {
+			if _, ok := s.nodeRunners.Get(nodeType); !ok {
+				return exception.NewClientException("pipeline node type is not executable: "+nodeType, nil)
+			}
+		}
 	}
 
-	for _, node := range nodes {
-		nextNodeID := strings.TrimSpace(node.NextNodeID)
-		if nextNodeID == "" {
-			continue
+	edgeIDs := make(map[string]struct{}, len(definition.Edges))
+	adjacency := make(map[string][]string, len(definition.Nodes))
+	for _, edge := range definition.Edges {
+		edgeID := strings.TrimSpace(edge.EdgeID)
+		if edgeID == "" {
+			return exception.NewClientException("pipeline edge id is required", nil)
 		}
-		if _, exists := nodeIDs[nextNodeID]; !exists {
-			return exception.NewClientException("pipeline next node id must reference an existing node", nil)
+		if _, exists := edgeIDs[edgeID]; exists {
+			return exception.NewClientException("pipeline edge id must be unique", nil)
 		}
+		edgeIDs[edgeID] = struct{}{}
+		fromNodeID := strings.TrimSpace(edge.FromNodeID)
+		toNodeID := strings.TrimSpace(edge.ToNodeID)
+		if _, exists := nodeIDs[fromNodeID]; !exists {
+			return exception.NewClientException("pipeline edge from node id must reference an existing node", nil)
+		}
+		if _, exists := nodeIDs[toNodeID]; !exists {
+			return exception.NewClientException("pipeline edge to node id must reference an existing node", nil)
+		}
+		adjacency[fromNodeID] = append(adjacency[fromNodeID], toNodeID)
+		inDegree[toNodeID]++
+	}
+
+	for _, entryNodeID := range definition.EntryNodeIDs {
+		entryNodeID = strings.TrimSpace(entryNodeID)
+		if _, exists := nodeIDs[entryNodeID]; !exists {
+			return exception.NewClientException("pipeline entry node id must reference an existing node", nil)
+		}
+	}
+
+	visited := make(map[string]bool, len(definition.Nodes))
+	var walk func(nodeID string)
+	walk = func(nodeID string) {
+		if visited[nodeID] {
+			return
+		}
+		visited[nodeID] = true
+		for _, nextNodeID := range adjacency[nodeID] {
+			walk(nextNodeID)
+		}
+	}
+	for _, entryNodeID := range definition.EntryNodeIDs {
+		walk(strings.TrimSpace(entryNodeID))
+	}
+	if len(visited) != len(definition.Nodes) {
+		return exception.NewClientException("pipeline graph contains unreachable nodes", nil)
+	}
+
+	queue := make([]string, 0, len(definition.Nodes))
+	inDegreeCopy := make(map[string]int, len(inDegree))
+	for nodeID, degree := range inDegree {
+		inDegreeCopy[nodeID] = degree
+		if degree == 0 {
+			queue = append(queue, nodeID)
+		}
+	}
+	visitedCount := 0
+	for len(queue) > 0 {
+		nodeID := queue[0]
+		queue = queue[1:]
+		visitedCount++
+		for _, nextNodeID := range adjacency[nodeID] {
+			inDegreeCopy[nextNodeID]--
+			if inDegreeCopy[nextNodeID] == 0 {
+				queue = append(queue, nextNodeID)
+			}
+		}
+	}
+	if visitedCount != len(definition.Nodes) {
+		return exception.NewClientException("pipeline graph must be acyclic", nil)
+	}
+	if err := s.validateNodeContracts(definition, nodesByID, adjacency); err != nil {
+		return err
 	}
 	return nil
 }
 
-// clonePipelineNodes 复制节点定义，避免外部切片被直接复用。
-func clonePipelineNodes(nodes []domain.PipelineNode) []domain.PipelineNode {
-	if len(nodes) == 0 {
+func (s *PipelineService) validateNodeContracts(
+	definition domain.PipelineDefinition,
+	nodesByID map[string]domain.PipelineNode,
+	adjacency map[string][]string,
+) error {
+	if len(definition.Nodes) == 0 {
 		return nil
 	}
-	result := make([]domain.PipelineNode, 0, len(nodes))
-	for _, node := range nodes {
-		result = append(result, domain.PipelineNode{
-			NodeID:     strings.TrimSpace(node.NodeID),
-			NodeType:   strings.TrimSpace(node.NodeType),
-			Settings:   node.Settings,
-			Condition:  node.Condition,
-			NextNodeID: strings.TrimSpace(node.NextNodeID),
-		})
+
+	inDegree := make(map[string]int, len(definition.Nodes))
+	predecessors := make(map[string][]string, len(definition.Nodes))
+	for _, node := range definition.Nodes {
+		nodeID := strings.TrimSpace(node.NodeID)
+		inDegree[nodeID] = 0
 	}
-	return result
+	for fromNodeID, nextNodeIDs := range adjacency {
+		for _, toNodeID := range nextNodeIDs {
+			inDegree[toNodeID]++
+			predecessors[toNodeID] = append(predecessors[toNodeID], fromNodeID)
+		}
+	}
+
+	entryNodeIDs := artifactSetFromNames(definition.EntryNodeIDs...)
+	baseArtifacts := artifactSetFromNames("task")
+	availableAfter := make(map[string]map[string]struct{}, len(definition.Nodes))
+
+	queue := make([]string, 0, len(definition.Nodes))
+	for _, node := range definition.Nodes {
+		nodeID := strings.TrimSpace(node.NodeID)
+		if inDegree[nodeID] == 0 {
+			queue = append(queue, nodeID)
+		}
+	}
+
+	for len(queue) > 0 {
+		nodeID := queue[0]
+		queue = queue[1:]
+
+		before := artifactSetFromNames()
+		if _, isEntry := entryNodeIDs[nodeID]; isEntry {
+			before = mergeArtifactSets(before, baseArtifacts)
+		}
+		for _, predecessorNodeID := range predecessors[nodeID] {
+			before = mergeArtifactSets(before, availableAfter[predecessorNodeID])
+		}
+		node := nodesByID[nodeID]
+		contract, ok := getNodeIOContract(node.NodeType)
+		if ok {
+			if _, isEntry := entryNodeIDs[nodeID]; isEntry && !contract.SupportsEntry {
+				return exception.NewClientException("pipeline entry node type does not support entry position: "+node.NodeType, nil)
+			}
+			for _, requirement := range contract.Requires {
+				if artifactSetContainsAny(before, requirement.AnyOf) {
+					continue
+				}
+				return exception.NewClientException(
+					fmt.Sprintf(
+						"pipeline node %s (%s) requires input artifact [%s], available artifacts are [%s]",
+						nodeID,
+						node.NodeType,
+						strings.Join(requirement.AnyOf, " or "),
+						strings.Join(artifactSetNames(before), ", "),
+					),
+					nil,
+				)
+			}
+		}
+
+		after := mergeArtifactSets(before, artifactSetFromNames(contract.Produces...))
+		availableAfter[nodeID] = after
+
+		for _, nextNodeID := range adjacency[nodeID] {
+			inDegree[nextNodeID]--
+			if inDegree[nextNodeID] == 0 {
+				queue = append(queue, nextNodeID)
+			}
+		}
+	}
+	return nil
 }
 
 // normalizePipelinePage 规范化分页页码。

@@ -206,20 +206,20 @@ func TestAgentLoopRunsMultipleRounds(t *testing.T) {
 	if len(sink.thinks) != 1 {
 		t.Fatalf("expected 1 agent think event, got %d", len(sink.thinks))
 	}
-	if planner.inputs[1].AgentState.Empty() {
-		t.Fatal("expected second planner call to receive agent state")
+	if len(planner.inputs) != 1 {
+		t.Fatalf("expected planner to run only in round 1, got %d calls", len(planner.inputs))
 	}
-	if len(planner.inputs[1].PreviousResults) != 1 {
-		t.Fatalf("expected second planner call to receive previous results, got %d", len(planner.inputs[1].PreviousResults))
+	if result.Rounds[0].PlanningSource != "llm" {
+		t.Fatalf("expected round 1 planningSource=llm, got %q", result.Rounds[0].PlanningSource)
 	}
-	if len(planner.inputs[1].AgentState.NextHintCalls) != 1 {
-		t.Fatalf("expected structured hint calls, got %+v", planner.inputs[1].AgentState.NextHintCalls)
+	if result.Rounds[1].PlanningSource != "hint_calls" {
+		t.Fatalf("expected round 2 planningSource=hint_calls, got %q", result.Rounds[1].PlanningSource)
 	}
-	if planner.inputs[1].AgentState.NextHint != "tool:ingestion_task_node_query|taskId=task-1|nodeId=indexer" {
-		t.Fatalf("expected structured agent state hint, got %q", planner.inputs[1].AgentState.NextHint)
+	if !result.Rounds[1].LLMPlannerSkipped {
+		t.Fatal("expected round 2 to skip llm planner when nextHintCalls exist")
 	}
-	if planner.inputs[1].AgentState.NextHintCalls[0].Name != "ingestion_task_node_query" {
-		t.Fatalf("unexpected hint call name: %+v", planner.inputs[1].AgentState.NextHintCalls[0])
+	if result.Rounds[0].NextHintCallCount != 1 {
+		t.Fatalf("expected round 1 nextHintCallCount=1, got %d", result.Rounds[0].NextHintCallCount)
 	}
 	if len(result.Rounds) < 1 || !strings.HasPrefix(result.Rounds[0].NextHint, "tool:ingestion_task_node_query|") {
 		t.Fatalf("expected structured next hint, got %q", result.Rounds[0].NextHint)
@@ -487,8 +487,8 @@ func TestObserveDocumentDiagnosisKeepsDrillingWhenOnlyLogErrorExists(t *testing.
 	if observation.Done {
 		t.Fatal("expected observer to continue when only task/log-level error exists")
 	}
-	if observation.NextHint != "tool:ingestion_task_query|taskId=task-1|includeNodes=true" {
-		t.Fatalf("unexpected next hint: %q", observation.NextHint)
+	if observation.State.NextHint != "tool:ingestion_task_query|taskId=task-1|includeNodes=true" {
+		t.Fatalf("unexpected next hint: %q", observation.State.NextHint)
 	}
 }
 
@@ -552,8 +552,8 @@ func TestObserveDocumentDiagnosisRunningKeepsVerifyingTaskState(t *testing.T) {
 	if observation.State.Phase != "verification" {
 		t.Fatalf("expected verification phase, got %q", observation.State.Phase)
 	}
-	if observation.NextHint != "tool:ingestion_task_query|taskId=task-run-1|includeNodes=true" {
-		t.Fatalf("unexpected next hint: %q", observation.NextHint)
+	if observation.State.NextHint != "tool:ingestion_task_query|taskId=task-run-1|includeNodes=true" {
+		t.Fatalf("unexpected next hint: %q", observation.State.NextHint)
 	}
 }
 
@@ -572,8 +572,8 @@ func TestObserveTaskDiagnosisRunningKeepsVerifyingTaskState(t *testing.T) {
 	if observation.State.Phase != "verification" {
 		t.Fatalf("expected verification phase, got %q", observation.State.Phase)
 	}
-	if observation.NextHint != "tool:ingestion_task_query|taskId=task-run-1|includeNodes=true" {
-		t.Fatalf("unexpected next hint: %q", observation.NextHint)
+	if observation.State.NextHint != "tool:ingestion_task_query|taskId=task-run-1|includeNodes=true" {
+		t.Fatalf("unexpected next hint: %q", observation.State.NextHint)
 	}
 }
 
@@ -598,8 +598,8 @@ func TestObserveTaskQueryRunningNodeUsesVerificationInsteadOfFailureDrilldown(t 
 	if !strings.Contains(observation.State.Hypothesis, "still running") {
 		t.Fatalf("expected running hypothesis, got %q", observation.State.Hypothesis)
 	}
-	if observation.NextHint != "tool:ingestion_task_node_query|taskId=task-run-1|nodeId=indexer" {
-		t.Fatalf("unexpected next hint: %q", observation.NextHint)
+	if observation.State.NextHint != "tool:ingestion_task_node_query|taskId=task-run-1|nodeId=indexer" {
+		t.Fatalf("unexpected next hint: %q", observation.State.NextHint)
 	}
 }
 
@@ -620,8 +620,8 @@ func TestObserveWebFetchUsesCombinedTextFromPages(t *testing.T) {
 	if !observation.Done {
 		t.Fatal("expected web_fetch observation to finish")
 	}
-	if observation.Confidence != 0.7 {
-		t.Fatalf("expected truncated fetch confidence=0.7, got %v", observation.Confidence)
+	if observation.State.Confidence != 0.7 {
+		t.Fatalf("expected truncated fetch confidence=0.7, got %v", observation.State.Confidence)
 	}
 	if observation.State.Phase != "complete" {
 		t.Fatalf("expected complete phase, got %q", observation.State.Phase)
@@ -954,15 +954,14 @@ func TestAgentLoopThinkToolCapturesReasoningInTrace(t *testing.T) {
 	if result.Rounds[0].ToolCallCount != 2 {
 		t.Fatalf("expected round 1 to have 2 calls, got %d", result.Rounds[0].ToolCallCount)
 	}
-	// Second planner should see think's thought in previous results.
-	if len(planner.inputs) != 2 {
-		t.Fatalf("expected 2 planner calls, got %d", len(planner.inputs))
+	if len(planner.inputs) != 1 {
+		t.Fatalf("expected planner to run only in round 1, got %d planner calls", len(planner.inputs))
 	}
-	if len(planner.inputs[1].PreviousResults) != 2 {
-		t.Fatalf("expected round 2 planner to see 2 previous results, got %d", len(planner.inputs[1].PreviousResults))
+	if result.Rounds[1].PlanningSource != "hint_calls" {
+		t.Fatalf("expected round 2 planningSource=hint_calls, got %q", result.Rounds[1].PlanningSource)
 	}
-	if planner.inputs[1].PreviousResults[0].Name != "think" {
-		t.Fatalf("expected planner to see think as first previous result, got %q", planner.inputs[1].PreviousResults[0].Name)
+	if !result.Rounds[1].LLMPlannerSkipped {
+		t.Fatal("expected round 2 to skip llm planner after observer emitted nextHintCalls")
 	}
 }
 

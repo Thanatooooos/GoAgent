@@ -78,13 +78,13 @@ type llmObserverResponse struct {
 }
 
 type llmObserverStateBlock struct {
-	Phase         string   `json:"phase"`
-	Hypothesis    string   `json:"hypothesis"`
-	Confidence    float64  `json:"confidence"`
-	OpenQuestions []string `json:"openQuestions"`
-	CheckedTools  []string `json:"checkedTools"`
+	Phase         string     `json:"phase"`
+	Hypothesis    string     `json:"hypothesis"`
+	Confidence    float64    `json:"confidence"`
+	OpenQuestions []string   `json:"openQuestions"`
+	CheckedTools  []string   `json:"checkedTools"`
 	NextHintCalls []HintCall `json:"nextHintCalls"`
-	NextHint      string   `json:"nextHint"`
+	NextHint      string     `json:"nextHint"`
 }
 
 // LLMObserver lets the LLM decide whether the agent loop should continue.
@@ -237,8 +237,7 @@ func (o *LLMObserver) parseResponse(raw string, input ObserveInput) (ObserveResu
 		Confidence:    parsed.State.Confidence,
 		OpenQuestions: parsed.State.OpenQuestions,
 		CheckedTools:  parsed.State.CheckedTools,
-		NextHintCalls: firstNonEmptyHintCalls(parsed.State.NextHintCalls, parseHintCallsFromLegacyString(parsed.State.NextHint)),
-		NextHint:      parsed.State.NextHint,
+		NextHintCalls: firstNonEmptyHintCalls(parsed.State.NextHintCalls),
 	}.Normalize()
 
 	state.CheckedTools = mergeCheckedTools(input.PreviousState.CheckedTools, state.CheckedTools, toolNames(input.RoundResults))
@@ -273,12 +272,9 @@ func (o *LLMObserver) parseResponse(raw string, input ObserveInput) (ObserveResu
 	state = state.Normalize()
 
 	return ObserveResult{
-		Done:          parsed.Done,
-		Reasoning:     strings.TrimSpace(parsed.Reasoning),
-		NextHintCalls: append([]HintCall(nil), state.NextHintCalls...),
-		NextHint:      state.NextHint,
-		Confidence:    state.Confidence,
-		State:         state,
+		Done:      parsed.Done,
+		Reasoning: strings.TrimSpace(parsed.Reasoning),
+		State:     state,
 	}, true
 }
 
