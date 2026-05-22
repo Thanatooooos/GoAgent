@@ -60,14 +60,26 @@ func (r *MemoryItemRepository) List(ctx context.Context, filter port.MemoryItemL
 	if values := trimNonEmpty(filter.ScopeIDs); len(values) > 0 {
 		query = query.Where("scope_id IN ?", values)
 	}
+	if values := trimNonEmpty(filter.Namespaces); len(values) > 0 {
+		query = query.Where("namespace IN ?", values)
+	}
 	if values := trimNonEmpty(filter.MemoryTypes); len(values) > 0 {
 		query = query.Where("memory_type IN ?", values)
+	}
+	if values := trimNonEmpty(filter.Categories); len(values) > 0 {
+		query = query.Where("category IN ?", values)
+	}
+	if values := trimNonEmpty(filter.CanonicalKeys); len(values) > 0 {
+		query = query.Where("canonical_key IN ?", values)
 	}
 	if values := trimNonEmpty(filter.Statuses); len(values) > 0 {
 		query = query.Where("status IN ?", values)
 	}
 	if sourceMessageID := strings.TrimSpace(filter.SourceMessageID); sourceMessageID != "" {
 		query = query.Where("source_message_id = ?", sourceMessageID)
+	}
+	if supersedesID := strings.TrimSpace(filter.SupersedesID); supersedesID != "" {
+		query = query.Where("supersedes_id = ?", supersedesID)
 	}
 	query = query.Order("update_time desc")
 	if filter.Limit > 0 {

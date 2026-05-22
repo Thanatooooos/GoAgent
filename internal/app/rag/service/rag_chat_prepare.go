@@ -6,6 +6,7 @@ import (
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/exception"
@@ -94,7 +95,7 @@ func (s *RagChatService) runConversationStage(ctx context.Context, input RagChat
 }
 
 func (s *RagChatService) runMemoryStage(ctx context.Context, conversationID string, userID string) (ragChatMemoryStageResult, error) {
-	history, err := s.memoryService.Load(ctx, conversationID, userID)
+	history, err := s.historyService.Load(ctx, conversationID, userID)
 	if err != nil {
 		return ragChatMemoryStageResult{}, exception.NewServiceException("failed to load rag memory", err)
 	}
@@ -236,7 +237,7 @@ func (s *RagChatService) runLongTermMemoryStage(
 	rewriteResult ragrewrite.Result,
 	traceID string,
 ) (ragChatLongTermMemoryStageResult, error) {
-	if s == nil || s.explicitMemory == nil {
+	if s == nil || s.longTermMemory == nil {
 		return ragChatLongTermMemoryStageResult{}, nil
 	}
 
@@ -252,7 +253,7 @@ func (s *RagChatService) runLongTermMemoryStage(
 			NodeName: "long_term_memory_recall",
 		},
 		run: func(ctx context.Context) (ragChatLongTermMemoryStageResult, error) {
-			result, err := s.explicitMemory.RecallMemories(ctx, RecallMemoriesInput{
+			result, err := s.longTermMemory.RecallMemories(ctx, longtermmemory.RecallMemoriesInput{
 				UserID:           strings.TrimSpace(input.UserID),
 				Query:            query,
 				KnowledgeBaseIDs: append([]string(nil), input.KnowledgeBaseIDs...),

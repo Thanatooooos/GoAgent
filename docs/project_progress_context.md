@@ -1,6 +1,6 @@
 # Project Progress Context
 
-更新时间：2026-05-18
+更新时间：2026-05-22
 
 这份文档用于维护 `goagent` 当前项目进度，帮助后续开发快速对齐当前阶段、已完成能力、最新进展、验证状态、已知风险和下一步计划。
 
@@ -1388,3 +1388,227 @@ The next major memory milestone is now:
 
 - finish the remaining productization / UX surface of Phase 2 if needed
 - then move to `Phase 3` retrieval projection so long-term memory can join retrieval more naturally
+
+## 2026-05-22 Additional Update: Memory Module Cleanup
+
+### Status Summary
+
+- `memory V1` 在保持 Phase 2 能力不变的前提下，完成了一轮“结构与语义收口”。
+- 这轮工作的目标不是新增治理能力，而是先把当前代码里的 `STM / MTM / LTM` 边界收清楚，降低后续推进 `Memory Gate` 和事实型记忆检索投影时的认知成本。
+- 当前代码语义已经明确为：
+  - `STM`：会话历史与摘要
+  - `MTM / evidence memory`：长消息处理、`SessionChunk`、`SessionRecall`
+  - `LTM`：显式长期记忆保存、长期记忆 recall、`MemoryContext`
+
+### Completed So Far
+
+#### 1. `STM` 命名已从泛化 `memory` 收口为 `history`
+
+- `internal/app/rag/core/memory` 已重命名为 `internal/app/rag/core/history`
+- 当前 `core/history` 只承载：
+  - history load
+  - summary load / compress
+  - chat history store adapter
+- 这避免了把会话历史服务误解为长期记忆模块
+
+#### 2. 长期记忆应用层已独立到 `service/longtermmemory`
+
+- 新增目录：
+  - `internal/app/rag/service/longtermmemory`
+- 当前已按职责拆开：
+  - `service.go`：`MemoryService`，负责 CRUD、embedding wiring、recall 委托
+  - `recall_service.go`：候选获取、关键词/向量融合、排序
+  - `context_renderer.go`：`MemoryContext` 渲染
+  - `types.go`：长期记忆输入输出与 recall result types
+- `domain.MemoryItem`、`port.MemoryItemRepository`、Postgres repo/model 本轮保持原位置，未做纵向大搬迁
+
+#### 3. `RagChatService` 已收口为只依赖长期记忆 recall 接口
+
+- chat 主链路不再直接感知长期记忆 CRUD service
+- `RagChatService` 当前通过单一入口接收长期记忆 recall 能力：
+  - `SetLongTermMemoryRecallService(...)`
+- `bootstrap/rag.Runtime` 当前分工变为：
+  - HTTP 管理面注入 `longtermmemory.MemoryService`
+  - chat 主链路注入 `longtermmemory.RecallService`
+  - `SessionRecallService` 继续独立注入，不与长期记忆合并
+
+#### 4. 清理了一个失效/占位实现
+
+- 已删除：
+  - `internal/app/rag/service/conversation_message_content_processor.go`
+- 当前仅保留 `LongMessageContentProcessor` 作为长消息处理器实现，避免消息内容处理双轨并存
+
+### Validation
+
+Validated on 2026-05-22:
+
+```powershell
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/rag/service/... ./internal/app/rag/core/history ./internal/adapter/http/rag -count=1
+```
+
+Current result:
+
+- `internal/app/rag/service` PASS
+- `internal/app/rag/service/longtermmemory` PASS
+- `internal/app/rag/core/history` PASS
+- `internal/adapter/http/rag` PASS
+
+Additional note:
+
+- `./internal/bootstrap/rag` 与 `./cmd/server` 的本轮回归受到当前环境的 Go module cache 权限限制，未在本轮文档更新时补齐完整验证结果。
+
+### Current Conclusion
+
+As of 2026-05-22, `memory V1` has completed a meaningful structural cleanup:
+
+- STM / MTM / LTM 的代码语义已经清晰分层
+- 长期记忆已有独立应用层入口，不再与会话历史服务混名
+- chat 主链路与长期记忆管理面的依赖方向更清楚
+
+This does not yet add governance, but it creates a cleaner base for:
+
+- `Phase 2.1` governance closure
+- `Phase 3` fact-memory retrieval projection
+
+## 2026-05-22 Additional Update: Memory V1 Phase 2.1 Governance Closure
+
+### Status Summary
+
+- `memory V1` 已从“结构与语义收口完成”推进到“Phase 2.1 治理闭环落地”。
+- 这轮工作的重点不是把长期记忆接入主检索，而是先把显式保存路径从“直接存文本”升级为“结构化治理写入”。
+- 当前长期记忆已经具备：
+  - 结构化治理字段持久化
+  - `Memory Gate`
+  - `Conflict Detector`
+  - 单值键 / 多值键规则
+  - `superseded` 覆盖语义
+  - 兼容旧 API 的渐进升级
+
+### Completed So Far
+
+#### 1. `memory_item` schema 已完成治理字段收口
+
+- `t_memory_item` 已补齐：
+  - `namespace`
+  - `category`
+  - `canonical_key`
+  - `value_type`
+  - `value_json`
+  - `display_value`
+  - `importance`
+  - `last_used_at`
+  - `supersedes_id`
+  - `extraction_method`
+- `domain.MemoryItem`、Gorm model、mapper、embedding search hit 扫描路径均已同步扩展
+- 已新增按 `user/scope/key/status`、`user/namespace/category/status`、`supersedes_id` 的索引支持
+
+#### 2. 长期记忆显式保存链路已切换到治理模式
+
+- `internal/app/rag/service/longtermmemory` 已新增：
+  - `governance_types.go`
+  - `schema_registry.go`
+  - `normalization.go`
+  - `gate.go`
+  - `conflict_detector.go`
+  - `lifecycle.go`
+  - `save_service.go`
+  - `transaction.go`
+- `SaveExplicitMemory(...)` 当前执行顺序已收口为：
+  - normalize
+  - gate validate
+  - load active candidates
+  - conflict / merge / supersede decision
+  - transactional persist
+- 显式保存入口仍保持“默认落 `active`”，本轮未引入自动抽取的 `pending` 流程
+
+#### 3. canonical key 与 cardinality 规则已落第一版白名单
+
+- 当前已内置首批 key：
+  - `response.language`
+  - `workflow.first_step`
+  - `behavior.avoid`
+  - `project.constraint.network`
+  - `project.messaging.main_bus`
+  - `project.fact.dependencies`
+  - `project.integrations`
+- 每个 key 当前都已明确：
+  - `category`
+  - `memory_type`
+  - `value_type`
+  - `single-valued / multi-valued`
+  - 默认 `importance`
+  - 允许的 `scope_type`
+
+#### 4. 单值键 / 多值键治理语义已落地
+
+- 单值键：
+  - 同 scope + 同 key + 同值时不新建，只刷新 `last_confirmed_at / update_time`
+  - 新值写入时，旧值改为 `superseded`，新值 `active`
+  - 新记录通过 `supersedes_id` 指向被覆盖记录
+- 多值键：
+  - 同值重复保存走 merge / refresh
+  - 不同值允许并存多个 `active`
+- `feedback` 默认不参与覆盖旧事实，只允许 `create / ignore`
+
+#### 5. HTTP 接口已完成兼容式升级
+
+- 仍保留：
+  - `POST /rag/v3/remember`
+  - `POST /rag/v3/memories`
+  - `GET /rag/v3/memories`
+  - `POST /rag/v3/memories/:memoryId/expire`
+- `remember` 现支持可选治理字段：
+  - `category`
+  - `canonicalKey`
+  - `valueType`
+  - `valueJson`
+  - `displayValue`
+  - `importance`
+- 对旧请求体保持兼容：
+  - 未传治理字段时自动补默认 `namespace / category / value_type / value_json / display_value`
+- `list memories` 当前已支持新增过滤：
+  - `category`
+  - `canonicalKey`
+  - `namespace`
+- `memoryItemVO` 已补充治理字段透出，便于调试与管理面观察
+
+#### 6. 覆盖语义已通过事务包装落地
+
+- 已新增 memory mutation transaction
+- `bootstrap/rag.Runtime` 当前已为 `MemoryService` 注入 transaction
+- 单值键覆盖路径现在在同一事务内完成：
+  - 旧记录 `superseded`
+  - 新记录 `active`
+
+### Validation
+
+Validated on 2026-05-22:
+
+```powershell
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/rag/service/longtermmemory -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/rag/service/... -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/adapter/http/rag/... -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/adapter/repository/postgres/rag -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/bootstrap/rag -count=1
+```
+
+Current result:
+
+- `internal/app/rag/service/longtermmemory` PASS
+- `internal/app/rag/service` PASS
+- `internal/adapter/http/rag/test` PASS
+- `internal/adapter/repository/postgres/rag` PASS
+- `internal/bootstrap/rag` PASS
+
+### Current Conclusion
+
+As of 2026-05-22, `memory V1` has completed `Phase 2.1` governance closure on the explicit-save path:
+
+- long-term memory is no longer only “storable”; it is now governed
+- single-valued replacement and multi-valued merge semantics are explicit
+- old API callers can continue working while structured governance fields are already available
+
+The next major memory milestones are now:
+
+- `Phase 3` fact-memory retrieval projection
+- stronger lifecycle governance such as `last_used_at` updates, cleanup policy, and background maintenance

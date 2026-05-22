@@ -12,12 +12,13 @@ import (
 	postgresrag "local/rag-project/internal/adapter/repository/postgres/rag"
 	postgresuser "local/rag-project/internal/adapter/repository/postgres/user"
 	pgvectorstore "local/rag-project/internal/adapter/vectorstore/pgvector"
-	ragmemory "local/rag-project/internal/app/rag/core/memory"
+	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	corevector "local/rag-project/internal/app/rag/core/vector"
 	ragservice "local/rag-project/internal/app/rag/service"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
 	"local/rag-project/internal/framework/config"
 	infraai "local/rag-project/internal/infra-ai"
@@ -40,7 +41,7 @@ type Runtime struct {
 	Retrieve     ragretrieve.Service
 	Conversation *ragservice.ConversationService
 	Message      *ragservice.ConversationMessageService
-	Memory       *ragservice.MemoryService
+	Memory       *longtermmemory.MemoryService
 	Feedback     *ragservice.MessageFeedbackService
 	Trace        *ragservice.TraceService
 	Chat         *ragservice.RagChatService
@@ -126,24 +127,25 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	messageService.SetChunkSink(postgresrag.NewConversationMessageChunkSink(db, aiRuntime.Embedding))
 	messageService.SetCreateTransaction(postgresrag.NewConversationMessageCreateTransaction(db, aiRuntime.Embedding))
 
-	memoryStore := ragmemory.NewMessageServiceStore(conversationRepo, messageRepo)
-	var summaryAdapter ragmemory.SummaryService
+	memoryStore := raghistory.NewMessageServiceStore(conversationRepo, messageRepo)
+	var summaryAdapter raghistory.SummaryService
 	if cfg.Rag.Memory.SummaryEnabled {
-		summaryAdapter = ragmemory.NewCompressibleSummaryService(summaryRepo, ragmemory.SummaryCompressionOptions{
+		summaryAdapter = raghistory.NewCompressibleSummaryService(summaryRepo, raghistory.SummaryCompressionOptions{
 			MessageRepo: messageRepo,
 			ChatService: aiRuntime.Chat,
 			StartTurns:  cfg.Rag.Memory.SummaryStartTurns,
 			MaxChars:    cfg.Rag.Memory.SummaryMaxChars,
 		})
 	} else {
-		summaryAdapter = ragmemory.NewSummaryServiceAdapter(summaryRepo)
+		summaryAdapter = raghistory.NewSummaryServiceAdapter(summaryRepo)
 	}
-	memoryService := ragmemory.NewDefaultService(memoryStore, summaryAdapter, cfg.Rag.Memory.HistoryKeepTurns)
-	explicitMemoryService := ragservice.NewMemoryService(memoryItemRepo, ragservice.MemoryServiceOptions{
+	historyService := raghistory.NewDefaultService(memoryStore, summaryAdapter, cfg.Rag.Memory.HistoryKeepTurns)
+	explicitMemoryService := longtermmemory.NewMemoryService(memoryItemRepo, longtermmemory.MemoryServiceOptions{
 		MaxRecallItems:        cfg.Rag.Memory.ExplicitRecall.MaxItems,
 		MaxRecallChars:        cfg.Rag.Memory.ExplicitRecall.MaxContextChars,
 		MaxCandidatesPerScope: cfg.Rag.Memory.ExplicitRecall.MaxCandidatesPerScope,
 	})
+	explicitMemoryService.SetMutationTransaction(postgresrag.NewMemoryItemTransaction(db))
 	explicitMemoryService.SetEmbeddingSupport(aiRuntime.Embedding, memoryItemEmbeddingRepo)
 
 	// 根据配置决定是否启用 LLM 查询改写；未启用时 retieve 阶段直接使用原始问题。
@@ -160,7 +162,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	chatService := ragservice.NewRagChatService(
 		conversationService,
 		messageService,
-		memoryService,
+		historyService,
 		rewriteService,
 		retrieveService,
 		promptService,
@@ -171,17 +173,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	if cfg != nil {
 		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
 	}
-	chatService.SetExplicitMemoryService(explicitMemoryService)
-	chatService.SetExplicitMemoryRecallService(ragservice.NewVectorAwareMemoryRecallRetriever(
-		memoryItemRepo,
-		memoryItemEmbeddingRepo,
-		aiRuntime.Embedding,
-		ragservice.MemoryServiceOptions{
-			MaxRecallItems:        cfg.Rag.Memory.ExplicitRecall.MaxItems,
-			MaxRecallChars:        cfg.Rag.Memory.ExplicitRecall.MaxContextChars,
-			MaxCandidatesPerScope: cfg.Rag.Memory.ExplicitRecall.MaxCandidatesPerScope,
-		},
-	))
+	chatService.SetLongTermMemoryRecallService(explicitMemoryService.RecallService())
 	chatService.SetSessionRecallService(ragservice.NewSessionRecallService(sessionChunkRepo, aiRuntime.Embedding, ragservice.SessionRecallOptions{
 		Enabled:              cfg.Rag.Memory.SessionRecall.Enabled,
 		MaxExcerpts:          cfg.Rag.Memory.SessionRecall.MaxExcerpts,

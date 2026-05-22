@@ -1,8 +1,7 @@
-package service
+package longtermmemory
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"unicode"
@@ -14,36 +13,35 @@ import (
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
-type ExplicitMemoryRecallService interface {
-	RecallMemories(ctx context.Context, input RecallMemoriesInput) (RecallMemoriesResult, error)
+type memoryRecallProjection struct {
+	item           domain.MemoryItem
+	summary        string
+	detail         string
+	searchableText string
+	keywordMatched bool
+	vectorMatched  bool
+	keywordScore   int
+	vectorScore    float32
+	finalScore     int
 }
 
-const (
-	memoryHitSourceKeyword           = "keyword"
-	memoryHitSourceVector            = "vector"
-	memoryContributionKeywordOnly    = "keyword_only"
-	memoryContributionVectorOnly     = "vector_only"
-	memoryContributionHybrid         = "hybrid"
-	memoryContributionNoDirectSignal = "none"
-)
-
-type memoryRecallRetriever struct {
+type recallService struct {
 	repo          port.MemoryItemRepository
 	embeddingRepo port.MemoryItemEmbeddingRepository
 	embedding     aiembedding.EmbeddingService
 	options       MemoryServiceOptions
 }
 
-func newMemoryRecallRetriever(repo port.MemoryItemRepository, options MemoryServiceOptions) *memoryRecallRetriever {
-	return NewVectorAwareMemoryRecallRetriever(repo, nil, nil, options)
+func newRecallService(repo port.MemoryItemRepository, options MemoryServiceOptions) RecallService {
+	return NewVectorAwareRecallService(repo, nil, nil, options)
 }
 
-func NewVectorAwareMemoryRecallRetriever(
+func NewVectorAwareRecallService(
 	repo port.MemoryItemRepository,
 	embeddingRepo port.MemoryItemEmbeddingRepository,
 	embedding aiembedding.EmbeddingService,
 	options MemoryServiceOptions,
-) *memoryRecallRetriever {
+) RecallService {
 	if options.MaxRecallItems <= 0 {
 		options.MaxRecallItems = defaultMemoryRecallItems
 	}
@@ -53,7 +51,7 @@ func NewVectorAwareMemoryRecallRetriever(
 	if options.MaxCandidatesPerScope <= 0 {
 		options.MaxCandidatesPerScope = options.MaxRecallItems * 4
 	}
-	return &memoryRecallRetriever{
+	return &recallService{
 		repo:          repo,
 		embeddingRepo: embeddingRepo,
 		embedding:     embedding,
@@ -61,7 +59,7 @@ func NewVectorAwareMemoryRecallRetriever(
 	}
 }
 
-func (r *memoryRecallRetriever) RecallMemories(ctx context.Context, input RecallMemoriesInput) (RecallMemoriesResult, error) {
+func (r *recallService) RecallMemories(ctx context.Context, input RecallMemoriesInput) (RecallMemoriesResult, error) {
 	if r == nil || r.repo == nil {
 		return RecallMemoriesResult{}, nil
 	}
@@ -241,31 +239,6 @@ func computeFusedMemoryScore(item memoryRecallProjection, vectorScore float32) i
 	return score + boost
 }
 
-func buildMemoryRecallContext(items []memoryRecallProjection, maxItems int, maxChars int) ([]memoryRecallProjection, string, bool) {
-	if len(items) == 0 || maxItems <= 0 || maxChars <= 0 {
-		return nil, "", false
-	}
-	selected := make([]memoryRecallProjection, 0, minMemoryInt(len(items), maxItems))
-	truncated := false
-	for _, item := range items {
-		if len(selected) >= maxItems {
-			truncated = true
-			break
-		}
-		candidate := append(append([]memoryRecallProjection(nil), selected...), item)
-		contextText := renderMemoryRecallContext(candidate)
-		if strings.TrimSpace(contextText) == "" {
-			continue
-		}
-		if utf8.RuneCountInString(contextText) > maxChars {
-			truncated = true
-			break
-		}
-		selected = append(selected, item)
-	}
-	return selected, renderMemoryRecallContext(selected), truncated
-}
-
 func buildMemoryRecallProjection(query string, item domain.MemoryItem) memoryRecallProjection {
 	summary := strings.TrimSpace(item.Summary)
 	if summary == "" {
@@ -379,190 +352,6 @@ func splitMemoryProjectionSegments(content string) []string {
 	return []string{strings.TrimSpace(content)}
 }
 
-func renderMemoryRecallContext(items []memoryRecallProjection) string {
-	if len(items) == 0 {
-		return ""
-	}
-
-	sections := make([]string, 0, 2)
-	for _, scopeType := range []string{domain.MemoryScopeKB, domain.MemoryScopeGlobal} {
-		lines := make([]string, 0, len(items))
-		for _, item := range items {
-			if strings.TrimSpace(item.item.ScopeType) != scopeType {
-				continue
-			}
-			line := renderMemoryContextEntry(item)
-			if line != "" {
-				lines = append(lines, line)
-			}
-		}
-		if len(lines) == 0 {
-			continue
-		}
-		sections = append(sections, renderMemoryScopeSection(scopeType)+"\n"+strings.Join(lines, "\n"))
-	}
-	return strings.TrimSpace(strings.Join(sections, "\n\n"))
-}
-
-func renderMemoryContextEntry(item memoryRecallProjection) string {
-	summary := strings.TrimSpace(item.summary)
-	if summary == "" {
-		return ""
-	}
-
-	scope := renderMemoryScopeLabel(item.item)
-	lines := []string{
-		fmt.Sprintf("- [memory_id=%s scope=%s type=%s] %s", strings.TrimSpace(item.item.ID), scope, strings.TrimSpace(item.item.MemoryType), summary),
-	}
-	if detail := strings.TrimSpace(item.detail); detail != "" {
-		lines = append(lines, "  Detail: "+detail)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func renderMemoryScopeSection(scopeType string) string {
-	switch strings.TrimSpace(scopeType) {
-	case domain.MemoryScopeKB:
-		return "KB-Scoped Memories:"
-	case domain.MemoryScopeGlobal:
-		return "Global Memories:"
-	default:
-		return "Other Memories:"
-	}
-}
-
-func renderMemoryScopeLabel(item domain.MemoryItem) string {
-	scope := strings.TrimSpace(item.ScopeType)
-	scopeID := strings.TrimSpace(item.ScopeID)
-	if scope != "" && scopeID != "" {
-		return scope + ":" + scopeID
-	}
-	if scope != "" {
-		return scope
-	}
-	if scopeID != "" {
-		return scopeID
-	}
-	return "unknown"
-}
-
-func projectedMemoryItems(items []memoryRecallProjection) []domain.MemoryItem {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]domain.MemoryItem, 0, len(items))
-	for _, item := range items {
-		result = append(result, item.item)
-	}
-	return result
-}
-
-func projectedMemoryEntries(items []memoryRecallProjection) []RecallMemoryEntry {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]RecallMemoryEntry, 0, len(items))
-	for _, item := range items {
-		result = append(result, RecallMemoryEntry{
-			ID:           strings.TrimSpace(item.item.ID),
-			ScopeType:    strings.TrimSpace(item.item.ScopeType),
-			ScopeID:      strings.TrimSpace(item.item.ScopeID),
-			MemoryType:   strings.TrimSpace(item.item.MemoryType),
-			Summary:      strings.TrimSpace(item.summary),
-			Detail:       strings.TrimSpace(item.detail),
-			HitSources:   memoryHitSources(item),
-			KeywordScore: item.keywordScore,
-			VectorScore:  item.vectorScore,
-			FinalScore:   item.finalScore,
-		})
-	}
-	return result
-}
-
-func projectedScopeCounts(items []memoryRecallProjection) map[string]int {
-	if len(items) == 0 {
-		return nil
-	}
-	counts := map[string]int{}
-	for _, item := range items {
-		counts[strings.TrimSpace(item.item.ScopeType)]++
-	}
-	return counts
-}
-
-func projectedTypeCounts(items []memoryRecallProjection) map[string]int {
-	if len(items) == 0 {
-		return nil
-	}
-	counts := map[string]int{}
-	for _, item := range items {
-		counts[strings.TrimSpace(item.item.MemoryType)]++
-	}
-	return counts
-}
-
-func projectedSourceCounts(items []memoryRecallProjection) map[string]int {
-	if len(items) == 0 {
-		return nil
-	}
-	counts := map[string]int{}
-	for _, item := range items {
-		for _, source := range memoryHitSources(item) {
-			counts[source]++
-		}
-	}
-	if len(counts) == 0 {
-		return nil
-	}
-	return counts
-}
-
-func projectedContributionCounts(items []memoryRecallProjection) map[string]int {
-	if len(items) == 0 {
-		return nil
-	}
-	counts := map[string]int{}
-	for _, item := range items {
-		counts[memoryContributionKind(item)]++
-	}
-	return counts
-}
-
-func projectedMemoryIDs(items []memoryRecallProjection) []string {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		result = append(result, strings.TrimSpace(item.item.ID))
-	}
-	return result
-}
-
-func memoryHitSources(item memoryRecallProjection) []string {
-	sources := make([]string, 0, 2)
-	if item.keywordMatched {
-		sources = append(sources, memoryHitSourceKeyword)
-	}
-	if item.vectorMatched {
-		sources = append(sources, memoryHitSourceVector)
-	}
-	return sources
-}
-
-func memoryContributionKind(item memoryRecallProjection) string {
-	switch {
-	case item.keywordMatched && item.vectorMatched:
-		return memoryContributionHybrid
-	case item.keywordMatched:
-		return memoryContributionKeywordOnly
-	case item.vectorMatched:
-		return memoryContributionVectorOnly
-	default:
-		return memoryContributionNoDirectSignal
-	}
-}
-
 func mergeMemorySearchHits(items []domain.MemoryItem, hits []domain.MemoryItemSearchHit, vectorScores map[string]float32) []domain.MemoryItem {
 	if len(hits) == 0 {
 		return items
@@ -616,17 +405,45 @@ func extractRecallTokens(value string) []string {
 	return result
 }
 
-func summarizeMemoryText(value string, maxRunes int) string {
-	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
-	if value == "" {
-		return ""
+func compactLowerString(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value))
+	for _, r := range strings.ToLower(value) {
+		if unicode.IsSpace(r) {
+			continue
+		}
+		builder.WriteRune(r)
 	}
-	if maxRunes <= 0 {
-		maxRunes = defaultMemorySummaryRunes
+	return builder.String()
+}
+
+func containsCJKString(value string) bool {
+	for _, r := range value {
+		if isCJKRune(r) {
+			return true
+		}
 	}
+	return false
+}
+
+func buildDistinctCJKBigrams(value string) []string {
 	runes := []rune(value)
-	if len(runes) <= maxRunes {
-		return value
+	if len(runes) < 2 {
+		return nil
 	}
-	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
+	result := make([]string, 0, len(runes)-1)
+	seen := make(map[string]struct{})
+	for i := 0; i < len(runes)-1; i++ {
+		bigram := string(runes[i : i+2])
+		if _, ok := seen[bigram]; ok {
+			continue
+		}
+		seen[bigram] = struct{}{}
+		result = append(result, bigram)
+	}
+	return result
+}
+
+func isCJKRune(r rune) bool {
+	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
 }

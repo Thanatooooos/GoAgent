@@ -9,6 +9,7 @@ import (
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/domain"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/distributedid"
@@ -53,7 +54,7 @@ type ragChatRewriteStageResult struct {
 }
 
 type ragChatLongTermMemoryStageResult struct {
-	result RecallMemoriesResult
+	result longtermmemory.RecallMemoriesResult
 }
 
 type ragChatRetrieveStageResult struct {

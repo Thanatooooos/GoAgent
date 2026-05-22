@@ -1,4 +1,4 @@
-package service
+package longtermmemory
 
 import (
 	"context"
@@ -13,94 +13,13 @@ import (
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
-const (
-	defaultMemoryListPageSize   = 20
-	maxMemoryListPageSize       = 100
-	defaultMemoryRecallItems    = 6
-	defaultMemoryRecallMaxChars = 1600
-	defaultMemorySummaryRunes   = 120
-	defaultMemoryDetailRunes    = 220
-)
-
-type SaveExplicitMemoryInput struct {
-	UserID          string
-	ScopeType       string
-	ScopeID         string
-	MemoryType      string
-	SourceMessageID string
-	Content         string
-	Summary         string
-	ExpiresAt       *time.Time
-}
-
-type ListMemoriesInput struct {
-	UserID     string
-	ScopeType  string
-	ScopeID    string
-	MemoryType string
-	Status     string
-	Page       int
-	PageSize   int
-}
-
-type RecallMemoriesInput struct {
-	UserID           string
-	Query            string
-	KnowledgeBaseIDs []string
-}
-
-type RecallMemoriesResult struct {
-	Used               bool
-	Context            string
-	Items              []domain.MemoryItem
-	SelectedEntries    []RecallMemoryEntry
-	CandidateCount     int
-	SelectedCount      int
-	Truncated          bool
-	ScopeCounts        map[string]int
-	SourceCounts       map[string]int
-	ContributionCounts map[string]int
-	TypeCounts         map[string]int
-	SelectedMemoryIDs  []string
-}
-
-type memoryRecallProjection struct {
-	item           domain.MemoryItem
-	summary        string
-	detail         string
-	searchableText string
-	keywordMatched bool
-	vectorMatched  bool
-	keywordScore   int
-	vectorScore    float32
-	finalScore     int
-}
-
-type RecallMemoryEntry struct {
-	ID           string
-	ScopeType    string
-	ScopeID      string
-	MemoryType   string
-	Summary      string
-	Detail       string
-	HitSources   []string
-	KeywordScore int
-	VectorScore  float32
-	FinalScore   int
-}
-
-type MemoryServiceOptions struct {
-	MaxRecallItems        int
-	MaxRecallChars        int
-	MaxCandidatesPerScope int
-	DefaultListStatus     string
-}
-
+// MemoryService owns long-term memory CRUD and exposes the recall capability used by chat.
 type MemoryService struct {
 	repo       port.MemoryItemRepository
 	now        func() time.Time
 	options    MemoryServiceOptions
-	retriever  ExplicitMemoryRecallService
+	recall     RecallService
+	mutationTx MemoryMutationTransaction
 	embedding  aiembedding.EmbeddingService
 	vectorRepo port.MemoryItemEmbeddingRepository
 }
@@ -119,10 +38,10 @@ func NewMemoryService(repo port.MemoryItemRepository, options MemoryServiceOptio
 		options.DefaultListStatus = domain.MemoryStatusActive
 	}
 	return &MemoryService{
-		repo:      repo,
-		now:       time.Now,
-		options:   options,
-		retriever: newMemoryRecallRetriever(repo, options),
+		repo:    repo,
+		now:     time.Now,
+		options: options,
+		recall:  newRecallService(repo, options),
 	}
 }
 
@@ -131,61 +50,19 @@ func (s *MemoryService) SaveExplicitMemory(ctx context.Context, input SaveExplic
 		return domain.MemoryItem{}, exception.NewServiceException("memory item repository is required", nil)
 	}
 
-	userID := strings.TrimSpace(input.UserID)
-	content := strings.TrimSpace(input.Content)
-	scopeType := normalizeMemoryScopeType(input.ScopeType)
-	memoryType := normalizeMemoryType(input.MemoryType)
-	if userID == "" {
-		return domain.MemoryItem{}, exception.NewClientException("user id is required", nil)
-	}
-	if content == "" {
-		return domain.MemoryItem{}, exception.NewClientException("memory content is required", nil)
-	}
-	if !isSupportedMemoryScopeType(scopeType) {
-		return domain.MemoryItem{}, exception.NewClientException("memory scope type must be global or kb", nil)
-	}
-	scopeID := strings.TrimSpace(input.ScopeID)
-	if scopeType == domain.MemoryScopeKB && scopeID == "" {
-		return domain.MemoryItem{}, exception.NewClientException("scope id is required for kb-scoped memory", nil)
-	}
-	if !isSupportedMemoryType(memoryType) {
-		return domain.MemoryItem{}, exception.NewClientException("memory type must be preference, knowledge, or feedback", nil)
-	}
-
-	id, err := nextMemoryItemID()
-	if err != nil {
+	var saved domain.MemoryItem
+	if err := s.runMemoryMutation(ctx, func(ctx context.Context, repo port.MemoryItemRepository) error {
+		item, err := s.saveExplicitMemoryWithRepo(ctx, repo, input)
+		if err != nil {
+			return err
+		}
+		saved = item
+		return nil
+	}); err != nil {
 		return domain.MemoryItem{}, err
 	}
-	now := s.now()
-	summary := strings.TrimSpace(input.Summary)
-	if summary == "" {
-		summary = summarizeMemoryText(content, defaultMemorySummaryRunes)
-	}
-
-	item := domain.MemoryItem{
-		ID:              id,
-		UserID:          userID,
-		ScopeType:       scopeType,
-		ScopeID:         scopeID,
-		MemoryType:      memoryType,
-		SourceMessageID: strings.TrimSpace(input.SourceMessageID),
-		Content:         content,
-		Summary:         summary,
-		Confidence:      1,
-		Status:          domain.MemoryStatusActive,
-		LastConfirmedAt: &now,
-		ExpiresAt:       input.ExpiresAt,
-		CreatedBy:       userID,
-		UpdatedBy:       userID,
-		CreateTime:      now,
-		UpdateTime:      now,
-	}
-	created, err := s.repo.Create(ctx, item)
-	if err != nil {
-		return domain.MemoryItem{}, exception.NewServiceException("failed to create memory item", err)
-	}
-	s.persistMemoryEmbedding(ctx, created)
-	return created, nil
+	s.persistMemoryEmbedding(ctx, saved)
+	return saved, nil
 }
 
 func (s *MemoryService) ListMemories(ctx context.Context, input ListMemoriesInput) ([]domain.MemoryItem, error) {
@@ -222,8 +99,17 @@ func (s *MemoryService) ListMemories(ctx context.Context, input ListMemoriesInpu
 	if scopeID := strings.TrimSpace(input.ScopeID); scopeID != "" {
 		filter.ScopeIDs = []string{scopeID}
 	}
+	if namespace := strings.TrimSpace(input.Namespace); namespace != "" {
+		filter.Namespaces = []string{namespace}
+	}
 	if memoryType := normalizeMemoryType(input.MemoryType); memoryType != "" {
 		filter.MemoryTypes = []string{memoryType}
+	}
+	if category := strings.TrimSpace(input.Category); category != "" {
+		filter.Categories = []string{strings.ToLower(category)}
+	}
+	if canonicalKey := normalizeCanonicalKey(input.CanonicalKey); canonicalKey != "" {
+		filter.CanonicalKeys = []string{canonicalKey}
 	}
 	status := strings.TrimSpace(input.Status)
 	if status == "" {
@@ -262,10 +148,7 @@ func (s *MemoryService) ExpireMemory(ctx context.Context, userID string, id stri
 	}
 
 	now := s.now()
-	item.Status = domain.MemoryStatusExpired
-	item.ExpiresAt = &now
-	item.UpdatedBy = userID
-	item.UpdateTime = now
+	item = markMemoryExpired(item, userID, now)
 	updated, err := s.repo.Update(ctx, item)
 	if err != nil {
 		return domain.MemoryItem{}, exception.NewServiceException("failed to expire memory item", err)
@@ -274,10 +157,24 @@ func (s *MemoryService) ExpireMemory(ctx context.Context, userID string, id stri
 }
 
 func (s *MemoryService) RecallMemories(ctx context.Context, input RecallMemoriesInput) (RecallMemoriesResult, error) {
-	if s == nil || s.retriever == nil {
+	if s == nil || s.recall == nil {
 		return RecallMemoriesResult{}, nil
 	}
-	return s.retriever.RecallMemories(ctx, input)
+	return s.recall.RecallMemories(ctx, input)
+}
+
+func (s *MemoryService) RecallService() RecallService {
+	if s == nil {
+		return nil
+	}
+	return s.recall
+}
+
+func (s *MemoryService) SetMutationTransaction(tx MemoryMutationTransaction) {
+	if s == nil {
+		return
+	}
+	s.mutationTx = tx
 }
 
 func (s *MemoryService) SetEmbeddingSupport(embedding aiembedding.EmbeddingService, repo port.MemoryItemEmbeddingRepository) {
@@ -289,31 +186,7 @@ func (s *MemoryService) SetEmbeddingSupport(embedding aiembedding.EmbeddingServi
 	if repo == nil && embedding == nil {
 		return
 	}
-	s.retriever = NewVectorAwareMemoryRecallRetriever(s.repo, repo, embedding, s.options)
-}
-
-func normalizeMemoryScopeType(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return domain.MemoryScopeGlobal
-	}
-	return value
-}
-
-func normalizeMemoryType(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return domain.MemoryTypeKnowledge
-	}
-	return value
-}
-
-func isSupportedMemoryScopeType(value string) bool {
-	return value == domain.MemoryScopeGlobal || value == domain.MemoryScopeKB
-}
-
-func isSupportedMemoryType(value string) bool {
-	return value == domain.MemoryTypePreference || value == domain.MemoryTypeKnowledge || value == domain.MemoryTypeFeedback
+	s.recall = NewVectorAwareRecallService(s.repo, repo, embedding, s.options)
 }
 
 func memoryScopePriority(scopeType string) int {
@@ -368,14 +241,34 @@ func buildMemoryEmbeddingText(item domain.MemoryItem) string {
 	parts := []string{
 		"scope: " + renderMemoryScopeLabel(item),
 		"type: " + strings.TrimSpace(item.MemoryType),
+		"category: " + strings.TrimSpace(item.Category),
+	}
+	if key := strings.TrimSpace(item.CanonicalKey); key != "" {
+		parts = append(parts, "key: "+key)
 	}
 	if summary := strings.TrimSpace(item.Summary); summary != "" {
 		parts = append(parts, "summary: "+summary)
+	}
+	if displayValue := strings.TrimSpace(item.DisplayValue); displayValue != "" {
+		parts = append(parts, "display: "+displayValue)
 	}
 	if content := strings.TrimSpace(item.Content); content != "" {
 		parts = append(parts, "content: "+content)
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func (s *MemoryService) runMemoryMutation(
+	ctx context.Context,
+	fn func(ctx context.Context, repo port.MemoryItemRepository) error,
+) error {
+	if s == nil || s.repo == nil {
+		return exception.NewServiceException("memory item repository is required", nil)
+	}
+	if s.mutationTx != nil {
+		return s.mutationTx(ctx, fn)
+	}
+	return fn(ctx, s.repo)
 }
 
 func trimMemoryValues(values []string) []string {
@@ -397,4 +290,19 @@ func minMemoryInt(a int, b int) int {
 		return a
 	}
 	return b
+}
+
+func summarizeMemoryText(value string, maxRunes int) string {
+	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
+	if value == "" {
+		return ""
+	}
+	if maxRunes <= 0 {
+		maxRunes = defaultMemorySummaryRunes
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
 }

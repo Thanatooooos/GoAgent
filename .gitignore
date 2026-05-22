@@ -36,3 +36,7 @@ Thumbs.db
 .gocache-eval
 
 .claude
+
+.gocache-chunk
+
+.gocache-rag

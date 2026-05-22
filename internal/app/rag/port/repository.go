@@ -33,9 +33,13 @@ type MemoryItemListFilter struct {
 	UserID          string
 	ScopeTypes      []string
 	ScopeIDs        []string
+	Namespaces      []string
 	MemoryTypes     []string
+	Categories      []string
+	CanonicalKeys   []string
 	Statuses        []string
 	SourceMessageID string
+	SupersedesID    string
 	ListOptions
 }
 

@@ -4,10 +4,11 @@ import (
 	"context"
 	"strings"
 
-	ragmemory "local/rag-project/internal/app/rag/core/memory"
+	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/exception"
 	aichat "local/rag-project/internal/infra-ai/chat"
@@ -86,8 +87,8 @@ type RagChatEventSink interface {
 type RagChatService struct {
 	conversationService *ConversationService
 	messageService      *ConversationMessageService
-	memoryService       ragmemory.Service
-	explicitMemory      ExplicitMemoryRecallService
+	historyService      raghistory.Service
+	longTermMemory      longtermmemory.RecallService
 	rewriteService      ragrewrite.Service
 	sessionRecall       SessionRecallService
 	retrieveService     ragretrieve.Service
@@ -102,7 +103,7 @@ type RagChatService struct {
 func NewRagChatService(
 	conversationService *ConversationService,
 	messageService *ConversationMessageService,
-	memoryService ragmemory.Service,
+	historyService raghistory.Service,
 	rewriteService ragrewrite.Service,
 	retrieveService ragretrieve.Service,
 	promptService *ragprompt.Service,
@@ -112,7 +113,7 @@ func NewRagChatService(
 	return &RagChatService{
 		conversationService: conversationService,
 		messageService:      messageService,
-		memoryService:       memoryService,
+		historyService:      historyService,
 		rewriteService:      rewriteService,
 		retrieveService:     retrieveService,
 		promptService:       promptService,
@@ -143,18 +144,11 @@ func (s *RagChatService) SetSessionRecallService(service SessionRecallService) {
 	s.sessionRecall = service
 }
 
-func (s *RagChatService) SetExplicitMemoryService(service *MemoryService) {
+func (s *RagChatService) SetLongTermMemoryRecallService(service longtermmemory.RecallService) {
 	if s == nil {
 		return
 	}
-	s.explicitMemory = service
-}
-
-func (s *RagChatService) SetExplicitMemoryRecallService(service ExplicitMemoryRecallService) {
-	if s == nil {
-		return
-	}
-	s.explicitMemory = service
+	s.longTermMemory = service
 }
 
 func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagChatEventSink) error {
@@ -281,8 +275,8 @@ func (s *RagChatService) validateDependencies() error {
 	if s.messageService == nil {
 		return exception.NewServiceException("conversation message service is required", nil)
 	}
-	if s.memoryService == nil {
-		return exception.NewServiceException("rag memory service is required", nil)
+	if s.historyService == nil {
+		return exception.NewServiceException("rag history service is required", nil)
 	}
 	if s.retrieveService == nil {
 		return exception.NewServiceException("rag retrieve service is required", nil)

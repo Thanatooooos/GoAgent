@@ -14,6 +14,7 @@ import (
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 	aichat "local/rag-project/internal/infra-ai/chat"
@@ -84,13 +85,13 @@ func (s *sessionRecallServiceStub) Recall(ctx context.Context, input SessionReca
 }
 
 type explicitMemoryRecallStub struct {
-	result RecallMemoriesResult
+	result longtermmemory.RecallMemoriesResult
 	err    error
-	input  RecallMemoriesInput
+	input  longtermmemory.RecallMemoriesInput
 	calls  int
 }
 
-func (s *explicitMemoryRecallStub) RecallMemories(ctx context.Context, input RecallMemoriesInput) (RecallMemoriesResult, error) {
+func (s *explicitMemoryRecallStub) RecallMemories(ctx context.Context, input longtermmemory.RecallMemoriesInput) (longtermmemory.RecallMemoriesResult, error) {
 	s.calls++
 	s.input = input
 	return s.result, s.err
@@ -936,14 +937,14 @@ func TestRunSessionRecallStageTraceContainsSelectedHits(t *testing.T) {
 }
 
 func TestPrepareChatLongTermMemoryFailsOpen(t *testing.T) {
-	explicitMemory := NewMemoryService(memoryItemRepoStub{
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
 		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		listFn: func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
 			return nil, errors.New("memory recall failed")
 		},
-	}, MemoryServiceOptions{})
+	}, longtermmemory.MemoryServiceOptions{})
 
 	service, _ := newPrepareChatTestService(
 		t,
@@ -951,7 +952,7 @@ func TestPrepareChatLongTermMemoryFailsOpen(t *testing.T) {
 		nil,
 		&retrieveServiceStub{},
 	)
-	service.SetExplicitMemoryService(explicitMemory)
+	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
 
 	prepared, err := service.prepareChat(context.Background(), RagChatInput{
 		ConversationID: "conv-1",
@@ -970,7 +971,7 @@ func TestPrepareChatLongTermMemoryFailsOpen(t *testing.T) {
 }
 
 func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
-	explicitMemory := NewMemoryService(memoryItemRepoStub{
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
 		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
@@ -1003,7 +1004,7 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 				},
 			}, nil
 		},
-	}, MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200})
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200})
 
 	service, _ := newPrepareChatTestService(
 		t,
@@ -1015,7 +1016,7 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 		nil,
 		&retrieveServiceStub{},
 	)
-	service.SetExplicitMemoryService(explicitMemory)
+	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
 
 	prepared, err := service.prepareChat(context.Background(), RagChatInput{
 		ConversationID:   "conv-1",
@@ -1065,7 +1066,7 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 
 func TestPrepareChatUsesExplicitMemoryRecallInterface(t *testing.T) {
 	recall := &explicitMemoryRecallStub{
-		result: RecallMemoriesResult{
+		result: longtermmemory.RecallMemoriesResult{
 			Used:    true,
 			Context: "KB-Scoped Memories:\n- [memory_id=mem-1 scope=kb:kb-ops type=knowledge] Retry vector store connectivity first.",
 		},
@@ -1079,7 +1080,7 @@ func TestPrepareChatUsesExplicitMemoryRecallInterface(t *testing.T) {
 		nil,
 		&retrieveServiceStub{},
 	)
-	service.SetExplicitMemoryRecallService(recall)
+	service.SetLongTermMemoryRecallService(recall)
 
 	prepared, err := service.prepareChat(context.Background(), RagChatInput{
 		ConversationID:   "conv-1",
@@ -1176,7 +1177,7 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 	repo := &traceNodeRepoRecorder{}
 	tracer := NewChatTracer(nil, repo)
 	embedding := &embeddingServiceStub{vector: []float32{0.8, 0.2}}
-	explicitMemory := NewMemoryService(memoryItemRepoStub{
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
 		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
@@ -1209,7 +1210,7 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 				},
 			}, nil
 		},
-	}, MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200})
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200})
 	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
 		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
 			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
@@ -1235,7 +1236,7 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 	})
 
 	service := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, tracer)
-	service.SetExplicitMemoryService(explicitMemory)
+	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
 
 	_, err := service.runLongTermMemoryStage(
 		context.Background(),
@@ -1265,11 +1266,11 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 		t.Fatalf("unexpected scopeCounts payload: %+v", payload["scopeCounts"])
 	}
 	sourceCounts, ok := payload["sourceCounts"].(map[string]any)
-	if !ok || sourceCounts[memoryHitSourceKeyword] != float64(2) || sourceCounts[memoryHitSourceVector] != float64(1) {
+	if !ok || sourceCounts["keyword"] != float64(2) || sourceCounts["vector"] != float64(1) {
 		t.Fatalf("unexpected sourceCounts payload: %+v", payload["sourceCounts"])
 	}
 	contributionCounts, ok := payload["contributionCounts"].(map[string]any)
-	if !ok || contributionCounts[memoryContributionHybrid] != float64(1) || contributionCounts[memoryContributionKeywordOnly] != float64(1) {
+	if !ok || contributionCounts["hybrid"] != float64(1) || contributionCounts["keyword_only"] != float64(1) {
 		t.Fatalf("unexpected contributionCounts payload: %+v", payload["contributionCounts"])
 	}
 	selected, ok := payload["selectedMemories"].([]any)
@@ -1287,7 +1288,7 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 		t.Fatalf("expected selected memory detail to be preserved, got %+v", first)
 	}
 	hitSources, ok := first["hitSources"].([]any)
-	if !ok || len(hitSources) != 2 || hitSources[0] != memoryHitSourceKeyword || hitSources[1] != memoryHitSourceVector {
+	if !ok || len(hitSources) != 2 || hitSources[0] != "keyword" || hitSources[1] != "vector" {
 		t.Fatalf("unexpected hitSources payload: %+v", first["hitSources"])
 	}
 	if first["keywordScore"].(float64) <= 0 || first["vectorScore"].(float64) <= 0 || first["finalScore"].(float64) <= first["keywordScore"].(float64) {

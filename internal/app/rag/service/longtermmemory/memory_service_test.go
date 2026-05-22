@@ -1,4 +1,4 @@
-package service
+package longtermmemory
 
 import (
 	"context"
@@ -113,8 +113,23 @@ func TestMemoryServiceSaveExplicitMemoryDefaultsAndPersists(t *testing.T) {
 	if created.ScopeType != domain.MemoryScopeGlobal {
 		t.Fatalf("expected default global scope, got %+v", created)
 	}
+	if created.Namespace != "global:global" {
+		t.Fatalf("expected default namespace, got %+v", created)
+	}
 	if created.MemoryType != domain.MemoryTypeKnowledge {
 		t.Fatalf("expected default knowledge type, got %+v", created)
+	}
+	if created.Category != domain.MemoryCategoryGeneral {
+		t.Fatalf("expected default general category, got %+v", created)
+	}
+	if created.ValueType != domain.MemoryValueTypeText {
+		t.Fatalf("expected default text value type, got %+v", created)
+	}
+	if created.ValueJSON != "We always use Chinese for external responses." {
+		t.Fatalf("expected default value json from content, got %+v", created)
+	}
+	if created.DisplayValue == "" {
+		t.Fatalf("expected display value, got %+v", created)
 	}
 	if created.Status != domain.MemoryStatusActive {
 		t.Fatalf("expected active status, got %+v", created)
@@ -219,6 +234,271 @@ func TestMemoryServiceRecallMemoriesPrioritizesKBAndPreferences(t *testing.T) {
 	}
 	if len(result.SelectedMemoryIDs) != 2 || result.SelectedMemoryIDs[0] != "mem-kb-1" {
 		t.Fatalf("unexpected selected memory ids: %+v", result.SelectedMemoryIDs)
+	}
+}
+
+func TestMemoryServiceSaveExplicitMemorySingleValuedSameValueUpdatesExisting(t *testing.T) {
+	now := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
+	var created domain.MemoryItem
+	var updated domain.MemoryItem
+	service := NewMemoryService(memoryItemRepoStub{
+		createFn: func(_ context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
+			created = item
+			return item, nil
+		},
+		updateFn: func(_ context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
+			updated = item
+			return item, nil
+		},
+		getByID: func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			if len(filter.CanonicalKeys) != 1 || filter.CanonicalKeys[0] != "response.language" {
+				t.Fatalf("unexpected list filter: %+v", filter)
+			}
+			return []domain.MemoryItem{{
+				ID:              "mem-1",
+				UserID:          "user-1",
+				ScopeType:       domain.MemoryScopeGlobal,
+				Namespace:       "global:global",
+				MemoryType:      domain.MemoryTypePreference,
+				Category:        domain.MemoryCategoryResponse,
+				CanonicalKey:    "response.language",
+				ValueType:       domain.MemoryValueTypeEnum,
+				ValueJSON:       "zh-CN",
+				DisplayValue:    "中文",
+				Content:         "以后都用中文回答",
+				Summary:         "默认中文回答",
+				Status:          domain.MemoryStatusActive,
+				LastConfirmedAt: ptrTime(now.Add(-time.Hour)),
+				UpdateTime:      now.Add(-time.Hour),
+			}}, nil
+		},
+	}, MemoryServiceOptions{})
+	service.now = func() time.Time { return now }
+
+	item, err := service.SaveExplicitMemory(context.Background(), SaveExplicitMemoryInput{
+		UserID:       "user-1",
+		CanonicalKey: "response.language",
+		ValueJSON:    "zh-CN",
+		DisplayValue: "中文",
+		Content:      "以后都用中文回答",
+		Summary:      "以后默认使用中文回答",
+	})
+	if err != nil {
+		t.Fatalf("SaveExplicitMemory returned error: %v", err)
+	}
+	if created.ID != "" {
+		t.Fatalf("expected no create on same single-valued memory, got %+v", created)
+	}
+	if updated.ID != "mem-1" || updated.Status != domain.MemoryStatusActive {
+		t.Fatalf("expected existing memory to be updated, got %+v", updated)
+	}
+	if updated.LastConfirmedAt == nil || !updated.LastConfirmedAt.Equal(now) {
+		t.Fatalf("expected last confirmed at to refresh, got %+v", updated)
+	}
+	if updated.Summary != "以后默认使用中文回答" {
+		t.Fatalf("expected richer summary to be merged, got %+v", updated)
+	}
+	if item.ID != "mem-1" {
+		t.Fatalf("expected updated item to be returned, got %+v", item)
+	}
+}
+
+func TestMemoryServiceSaveExplicitMemorySingleValuedDifferentValueSupersedesExisting(t *testing.T) {
+	now := time.Date(2026, 5, 22, 11, 0, 0, 0, time.UTC)
+	var created domain.MemoryItem
+	updates := make([]domain.MemoryItem, 0, 1)
+	service := NewMemoryService(memoryItemRepoStub{
+		createFn: func(_ context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
+			created = item
+			return item, nil
+		},
+		updateFn: func(_ context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
+			updates = append(updates, item)
+			return item, nil
+		},
+		getByID: func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			return []domain.MemoryItem{{
+				ID:           "mem-old",
+				UserID:       "user-1",
+				ScopeType:    domain.MemoryScopeGlobal,
+				Namespace:    "global:global",
+				MemoryType:   domain.MemoryTypePreference,
+				Category:     domain.MemoryCategoryResponse,
+				CanonicalKey: "response.language",
+				ValueType:    domain.MemoryValueTypeEnum,
+				ValueJSON:    "en-US",
+				DisplayValue: "English",
+				Content:      "以后都用英文回答",
+				Status:       domain.MemoryStatusActive,
+				UpdateTime:   now.Add(-2 * time.Hour),
+			}}, nil
+		},
+	}, MemoryServiceOptions{})
+	service.now = func() time.Time { return now }
+
+	item, err := service.SaveExplicitMemory(context.Background(), SaveExplicitMemoryInput{
+		UserID:       "user-1",
+		CanonicalKey: "response.language",
+		ValueJSON:    "zh-CN",
+		DisplayValue: "中文",
+		Content:      "以后都用中文回答",
+		Summary:      "默认中文回答",
+	})
+	if err != nil {
+		t.Fatalf("SaveExplicitMemory returned error: %v", err)
+	}
+	if len(updates) != 1 || updates[0].Status != domain.MemoryStatusSuperseded {
+		t.Fatalf("expected old memory to be superseded, got %+v", updates)
+	}
+	if created.SupersedesID != "mem-old" || created.Status != domain.MemoryStatusActive {
+		t.Fatalf("expected created memory to supersede old one, got %+v", created)
+	}
+	if item.SupersedesID != "mem-old" {
+		t.Fatalf("expected returned item to link superseded id, got %+v", item)
+	}
+}
+
+func TestMemoryServiceSaveExplicitMemoryMultiValuedSameValueMerges(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	var created domain.MemoryItem
+	var updated domain.MemoryItem
+	service := NewMemoryService(memoryItemRepoStub{
+		createFn: func(_ context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
+			created = item
+			return item, nil
+		},
+		updateFn: func(_ context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
+			updated = item
+			return item, nil
+		},
+		getByID: func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			return []domain.MemoryItem{{
+				ID:           "mem-1",
+				UserID:       "user-1",
+				ScopeType:    domain.MemoryScopeKB,
+				ScopeID:      "kb-1",
+				Namespace:    "kb:kb-1",
+				MemoryType:   domain.MemoryTypeKnowledge,
+				Category:     domain.MemoryCategoryProject,
+				CanonicalKey: "project.integrations",
+				ValueType:    domain.MemoryValueTypeText,
+				ValueJSON:    "slack",
+				DisplayValue: "Slack",
+				Content:      "项目集成 Slack",
+				Status:       domain.MemoryStatusActive,
+				UpdateTime:   now.Add(-time.Hour),
+			}}, nil
+		},
+	}, MemoryServiceOptions{})
+	service.now = func() time.Time { return now }
+
+	item, err := service.SaveExplicitMemory(context.Background(), SaveExplicitMemoryInput{
+		UserID:       "user-1",
+		ScopeType:    domain.MemoryScopeKB,
+		ScopeID:      "kb-1",
+		CanonicalKey: "project.integrations",
+		ValueJSON:    "slack",
+		DisplayValue: "Slack",
+		Content:      "项目已经集成 Slack",
+	})
+	if err != nil {
+		t.Fatalf("SaveExplicitMemory returned error: %v", err)
+	}
+	if created.ID != "" {
+		t.Fatalf("expected merge path without create, got %+v", created)
+	}
+	if updated.ID != "mem-1" {
+		t.Fatalf("expected existing memory to be merged, got %+v", updated)
+	}
+	if item.ID != "mem-1" {
+		t.Fatalf("expected merged memory item to be returned, got %+v", item)
+	}
+}
+
+func TestMemoryServiceSaveExplicitMemoryMultiValuedDifferentValueCreatesNew(t *testing.T) {
+	now := time.Date(2026, 5, 22, 13, 0, 0, 0, time.UTC)
+	var created domain.MemoryItem
+	service := NewMemoryService(memoryItemRepoStub{
+		createFn: func(_ context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
+			created = item
+			return item, nil
+		},
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			return []domain.MemoryItem{{
+				ID:           "mem-1",
+				UserID:       "user-1",
+				ScopeType:    domain.MemoryScopeKB,
+				ScopeID:      "kb-1",
+				Namespace:    "kb:kb-1",
+				MemoryType:   domain.MemoryTypeKnowledge,
+				Category:     domain.MemoryCategoryProject,
+				CanonicalKey: "project.integrations",
+				ValueType:    domain.MemoryValueTypeText,
+				ValueJSON:    "slack",
+				DisplayValue: "Slack",
+				Content:      "项目集成 Slack",
+				Status:       domain.MemoryStatusActive,
+				UpdateTime:   now.Add(-time.Hour),
+			}}, nil
+		},
+	}, MemoryServiceOptions{})
+	service.now = func() time.Time { return now }
+
+	item, err := service.SaveExplicitMemory(context.Background(), SaveExplicitMemoryInput{
+		UserID:       "user-1",
+		ScopeType:    domain.MemoryScopeKB,
+		ScopeID:      "kb-1",
+		CanonicalKey: "project.integrations",
+		ValueJSON:    "github",
+		DisplayValue: "GitHub",
+		Content:      "项目集成 GitHub",
+	})
+	if err != nil {
+		t.Fatalf("SaveExplicitMemory returned error: %v", err)
+	}
+	if created.ID == "" || created.Status != domain.MemoryStatusActive {
+		t.Fatalf("expected new active memory, got %+v", created)
+	}
+	if item.ID == "" || item.DisplayValue != "GitHub" {
+		t.Fatalf("expected created item to be returned, got %+v", item)
+	}
+}
+
+func TestMemoryServiceListMemoriesSupportsCategoryAndCanonicalKeyFilters(t *testing.T) {
+	service := NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			if len(filter.Categories) != 1 || filter.Categories[0] != domain.MemoryCategoryProject {
+				t.Fatalf("unexpected category filters: %+v", filter)
+			}
+			if len(filter.CanonicalKeys) != 1 || filter.CanonicalKeys[0] != "project.integrations" {
+				t.Fatalf("unexpected canonical key filters: %+v", filter)
+			}
+			if len(filter.Statuses) != 1 || filter.Statuses[0] != domain.MemoryStatusSuperseded {
+				t.Fatalf("unexpected status filters: %+v", filter)
+			}
+			return []domain.MemoryItem{{ID: "mem-1"}}, nil
+		},
+	}, MemoryServiceOptions{DefaultListStatus: domain.MemoryStatusActive})
+
+	items, err := service.ListMemories(context.Background(), ListMemoriesInput{
+		UserID:       "user-1",
+		Category:     domain.MemoryCategoryProject,
+		CanonicalKey: "project.integrations",
+		Status:       domain.MemoryStatusSuperseded,
+	})
+	if err != nil {
+		t.Fatalf("ListMemories returned error: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "mem-1" {
+		t.Fatalf("unexpected list result: %+v", items)
 	}
 }
 
@@ -452,4 +732,8 @@ func TestMemoryServiceRecallMemoriesTracksKeywordVectorAndHybridContributions(t 
 	if !strings.Contains(result.Context, "memory_id=mem-kb-vector-only") {
 		t.Fatalf("expected vector-backed memory to appear in context, got %q", result.Context)
 	}
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
 }

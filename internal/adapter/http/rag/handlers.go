@@ -10,6 +10,7 @@ import (
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/contextx"
 	"local/rag-project/internal/framework/convention"
@@ -22,7 +23,7 @@ import (
 type Handler struct {
 	conversationService *ragservice.ConversationService
 	messageService      *ragservice.ConversationMessageService
-	memoryService       *ragservice.MemoryService
+	memoryService       *longtermmemory.MemoryService
 	feedbackService     *ragservice.MessageFeedbackService
 	chatService         *ragservice.RagChatService
 }
@@ -31,7 +32,7 @@ type Handler struct {
 func NewHandler(
 	conversationService *ragservice.ConversationService,
 	messageService *ragservice.ConversationMessageService,
-	memoryService *ragservice.MemoryService,
+	memoryService *longtermmemory.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService *ragservice.RagChatService,
 ) *Handler {
@@ -49,7 +50,7 @@ func RegisterRoutes(
 	r gin.IRouter,
 	conversationService *ragservice.ConversationService,
 	messageService *ragservice.ConversationMessageService,
-	memoryService *ragservice.MemoryService,
+	memoryService *longtermmemory.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService *ragservice.RagChatService,
 	traceService *ragservice.TraceService,
@@ -84,6 +85,12 @@ type rememberRequest struct {
 	ScopeType       string `json:"scopeType"`
 	ScopeID         string `json:"scopeId"`
 	MemoryType      string `json:"memoryType"`
+	Category        string `json:"category"`
+	CanonicalKey    string `json:"canonicalKey"`
+	ValueType       string `json:"valueType"`
+	ValueJSON       string `json:"valueJson"`
+	DisplayValue    string `json:"displayValue"`
+	Importance      int    `json:"importance"`
 	SourceMessageID string `json:"sourceMessageId"`
 	Content         string `json:"content"`
 	Summary         string `json:"summary"`
@@ -110,20 +117,30 @@ type messageVO struct {
 }
 
 type memoryItemVO struct {
-	ID              string     `json:"id"`
-	UserID          string     `json:"userId"`
-	ScopeType       string     `json:"scopeType"`
-	ScopeID         string     `json:"scopeId,omitempty"`
-	MemoryType      string     `json:"memoryType"`
-	SourceMessageID string     `json:"sourceMessageId,omitempty"`
-	Content         string     `json:"content"`
-	Summary         string     `json:"summary,omitempty"`
-	Confidence      float64    `json:"confidence"`
-	Status          string     `json:"status"`
-	LastConfirmedAt *time.Time `json:"lastConfirmedAt,omitempty"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
-	CreateTime      *time.Time `json:"createTime,omitempty"`
-	UpdateTime      *time.Time `json:"updateTime,omitempty"`
+	ID               string     `json:"id"`
+	UserID           string     `json:"userId"`
+	ScopeType        string     `json:"scopeType"`
+	ScopeID          string     `json:"scopeId,omitempty"`
+	Namespace        string     `json:"namespace,omitempty"`
+	MemoryType       string     `json:"memoryType"`
+	Category         string     `json:"category,omitempty"`
+	CanonicalKey     string     `json:"canonicalKey,omitempty"`
+	ValueType        string     `json:"valueType,omitempty"`
+	ValueJSON        string     `json:"valueJson,omitempty"`
+	DisplayValue     string     `json:"displayValue,omitempty"`
+	SourceMessageID  string     `json:"sourceMessageId,omitempty"`
+	Content          string     `json:"content"`
+	Summary          string     `json:"summary,omitempty"`
+	Confidence       float64    `json:"confidence"`
+	Importance       int        `json:"importance,omitempty"`
+	Status           string     `json:"status"`
+	LastConfirmedAt  *time.Time `json:"lastConfirmedAt,omitempty"`
+	LastUsedAt       *time.Time `json:"lastUsedAt,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	SupersedesID     string     `json:"supersedesId,omitempty"`
+	ExtractionMethod string     `json:"extractionMethod,omitempty"`
+	CreateTime       *time.Time `json:"createTime,omitempty"`
+	UpdateTime       *time.Time `json:"updateTime,omitempty"`
 }
 
 // ListConversations 返回当前登录用户的会话列表。
@@ -446,14 +463,17 @@ func (h *Handler) ListMemories(c *gin.Context) {
 	if user == nil {
 		return
 	}
-	items, err := h.memoryService.ListMemories(c.Request.Context(), ragservice.ListMemoriesInput{
-		UserID:     user.UserID,
-		ScopeType:  c.Query("scopeType"),
-		ScopeID:    c.Query("scopeId"),
-		MemoryType: c.Query("memoryType"),
-		Status:     c.Query("status"),
-		Page:       parsePositiveInt(c.Query("current"), 1),
-		PageSize:   parsePositiveInt(c.Query("size"), 20),
+	items, err := h.memoryService.ListMemories(c.Request.Context(), longtermmemory.ListMemoriesInput{
+		UserID:       user.UserID,
+		ScopeType:    c.Query("scopeType"),
+		ScopeID:      c.Query("scopeId"),
+		Namespace:    c.Query("namespace"),
+		MemoryType:   c.Query("memoryType"),
+		Category:     c.Query("category"),
+		CanonicalKey: c.Query("canonicalKey"),
+		Status:       c.Query("status"),
+		Page:         parsePositiveInt(c.Query("current"), 1),
+		PageSize:     parsePositiveInt(c.Query("size"), 20),
 	})
 	if err != nil {
 		_ = c.Error(err)
@@ -476,11 +496,17 @@ func (h *Handler) Remember(c *gin.Context) {
 		_ = c.Error(err)
 		return
 	}
-	item, err := h.memoryService.SaveExplicitMemory(c.Request.Context(), ragservice.SaveExplicitMemoryInput{
+	item, err := h.memoryService.SaveExplicitMemory(c.Request.Context(), longtermmemory.SaveExplicitMemoryInput{
 		UserID:          user.UserID,
 		ScopeType:       req.ScopeType,
 		ScopeID:         req.ScopeID,
 		MemoryType:      req.MemoryType,
+		Category:        req.Category,
+		CanonicalKey:    req.CanonicalKey,
+		ValueType:       req.ValueType,
+		ValueJSON:       req.ValueJSON,
+		DisplayValue:    req.DisplayValue,
+		Importance:      req.Importance,
 		SourceMessageID: req.SourceMessageID,
 		Content:         req.Content,
 		Summary:         req.Summary,
@@ -507,19 +533,29 @@ func (h *Handler) ExpireMemory(c *gin.Context) {
 
 func toMemoryItemVO(item domain.MemoryItem) memoryItemVO {
 	return memoryItemVO{
-		ID:              item.ID,
-		UserID:          item.UserID,
-		ScopeType:       item.ScopeType,
-		ScopeID:         item.ScopeID,
-		MemoryType:      item.MemoryType,
-		SourceMessageID: item.SourceMessageID,
-		Content:         item.Content,
-		Summary:         item.Summary,
-		Confidence:      item.Confidence,
-		Status:          item.Status,
-		LastConfirmedAt: item.LastConfirmedAt,
-		ExpiresAt:       item.ExpiresAt,
-		CreateTime:      timePointer(item.CreateTime),
-		UpdateTime:      timePointer(item.UpdateTime),
+		ID:               item.ID,
+		UserID:           item.UserID,
+		ScopeType:        item.ScopeType,
+		ScopeID:          item.ScopeID,
+		Namespace:        item.Namespace,
+		MemoryType:       item.MemoryType,
+		Category:         item.Category,
+		CanonicalKey:     item.CanonicalKey,
+		ValueType:        item.ValueType,
+		ValueJSON:        item.ValueJSON,
+		DisplayValue:     item.DisplayValue,
+		SourceMessageID:  item.SourceMessageID,
+		Content:          item.Content,
+		Summary:          item.Summary,
+		Confidence:       item.Confidence,
+		Importance:       item.Importance,
+		Status:           item.Status,
+		LastConfirmedAt:  item.LastConfirmedAt,
+		LastUsedAt:       item.LastUsedAt,
+		ExpiresAt:        item.ExpiresAt,
+		SupersedesID:     item.SupersedesID,
+		ExtractionMethod: item.ExtractionMethod,
+		CreateTime:       timePointer(item.CreateTime),
+		UpdateTime:       timePointer(item.UpdateTime),
 	}
 }
