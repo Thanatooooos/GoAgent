@@ -1089,3 +1089,302 @@ As of 2026-05-15, the project has completed a meaningful cleanup on the chat ret
 - `searchMode` has effectively been downgraded from a strategy surface to an internal fixed constant on the chat path
 
 This reduces unnecessary resource consumption for greeting/small-talk requests, while also making the RAG chain easier to reason about and easier to maintain.
+
+## 2026-05-20 Additional Update: Tool Module Closure Progress
+
+### Status Summary
+
+- `tool / AgentLoop` has moved further from "usable but still debt-heavy" toward a more stable module-first runtime.
+- The main focus of this round was not adding new tools, but reducing duplicated decision logic, slimming core runtime files, and tightening typed result-view boundaries.
+- The current highest-value engineering result is that high-frequency `system` tool results are now much less dependent on ad hoc `map[string]any` reads in runtime/behavior code.
+
+### Completed So Far
+
+#### 1. AgentLoop and observer/runtime closure advanced by another round
+
+- Added shared runtime helpers:
+  - `internal/app/rag/tool/runtime/evidence_validation.go`
+  - `internal/app/rag/tool/runtime/observation_state.go`
+- Moved common task-node helper logic into:
+  - `internal/app/rag/tool/core/data_helpers.go`
+- Extracted base routing rules out of the orchestration file:
+  - `internal/app/rag/tool/runtime/base_rules.go`
+- Split large runtime/system files so core orchestration is thinner:
+  - `internal/app/rag/tool/modules/system/document_behavior.go`
+  - `internal/app/rag/tool/modules/system/task_behavior.go`
+  - `internal/app/rag/tool/runtime/guidance_diagnosis.go`
+  - `internal/app/rag/tool/runtime/guidance_web.go`
+
+#### 2. Observer modularization continued
+
+- `ToolBehavior` now supports module-provided observer examples.
+- `LLMObserver` was split by responsibility:
+  - `observer_llm.go`
+  - `observer_llm_prompt.go`
+  - `observer_llm_parse.go`
+- High-frequency tool families can now contribute their own few-shot observer examples instead of growing a single central runtime constant.
+
+#### 3. Typed result-view closure for the system tool family
+
+- Added/exported typed views for these results:
+  - `document_query`
+  - `document_chunk_log_query`
+  - `document_list`
+  - `ingestion_task_query`
+  - `ingestion_task_node_query`
+  - `task_list`
+- The new view layer lives mainly in:
+  - `internal/app/rag/tool/modules/system/result_views.go`
+  - `internal/app/rag/tool/views.go`
+- `document_behavior.go` and `task_behavior.go` now render and branch on structured views instead of repeatedly reading raw maps.
+- `IngestionTaskQueryResultView` now owns `LatestInterestingNode()` so "failed/running node" drilling no longer depends on scattered raw-map parsing.
+- `document_root_cause_diagnosis` graph chaining was also updated to reuse the typed `ingestion_task_query` view.
+
+#### 4. Small leftover runtime debt was trimmed
+
+- Removed an unused legacy helper from:
+  - `internal/app/rag/tool/runtime/renderer.go`
+- Continued shrinking mixed old/new style consumption paths so future tool-family expansion is less likely to reintroduce raw data coupling.
+
+#### 5. Test coverage was strengthened
+
+- Added/expanded focused tests for:
+  - base rules
+  - evidence validation
+  - observation state normalization
+  - observer example aggregation
+  - system typed view parsing for document/task/task-node result shapes
+
+### Validation
+
+Validated on 2026-05-20:
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/tool/... -count=1
+```
+
+Current result:
+
+- `internal/app/rag/tool` PASS
+- `internal/app/rag/tool/assembly` PASS
+- `internal/app/rag/tool/invokers/web` PASS
+- `internal/app/rag/tool/planner` PASS
+- `internal/app/rag/tool/runtime` PASS
+
+### Current Conclusion
+
+As of 2026-05-20, the tool module is noticeably closer to a stage-stop "closure point":
+
+- core AgentLoop orchestration is thinner
+- observer behavior is more modular
+- system-family high-frequency results are increasingly typed-view driven
+- adding or extending a tool family now requires less direct editing of core runtime paths
+
+### Remaining Work
+
+- Continue reducing the remaining high-level raw `map[string]any` consumption boundaries, especially where evidence guardrails still operate on generic maps.
+- Consider unifying the `trace` family result-view layout with the same style used by `system` and `web`.
+- Evaluate whether the next best step is:
+  - more tool-module closure
+  - or switching the main engineering focus to `memory V1` retrieval-side integration
+
+## 2026-05-20 Additional Update: Memory V1 Session Recall Closure
+
+### Status Summary
+
+- `memory V1` 的 `Phase 1.5` 已从“存储侧完成、召回侧待做”推进到“会话检索层闭环完成”。
+- 当前系统已经具备：长消息写时摘要、会话内原文 chunk 存储、后续轮自动轻量召回、独立 prompt section 注入，以及基础 trace 可观测性。
+- 这轮工作的重点不是长期记忆，而是把“当前 conversation 内记住长原文细节”的链路真正跑通。
+
+### Completed So Far
+
+#### 1. 修正了长消息存储覆盖范围
+
+- `LongMessageContentProcessor` 现在不仅为超长消息生成 `SessionChunks`，也会为 `3000~12000 token` 的中等长消息生成 `SessionChunks`。
+- 这使实现重新与设计文档对齐：
+  - 中等长消息：摘要进上下文，原文 chunk 进入会话检索层
+  - 超长消息：chunk 摘要后合并总摘要，原文 chunk 进入会话检索层
+
+#### 2. 会话召回链路已落地
+
+- `SessionChunkRepository` 新增：
+  - `ExistsRecallable(...)`
+  - `SearchRecallableByVector(...)`
+- 新增 `SessionRecallService`
+  - 作用域固定为当前 `conversation_id`
+  - 仅召回 `user` 且 `is_summarized=true` 的历史长消息
+  - 排除当前轮刚写入的消息
+  - 先判断是否存在 recallable chunk，再决定是否执行 query embedding
+- `RagChatService.prepareChat(...)` 现在按顺序执行：
+  - `runMemoryStage`
+  - `runUserMessageStage`
+  - `runRuntimeStage`
+  - `runRewriteStage`
+  - `runSessionRecallStage`
+  - `runRetrieveStage`
+
+#### 3. Prompt 与 trace 已形成闭环
+
+- prompt 新增独立的 `SessionContext`
+  - 以 `## 会话上下文片段` system section 注入
+  - 不混入 history，也不并入 `KnowledgeContext`
+- excerpt 选择已按轻量 lexical overlap 落地
+  - 小 chunk 直接回放完整原文
+  - 大 chunk 二次切窗后再择优
+  - 最终固定输出“摘要 + 原文 excerpt”
+- `session_recall` 已有独立 trace node：
+  - `node_id=session_recall`
+  - `node_type=memory`
+  - `node_name=session_chunk_recall`
+- trace extraData 现可表达：
+  - `used`
+  - `candidateCount`
+  - `excerptCount`
+  - `topScore`
+  - `excludedMessageId`
+  - `selectedHits`
+  - `skippedPerMessageLimit`
+  - `truncatedBy`
+
+#### 4. 已补近似真实场景样例
+
+- `RagChatService` 已新增近似端到端样例：
+  - 长日志追问：验证 `retriever timeout` 之类细节可从前一轮日志中补回
+  - 长配置追问：验证 `provider: tavily-mcp` 之类配置细节可从前一轮配置中补回
+- 这些样例同时覆盖：
+  - 长消息写入
+  - `SessionChunk` 落存
+  - follow-up query 召回
+  - prompt 中的 `Session Context Excerpts` 注入
+
+### Validation
+
+Validated on 2026-05-20:
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/service -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/... -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/bootstrap/rag -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/framework/config -count=1
+```
+
+Current result:
+
+- `internal/app/rag/service` PASS
+- `internal/app/rag/...` PASS
+- `internal/bootstrap/rag` PASS
+- `internal/framework/config` PASS
+
+### Current Conclusion
+
+As of 2026-05-20, `memory V1` has a genuinely usable session-recall layer:
+
+- long user messages no longer only summarize away detail
+- detail can be reintroduced in later turns within the same conversation
+- the recall path is now observable and protected by realistic tests
+
+The next major memory milestone is no longer “finish Phase 1.5”, but “start Phase 2 explicit long-term memory”.
+
+## 2026-05-20 Additional Update: Memory V1 Phase 2 Foundation
+
+### Status Summary
+
+- `memory V1` 已经从“Phase 1.5 完成、Phase 2 待启动”推进到“Phase 2 基础闭环完成”。
+- 当前系统已经具备：
+  - `memory_item` 主模型持久化
+  - 显式长期记忆保存入口
+  - `global / kb` 双作用域
+  - 聊天前的最小长期记忆 recall
+  - 独立 prompt section 注入
+- 这轮工作的重点仍然不是长期记忆向量化或自动抽取，而是先把“显式保存 -> 可被后续对话使用”这条最小链路跑通。
+
+### Completed So Far
+
+#### 1. `memory_item` 主模型与持久化已落地
+
+- 新增 `domain.MemoryItem`
+- 新增 migration：
+  - `20260520120000_create_memory_item_table.sql`
+- 新增 Postgres 持久化：
+  - `MemoryItemModel`
+  - `MemoryItemRepository`
+- 当前主字段已覆盖设计中的核心语义：
+  - `scope_type / scope_id`
+  - `memory_type`
+  - `source_message_id`
+  - `content / summary`
+  - `confidence / status`
+  - `last_confirmed_at / expires_at`
+  - `created_by / updated_by`
+
+#### 2. 显式长期记忆服务已可用
+
+- 新增 `MemoryService`
+  - `SaveExplicitMemory(...)`
+  - `ListMemories(...)`
+  - `ExpireMemory(...)`
+  - `RecallMemories(...)`
+- 当前 `SaveExplicitMemory(...)` 支持：
+  - 默认 `scope_type=global`
+  - 默认 `memory_type=knowledge`
+  - 自动生成 summary
+  - 写入后直接落为 `status=active`
+- 当前 recall 仍保持 Phase 2 的轻量实现边界：
+  - 不是向量检索
+  - 先按 `kb` / `global` 作用域取数
+  - 再做轻量 lexical match 与优先级排序
+
+#### 3. 长期记忆 recall 已接入 chat prepare 链路
+
+- `RagChatService` 新增独立 `long_term_memory` stage
+- 当前 `prepareChat(...)` 关键顺序变为：
+  - `runMemoryStage`
+  - `runUserMessageStage`
+  - `runRuntimeStage`
+  - `runRewriteStage`
+  - `runLongTermMemoryStage`
+  - `runSessionRecallStage`
+  - `runRetrieveStage`
+- recall 结果当前通过独立 `MemoryContext` 注入 prompt
+  - 不混入 history
+  - 不并入 `KnowledgeContext`
+  - 与 `SessionContext` 分层保持一致
+
+#### 4. HTTP 接口与 runtime wiring 已补齐
+
+- 新增接口：
+  - `POST /rag/v3/remember`
+  - `POST /rag/v3/memories`
+  - `GET /rag/v3/memories`
+  - `POST /rag/v3/memories/:memoryId/expire`
+- `bootstrap/rag.Runtime` 已注入：
+  - `MemoryItemRepository`
+  - `MemoryService`
+  - `RagChatService.SetExplicitMemoryService(...)`
+
+### Validation
+
+Validated on 2026-05-20:
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/... ./internal/bootstrap/rag ./cmd/server -count=1
+```
+
+Current result:
+
+- `internal/app/rag/...` PASS
+- `internal/bootstrap/rag` PASS
+- `cmd/server` PASS
+
+### Current Conclusion
+
+As of 2026-05-20, `memory V1` is no longer only “session recall complete”:
+
+- explicit long-term memory can now be saved
+- saved memory can participate in later chat preparation
+- Phase 2 has a usable foundation without yet committing to full retrieval projection
+
+The next major memory milestone is now:
+
+- finish the remaining productization / UX surface of Phase 2 if needed
+- then move to `Phase 3` retrieval projection so long-term memory can join retrieval more naturally

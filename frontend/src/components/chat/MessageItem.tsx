@@ -1,5 +1,5 @@
 import * as React from "react";
-import { AlertCircle, Brain, CheckCircle2, ChevronDown, Wrench, XCircle } from "lucide-react";
+import { AlertCircle, Brain, CheckCircle2, ChevronDown, Database, History, Wrench, XCircle } from "lucide-react";
 
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
@@ -26,9 +26,13 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const hasContent = message.content.trim().length > 0;
   const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
   const toolCalls = message.toolCalls ?? [];
+  const memoryEvents = message.memoryEvents ?? [];
+  const sessionRecallEvents = message.sessionRecallEvents ?? [];
   const agentThinks = (message.agentThinks ?? []).filter((item) => item.trim().length > 0);
   const hasAgentThinks = agentThinks.length > 0;
   const hasToolCalls = toolCalls.length > 0;
+  const hasMemoryEvents = memoryEvents.length > 0;
+  const hasSessionRecallEvents = sessionRecallEvents.length > 0;
   const hasFailedTools = toolCalls.some((tc) => tc.status === "failed");
   const fallbackReason = message.fallbackReason?.trim();
 
@@ -102,6 +106,89 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                 <p key={`${idx}-${item}`} className="mt-3 text-sm leading-6 text-sky-900">
                   {item}
                 </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {hasMemoryEvents ? (
+          <div className="overflow-hidden rounded-lg border border-emerald-200 bg-emerald-50">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100">
+                <Database className="h-4 w-4 text-emerald-700" />
+              </div>
+              <span className="text-sm font-medium text-emerald-800">Long message stored</span>
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                {memoryEvents.length}
+              </span>
+            </div>
+            <div className="border-t border-emerald-200 px-4 pb-4">
+              {memoryEvents.map((event, idx) => (
+                <div
+                  key={`${event.messageId}-${idx}`}
+                  className="mt-3 rounded-lg border border-emerald-100 bg-white px-3 py-2.5"
+                >
+                  <p className="text-sm font-medium text-emerald-900">
+                    Message {event.messageId} was summarized for later recall.
+                  </p>
+                  {event.contentSummary ? (
+                    <p className="mt-1 text-xs leading-5 text-emerald-800">{event.contentSummary}</p>
+                  ) : null}
+                  {typeof event.rawContentLength === "number" && event.rawContentLength > 0 ? (
+                    <p className="mt-1 text-xs text-emerald-700">
+                      Raw length: {event.rawContentLength} chars
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {hasSessionRecallEvents ? (
+          <div className="overflow-hidden rounded-lg border border-violet-200 bg-violet-50">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100">
+                <History className="h-4 w-4 text-violet-700" />
+              </div>
+              <span className="text-sm font-medium text-violet-800">Session recall</span>
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700">
+                {sessionRecallEvents.reduce((count, event) => count + (event.hitCount || 0), 0)} hits
+              </span>
+            </div>
+            <div className="border-t border-violet-200 px-4 pb-4">
+              {sessionRecallEvents.map((event, idx) => (
+                <div
+                  key={`${event.query || "recall"}-${idx}`}
+                  className="mt-3 rounded-lg border border-violet-100 bg-white px-3 py-2.5"
+                >
+                  <p className="text-sm font-medium text-violet-900">
+                    Recalled {event.hitCount} earlier message chunk(s)
+                    {event.query ? ` for "${event.query}"` : ""}.
+                  </p>
+                  {typeof event.topScore === "number" && event.topScore > 0 ? (
+                    <p className="mt-1 text-xs text-violet-700">Top score: {event.topScore.toFixed(2)}</p>
+                  ) : null}
+                  {event.hits?.length ? (
+                    <div className="mt-2 space-y-2">
+                      {event.hits.map((hit, hitIndex) => (
+                        <div key={`${hit.messageId}-${hit.chunkIndex}-${hitIndex}`} className="rounded-md bg-violet-50 px-2.5 py-2">
+                          <p className="text-xs font-medium text-violet-900">
+                            {hit.messageId} / chunk {hit.chunkIndex}
+                          </p>
+                          {hit.summary ? (
+                            <p className="mt-1 text-xs text-violet-800">{hit.summary}</p>
+                          ) : null}
+                          {hit.excerpt ? (
+                            <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs text-violet-700">
+                              {hit.excerpt}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               ))}
             </div>
           </div>

@@ -87,6 +87,7 @@ func (s *MessageServiceStore) Append(ctx context.Context, conversationID string,
 		UserID:           userID,
 		Role:             string(message.Role),
 		Content:          strings.TrimSpace(message.Content),
+		ContentSummary:   strings.TrimSpace(message.Content),
 		ThinkingContent:  strings.TrimSpace(message.ThinkingContent),
 		ThinkingDuration: toOptionalInt(message.ThinkingDuration),
 		CreateTime:       now,
@@ -106,11 +107,11 @@ func (s *MessageServiceStore) RefreshCache(context.Context, string, string) erro
 
 // SummaryServiceAdapter 基于摘要 repository 提供摘要读取能力。
 type SummaryServiceAdapter struct {
-	summaryRepo      port.ConversationSummaryRepository
-	messageRepo      port.ConversationMessageRepository
-	chatService      aichat.LLMService
-	startTurns       int
-	maxChars         int
+	summaryRepo port.ConversationSummaryRepository
+	messageRepo port.ConversationMessageRepository
+	chatService aichat.LLMService
+	startTurns  int
+	maxChars    int
 }
 
 // SummaryCompressionOptions 描述摘要压缩的配置参数。
@@ -221,7 +222,7 @@ func (s *SummaryServiceAdapter) CompressIfNeeded(ctx context.Context, conversati
 	}
 
 	// 构建压缩 prompt。
-	compressPrompt := buildCompressPrompt(s.maxChars, historyMessages)
+	compressPrompt := buildCompressPrompt(s.maxChars, latestSummary.Content, historyMessages)
 	request := convention.ChatRequest{
 		Messages: []convention.ChatMessage{
 			convention.SystemMessage(compressPrompt),
@@ -268,11 +269,16 @@ const (
 )
 
 // buildCompressPrompt 构建压缩摘要的 system prompt。
-func buildCompressPrompt(maxChars int, historyMessages []domain.ConversationMessage) string {
+func buildCompressPrompt(maxChars int, previousSummary string, historyMessages []domain.ConversationMessage) string {
 	prompt := fmt.Sprintf(compressSummarySystemPrompt, maxChars)
 	var builder strings.Builder
 	builder.WriteString(prompt)
-	builder.WriteString("\n\n## 对话历史\n")
+	if previousSummary != "" {
+		builder.WriteString("\n\n上一次压缩的摘要为：\n")
+		builder.WriteString(previousSummary)
+		builder.WriteString("\n\n请结合之前的摘要，将以下新对话内容合并到摘要中。")
+	}
+	builder.WriteString("\n\n## 新对话\n")
 
 	for _, msg := range historyMessages {
 		role := msg.Role

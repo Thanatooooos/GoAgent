@@ -71,6 +71,26 @@ rag:
     ttl-minutes: 60
     summary-max-chars: 200
     title-max-length: 30
+    long-message:
+      enabled: true
+      direct-context-max-tokens: 3000
+      chunk-summary-threshold-tokens: 12000
+      large-chunk-target-tokens: 3000
+      large-chunk-overlap-tokens: 300
+      medium-summary-max-chars: 600
+      chunk-summary-max-chars: 240
+      large-summary-max-chars: 900
+    session-recall:
+      enabled: true
+      max-excerpts: 3
+      max-chunks-per-message: 2
+      excerpt-target-tokens: 500
+      excerpt-overlap-tokens: 50
+      max-prompt-tokens: 1500
+    explicit-recall:
+      max-items: 6
+      max-context-chars: 1600
+      max-candidates-per-scope: 24
 
   semaphore:
     document-upload:

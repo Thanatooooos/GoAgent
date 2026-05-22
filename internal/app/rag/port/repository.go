@@ -29,6 +29,16 @@ type ConversationMessageListFilter struct {
 	Limit          int
 }
 
+type MemoryItemListFilter struct {
+	UserID          string
+	ScopeTypes      []string
+	ScopeIDs        []string
+	MemoryTypes     []string
+	Statuses        []string
+	SourceMessageID string
+	ListOptions
+}
+
 type RagTraceRunListFilter struct {
 	TraceID        string
 	ConversationID string
@@ -60,6 +70,36 @@ type ConversationSummaryRepository interface {
 	Create(ctx context.Context, summary domain.ConversationSummary) (domain.ConversationSummary, error)
 	FindLatestByConversationIDAndUserID(ctx context.Context, conversationID string, userID string) (domain.ConversationSummary, error)
 	DeleteByConversationIDAndUserID(ctx context.Context, conversationID string, userID string) error
+}
+
+type MemoryItemRepository interface {
+	Create(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error)
+	Update(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error)
+	GetByID(ctx context.Context, id string) (domain.MemoryItem, error)
+	List(ctx context.Context, filter MemoryItemListFilter) ([]domain.MemoryItem, error)
+}
+
+type MemoryItemEmbeddingSearchFilter struct {
+	UserID     string
+	ScopeTypes []string
+	ScopeIDs   []string
+	Statuses   []string
+	TopK       int
+}
+
+type MemoryItemEmbeddingRepository interface {
+	UpsertBatch(ctx context.Context, embeddings []domain.MemoryItemEmbedding) error
+	SearchByVector(ctx context.Context, vector []float32, filter MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error)
+}
+
+type SessionChunkRepository interface {
+	CreateBatch(ctx context.Context, chunks []domain.SessionChunk) error
+	ExistsRecallable(ctx context.Context, conversationID string, userID string, excludeMessageID string) (bool, error)
+	SearchRecallableByVector(ctx context.Context, conversationID string, userID string, excludeMessageID string, vector []float32, topK int) ([]domain.SessionChunkSearchHit, error)
+}
+
+type SessionChunkEmbeddingRepository interface {
+	UpsertBatch(ctx context.Context, embeddings []domain.SessionChunkEmbedding) error
 }
 
 type MessageFeedbackRepository interface {

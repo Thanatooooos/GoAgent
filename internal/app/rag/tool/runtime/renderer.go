@@ -57,7 +57,7 @@ func renderResultContextDetail(result Result) string {
 }
 
 func renderWebSearchContext(result Result) string {
-		view, ok := webmod.ViewWebSearchResult(result)
+	view, ok := webmod.ViewWebSearchResult(result)
 	if !ok || len(view.Results) == 0 {
 		return ""
 	}
@@ -154,21 +154,6 @@ func renderExternalEvidenceContext(result Result) string {
 		parts = append(parts, line)
 	}
 	return strings.Join(parts, "\n\n")
-}
-
-func renderWebFetchPages(raw any) string {
-	view := webmod.WebFetchResultView{Pages: make([]webmod.WebFetchPageView, 0)}
-	for _, item := range readMapItems(raw) {
-		view.Pages = append(view.Pages, webmod.WebFetchPageView{
-			URL:  strings.TrimSpace(readDataString(item, "url")),
-			Text: strings.TrimSpace(readDataString(item, "text")),
-		})
-	}
-	text := strings.TrimSpace(view.ReadableText())
-	if text == "" {
-		return ""
-	}
-	return text
 }
 
 func truncateRenderedContext(raw string) string {

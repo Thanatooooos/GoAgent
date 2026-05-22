@@ -77,8 +77,10 @@ func NewDiagnosisGraphTool(executor *ragruntime.Executor) (*DiagnosisGraphTool, 
 				return state, nil
 			}
 			state.Results = append(state.Results, result)
-			if nodeID, _, ok := latestInterestingTaskNode(result.Data); ok {
-				state.NodeID = nodeID
+			if view, ok := ragtool.ViewIngestionTaskQueryResult(result); ok {
+				if node, found := view.LatestInterestingNode(); found {
+					state.NodeID = node.NodeID
+				}
 			}
 			return state, nil
 		},
@@ -231,61 +233,4 @@ func diagnosisDepthLabel(chainLength int) string {
 	default:
 		return "diagnose_only"
 	}
-}
-
-func readStringArg(arguments map[string]any, key string) string {
-	if len(arguments) == 0 {
-		return ""
-	}
-	value, ok := arguments[key]
-	if !ok || value == nil {
-		return ""
-	}
-	typed, ok := value.(string)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(typed)
-}
-
-func latestInterestingTaskNode(data map[string]any) (string, string, bool) {
-	if len(data) == 0 {
-		return "", "", false
-	}
-	raw, ok := data["taskNodeSummary"]
-	if !ok || raw == nil {
-		return "", "", false
-	}
-
-	readFromMap := func(item map[string]any) (string, string, bool) {
-		nodeID := strings.TrimSpace(ragcore.ReadStringArg(item, "nodeId"))
-		status := strings.ToLower(strings.TrimSpace(ragcore.ReadStringArg(item, "status")))
-		if nodeID == "" {
-			return "", "", false
-		}
-		if status == "failed" || status == "running" {
-			return nodeID, status, true
-		}
-		return "", "", false
-	}
-
-	switch typed := raw.(type) {
-	case []map[string]any:
-		for _, item := range typed {
-			if nodeID, status, ok := readFromMap(item); ok {
-				return nodeID, status, true
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			mapped, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			if nodeID, status, ok := readFromMap(mapped); ok {
-				return nodeID, status, true
-			}
-		}
-	}
-	return "", "", false
 }

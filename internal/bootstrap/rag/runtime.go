@@ -40,6 +40,7 @@ type Runtime struct {
 	Retrieve     ragretrieve.Service
 	Conversation *ragservice.ConversationService
 	Message      *ragservice.ConversationMessageService
+	Memory       *ragservice.MemoryService
 	Feedback     *ragservice.MessageFeedbackService
 	Trace        *ragservice.TraceService
 	Chat         *ragservice.RagChatService
@@ -88,6 +89,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	messageRepo := postgresrag.NewConversationMessageRepository(db)
 	summaryRepo := postgresrag.NewConversationSummaryRepository(db)
 	feedbackRepo := postgresrag.NewMessageFeedbackRepository(db)
+	memoryItemRepo := postgresrag.NewMemoryItemRepository(db)
+	memoryItemEmbeddingRepo := postgresrag.NewMemoryItemEmbeddingRepository(db)
+	sessionChunkRepo := postgresrag.NewSessionChunkRepository(db)
 	traceRunRepo := postgresrag.NewRagTraceRunRepository(db)
 	traceNodeRepo := postgresrag.NewRagTraceNodeRepository(db)
 	userRepo := postgresuser.NewUserRepository(db)
@@ -107,6 +111,20 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		summaryRepo,
 		feedbackRepo,
 	)
+	messageService.SetContentProcessor(ragservice.NewLongMessageContentProcessor(ragservice.LongMessageProcessorOptions{
+		Enabled:                     cfg.Rag.Memory.LongMessage.Enabled,
+		DirectContextMaxTokens:      cfg.Rag.Memory.LongMessage.DirectContextMaxTokens,
+		ChunkSummaryThresholdTokens: cfg.Rag.Memory.LongMessage.ChunkSummaryThresholdTokens,
+		LargeChunkTargetTokens:      cfg.Rag.Memory.LongMessage.LargeChunkTargetTokens,
+		LargeChunkOverlapTokens:     cfg.Rag.Memory.LongMessage.LargeChunkOverlapTokens,
+		MediumSummaryMaxChars:       cfg.Rag.Memory.LongMessage.MediumSummaryMaxChars,
+		ChunkSummaryMaxChars:        cfg.Rag.Memory.LongMessage.ChunkSummaryMaxChars,
+		LargeSummaryMaxChars:        cfg.Rag.Memory.LongMessage.LargeSummaryMaxChars,
+		Estimator:                   ragservice.RoughTokenEstimator{},
+		ChatService:                 aiRuntime.Chat,
+	}))
+	messageService.SetChunkSink(postgresrag.NewConversationMessageChunkSink(db, aiRuntime.Embedding))
+	messageService.SetCreateTransaction(postgresrag.NewConversationMessageCreateTransaction(db, aiRuntime.Embedding))
 
 	memoryStore := ragmemory.NewMessageServiceStore(conversationRepo, messageRepo)
 	var summaryAdapter ragmemory.SummaryService
@@ -121,6 +139,12 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		summaryAdapter = ragmemory.NewSummaryServiceAdapter(summaryRepo)
 	}
 	memoryService := ragmemory.NewDefaultService(memoryStore, summaryAdapter, cfg.Rag.Memory.HistoryKeepTurns)
+	explicitMemoryService := ragservice.NewMemoryService(memoryItemRepo, ragservice.MemoryServiceOptions{
+		MaxRecallItems:        cfg.Rag.Memory.ExplicitRecall.MaxItems,
+		MaxRecallChars:        cfg.Rag.Memory.ExplicitRecall.MaxContextChars,
+		MaxCandidatesPerScope: cfg.Rag.Memory.ExplicitRecall.MaxCandidatesPerScope,
+	})
+	explicitMemoryService.SetEmbeddingSupport(aiRuntime.Embedding, memoryItemEmbeddingRepo)
 
 	// 根据配置决定是否启用 LLM 查询改写；未启用时 retieve 阶段直接使用原始问题。
 	var rewriteService ragrewrite.Service
@@ -147,6 +171,26 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	if cfg != nil {
 		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
 	}
+	chatService.SetExplicitMemoryService(explicitMemoryService)
+	chatService.SetExplicitMemoryRecallService(ragservice.NewVectorAwareMemoryRecallRetriever(
+		memoryItemRepo,
+		memoryItemEmbeddingRepo,
+		aiRuntime.Embedding,
+		ragservice.MemoryServiceOptions{
+			MaxRecallItems:        cfg.Rag.Memory.ExplicitRecall.MaxItems,
+			MaxRecallChars:        cfg.Rag.Memory.ExplicitRecall.MaxContextChars,
+			MaxCandidatesPerScope: cfg.Rag.Memory.ExplicitRecall.MaxCandidatesPerScope,
+		},
+	))
+	chatService.SetSessionRecallService(ragservice.NewSessionRecallService(sessionChunkRepo, aiRuntime.Embedding, ragservice.SessionRecallOptions{
+		Enabled:              cfg.Rag.Memory.SessionRecall.Enabled,
+		MaxExcerpts:          cfg.Rag.Memory.SessionRecall.MaxExcerpts,
+		MaxChunksPerMessage:  cfg.Rag.Memory.SessionRecall.MaxChunksPerMessage,
+		ExcerptTargetTokens:  cfg.Rag.Memory.SessionRecall.ExcerptTargetTokens,
+		ExcerptOverlapTokens: cfg.Rag.Memory.SessionRecall.ExcerptOverlapTokens,
+		MaxPromptTokens:      cfg.Rag.Memory.SessionRecall.MaxPromptTokens,
+		Estimator:            ragservice.RoughTokenEstimator{},
+	}))
 	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, mcpManager, aiRuntime.Chat))
 
 	return &Runtime{
@@ -156,6 +200,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		Retrieve:     retrieveService,
 		Conversation: conversationService,
 		Message:      messageService,
+		Memory:       explicitMemoryService,
 		Feedback:     feedbackService,
 		Trace:        traceService,
 		Chat:         chatService,
@@ -182,6 +227,10 @@ var ragRequiredTables = []string{
 	"t_conversation",
 	"t_conversation_summary",
 	"t_message",
+	"t_memory_item",
+	"t_memory_item_embedding",
+	"t_session_chunk",
+	"t_session_chunk_embedding",
 	"t_message_feedback",
 	"t_rag_trace_run",
 	"t_rag_trace_node",

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	ragcore "local/rag-project/internal/app/rag/tool/core"
 	graphmod "local/rag-project/internal/app/rag/tool/modules/graph"
 	metamod "local/rag-project/internal/app/rag/tool/modules/meta"
 	systemmod "local/rag-project/internal/app/rag/tool/modules/system"
@@ -44,25 +43,29 @@ func setupTestRegistry() *Registry {
 
 	register("think", ToolSpec{Capability: CapabilityGeneral, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "system"}, metamod.ThinkBehavior())
 	register("web_search", webSpec, webmod.WebSearchBehavior())
-	register("web_fetch", webSpec, webmod.WebFetchBehavior())
+	webFetchSpec := webSpec
+	webFetchSpec.After = []string{"web_search"}
+	register("web_fetch", webFetchSpec, webmod.WebFetchBehavior())
 	register("external_evidence_workflow", webSpec, webmod.ExternalEvidenceWorkflowBehavior())
 	register("document_list", systemSpec, systemmod.DocumentListBehavior())
 	register("task_list", systemSpec, systemmod.TaskListBehavior())
 	register("document_query", systemSpec, systemmod.DocumentQueryBehavior())
 	register("document_chunk_log_query", systemSpec, systemmod.DocumentChunkLogQueryBehavior())
-	register("document_ingestion_diagnose", systemSpec, systemmod.DocumentIngestionDiagnoseBehavior())
-	register("ingestion_task_query", systemSpec, systemmod.IngestionTaskQueryBehavior())
-	register("ingestion_task_node_query", systemSpec, systemmod.IngestionTaskNodeQueryBehavior())
+	diagnoseSpec := systemSpec
+	diagnoseSpec.After = []string{"document_query", "document_chunk_log_query"}
+	register("document_ingestion_diagnose", diagnoseSpec, systemmod.DocumentIngestionDiagnoseBehavior())
+	taskQuerySpec := systemSpec
+	taskQuerySpec.After = []string{"document_ingestion_diagnose", "document_chunk_log_query", "task_ingestion_diagnose"}
+	register("ingestion_task_query", taskQuerySpec, systemmod.IngestionTaskQueryBehavior())
+	nodeQuerySpec := systemSpec
+	nodeQuerySpec.After = []string{"ingestion_task_query", "document_ingestion_diagnose", "task_ingestion_diagnose"}
+	register("ingestion_task_node_query", nodeQuerySpec, systemmod.IngestionTaskNodeQueryBehavior())
 	register("task_ingestion_diagnose", systemSpec, systemmod.TaskIngestionDiagnoseBehavior())
 	register("trace_node_query", traceSpec, tracemod.TraceNodeQueryBehavior())
 	register("trace_retrieval_diagnose", traceSpec, tracemod.TraceRetrievalDiagnoseBehavior())
 	register("document_root_cause_diagnosis", systemSpec, graphmod.DocumentRootCauseDiagnosisBehavior())
 	register("document_diagnose_with_search", systemSpec, graphmod.DocumentDiagnoseWithSearchBehavior())
 
-	ragruntime.SetNextActionRegistry(r)
-	ragruntime.SetWorkflowControlRegistry(r)
-	SetLegacySpecRegistry(r)
-	ragcore.SetInferBehavior(r)
 	testRegistry = r
 	return r
 }
@@ -128,9 +131,100 @@ func (t staticTool) Invoke(_ context.Context, call Call) (Result, error) {
 	return t.result, nil
 }
 
+func registerKnownTestTool(registry *Registry, tool staticTool) {
+	systemSpec := ToolSpec{
+		Capability:      CapabilityDiagnosis,
+		EvidenceSources: []string{EvidenceSourceSystemRecords},
+		ExecutionMode:   ExecutionModeReadOnly,
+		RiskLevel:       RiskLevelLow,
+		ReadOnly:        true,
+		Family:          "system",
+	}
+	webSpec := ToolSpec{
+		Capability:      CapabilitySearch,
+		EvidenceSources: []string{EvidenceSourceExternalWeb},
+		ExecutionMode:   ExecutionModeReadOnly,
+		RiskLevel:       RiskLevelLow,
+		ReadOnly:        true,
+		Family:          "web",
+	}
+	traceSpec := ToolSpec{
+		Capability:      CapabilityDiagnosis,
+		EvidenceSources: []string{EvidenceSourceRAGTrace},
+		ExecutionMode:   ExecutionModeReadOnly,
+		RiskLevel:       RiskLevelLow,
+		ReadOnly:        true,
+		Family:          "trace",
+	}
+
+	var (
+		spec     ToolSpec
+		behavior ToolBehavior
+	)
+	switch tool.definition.Name {
+	case "think":
+		spec = ToolSpec{Capability: CapabilityGeneral, ExecutionMode: ExecutionModeReadOnly, RiskLevel: RiskLevelLow, ReadOnly: true, Family: "system"}
+		behavior = metamod.ThinkBehavior()
+	case "web_search":
+		spec = webSpec
+		behavior = webmod.WebSearchBehavior()
+	case "web_fetch":
+		spec = webSpec
+		spec.After = []string{"web_search"}
+		behavior = webmod.WebFetchBehavior()
+	case "external_evidence_workflow":
+		spec = webSpec
+		behavior = webmod.ExternalEvidenceWorkflowBehavior()
+	case "trace_node_query":
+		spec = traceSpec
+		behavior = tracemod.TraceNodeQueryBehavior()
+	case "trace_retrieval_diagnose":
+		spec = traceSpec
+		behavior = tracemod.TraceRetrievalDiagnoseBehavior()
+	case "document_root_cause_diagnosis":
+		spec = systemSpec
+		behavior = graphmod.DocumentRootCauseDiagnosisBehavior()
+	case "document_diagnose_with_search":
+		spec = systemSpec
+		behavior = graphmod.DocumentDiagnoseWithSearchBehavior()
+	case "document_list":
+		spec = systemSpec
+		behavior = systemmod.DocumentListBehavior()
+	case "task_list":
+		spec = systemSpec
+		behavior = systemmod.TaskListBehavior()
+	case "document_query":
+		spec = systemSpec
+		behavior = systemmod.DocumentQueryBehavior()
+	case "document_chunk_log_query":
+		spec = systemSpec
+		behavior = systemmod.DocumentChunkLogQueryBehavior()
+	case "document_ingestion_diagnose":
+		spec = systemSpec
+		spec.After = []string{"document_query", "document_chunk_log_query"}
+		behavior = systemmod.DocumentIngestionDiagnoseBehavior()
+	case "ingestion_task_query":
+		spec = systemSpec
+		spec.After = []string{"document_ingestion_diagnose", "document_chunk_log_query", "task_ingestion_diagnose"}
+		behavior = systemmod.IngestionTaskQueryBehavior()
+	case "ingestion_task_node_query":
+		spec = systemSpec
+		spec.After = []string{"ingestion_task_query", "document_ingestion_diagnose", "task_ingestion_diagnose"}
+		behavior = systemmod.IngestionTaskNodeQueryBehavior()
+	case "task_ingestion_diagnose":
+		spec = systemSpec
+		behavior = systemmod.TaskIngestionDiagnoseBehavior()
+	default:
+		registry.MustRegister(tool)
+		return
+	}
+
+	registry.MustRegisterModule(NewLegacyToolAdapterWithBehavior(tool, spec, behavior).Module())
+}
+
 func TestAgentLoopRunsMultipleRounds(t *testing.T) {
 	registry := NewRegistry()
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "document_ingestion_diagnose",
 			Description: "diagnose document",
@@ -152,7 +246,7 @@ func TestAgentLoopRunsMultipleRounds(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "ingestion_task_node_query",
 			Description: "query task node",
@@ -284,7 +378,7 @@ func TestPlanCallsFromHintCallsUsesStructuredArguments(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromDocumentQuery(t *testing.T) {
-	calls := ragruntime.PlanCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResultsWithRegistry([]Result{
 		{
 			Name: "document_query",
 			Data: map[string]any{
@@ -293,7 +387,7 @@ func TestPlanCallsFromResultsFallsBackFromDocumentQuery(t *testing.T) {
 				"processMode": "pipeline",
 			},
 		},
-	})
+	}, WorkflowInput{}, testRegistry)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 fallback call, got %d", len(calls))
 	}
@@ -398,7 +492,7 @@ func TestPlanWithBaseRulesOpenEndedNotTriggeredForSpecificID(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromChunkLogToTaskQuery(t *testing.T) {
-	calls := ragruntime.PlanCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResultsWithRegistry([]Result{
 		{
 			Name: "document_chunk_log_query",
 			Data: map[string]any{
@@ -408,7 +502,7 @@ func TestPlanCallsFromResultsFallsBackFromChunkLogToTaskQuery(t *testing.T) {
 				"runningLogCount": 1,
 			},
 		},
-	})
+	}, WorkflowInput{}, testRegistry)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 fallback call, got %d", len(calls))
 	}
@@ -425,7 +519,7 @@ func TestPlanCallsFromResultsFallsBackFromChunkLogToTaskQuery(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromTaskQueryToNodeQuery(t *testing.T) {
-	calls := ragruntime.PlanCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResultsWithRegistry([]Result{
 		{
 			Name: "ingestion_task_query",
 			Data: map[string]any{
@@ -437,7 +531,7 @@ func TestPlanCallsFromResultsFallsBackFromTaskQueryToNodeQuery(t *testing.T) {
 				},
 			},
 		},
-	})
+	}, WorkflowInput{}, testRegistry)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 fallback call, got %d", len(calls))
 	}
@@ -453,7 +547,7 @@ func TestPlanCallsFromResultsFallsBackFromTaskQueryToNodeQuery(t *testing.T) {
 }
 
 func TestPlanCallsFromResultsFallsBackFromWebSearchToWebFetch(t *testing.T) {
-	calls := ragruntime.PlanCallsFromResults([]Result{
+	calls := ragruntime.PlanCallsFromResultsWithRegistry([]Result{
 		{
 			Name: "web_search",
 			Data: map[string]any{
@@ -463,7 +557,7 @@ func TestPlanCallsFromResultsFallsBackFromWebSearchToWebFetch(t *testing.T) {
 				},
 			},
 		},
-	})
+	}, WorkflowInput{}, testRegistry)
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 fallback call, got %d", len(calls))
 	}
@@ -635,7 +729,7 @@ func TestObserveWebFetchUsesCombinedTextFromPages(t *testing.T) {
 
 func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 	registry := NewRegistry()
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "document_root_cause_diagnosis",
 			Description: "diagnosis graph: chains diagnose → task_query → node_query",
@@ -656,7 +750,7 @@ func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "document_ingestion_diagnose",
 			Description: "diagnose document ingestion",
@@ -675,7 +769,7 @@ func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "ingestion_task_query",
 			Description: "query ingestion task",
@@ -699,7 +793,7 @@ func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "ingestion_task_node_query",
 			Description: "query task node",
@@ -741,7 +835,7 @@ func TestAgentLoopDocRunScenarioStaysInVerificationPath(t *testing.T) {
 
 func TestAgentLoopTaskRunScenarioStaysInVerificationPath(t *testing.T) {
 	registry := NewRegistry()
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "task_ingestion_diagnose",
 			Description: "diagnose task ingestion",
@@ -759,7 +853,7 @@ func TestAgentLoopTaskRunScenarioStaysInVerificationPath(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "ingestion_task_query",
 			Description: "query ingestion task",
@@ -783,7 +877,7 @@ func TestAgentLoopTaskRunScenarioStaysInVerificationPath(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "ingestion_task_node_query",
 			Description: "query task node",
@@ -836,7 +930,7 @@ func TestAgentLoopTaskRunScenarioStaysInVerificationPath(t *testing.T) {
 
 func TestAgentLoopThinkToolCapturesReasoningInTrace(t *testing.T) {
 	registry := NewRegistry()
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "think",
 			Description: "Record a reasoning thought before taking action.",
@@ -852,7 +946,7 @@ func TestAgentLoopThinkToolCapturesReasoningInTrace(t *testing.T) {
 			}
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "document_query",
 			Description: "query document",
@@ -870,7 +964,7 @@ func TestAgentLoopThinkToolCapturesReasoningInTrace(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "document_ingestion_diagnose",
 			Description: "diagnose document",
@@ -972,7 +1066,7 @@ func TestAgentLoopThinkToolCapturesReasoningInTrace(t *testing.T) {
 
 func TestAgentLoopRejectsPlannerCallWithInventedNodeID(t *testing.T) {
 	registry := NewRegistry()
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "ingestion_task_query",
 			Description: "query task",
@@ -995,7 +1089,7 @@ func TestAgentLoopRejectsPlannerCallWithInventedNodeID(t *testing.T) {
 			},
 		},
 	})
-	registry.MustRegister(staticTool{
+	registerKnownTestTool(registry, staticTool{
 		definition: Definition{
 			Name:        "ingestion_task_node_query",
 			Description: "query task node",
@@ -1257,4 +1351,165 @@ func TestAgentLoopParallelToolCallsImproveWallClockDuration(t *testing.T) {
 	if parallelDuration > serialDuration-(15*time.Millisecond) {
 		t.Fatalf("expected parallel run to save noticeable time, got serial=%s parallel=%s", serialDuration, parallelDuration)
 	}
+}
+
+func TestAgentLoopDependencyLevelsOrdering(t *testing.T) {
+	registry := NewRegistry()
+	registerKnownTestTool(registry, staticTool{
+		definition: Definition{
+			Name:        "web_search",
+			Description: "search the web",
+			ReadOnly:    true,
+			Parameters:  []ParameterDefinition{{Name: "query", Type: ParamTypeString, Required: true}},
+		},
+		result: Result{Name: "web_search", Status: CallStatusSuccess, Summary: "found 3 results",
+			Data: map[string]any{"urls": []string{"https://a.com", "https://b.com"}}},
+		delay: 40 * time.Millisecond,
+	})
+	registerKnownTestTool(registry, staticTool{
+		definition: Definition{
+			Name:        "web_fetch",
+			Description: "fetch web pages",
+			ReadOnly:    true,
+			Parameters:  []ParameterDefinition{{Name: "urls", Type: ParamTypeArray, Required: true}},
+		},
+		result: Result{Name: "web_fetch", Status: CallStatusSuccess, Summary: "fetched 2 pages"},
+		delay:  40 * time.Millisecond,
+	})
+	planner := &plannerStub{
+		results: []PlanResult{{
+			Calls: []Call{
+				{Name: "web_search", Arguments: map[string]any{"query": "error X"}},
+				{Name: "web_fetch", Arguments: map[string]any{"urls": []string{"https://a.com"}}},
+			},
+		}},
+	}
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
+	loop.SetPlanner(planner)
+	loop.SetParallelToolCalls(true, 2)
+
+	result, err := loop.Run(context.Background(), WorkflowInput{
+		Question: "search and fetch about error X",
+		TraceID:  "trace-1",
+	})
+	if err != nil {
+		t.Fatalf("run agent loop: %v", err)
+	}
+	if len(result.Rounds) == 0 {
+		t.Fatal("expected at least 1 round")
+	}
+	mode := result.Rounds[0].ExecutionMode
+	if !strings.Contains(mode, "parallel_levels=") {
+		t.Fatalf("expected dependency-ordered parallel mode, got %q", mode)
+	}
+	if result.Rounds[0].WallClockDurationMs < 70 {
+		t.Fatalf("expected wall clock >= ~80ms (serialized by dependency levels), got %dms", result.Rounds[0].WallClockDurationMs)
+	}
+	t.Logf("dependency levels mode=%s wall=%dms totalTool=%dms", mode, result.Rounds[0].WallClockDurationMs, result.Rounds[0].TotalToolDurationMs)
+}
+
+func TestAgentLoopDependencyLevelsPreservesParallelism(t *testing.T) {
+	var maxInFlight int32
+	var currentInFlight int32
+	recordConcurrency := func() {
+		n := atomic.AddInt32(&currentInFlight, 1)
+		if n > atomic.LoadInt32(&maxInFlight) {
+			atomic.StoreInt32(&maxInFlight, n)
+		}
+		time.Sleep(30 * time.Millisecond)
+		atomic.AddInt32(&currentInFlight, -1)
+	}
+
+	registry := NewRegistry()
+	registerKnownTestTool(registry, staticTool{
+		definition: Definition{
+			Name:        "document_query",
+			Description: "query document",
+			ReadOnly:    true,
+			Parameters:  []ParameterDefinition{{Name: "documentId", Type: ParamTypeString, Required: true}},
+		},
+		result:   Result{Name: "document_query", Status: CallStatusSuccess, Summary: "found doc-1"},
+		onInvoke: recordConcurrency,
+	})
+	registerKnownTestTool(registry, staticTool{
+		definition: Definition{
+			Name:        "trace_node_query",
+			Description: "query trace",
+			ReadOnly:    true,
+			Parameters:  []ParameterDefinition{{Name: "traceId", Type: ParamTypeString, Required: true}},
+		},
+		result:   Result{Name: "trace_node_query", Status: CallStatusSuccess, Summary: "found trace-1"},
+		onInvoke: recordConcurrency,
+	})
+	planner := &plannerStub{
+		results: []PlanResult{{
+			Calls: []Call{
+				{Name: "document_query", Arguments: map[string]any{"documentId": "doc-1"}},
+				{Name: "trace_node_query", Arguments: map[string]any{"traceId": "trace-1"}},
+			},
+		}},
+	}
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
+	loop.SetPlanner(planner)
+	loop.SetParallelToolCalls(true, 2)
+
+	if _, err := loop.Run(context.Background(), WorkflowInput{
+		Question: "check doc-1 and trace-1",
+		TraceID:  "trace-1",
+	}); err != nil {
+		t.Fatalf("run agent loop: %v", err)
+	}
+	if atomic.LoadInt32(&maxInFlight) < 2 {
+		t.Fatalf("expected parallel execution (independent tools have no deps), got maxInFlight=%d", maxInFlight)
+	}
+	t.Logf("independent tools ran in parallel, maxInFlight=%d", maxInFlight)
+}
+
+func TestAgentLoopDependencyLevelsCycleFallback(t *testing.T) {
+	registry := NewRegistry()
+	registry.MustRegisterModule(ToolModule{
+		Name:    "tool_a",
+		Invoker: testInvoker{},
+		Spec: ToolSpec{
+			Definition: Definition{Name: "tool_a", ReadOnly: true},
+			ReadOnly:   true,
+			After:      []string{"tool_b"},
+		},
+	}.Normalize())
+	registry.MustRegisterModule(ToolModule{
+		Name:    "tool_b",
+		Invoker: testInvoker{},
+		Spec: ToolSpec{
+			Definition: Definition{Name: "tool_b", ReadOnly: true},
+			ReadOnly:   true,
+			After:      []string{"tool_a"},
+		},
+	}.Normalize())
+
+	planner := &plannerStub{
+		results: []PlanResult{{
+			Calls: []Call{
+				{Name: "tool_a", Arguments: map[string]any{}},
+				{Name: "tool_b", Arguments: map[string]any{}},
+			},
+		}},
+	}
+	loop := ragruntime.NewAgentLoop(ragruntime.NewExecutor(registry))
+	loop.SetPlanner(planner)
+	loop.SetParallelToolCalls(true, 2)
+
+	result, err := loop.Run(context.Background(), WorkflowInput{
+		Question: "test cycle",
+		TraceID:  "trace-1",
+	})
+	if err != nil {
+		t.Fatalf("run agent loop: %v", err)
+	}
+	if len(result.Rounds) == 0 {
+		t.Fatal("expected at least 1 round despite cycle")
+	}
+	if strings.Contains(result.Rounds[0].ExecutionMode, "parallel_levels=") {
+		t.Fatalf("expected flat parallel fallback for cycle, got %q", result.Rounds[0].ExecutionMode)
+	}
+	t.Logf("cycle fallback: mode=%s", result.Rounds[0].ExecutionMode)
 }

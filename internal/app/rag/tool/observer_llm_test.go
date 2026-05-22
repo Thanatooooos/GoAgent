@@ -358,3 +358,33 @@ func TestLLMObserverBuildUserPromptIncludesRewriteAndRetrieveContext(t *testing.
 		t.Fatal("prompt should include retrieved chunk summary")
 	}
 }
+
+func TestLLMObserverBuildSystemPromptCollectsRegistryExamples(t *testing.T) {
+	mock := &mockObserverLLMService{response: `{"done":true,"reasoning":"enough","state":{"phase":"complete","confidence":0.8,"checkedTools":["document_query"],"nextHintCalls":[]}}`}
+	observer := ragruntime.NewLLMObserver(mock)
+
+	_, err := observer.Observe(context.Background(), ObserveInput{
+		Question:        "why did doc-1 fail?",
+		Round:           1,
+		ToolRegistry:    testRegistry,
+		ToolDefinitions: testRegistry.ListDefinitions(),
+		RoundResults: []Result{{
+			Name: "document_query",
+			Data: map[string]any{
+				"documentId":  "doc-1",
+				"status":      "failed",
+				"processMode": "pipeline",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	if len(mock.requests) != 1 {
+		t.Fatalf("expected 1 llm request, got %d", len(mock.requests))
+	}
+	systemPrompt := mock.requests[0].Messages[0].Content
+	if !strings.Contains(systemPrompt, "The document is in a pipeline abnormal state:") {
+		t.Fatalf("expected system prompt to include module-provided observer example, got %q", systemPrompt)
+	}
+}

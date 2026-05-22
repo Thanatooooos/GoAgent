@@ -65,32 +65,30 @@ func TestWebFetchBehaviorObserveRenderAndGuidance(t *testing.T) {
 		t.Fatalf("unexpected observation: %+v", observation)
 	}
 
-	rendered := behavior.RenderContext(result)
+	rendered := ragruntime.RenderContext([]Result{result})
 	if !strings.Contains(rendered, "Fetched web content") {
 		t.Fatalf("expected fetched content render, got %q", rendered)
 	}
 
-	guidance := behavior.BuildGuidance(result, GuidanceInput{
-		AllResults: []Result{
-			{
-				Name:    "document_list",
-				Status:  CallStatusSuccess,
-				Summary: "matched 1 local document",
-			},
-			{
-				Name:   "web_search",
-				Status: CallStatusSuccess,
-				Data: map[string]any{
-					"results": []map[string]any{
-						{"title": "Official Guide", "url": "https://example.com/a", "policy": "allow", "sourceType": "official_docs"},
-					},
+	guidance := ragruntime.BuildAnswerGuidanceWithRegistry(testRegistry, []Result{
+		{
+			Name:    "document_list",
+			Status:  CallStatusSuccess,
+			Summary: "matched 1 local document",
+		},
+		{
+			Name:   "web_search",
+			Status: CallStatusSuccess,
+			Data: map[string]any{
+				"results": []map[string]any{
+					{"title": "Official Guide", "url": "https://example.com/a", "policy": "allow", "sourceType": "official_docs"},
 				},
 			},
-			result,
 		},
+		result,
 	})
-	if len(guidance) == 0 || !strings.Contains(guidance[0].Text, "搜索结果来源") {
-		t.Fatalf("expected web guidance text, got %+v", guidance)
+	if !strings.Contains(guidance, "搜索结果来源") {
+		t.Fatalf("expected web guidance text, got %q", guidance)
 	}
 }
 
@@ -146,23 +144,21 @@ func TestExternalEvidenceWorkflowBehaviorObserveRenderAndGuidance(t *testing.T) 
 		t.Fatalf("expected external evidence observe hook to finish, got handled=%v observation=%+v", handled, observation)
 	}
 
-	rendered := behavior.RenderContext(result)
+	rendered := ragruntime.RenderContext([]Result{result})
 	if !strings.Contains(rendered, "Readiness: ready") {
 		t.Fatalf("expected readiness in render context, got %q", rendered)
 	}
 
-	guidance := behavior.BuildGuidance(result, GuidanceInput{
-		AllResults: []Result{
-			{
-				Name:    "document_list",
-				Status:  CallStatusSuccess,
-				Summary: "matched 1 local document about Go syntax basics",
-			},
-			result,
+	guidance := ragruntime.BuildAnswerGuidanceWithRegistry(testRegistry, []Result{
+		{
+			Name:    "document_list",
+			Status:  CallStatusSuccess,
+			Summary: "matched 1 local document about Go syntax basics",
 		},
+		result,
 	})
-	if len(guidance) == 0 || !strings.Contains(guidance[0].Text, "外部来源质量要求") {
-		t.Fatalf("expected external evidence guidance, got %+v", guidance)
+	if !strings.Contains(guidance, "外部来源质量要求") {
+		t.Fatalf("expected external evidence guidance, got %q", guidance)
 	}
 }
 
@@ -275,7 +271,7 @@ func TestAgentLoopWebModulesUseBehaviorDrivenContinuation(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
-		Question: "golang generics 是什么",
+		Question: "golang generics 鏄粈涔?",
 	})
 	if err != nil {
 		t.Fatalf("run agent loop: %v", err)

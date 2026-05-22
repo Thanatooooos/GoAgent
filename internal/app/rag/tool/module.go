@@ -23,10 +23,3 @@ func NewLegacyToolAdapterWithSpec(tool Tool, spec ToolSpec) LegacyToolAdapter {
 func NewLegacyToolAdapterWithBehavior(tool Tool, spec ToolSpec, behavior ToolBehavior) LegacyToolAdapter {
 	return ragcore.NewLegacyToolAdapterWithBehavior(tool, spec, behavior)
 }
-
-func inferLegacyBehavior(name string) ToolBehavior {
-	if ragcore.InferBehavior == nil {
-		return ToolBehavior{}
-	}
-	return ragcore.InferBehavior(name)
-}

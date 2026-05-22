@@ -105,6 +105,7 @@ func registerWebTools(registry *ragcore.Registry, cfg *config.Config, mcpManager
 			ApprovalRequirement: ragcore.ApprovalRequirementNone,
 			ReadOnly:            true,
 			Family:              "web",
+			After:               []string{"web_search"},
 		},
 		webmod.WebFetchBehavior(),
 	)
@@ -129,14 +130,22 @@ func registerSystemTools(
 	registerModule(registry, raginvsystem.NewTaskListTool(taskService), spec, systemmod.TaskListBehavior())
 	registerModule(registry, raginvsystem.NewDocumentQueryTool(documentService), spec, systemmod.DocumentQueryBehavior())
 
+	diagnoseSpec := spec
+	diagnoseSpec.After = []string{"document_query", "document_chunk_log_query"}
 	documentDiagnoseTool := raginvsystem.NewDocumentIngestionDiagnoseTool(documentService)
 	documentDiagnoseTool.SetTaskNodeReader(taskService)
-	registerModule(registry, documentDiagnoseTool, spec, systemmod.DocumentIngestionDiagnoseBehavior())
+	registerModule(registry, documentDiagnoseTool, diagnoseSpec, systemmod.DocumentIngestionDiagnoseBehavior())
 
 	registerModule(registry, raginvsystem.NewDocumentChunkLogQueryTool(documentService), spec, systemmod.DocumentChunkLogQueryBehavior())
 	registerModule(registry, raginvsystem.NewTaskIngestionDiagnoseTool(taskService), spec, systemmod.TaskIngestionDiagnoseBehavior())
-	registerModule(registry, raginvsystem.NewIngestionTaskQueryTool(taskService), spec, systemmod.IngestionTaskQueryBehavior())
-	registerModule(registry, raginvsystem.NewIngestionTaskNodeQueryTool(taskService), spec, systemmod.IngestionTaskNodeQueryBehavior())
+
+	taskQuerySpec := spec
+	taskQuerySpec.After = []string{"document_ingestion_diagnose", "document_chunk_log_query", "task_ingestion_diagnose"}
+	registerModule(registry, raginvsystem.NewIngestionTaskQueryTool(taskService), taskQuerySpec, systemmod.IngestionTaskQueryBehavior())
+
+	nodeQuerySpec := spec
+	nodeQuerySpec.After = []string{"ingestion_task_query", "document_ingestion_diagnose", "task_ingestion_diagnose"}
+	registerModule(registry, raginvsystem.NewIngestionTaskNodeQueryTool(taskService), nodeQuerySpec, systemmod.IngestionTaskNodeQueryBehavior())
 }
 
 func registerTraceTools(

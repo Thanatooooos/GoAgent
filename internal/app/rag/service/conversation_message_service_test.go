@@ -152,6 +152,272 @@ func TestConversationMessageServiceAddMessageCreatesRecord(t *testing.T) {
 	if created.Role != "user" || created.Content != "你好" {
 		t.Fatalf("unexpected message: %#v", created)
 	}
+	if created.IsSummarized {
+		t.Fatalf("expected unsummarized message, got %#v", created)
+	}
+}
+
+func TestConversationMessageServiceAddMessageStoresSummaryFields(t *testing.T) {
+	var created domain.ConversationMessage
+	service := NewConversationMessageService(
+		conversationMessageConversationRepoStub{getByConversationIDAndUserFn: func(context.Context, string, string) (domain.Conversation, error) {
+			return domain.Conversation{}, nil
+		}},
+		conversationMessageRepoServiceStub{
+			createFn: func(_ context.Context, message domain.ConversationMessage) (domain.ConversationMessage, error) {
+				created = message
+				return message, nil
+			},
+			listFn: func(context.Context, port.ConversationMessageListFilter) ([]domain.ConversationMessage, error) {
+				return nil, nil
+			},
+		},
+		conversationSummaryRepoServiceStub{createFn: func(context.Context, domain.ConversationSummary) (domain.ConversationSummary, error) {
+			return domain.ConversationSummary{}, nil
+		}},
+		nil,
+	)
+
+	_, err := service.AddMessage(context.Background(), AddConversationMessageInput{
+		ConversationID: "c1",
+		UserID:         "u1",
+		Role:           convention.UserRole,
+		Content:        "精简摘要",
+		RawContent:     "很长很长的原文",
+		ContentSummary: "精简摘要",
+		IsSummarized:   true,
+	})
+	if err != nil {
+		t.Fatalf("AddMessage returned error: %v", err)
+	}
+	if created.RawContent != "很长很长的原文" || created.ContentSummary != "精简摘要" || !created.IsSummarized {
+		t.Fatalf("unexpected summary fields: %#v", created)
+	}
+}
+
+type summaryProcessorStub struct {
+	result ProcessedConversationMessageContent
+	err    error
+}
+
+func (s summaryProcessorStub) ProcessAddMessage(context.Context, AddConversationMessageInput) (ProcessedConversationMessageContent, error) {
+	return s.result, s.err
+}
+
+type conversationMessageChunkSinkStub struct {
+	persistFn func(ctx context.Context, message domain.ConversationMessage, chunks []ProcessedConversationMessageChunk) error
+}
+
+func (s conversationMessageChunkSinkStub) PersistMessageChunks(ctx context.Context, message domain.ConversationMessage, chunks []ProcessedConversationMessageChunk) error {
+	if s.persistFn == nil {
+		return nil
+	}
+	return s.persistFn(ctx, message, chunks)
+}
+
+type conversationMessageCreateTransactionStub struct {
+	runFn func(
+		ctx context.Context,
+		fn func(ctx context.Context, messageRepo port.ConversationMessageRepository, chunkSink ConversationMessageChunkSink) error,
+	) error
+}
+
+func (s conversationMessageCreateTransactionStub) asFunc() ConversationMessageCreateTransaction {
+	return func(
+		ctx context.Context,
+		fn func(ctx context.Context, messageRepo port.ConversationMessageRepository, chunkSink ConversationMessageChunkSink) error,
+	) error {
+		if s.runFn == nil {
+			return fn(ctx, nil, nil)
+		}
+		return s.runFn(ctx, fn)
+	}
+}
+
+func TestConversationMessageServiceAddMessageUsesContentProcessor(t *testing.T) {
+	var created domain.ConversationMessage
+	service := NewConversationMessageService(
+		conversationMessageConversationRepoStub{getByConversationIDAndUserFn: func(context.Context, string, string) (domain.Conversation, error) {
+			return domain.Conversation{}, nil
+		}},
+		conversationMessageRepoServiceStub{
+			createFn: func(_ context.Context, message domain.ConversationMessage) (domain.ConversationMessage, error) {
+				created = message
+				return message, nil
+			},
+			listFn: func(context.Context, port.ConversationMessageListFilter) ([]domain.ConversationMessage, error) {
+				return nil, nil
+			},
+		},
+		conversationSummaryRepoServiceStub{createFn: func(context.Context, domain.ConversationSummary) (domain.ConversationSummary, error) {
+			return domain.ConversationSummary{}, nil
+		}},
+		nil,
+	)
+	service.SetContentProcessor(summaryProcessorStub{
+		result: ProcessedConversationMessageContent{
+			Content:        "压缩后的摘要",
+			RawContent:     "原始超长文本",
+			ContentSummary: "压缩后的摘要",
+			IsSummarized:   true,
+		},
+	})
+
+	_, err := service.AddMessage(context.Background(), AddConversationMessageInput{
+		ConversationID: "c1",
+		UserID:         "u1",
+		Role:           convention.UserRole,
+		Content:        "原始超长文本",
+	})
+	if err != nil {
+		t.Fatalf("AddMessage returned error: %v", err)
+	}
+	if created.Content != "压缩后的摘要" || created.RawContent != "原始超长文本" || !created.IsSummarized {
+		t.Fatalf("unexpected processed message: %#v", created)
+	}
+}
+
+func TestConversationMessageServiceAddMessagePersistsSessionChunks(t *testing.T) {
+	var (
+		createdMessage domain.ConversationMessage
+		persistedMsg   domain.ConversationMessage
+		persisted      []ProcessedConversationMessageChunk
+	)
+	service := NewConversationMessageService(
+		conversationMessageConversationRepoStub{getByConversationIDAndUserFn: func(context.Context, string, string) (domain.Conversation, error) {
+			return domain.Conversation{}, nil
+		}},
+		conversationMessageRepoServiceStub{
+			createFn: func(_ context.Context, message domain.ConversationMessage) (domain.ConversationMessage, error) {
+				createdMessage = message
+				return message, nil
+			},
+			listFn: func(context.Context, port.ConversationMessageListFilter) ([]domain.ConversationMessage, error) {
+				return nil, nil
+			},
+		},
+		conversationSummaryRepoServiceStub{createFn: func(context.Context, domain.ConversationSummary) (domain.ConversationSummary, error) {
+			return domain.ConversationSummary{}, nil
+		}},
+		nil,
+	)
+	service.SetContentProcessor(summaryProcessorStub{
+		result: ProcessedConversationMessageContent{
+			Content:        "summary",
+			RawContent:     "original long message",
+			ContentSummary: "summary",
+			IsSummarized:   true,
+			SessionChunks: []ProcessedConversationMessageChunk{
+				{ChunkIndex: 1, Content: "chunk-1", ContentSummary: "summary-1", TokenEstimate: 10},
+				{ChunkIndex: 2, Content: "chunk-2", ContentSummary: "summary-2", TokenEstimate: 12},
+			},
+		},
+	})
+	service.SetChunkSink(conversationMessageChunkSinkStub{
+		persistFn: func(_ context.Context, message domain.ConversationMessage, chunks []ProcessedConversationMessageChunk) error {
+			persistedMsg = message
+			persisted = append([]ProcessedConversationMessageChunk(nil), chunks...)
+			return nil
+		},
+	})
+
+	_, err := service.AddMessage(context.Background(), AddConversationMessageInput{
+		ConversationID: "c1",
+		UserID:         "u1",
+		Role:           convention.UserRole,
+		Content:        "original long message",
+	})
+	if err != nil {
+		t.Fatalf("AddMessage returned error: %v", err)
+	}
+	if persistedMsg.ID != createdMessage.ID {
+		t.Fatalf("expected sink to receive created message id, got message=%#v created=%#v", persistedMsg, createdMessage)
+	}
+	if len(persisted) != 2 {
+		t.Fatalf("expected 2 persisted chunks, got %#v", persisted)
+	}
+	if persisted[0].Content != "chunk-1" || persisted[1].ChunkIndex != 2 {
+		t.Fatalf("unexpected persisted chunks: %#v", persisted)
+	}
+}
+
+func TestConversationMessageServiceAddMessageUsesCreateTransaction(t *testing.T) {
+	service := NewConversationMessageService(
+		conversationMessageConversationRepoStub{getByConversationIDAndUserFn: func(context.Context, string, string) (domain.Conversation, error) {
+			return domain.Conversation{}, nil
+		}},
+		conversationMessageRepoServiceStub{
+			createFn: func(_ context.Context, _ domain.ConversationMessage) (domain.ConversationMessage, error) {
+				t.Fatal("expected outer message repo to be bypassed when transaction is configured")
+				return domain.ConversationMessage{}, nil
+			},
+			listFn: func(context.Context, port.ConversationMessageListFilter) ([]domain.ConversationMessage, error) {
+				return nil, nil
+			},
+		},
+		conversationSummaryRepoServiceStub{createFn: func(context.Context, domain.ConversationSummary) (domain.ConversationSummary, error) {
+			return domain.ConversationSummary{}, nil
+		}},
+		nil,
+	)
+	service.SetContentProcessor(summaryProcessorStub{
+		result: ProcessedConversationMessageContent{
+			Content:        "summary",
+			RawContent:     "original long message",
+			ContentSummary: "summary",
+			IsSummarized:   true,
+			SessionChunks: []ProcessedConversationMessageChunk{
+				{ChunkIndex: 1, Content: "chunk-1", ContentSummary: "summary-1", TokenEstimate: 10},
+			},
+		},
+	})
+
+	var (
+		usedTxRepo  bool
+		usedTxSink  bool
+		persistedID string
+	)
+	txRepo := conversationMessageRepoServiceStub{
+		createFn: func(_ context.Context, message domain.ConversationMessage) (domain.ConversationMessage, error) {
+			usedTxRepo = true
+			message.ID = "tx-message-1"
+			return message, nil
+		},
+		listFn: func(context.Context, port.ConversationMessageListFilter) ([]domain.ConversationMessage, error) {
+			return nil, nil
+		},
+	}
+	txSink := conversationMessageChunkSinkStub{
+		persistFn: func(_ context.Context, message domain.ConversationMessage, chunks []ProcessedConversationMessageChunk) error {
+			usedTxSink = true
+			persistedID = message.ID
+			if len(chunks) != 1 || chunks[0].Content != "chunk-1" {
+				t.Fatalf("unexpected tx chunks: %#v", chunks)
+			}
+			return nil
+		},
+	}
+	service.SetCreateTransaction(conversationMessageCreateTransactionStub{
+		runFn: func(ctx context.Context, fn func(context.Context, port.ConversationMessageRepository, ConversationMessageChunkSink) error) error {
+			return fn(ctx, txRepo, txSink)
+		},
+	}.asFunc())
+
+	created, err := service.AddMessage(context.Background(), AddConversationMessageInput{
+		ConversationID: "c1",
+		UserID:         "u1",
+		Role:           convention.UserRole,
+		Content:        "original long message",
+	})
+	if err != nil {
+		t.Fatalf("AddMessage returned error: %v", err)
+	}
+	if !usedTxRepo || !usedTxSink {
+		t.Fatalf("expected transaction-scoped repo and sink to be used, got usedTxRepo=%v usedTxSink=%v", usedTxRepo, usedTxSink)
+	}
+	if created.ID != "tx-message-1" || persistedID != "tx-message-1" {
+		t.Fatalf("expected created message id to flow through transaction, got created=%#v persistedID=%s", created, persistedID)
+	}
 }
 
 func TestConversationMessageServiceListMessagesReturnsChronologicalResults(t *testing.T) {

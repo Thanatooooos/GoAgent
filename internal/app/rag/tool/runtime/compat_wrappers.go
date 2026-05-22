@@ -60,6 +60,10 @@ func readDataFloat(data map[string]any, key string) float64 {
 	return ragcore.ReadDataFloat(data, key)
 }
 
+func readDataString(data map[string]any, key string) string {
+	return ragcore.ReadDataString(data, key)
+}
+
 func readMapItems(raw any) []map[string]any {
 	return ragcore.ReadMapItems(raw)
 }

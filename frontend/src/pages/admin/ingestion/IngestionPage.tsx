@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+﻿import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Activity,
@@ -853,7 +853,7 @@ export function IngestionPage() {
         }}
         onUpload={async (pipelineId, file) => {
           const result = await uploadIngestionTask(pipelineId, file);
-          toast.success(`上传成功�?{result.taskId}`);
+          toast.success(`Upload succeeded: ${result.taskId}`);
           setTaskDialogOpen(false);
           await loadTasks(1, taskStatus);
         }}
@@ -865,7 +865,7 @@ export function IngestionPage() {
         onOpenChange={setUploadDialogOpen}
         onSubmit={async (pipelineId, file) => {
           const result = await uploadIngestionTask(pipelineId, file);
-          toast.success(`上传成功�?{result.taskId}`);
+          toast.success(`Upload succeeded: ${result.taskId}`);
           setUploadDialogOpen(false);
           await loadTasks(1, taskStatus);
         }}
@@ -1520,7 +1520,7 @@ function PipelineDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sidebar-scroll sm:max-w-[880px]">
         <DialogHeader>
-          <DialogTitle>{mode === "create" ? "新建流水�? : "编辑流水�?}</DialogTitle>
+          <DialogTitle>{mode === "create" ? "Create Pipeline" : "Edit Pipeline"}</DialogTitle>
           <DialogDescription>配置节点顺序与处理逻辑</DialogDescription>
         </DialogHeader>
 
@@ -3003,3 +3003,5 @@ function TaskDetailDialog({ open, taskId, onOpenChange }: TaskDetailDialogProps)
     </Dialog>
   );
 }
+
+

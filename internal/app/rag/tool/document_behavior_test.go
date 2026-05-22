@@ -138,7 +138,7 @@ func TestAgentLoopDocumentModulesUseBehaviorDrivenContinuation(t *testing.T) {
 		ReadOnly:            true,
 		Family:              "system",
 	}, DocumentQueryBehavior()).Module())
-	registry.MustRegisterModule(NewLegacyToolAdapter(staticTool{
+	registry.MustRegisterModule(NewLegacyToolAdapterWithBehavior(staticTool{
 		definition: Definition{
 			Name:        "document_ingestion_diagnose",
 			Description: "diagnose document",
@@ -154,7 +154,15 @@ func TestAgentLoopDocumentModulesUseBehaviorDrivenContinuation(t *testing.T) {
 				"confidence": "high",
 			},
 		},
-	}).Module())
+	}, ToolSpec{
+		Capability:          CapabilityDiagnosis,
+		EvidenceSources:     []string{EvidenceSourceSystemRecords},
+		ExecutionMode:       ExecutionModeReadOnly,
+		RiskLevel:           RiskLevelLow,
+		ApprovalRequirement: ApprovalRequirementNone,
+		ReadOnly:            true,
+		Family:              "system",
+	}, DocumentIngestionDiagnoseBehavior()).Module())
 
 	planner := &plannerStub{
 		results: []PlanResult{

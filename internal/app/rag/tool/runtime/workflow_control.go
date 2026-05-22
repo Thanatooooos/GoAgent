@@ -7,10 +7,6 @@ import (
 	. "local/rag-project/internal/app/rag/tool/core"
 )
 
-func deriveWorkflowControl(input WorkflowInput, results []Result) WorkflowControl {
-	return deriveWorkflowControlWithRegistry(input, results, wfControlRegistry)
-}
-
 func DeriveWorkflowControlWithRegistry(input WorkflowInput, results []Result, registry *Registry) WorkflowControl {
 	return deriveWorkflowControlWithRegistry(input, results, registry)
 }
@@ -36,10 +32,6 @@ func deriveWorkflowControlWithRegistry(input WorkflowInput, results []Result, re
 		}
 	}
 	return control.Normalize()
-}
-
-func buildWorkflowTraceMeta(control WorkflowControl, retrieve ragretrieve.Result, results []Result) WorkflowTraceMeta {
-	return buildWorkflowTraceMetaWithRegistry(control, retrieve, results, wfControlRegistry)
 }
 
 func BuildWorkflowTraceMetaWithRegistry(control WorkflowControl, retrieve ragretrieve.Result, results []Result, registry *Registry) WorkflowTraceMeta {
@@ -87,13 +79,6 @@ func inferWorkflowCapability(results []Result, retrieve ragretrieve.Result, regi
 	default:
 		return CapabilityGeneral
 	}
-}
-
-var wfControlRegistry *Registry
-
-// SetWorkflowControlRegistry makes the Registry available for workflow control inference.
-func SetWorkflowControlRegistry(r *Registry) {
-	wfControlRegistry = r
 }
 
 func inferWorkflowEvidenceSources(retrieve ragretrieve.Result, results []Result, registry *Registry) []string {

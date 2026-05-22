@@ -33,18 +33,10 @@ const (
 type WorkflowControl = ragcore.WorkflowControl
 type WorkflowTraceMeta = ragcore.WorkflowTraceMeta
 
-var legacySpecRegistry *ragcore.Registry
-
-func deriveWorkflowControl(input WorkflowInput, results []Result) WorkflowControl {
-	return ragruntime.DeriveWorkflowControlWithRegistry(input, results, legacySpecRegistry)
+func deriveWorkflowControl(input WorkflowInput, results []Result, registry *Registry) WorkflowControl {
+	return ragruntime.DeriveWorkflowControlWithRegistry(input, results, registry)
 }
 
-func buildWorkflowTraceMeta(control WorkflowControl, retrieve ragretrieve.Result, results []Result) WorkflowTraceMeta {
-	return ragruntime.BuildWorkflowTraceMetaWithRegistry(control, retrieve, results, legacySpecRegistry)
-}
-
-// SetLegacySpecRegistry keeps the legacy facade tests and fallback helpers working.
-// The production runtime no longer relies on this global registry.
-func SetLegacySpecRegistry(r *ragcore.Registry) {
-	legacySpecRegistry = r
+func buildWorkflowTraceMeta(control WorkflowControl, retrieve ragretrieve.Result, results []Result, registry *Registry) WorkflowTraceMeta {
+	return ragruntime.BuildWorkflowTraceMetaWithRegistry(control, retrieve, results, registry)
 }

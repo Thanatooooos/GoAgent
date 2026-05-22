@@ -166,9 +166,9 @@ func TestRegistryRegisterModuleAndGetSpec(t *testing.T) {
 	}
 }
 
-func TestLegacyRegisterInfersKnownBehavior(t *testing.T) {
+func TestLegacyRegisterUsesExplicitBehavior(t *testing.T) {
 	registry := NewRegistry()
-	registry.MustRegister(&toolStub{
+	registry.MustRegisterModule(NewLegacyToolAdapterWithBehavior(&toolStub{
 		definition: Definition{
 			Name:        "document_query",
 			Description: "query document",
@@ -184,11 +184,19 @@ func TestLegacyRegisterInfersKnownBehavior(t *testing.T) {
 				"processMode": "pipeline",
 			},
 		},
-	})
+	}, ToolSpec{
+		Capability:          CapabilityDiagnosis,
+		EvidenceSources:     []string{EvidenceSourceSystemRecords},
+		ExecutionMode:       ExecutionModeReadOnly,
+		RiskLevel:           RiskLevelLow,
+		ApprovalRequirement: ApprovalRequirementNone,
+		ReadOnly:            true,
+		Family:              "system",
+	}, DocumentQueryBehavior()).Module())
 
 	behavior, ok := registry.GetBehavior("document_query")
 	if !ok || behavior.Next == nil || behavior.Observe == nil {
-		t.Fatalf("expected inferred legacy behavior, got ok=%v behavior=%+v", ok, behavior)
+		t.Fatalf("expected explicit legacy behavior, got ok=%v behavior=%+v", ok, behavior)
 	}
 
 	decision := nextDecisionWithRegistry(registry, WorkflowInput{}, Result{
@@ -201,7 +209,7 @@ func TestLegacyRegisterInfersKnownBehavior(t *testing.T) {
 		},
 	})
 	if decision.Done || len(decision.HintCalls) != 1 || decision.HintCalls[0].Name != "document_ingestion_diagnose" {
-		t.Fatalf("expected inferred behavior-driven continuation, got %+v", decision)
+		t.Fatalf("expected explicit behavior-driven continuation, got %+v", decision)
 	}
 }
 
@@ -500,6 +508,225 @@ func TestViewWebSearchResultParsesGenericSlices(t *testing.T) {
 	}
 }
 
+func TestViewDocumentListResultParsesItems(t *testing.T) {
+	view, ok := ViewDocumentListResult(Result{
+		Name: "document_list",
+		Data: map[string]any{
+			"total":        2,
+			"failedCount":  1,
+			"runningCount": 1,
+			"items": []any{
+				map[string]any{
+					"documentId":      "doc-1",
+					"name":            "Quarterly Report",
+					"status":          "failed",
+					"processMode":     "pipeline",
+					"knowledgeBaseId": "kb-1",
+					"chunkCount":      42,
+				},
+				map[string]any{
+					"documentId":  "doc-2",
+					"name":        "Playbook",
+					"status":      "running",
+					"processMode": "pipeline",
+				},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected document list view to parse")
+	}
+	if view.Total != 2 || view.FailedCount != 1 || view.RunningCount != 1 {
+		t.Fatalf("unexpected counters: %+v", view)
+	}
+	if len(view.Items) != 2 {
+		t.Fatalf("expected 2 items, got %+v", view.Items)
+	}
+	if view.Items[0].DocumentID != "doc-1" || view.Items[0].ChunkCount != 42 {
+		t.Fatalf("unexpected first item: %+v", view.Items[0])
+	}
+}
+
+func TestViewIngestionTaskQueryResultParsesNodeSummaryAndInterestingNode(t *testing.T) {
+	view, ok := ViewIngestionTaskQueryResult(Result{
+		Name: "ingestion_task_query",
+		Data: map[string]any{
+			"taskId":         "task-1",
+			"pipelineId":     "pipe-1",
+			"status":         "failed",
+			"sourceType":     "file",
+			"sourceFileName": "report.pdf",
+			"taskNodeCount":  3,
+			"taskNodeSummary": []any{
+				map[string]any{"nodeId": "parser", "nodeType": "parser", "status": "success"},
+				map[string]any{"nodeId": "indexer", "nodeType": "indexer", "status": "failed"},
+				map[string]any{"nodeId": "writer", "nodeType": "writer", "status": "running"},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected ingestion task query view to parse")
+	}
+	if view.TaskID != "task-1" || view.TaskNodeCount != 3 {
+		t.Fatalf("unexpected task query view: %+v", view)
+	}
+	node, found := view.LatestInterestingNode()
+	if !found {
+		t.Fatal("expected interesting node to be found")
+	}
+	if node.NodeID != "indexer" || node.Status != "failed" {
+		t.Fatalf("unexpected interesting node: %+v", node)
+	}
+}
+
+func TestViewIngestionTaskNodeQueryResultParsesSingleAndListShapes(t *testing.T) {
+	singleView, ok := ViewIngestionTaskNodeQueryResult(Result{
+		Name: "ingestion_task_node_query",
+		Data: map[string]any{
+			"taskId":       "task-1",
+			"nodeId":       "indexer",
+			"nodeType":     "indexer",
+			"nodeOrder":    4,
+			"status":       "failed",
+			"durationMs":   5210,
+			"message":      "retry exhausted",
+			"errorMessage": "connection refused",
+		},
+	})
+	if !ok {
+		t.Fatal("expected single-node view to parse")
+	}
+	if singleView.NodeID != "indexer" || singleView.ErrorMessage != "connection refused" {
+		t.Fatalf("unexpected single-node view: %+v", singleView)
+	}
+
+	listView, ok := ViewIngestionTaskNodeQueryResult(Result{
+		Name: "ingestion_task_node_query",
+		Data: map[string]any{
+			"taskId":    "task-1",
+			"nodeCount": 2,
+			"nodes": []any{
+				map[string]any{"nodeId": "parser", "nodeType": "parser", "status": "success"},
+				map[string]any{"nodeId": "indexer", "nodeType": "indexer", "status": "failed", "errorMessage": "connection refused"},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected node-list view to parse")
+	}
+	if listView.NodeCount != 2 || len(listView.Nodes) != 2 {
+		t.Fatalf("unexpected node-list view: %+v", listView)
+	}
+	if listView.Nodes[1].NodeID != "indexer" || listView.Nodes[1].ErrorMessage != "connection refused" {
+		t.Fatalf("unexpected second node view: %+v", listView.Nodes[1])
+	}
+}
+
+func TestViewTraceNodeQueryResultParsesNodes(t *testing.T) {
+	view, ok := ViewTraceNodeQueryResult(Result{
+		Name: "trace_node_query",
+		Data: map[string]any{
+			"traceId":        "trace-1",
+			"status":         "failed",
+			"conversationId": "conv-1",
+			"taskId":         "task-1",
+			"nodeCount":      2,
+			"nodes": []any{
+				map[string]any{"nodeId": "rewrite", "nodeType": "llm", "nodeName": "Rewrite", "status": "failed"},
+				map[string]any{
+					"nodeId":   "long_term_memory",
+					"nodeType": "memory",
+					"nodeName": "LongTermMemory",
+					"status":   "success",
+					"summary":  "selected 2/3 memories, contributions hybrid=1, keyword_only=1, sources keyword=2, vector=1",
+					"memoryRecall": map[string]any{
+						"candidateCount":     3,
+						"selectedCount":      2,
+						"truncated":          false,
+						"sourceCounts":       map[string]any{"keyword": 2, "vector": 1},
+						"contributionCounts": map[string]any{"hybrid": 1, "keyword_only": 1},
+						"memoryIds":          []any{"mem-1", "mem-2"},
+						"summary":            "selected 2/3 memories, contributions hybrid=1, keyword_only=1, sources keyword=2, vector=1",
+					},
+				},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected trace node view to parse")
+	}
+	if view.TraceID != "trace-1" || view.TaskID != "task-1" || len(view.Nodes) != 2 {
+		t.Fatalf("unexpected trace node view: %+v", view)
+	}
+	if view.Nodes[0].NodeID != "rewrite" || view.Nodes[1].NodeType != "memory" {
+		t.Fatalf("unexpected trace nodes: %+v", view.Nodes)
+	}
+	if view.Nodes[1].MemoryRecall == nil || view.Nodes[1].MemoryRecall.SelectedCount != 2 || view.Nodes[1].MemoryRecall.SourceCounts["vector"] != 1 {
+		t.Fatalf("expected memory recall summary to parse, got %+v", view.Nodes[1])
+	}
+}
+
+func TestViewTraceRetrievalDiagnoseResultParsesDiagnosisFields(t *testing.T) {
+	view, ok := ViewTraceRetrievalDiagnoseResult(Result{
+		Name: "trace_retrieval_diagnose",
+		Data: map[string]any{
+			"conclusion":   "rewrite produced an overly broad query",
+			"confidence":   "high",
+			"facts":        []string{"retrieve returned zero chunks"},
+			"nextActions":  []string{"inspect rewritten query"},
+			"taskId":       "task-1",
+			"latestTaskId": "task-2",
+			"latestNodeId": "retrieve",
+		},
+	})
+	if !ok {
+		t.Fatal("expected trace diagnose view to parse")
+	}
+	if view.Conclusion != "rewrite produced an overly broad query" || view.LatestNodeID != "retrieve" {
+		t.Fatalf("unexpected trace diagnose view: %+v", view)
+	}
+	if len(view.NextActions) != 1 || view.NextActions[0] != "inspect rewritten query" {
+		t.Fatalf("unexpected next actions: %+v", view.NextActions)
+	}
+}
+
+func TestViewTaskListResultParsesItems(t *testing.T) {
+	view, ok := ViewTaskListResult(Result{
+		Name: "task_list",
+		Data: map[string]any{
+			"total":        2,
+			"failedCount":  1,
+			"runningCount": 1,
+			"pipelineId":   "pipe-1",
+			"items": []any{
+				map[string]any{
+					"taskId":         "task-1",
+					"pipelineId":     "pipe-1",
+					"status":         "failed",
+					"sourceFileName": "a.pdf",
+					"chunkCount":     12,
+					"errorMessage":   "connection refused",
+				},
+				map[string]any{
+					"taskId":         "task-2",
+					"pipelineId":     "pipe-1",
+					"status":         "running",
+					"sourceFileName": "b.pdf",
+				},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected task list view to parse")
+	}
+	if view.Total != 2 || len(view.Items) != 2 {
+		t.Fatalf("unexpected task list view: %+v", view)
+	}
+	if view.Items[0].TaskID != "task-1" || view.Items[0].ErrorMessage != "connection refused" {
+		t.Fatalf("unexpected first task item: %+v", view.Items[0])
+	}
+}
+
 func TestBuildAnswerGuidanceFromWebSearchIncludesLocalEvidenceAndSources(t *testing.T) {
 	guidance := BuildAnswerGuidance([]Result{
 		{
@@ -688,7 +915,7 @@ func TestBuildWorkflowTraceMetaDetectsSearchCapabilityAndEvidenceSources(t *test
 		{Name: "document_list", Summary: "matched local docs"},
 		{Name: "web_search"},
 		{Name: "web_fetch"},
-	})
+	}, testRegistry)
 
 	if control.Capability != CapabilitySearch {
 		t.Fatalf("expected search capability, got %q", control.Capability)
@@ -698,7 +925,7 @@ func TestBuildWorkflowTraceMetaDetectsSearchCapabilityAndEvidenceSources(t *test
 		{Name: "document_list"},
 		{Name: "web_search"},
 		{Name: "web_fetch"},
-	})
+	}, testRegistry)
 	if traceMeta.ExecutionMode != ExecutionModeReadOnly {
 		t.Fatalf("unexpected execution mode: %q", traceMeta.ExecutionMode)
 	}
@@ -728,7 +955,7 @@ func TestBuildWorkflowTraceMetaPrefersResultMeta(t *testing.T) {
 				ApprovalRequirement: ApprovalRequirementNone,
 			},
 		},
-	})
+	}, testRegistry)
 	if control.Capability != CapabilitySearch {
 		t.Fatalf("expected capability from result meta, got %q", control.Capability)
 	}
@@ -740,7 +967,7 @@ func TestBuildWorkflowTraceMetaPrefersResultMeta(t *testing.T) {
 				EvidenceSources: []string{EvidenceSourceExternalWeb},
 			},
 		},
-	})
+	}, testRegistry)
 	if len(traceMeta.EvidenceSources) != 1 || traceMeta.EvidenceSources[0] != EvidenceSourceExternalWeb {
 		t.Fatalf("expected evidence source from result meta, got %+v", traceMeta.EvidenceSources)
 	}
@@ -749,7 +976,7 @@ func TestBuildWorkflowTraceMetaPrefersResultMeta(t *testing.T) {
 func TestDeriveWorkflowControlFallsBackToLegacyToolSpec(t *testing.T) {
 	control := deriveWorkflowControl(WorkflowInput{}, []Result{
 		{Name: "trace_node_query"},
-	})
+	}, testRegistry)
 	if control.Capability != CapabilityDiagnosis {
 		t.Fatalf("expected diagnosis capability from legacy spec, got %q", control.Capability)
 	}

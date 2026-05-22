@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -88,12 +89,121 @@ func summarizeTraceNodes(nodes []ragdomain.RagTraceNode) []map[string]any {
 	}
 	items := make([]map[string]any, 0, len(nodes))
 	for _, node := range nodes {
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"nodeId":   node.NodeID,
 			"nodeType": node.NodeType,
 			"nodeName": node.NodeName,
 			"status":   node.Status,
-		})
+		}
+		if summary, memoryRecall := summarizeTraceNodeExtra(node); summary != "" {
+			item["summary"] = summary
+			if memoryRecall != nil {
+				item["memoryRecall"] = memoryRecall
+			}
+		}
+		items = append(items, item)
 	}
 	return items
+}
+
+func summarizeTraceNodeExtra(node ragdomain.RagTraceNode) (string, map[string]any) {
+	extra := strings.TrimSpace(node.ExtraData)
+	if extra == "" {
+		return "", nil
+	}
+
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(extra), &payload); err != nil || len(payload) == 0 {
+		return "", nil
+	}
+
+	if summary, details := summarizeMemoryRecallExtra(payload); summary != "" {
+		return summary, details
+	}
+	return "", nil
+}
+
+func summarizeMemoryRecallExtra(payload map[string]any) (string, map[string]any) {
+	selectedCount := readTraceNodeInt(payload, "selectedCount")
+	candidateCount := readTraceNodeInt(payload, "candidateCount")
+	if selectedCount == 0 && candidateCount == 0 && len(readTraceNodeCountMap(payload, "sourceCounts")) == 0 && len(readTraceNodeCountMap(payload, "contributionCounts")) == 0 {
+		return "", nil
+	}
+
+	sourceCounts := readTraceNodeCountMap(payload, "sourceCounts")
+	contributionCounts := readTraceNodeCountMap(payload, "contributionCounts")
+	memoryIDs := ragcore.ReadDataStringSlice(payload, "memoryIds")
+	truncated := ragcore.ReadDataBool(payload, "truncated")
+
+	parts := make([]string, 0, 4)
+	if candidateCount > 0 {
+		parts = append(parts, fmt.Sprintf("selected %d/%d memories", selectedCount, candidateCount))
+	} else {
+		parts = append(parts, fmt.Sprintf("selected %d memories", selectedCount))
+	}
+	if contributionText := renderTraceCountSummary(contributionCounts, []string{"hybrid", "vector_only", "keyword_only"}); contributionText != "" {
+		parts = append(parts, "contributions "+contributionText)
+	}
+	if sourceText := renderTraceCountSummary(sourceCounts, []string{"keyword", "vector"}); sourceText != "" {
+		parts = append(parts, "sources "+sourceText)
+	}
+	if truncated {
+		parts = append(parts, "truncated")
+	}
+
+	details := map[string]any{
+		"candidateCount":     candidateCount,
+		"selectedCount":      selectedCount,
+		"truncated":          truncated,
+		"sourceCounts":       sourceCounts,
+		"contributionCounts": contributionCounts,
+		"memoryIds":          memoryIDs,
+		"summary":            strings.Join(parts, ", "),
+	}
+	return details["summary"].(string), details
+}
+
+func renderTraceCountSummary(counts map[string]int, keys []string) string {
+	if len(counts) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if counts[key] > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", key, counts[key]))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func readTraceNodeCountMap(payload map[string]any, key string) map[string]int {
+	raw := ragcore.ReadDataMap(payload, key)
+	if len(raw) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, len(raw))
+	for name, value := range raw {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		switch typed := value.(type) {
+		case int:
+			counts[trimmed] = typed
+		case int32:
+			counts[trimmed] = int(typed)
+		case int64:
+			counts[trimmed] = int(typed)
+		case float64:
+			counts[trimmed] = int(typed)
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	return counts
+}
+
+func readTraceNodeInt(payload map[string]any, key string) int {
+	return ragcore.ReadDataInt(payload, key)
 }

@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -139,11 +138,12 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 		for i, c := range plannedCalls {
 			toolNames[i] = strings.TrimSpace(c.Name)
 		}
-		mode := w.roundExecutionMode(len(plannedCalls))
+		levels := resolveExecutionLevels(plannedCalls, w.executor.registry)
+		mode := w.roundExecutionMode(len(plannedCalls), levels)
 		log.Infof("[agent] round %d: %d call(s) [%s] (%s)", round, len(plannedCalls), strings.Join(toolNames, ", "), mode)
 
 		roundStartedAt := time.Now()
-		roundResults, roundCalls, roundDegradeReasons := w.executeRoundCalls(ctx, input.EventSink, round, plannedCalls)
+		roundResults, roundCalls, roundDegradeReasons := w.executeRoundCalls(ctx, input.EventSink, round, plannedCalls, levels)
 		roundWallClockDurationMs := time.Since(roundStartedAt).Milliseconds()
 		allResults = append(allResults, roundResults...)
 		allCalls = append(allCalls, roundCalls...)
@@ -170,57 +170,25 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 		}
 
 		observation := ObserveResult{
-			Done: true,
-			State: AgentState{
-				Phase:         agentState.Phase,
-				Hypothesis:    agentState.Hypothesis,
-				Confidence:    agentState.Confidence,
-				OpenQuestions: append([]string(nil), agentState.OpenQuestions...),
-				CheckedTools:  append([]string(nil), agentState.CheckedTools...),
-				NextHintCalls: append([]HintCall(nil), agentState.NextHintCalls...),
-			}.Normalize(),
+			Done:  true,
+			State: cloneAgentState(agentState),
 		}
 		if w.observer != nil {
 			obs, err := w.observer.Observe(ctx, observeInput)
 			if err != nil {
 				degradeReasons = append(degradeReasons, err.Error())
+				failedState := cloneAgentState(agentState)
+				failedState.Phase = "complete"
 				observation = ObserveResult{
 					Done:      true,
 					Reasoning: "observe phase failed, so the agent loop stops with the current evidence.",
-					State: AgentState{
-						Phase:         "complete",
-						Hypothesis:    agentState.Hypothesis,
-						Confidence:    agentState.Confidence,
-						OpenQuestions: append([]string(nil), agentState.OpenQuestions...),
-						CheckedTools:  append([]string(nil), agentState.CheckedTools...),
-						NextHintCalls: append([]HintCall(nil), agentState.NextHintCalls...),
-					}.Normalize(),
+					State:     failedState,
 				}
 			} else {
 				observation = obs
 			}
 		}
-		state := observation.State.Normalize()
-		if state.Empty() {
-			state = AgentState{
-				Phase:         agentState.Phase,
-				Hypothesis:    agentState.Hypothesis,
-				Confidence:    agentState.Confidence,
-				OpenQuestions: append([]string(nil), agentState.OpenQuestions...),
-				CheckedTools:  append([]string(nil), agentState.CheckedTools...),
-				NextHintCalls: append([]HintCall(nil), agentState.NextHintCalls...),
-			}.Normalize()
-		}
-		if observation.Done {
-			state.NextHintCalls = nil
-			state.NextHint = ""
-			if strings.TrimSpace(state.Phase) == "" {
-				state.Phase = "complete"
-			}
-		} else if strings.TrimSpace(state.Phase) == "" {
-			state.Phase = "deep_dive"
-		}
-		state = state.Normalize()
+		state := normalizeObservationState(observation, agentState)
 		observation.State = state
 
 		totalToolDurationMs := int64(0)
@@ -237,7 +205,7 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 			NextHint:            strings.TrimSpace(state.NextHint),
 			Confidence:          state.Confidence,
 			State:               state,
-			ExecutionMode:       w.roundExecutionMode(len(plannedCalls)),
+			ExecutionMode:       w.roundExecutionMode(len(plannedCalls), levels),
 			PlanningSource:      strings.TrimSpace(planning.Source),
 			LLMPlannerSkipped:   planning.LLMPlannerSkipped,
 			NextHintCallCount:   len(state.NextHintCalls),
@@ -277,7 +245,7 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 	workflowResult.TraceMeta = buildWorkflowTraceMetaWithRegistry(workflowResult.Control, input.RetrieveResult, allResults, w.executor.registry)
 	if len(degradeReasons) > 0 {
 		workflowResult.Degraded = true
-		workflowResult.DegradeReason = strings.Join(uniqueStrings(degradeReasons), "; ")
+		workflowResult.DegradeReason = strings.Join(UniqueTrimmedStrings(degradeReasons), "; ")
 	}
 	if len(rounds) == w.maxIterations && len(rounds) > 0 && !rounds[len(rounds)-1].Done {
 		workflowResult.Degraded = true
@@ -375,218 +343,13 @@ func (w *AgentLoop) planWithLLM(ctx context.Context, input WorkflowInput, agentS
 }
 
 func (w *AgentLoop) planWithRules(input WorkflowInput, previousResults []Result, executed map[string]struct{}) planningDecision {
-	if calls := filterNewCalls(planCallsFromResultsWithRegistry(previousResults, input, w.executor.registry), executed); len(calls) > 0 {
+	if calls := filterNewCalls(PlanCallsFromResultsWithRegistry(previousResults, input, w.executor.registry), executed); len(calls) > 0 {
 		return planningDecision{Calls: calls, Source: planningSourceResultFallback}
 	}
 	if calls := filterNewCalls(PlanWithBaseRules(input, DefaultMaxIterations), executed); len(calls) > 0 {
 		return planningDecision{Calls: calls, Source: planningSourceBaseRules}
 	}
 	return planningDecision{Source: planningSourceBaseRules}
-}
-
-func PlanWithBaseRules(input WorkflowInput, maxCalls int) []Call {
-	question := strings.TrimSpace(input.Question)
-	if question == "" {
-		return nil
-	}
-	lowered := strings.ToLower(question)
-	calls := make([]Call, 0, maxCalls)
-	seen := map[string]struct{}{}
-
-	appendCall := func(call Call) {
-		if len(calls) >= maxCalls {
-			return
-		}
-		key := callKey(call)
-		if _, exists := seen[key]; exists {
-			return
-		}
-		seen[key] = struct{}{}
-		calls = append(calls, call)
-	}
-
-	appendDocumentCalls(lowered, question, &calls, appendCall)
-	appendTaskCalls(lowered, question, &calls, appendCall)
-	appendTraceCalls(lowered, question, input.TraceID, &calls, appendCall)
-
-	if len(calls) == 0 {
-		appendOpenEndedCalls(lowered, input, &calls, appendCall)
-	}
-
-	if len(calls) == 0 && KnowledgeBaseInsufficient(input.RetrieveResult) {
-		log.Infof("[agent] kb insufficient (chunks=%d), triggering external_evidence_workflow for %q", len(input.RetrieveResult.Chunks), TruncateForLog(question))
-		appendCall(Call{Name: "external_evidence_workflow", Arguments: map[string]any{"question": question}})
-	}
-
-	return calls
-}
-
-// baseRouteRule defines a keyword-driven routing rule. Rules in a family are
-// checked in order; the first match wins.
-type baseRouteRule struct {
-	requireAll [][]string // at least one keyword from each inner slice must match
-	exclude    []string   // none of these must match
-	buildCall  func(id string) Call
-}
-
-var (
-	diagnosisKeywords = []string{
-		"diagnose", "failure", "why", "failed", "排查", "诊断", "失败", "原因",
-		"running", "processing", "progress", "slow", "stuck", "node", "status",
-		"运行", "处理中", "进度", "慢", "卡", "节点", "状态", "还在", "完成",
-	}
-	solutionKeywords = []string{
-		"解决", "怎么办", "修复", "方案", "办法", "如何处理", "怎么修复",
-		"solution", "fix", "how to fix", "resolve", "troubleshoot",
-	}
-	chunkLogKeywords = []string{
-		"chunk log", "chunklog", "chunk", "ingestion", "pipeline",
-		"diagnose", "failure", "排查", "诊断", "失败",
-	}
-	docKeywords            = []string{"document", "doc", "文档"}
-	taskKeywords           = []string{"ingestion", "task", "任务", "导入任务"}
-	traceKeywords          = []string{"trace", "chain", "retrieval", "链路", "检索", "召回"}
-	traceDiagnosisKeywords = []string{
-		"diagnose", "failure", "why", "bad", "poor", "failed",
-		"排查", "诊断", "失败", "原因", "效果差", "召回差",
-	}
-)
-
-var documentBaseRules = []baseRouteRule{
-	{
-		requireAll: [][]string{docKeywords, diagnosisKeywords, solutionKeywords},
-		buildCall: func(id string) Call {
-			return Call{Name: "document_diagnose_with_search", Arguments: map[string]any{"documentId": id}}
-		},
-	},
-	{
-		requireAll: [][]string{docKeywords, diagnosisKeywords},
-		exclude:    solutionKeywords,
-		buildCall: func(id string) Call {
-			return Call{Name: "document_root_cause_diagnosis", Arguments: map[string]any{"documentId": id}}
-		},
-	},
-	{
-		requireAll: [][]string{docKeywords, chunkLogKeywords},
-		exclude:    diagnosisKeywords,
-		buildCall: func(id string) Call {
-			return Call{Name: "document_chunk_log_query", Arguments: map[string]any{"documentId": id}}
-		},
-	},
-	{
-		requireAll: [][]string{docKeywords},
-		buildCall:  func(id string) Call { return Call{Name: "document_query", Arguments: map[string]any{"documentId": id}} },
-	},
-}
-
-var taskBaseRules = []baseRouteRule{
-	{
-		requireAll: [][]string{taskKeywords, diagnosisKeywords},
-		buildCall: func(id string) Call {
-			return Call{Name: "task_ingestion_diagnose", Arguments: map[string]any{"taskId": id}}
-		},
-	},
-	{
-		requireAll: [][]string{taskKeywords},
-		buildCall: func(id string) Call {
-			return Call{Name: "ingestion_task_query", Arguments: map[string]any{"taskId": id, "includeNodes": true}}
-		},
-	},
-}
-
-func applyFirstMatchingRule(lowered string, id string, rules []baseRouteRule) *Call {
-	for _, rule := range rules {
-		if !matchKeywordGroups(lowered, rule.requireAll) {
-			continue
-		}
-		if len(rule.exclude) > 0 && containsAny(lowered, rule.exclude...) {
-			continue
-		}
-		call := rule.buildCall(id)
-		return &call
-	}
-	return nil
-}
-
-func matchKeywordGroups(text string, groups [][]string) bool {
-	for _, group := range groups {
-		if !containsAny(text, group...) {
-			return false
-		}
-	}
-	return true
-}
-
-func appendDocumentCalls(lowered, question string, calls *[]Call, appendCall func(Call)) {
-	id := firstMatchedID(documentIDPattern, question)
-	if id == "" || !containsAny(lowered, docKeywords...) {
-		return
-	}
-	call := applyFirstMatchingRule(lowered, id, documentBaseRules)
-	if call != nil {
-		appendCall(*call)
-	}
-}
-
-func appendTaskCalls(lowered, question string, calls *[]Call, appendCall func(Call)) {
-	id := firstMatchedID(taskIDPattern, question)
-	if id == "" || !containsAny(lowered, taskKeywords...) {
-		return
-	}
-	call := applyFirstMatchingRule(lowered, id, taskBaseRules)
-	if call != nil {
-		appendCall(*call)
-	}
-}
-
-func appendTraceCalls(lowered, question, traceID string, calls *[]Call, appendCall func(Call)) {
-	id := firstMatchedID(traceIDPattern, question)
-	if id == "" && containsAny(lowered, "本次", "当前", "this", "current") && containsAny(lowered, traceKeywords...) {
-		id = strings.TrimSpace(traceID)
-	}
-	if id == "" || !containsAny(lowered, traceKeywords...) {
-		return
-	}
-	if containsAny(lowered, traceDiagnosisKeywords...) {
-		appendCall(Call{Name: "trace_retrieval_diagnose", Arguments: map[string]any{"traceId": id}})
-	}
-	appendCall(Call{Name: "trace_node_query", Arguments: map[string]any{"traceId": id}})
-}
-
-func appendOpenEndedCalls(lowered string, input WorkflowInput, calls *[]Call, appendCall func(Call)) {
-	isOpenEnded := containsAny(lowered,
-		"哪些", "最近", "所有", "列表", "哪个", "哪个文档", "哪些文档",
-		"which", "list", "recent", "all", "any",
-		"失败", "运行中", "处理中",
-	)
-	if !isOpenEnded {
-		return
-	}
-	defaultKB := ""
-	if len(input.KnowledgeBaseIDs) > 0 {
-		defaultKB = strings.TrimSpace(input.KnowledgeBaseIDs[0])
-	}
-	if containsAny(lowered, docKeywords...) {
-		callArgs := map[string]any{}
-		if defaultKB != "" {
-			callArgs["knowledgeBaseId"] = defaultKB
-		}
-		if containsAny(lowered, "失败", "failed") {
-			callArgs["status"] = "failed"
-		} else if containsAny(lowered, "运行", "处理中", "running") {
-			callArgs["status"] = "running"
-		}
-		appendCall(Call{Name: "document_list", Arguments: callArgs})
-	}
-	if containsAny(lowered, taskKeywords...) {
-		callArgs := map[string]any{}
-		if containsAny(lowered, "失败", "failed") {
-			callArgs["status"] = "failed"
-		} else if containsAny(lowered, "运行", "处理中", "running") {
-			callArgs["status"] = "running"
-		}
-		appendCall(Call{Name: "task_list", Arguments: callArgs})
-	}
 }
 
 func PlanCallsFromHint(agentState string, defs []Definition) []Call {
@@ -619,7 +382,7 @@ func buildCallFromHintCall(hintCall HintCall, defs []Definition) (Call, bool) {
 	}
 	def, ok := findDefinitionByName(defs, name)
 	if !ok {
-		arguments := cloneMap(hintCall.Arguments)
+		arguments := CloneMap(hintCall.Arguments)
 		if len(arguments) == 0 {
 			return Call{}, false
 		}
@@ -639,7 +402,7 @@ func buildCallFromHintCall(hintCall HintCall, defs []Definition) (Call, bool) {
 			}
 			continue
 		}
-		coerced, ok := coerceHintArgument(value, param.Type)
+		coerced, ok := CoerceHintArgument(value, param.Type)
 		if !ok {
 			return Call{}, false
 		}
@@ -661,140 +424,8 @@ func findDefinitionByName(defs []Definition, name string) (Definition, bool) {
 	return Definition{}, false
 }
 
-func coerceHintArgument(value any, paramType string) (any, bool) {
-	switch strings.TrimSpace(paramType) {
-	case "", ParamTypeString:
-		switch typed := value.(type) {
-		case string:
-			typed = strings.TrimSpace(typed)
-			return typed, typed != ""
-		default:
-			return "", false
-		}
-	case ParamTypeBoolean:
-		switch typed := value.(type) {
-		case bool:
-			return typed, true
-		case string:
-			typed = strings.TrimSpace(typed)
-			if typed == "" {
-				return false, false
-			}
-			parsed, err := strconv.ParseBool(typed)
-			if err != nil {
-				return false, false
-			}
-			return parsed, true
-		default:
-			return false, false
-		}
-	case ParamTypeInteger:
-		switch typed := value.(type) {
-		case int:
-			return typed, true
-		case int32:
-			return int(typed), true
-		case int64:
-			return int(typed), true
-		case float64:
-			return int(typed), true
-		case string:
-			typed = strings.TrimSpace(typed)
-			if typed == "" {
-				return 0, false
-			}
-			parsed, err := strconv.Atoi(typed)
-			if err != nil {
-				return 0, false
-			}
-			return parsed, true
-		default:
-			return 0, false
-		}
-	case ParamTypeNumber:
-		switch typed := value.(type) {
-		case float64:
-			return typed, true
-		case float32:
-			return float64(typed), true
-		case int:
-			return float64(typed), true
-		case int32:
-			return float64(typed), true
-		case int64:
-			return float64(typed), true
-		case string:
-			typed = strings.TrimSpace(typed)
-			if typed == "" {
-				return 0, false
-			}
-			parsed, err := strconv.ParseFloat(typed, 64)
-			if err != nil {
-				return 0, false
-			}
-			return parsed, true
-		default:
-			return 0, false
-		}
-	case ParamTypeObject, ParamTypeArray:
-		return value, true
-	default:
-		return value, true
-	}
-}
-
 func PlanCallsFromResults(results []Result) []Call {
-	if len(results) == 0 {
-		return nil
-	}
-	latest := results[len(results)-1]
-	hintCall, done, _ := nextAction(latest)
-	if done || hintCall == nil || strings.TrimSpace(hintCall.Name) == "" {
-		return nil
-	}
-	return []Call{{Name: strings.TrimSpace(hintCall.Name), Arguments: cloneMap(hintCall.Arguments)}}
-}
-
-func latestInterestingTaskNode(data map[string]any) (string, string, bool) {
-	if len(data) == 0 {
-		return "", "", false
-	}
-	raw, ok := data["taskNodeSummary"]
-	if !ok || raw == nil {
-		return "", "", false
-	}
-
-	readFromMap := func(item map[string]any) (string, string, bool) {
-		nodeID := strings.TrimSpace(readStringArg(item, "nodeId"))
-		status := strings.ToLower(strings.TrimSpace(readStringArg(item, "status")))
-		if nodeID == "" {
-			return "", "", false
-		}
-		if status == "failed" || status == "running" {
-			return nodeID, status, true
-		}
-		return "", "", false
-	}
-
-	switch typed := raw.(type) {
-	case []map[string]any:
-		for _, item := range typed {
-			if nodeID, status, ok := readFromMap(item); ok {
-				return nodeID, status, true
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			mapped, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			if nodeID, status, ok := readFromMap(mapped); ok {
-				return nodeID, status, true
-			}
-		}
-	}
-	return "", "", false
+	return PlanCallsFromResultsWithRegistry(results, WorkflowInput{}, nil)
 }
 
 func filterNewCalls(calls []Call, executed map[string]struct{}) []Call {
@@ -809,70 +440,6 @@ func filterNewCalls(calls []Call, executed map[string]struct{}) []Call {
 		filtered = append(filtered, call)
 	}
 	return filtered
-}
-
-func cloneMap(input map[string]any) map[string]any {
-	if len(input) == 0 {
-		return nil
-	}
-	cloned := make(map[string]any, len(input))
-	for key, value := range input {
-		cloned[key] = value
-	}
-	return cloned
-}
-
-func uniqueStrings(items []string) []string {
-	if len(items) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		trimmed := strings.TrimSpace(item)
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		result = append(result, trimmed)
-	}
-	return result
-}
-
-func parseNextHint(hint string) (string, map[string]any) {
-	hint = strings.TrimSpace(hint)
-	if hint == "" || !strings.HasPrefix(hint, "tool:") {
-		return "", nil
-	}
-	parts := strings.Split(hint, "|")
-	if len(parts) == 0 {
-		return "", nil
-	}
-	name := strings.TrimSpace(strings.TrimPrefix(parts[0], "tool:"))
-	if name == "" {
-		return "", nil
-	}
-	arguments := map[string]any{}
-	for _, part := range parts[1:] {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" || value == "" {
-			continue
-		}
-		arguments[key] = value
-	}
-	return name, arguments
 }
 
 func firstNonZeroFloat(values ...float64) float64 {
@@ -900,7 +467,7 @@ type roundExecutionItem struct {
 	err         error
 }
 
-func (w *AgentLoop) executeRoundCalls(ctx context.Context, sink WorkflowEventSink, round int, plannedCalls []Call) ([]Result, []CallSummary, []string) {
+func (w *AgentLoop) executeRoundCalls(ctx context.Context, sink WorkflowEventSink, round int, plannedCalls []Call, levels [][]int) ([]Result, []CallSummary, []string) {
 	if len(plannedCalls) == 0 {
 		return nil, nil, nil
 	}
@@ -920,7 +487,7 @@ func (w *AgentLoop) executeRoundCalls(ctx context.Context, sink WorkflowEventSin
 				Sequence:  idx + 1,
 				Name:      strings.TrimSpace(call.Name),
 				Status:    "running",
-				Arguments: cloneMap(call.Arguments),
+				Arguments: CloneMap(call.Arguments),
 			})
 		}
 	}
@@ -929,6 +496,8 @@ func (w *AgentLoop) executeRoundCalls(ctx context.Context, sink WorkflowEventSin
 		for idx := range items {
 			items[idx] = w.executeSingleCall(ctx, round, items[idx])
 		}
+	} else if levels != nil {
+		w.executeCallsByLevel(ctx, round, items, levels)
 	} else {
 		w.executeCallsInParallel(ctx, round, items)
 	}
@@ -952,8 +521,8 @@ func (w *AgentLoop) executeRoundCalls(ctx context.Context, sink WorkflowEventSin
 				Status:     item.callSummary.Status,
 				Summary:    item.callSummary.Summary,
 				DurationMs: item.callSummary.DurationMs,
-				Arguments:  cloneMap(item.call.Arguments),
-				Data:       cloneMap(item.result.Data),
+				Arguments:  CloneMap(item.call.Arguments),
+				Data:       CloneMap(item.result.Data),
 			})
 		}
 	}
@@ -983,6 +552,127 @@ func (w *AgentLoop) executeCallsInParallel(ctx context.Context, round int, items
 	wg.Wait()
 }
 
+// resolveExecutionLevels partitions planned calls into dependency-ordered levels
+// using ToolSpec.After declarations from the registry. Returns nil when there are
+// no ordering constraints (single level or no dependency data), allowing the
+// caller to use the flat-parallel fast path.
+func resolveExecutionLevels(calls []Call, registry *Registry) [][]int {
+	if registry == nil || len(calls) <= 1 {
+		return nil
+	}
+
+	planned := make(map[string]int, len(calls))
+	for i, c := range calls {
+		name := strings.TrimSpace(c.Name)
+		if name != "" {
+			planned[name] = i
+		}
+	}
+
+	graph := make([][]int, len(calls))
+	inDegree := make([]int, len(calls))
+
+	for i, c := range calls {
+		spec, ok := registry.GetSpec(c.Name)
+		if !ok || len(spec.After) == 0 {
+			continue
+		}
+		for _, depName := range spec.After {
+			if depIdx, found := planned[depName]; found && depIdx != i {
+				graph[depIdx] = append(graph[depIdx], i)
+				inDegree[i]++
+			}
+		}
+	}
+
+	hasDeps := false
+	for _, d := range inDegree {
+		if d > 0 {
+			hasDeps = true
+			break
+		}
+	}
+	if !hasDeps {
+		return nil
+	}
+
+	type queueEntry struct {
+		index int
+		level int
+	}
+	queue := make([]queueEntry, 0, len(calls))
+
+	for i, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, queueEntry{index: i, level: 0})
+		}
+	}
+
+	levels := make([][]int, 0)
+	visited := 0
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		visited++
+
+		for curr.level >= len(levels) {
+			levels = append(levels, nil)
+		}
+		levels[curr.level] = append(levels[curr.level], curr.index)
+
+		for _, dependent := range graph[curr.index] {
+			inDegree[dependent]--
+			if inDegree[dependent] == 0 {
+				queue = append(queue, queueEntry{index: dependent, level: curr.level + 1})
+			}
+		}
+	}
+
+	if visited != len(calls) {
+		log.Warnf("[agent] cycle detected in tool dependency graph: visited %d/%d, falling back to flat parallel", visited, len(calls))
+		return nil
+	}
+
+	if len(levels) <= 1 {
+		return nil
+	}
+
+	return levels
+}
+
+// executeCallsByLevel executes tool call levels sequentially: level N waits for
+// level N-1 to complete. Calls within a single level run in parallel bounded by
+// the semaphore (same pattern as executeCallsInParallel).
+func (w *AgentLoop) executeCallsByLevel(ctx context.Context, round int, items []roundExecutionItem, levels [][]int) {
+	for _, level := range levels {
+		if len(level) == 1 {
+			items[level[0]] = w.executeSingleCall(ctx, round, items[level[0]])
+			continue
+		}
+
+		maxConcurrency := w.maxParallelToolCalls
+		if maxConcurrency <= 1 {
+			maxConcurrency = 1
+		}
+		if maxConcurrency > len(level) {
+			maxConcurrency = len(level)
+		}
+
+		sem := make(chan struct{}, maxConcurrency)
+		var wg sync.WaitGroup
+		for _, idx := range level {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(itemIndex int) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				items[itemIndex] = w.executeSingleCall(ctx, round, items[itemIndex])
+			}(idx)
+		}
+		wg.Wait()
+	}
+}
+
 func (w *AgentLoop) executeSingleCall(ctx context.Context, round int, item roundExecutionItem) roundExecutionItem {
 	startedAt := time.Now()
 	result, err := w.executor.Execute(ctx, item.call)
@@ -998,17 +688,20 @@ func (w *AgentLoop) executeSingleCall(ctx context.Context, round int, item round
 		Status:     strings.TrimSpace(result.Status),
 		Summary:    summary,
 		DurationMs: durationMs,
-		Arguments:  cloneMap(item.call.Arguments),
-		Data:       cloneMap(result.Data),
+		Arguments:  CloneMap(item.call.Arguments),
+		Data:       CloneMap(result.Data),
 	}
 	return item
 }
 
-func (w *AgentLoop) roundExecutionMode(callCount int) string {
+func (w *AgentLoop) roundExecutionMode(callCount int, levels [][]int) string {
 	if w == nil {
 		return "serial"
 	}
 	if w.parallelToolCalls && w.maxParallelToolCalls > 1 && callCount > 1 {
+		if len(levels) > 1 {
+			return fmt.Sprintf("parallel_levels=%d", len(levels))
+		}
 		return "parallel"
 	}
 	return "serial"

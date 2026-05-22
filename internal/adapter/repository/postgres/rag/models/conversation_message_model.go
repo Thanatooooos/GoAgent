@@ -12,6 +12,9 @@ type ConversationMessageModel struct {
 	UserID           string                `gorm:"column:user_id;type:varchar(20);not null;index:idx_conversation_user_time,priority:2;index:idx_conversation_summary,priority:2"`
 	Role             string                `gorm:"column:role;type:varchar(16);not null"`
 	Content          string                `gorm:"column:content;type:text;not null"`
+	RawContent       string                `gorm:"column:raw_content;type:text"`
+	ContentSummary   string                `gorm:"column:content_summary;type:text"`
+	IsSummarized     bool                  `gorm:"column:is_summarized;not null;default:false"`
 	ThinkingContent  string                `gorm:"column:thinking_content;type:text"`
 	ThinkingDuration *int                  `gorm:"column:thinking_duration"`
 	CreateTime       time.Time             `gorm:"column:create_time;not null;index:idx_conversation_user_time,priority:3;index:idx_conversation_summary,priority:3"`

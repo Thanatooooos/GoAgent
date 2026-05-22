@@ -9,6 +9,11 @@ import (
 
 func WebSearchBehavior() ragcore.ToolBehavior {
 	return ragcore.ToolBehavior{
+		ObserverExamples: []string{
+			`Web search completed and found relevant results:
+Current result: web_search found several external results for the user's general question.
+Return: {"done":false,"reasoning":"Search results exist, but full page content is still needed before answering.","state":{"phase":"fetching","hypothesis":"the web results look relevant but need full content review","confidence":0.4,"openQuestions":["What does each result page actually say?"],"checkedTools":["web_search"],"nextHintCalls":[{"name":"web_fetch","arguments":{"urls":["https://example.com/1","https://example.com/2"]}}]}}`,
+		},
 		Decode: func(result ragcore.Result) (any, error) {
 			view, ok := ViewWebSearchResult(result)
 			if !ok {
@@ -28,6 +33,11 @@ func WebSearchBehavior() ragcore.ToolBehavior {
 
 func WebFetchBehavior() ragcore.ToolBehavior {
 	return ragcore.ToolBehavior{
+		ObserverExamples: []string{
+			`Web page content has been fetched and is sufficient:
+Current result: web_fetch fetched the top result pages and extracted readable text.
+Return: {"done":true,"reasoning":"The fetched page content is sufficient to synthesize an answer with source attribution.","state":{"phase":"complete","hypothesis":"external sources provide enough evidence to answer the question","confidence":0.8,"openQuestions":[],"checkedTools":["web_fetch"],"nextHintCalls":[]}}`,
+		},
 		Decode: func(result ragcore.Result) (any, error) {
 			view, ok := ViewWebFetchResult(result)
 			if !ok {
@@ -46,6 +56,11 @@ func WebFetchBehavior() ragcore.ToolBehavior {
 
 func ExternalEvidenceWorkflowBehavior() ragcore.ToolBehavior {
 	return ragcore.ToolBehavior{
+		ObserverExamples: []string{
+			`The external evidence workflow already completed source review and readiness assessment:
+Current result: external_evidence_workflow includes selected sources, quality assessment, and readinessReasoning.
+Return: {"done":true,"reasoning":"The workflow already gathered and assessed the external evidence needed for the answer.","state":{"phase":"complete","hypothesis":"the workflow output is sufficient for a sourced answer","confidence":0.8,"openQuestions":[],"checkedTools":["external_evidence_workflow"],"nextHintCalls":[]}}`,
+		},
 		Decode: func(result ragcore.Result) (any, error) {
 			view, ok := ViewExternalEvidenceWorkflowResult(result)
 			if !ok {

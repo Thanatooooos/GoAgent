@@ -36,6 +36,9 @@ func toConversationMessageModel(item domain.ConversationMessage) models.Conversa
 		UserID:           item.UserID,
 		Role:             item.Role,
 		Content:          item.Content,
+		RawContent:       item.RawContent,
+		ContentSummary:   item.ContentSummary,
+		IsSummarized:     item.IsSummarized,
 		ThinkingContent:  item.ThinkingContent,
 		ThinkingDuration: item.ThinkingDuration,
 		CreateTime:       item.CreateTime,
@@ -50,6 +53,9 @@ func toConversationMessageDomain(item models.ConversationMessageModel) domain.Co
 		UserID:           item.UserID,
 		Role:             item.Role,
 		Content:          item.Content,
+		RawContent:       item.RawContent,
+		ContentSummary:   item.ContentSummary,
+		IsSummarized:     item.IsSummarized,
 		ThinkingContent:  item.ThinkingContent,
 		ThinkingDuration: item.ThinkingDuration,
 		CreateTime:       item.CreateTime,
@@ -76,6 +82,78 @@ func toConversationSummaryDomain(item models.ConversationSummaryModel) domain.Co
 		UserID:         item.UserID,
 		LastMessageID:  item.LastMessageID,
 		Content:        item.Content,
+		CreateTime:     item.CreateTime,
+		UpdateTime:     item.UpdateTime,
+	}
+}
+
+func toMemoryItemModel(item domain.MemoryItem) models.MemoryItemModel {
+	return models.MemoryItemModel{
+		ID:              item.ID,
+		UserID:          item.UserID,
+		ScopeType:       item.ScopeType,
+		ScopeID:         item.ScopeID,
+		MemoryType:      item.MemoryType,
+		SourceMessageID: item.SourceMessageID,
+		Content:         item.Content,
+		Summary:         item.Summary,
+		Confidence:      item.Confidence,
+		Status:          item.Status,
+		LastConfirmedAt: item.LastConfirmedAt,
+		ExpiresAt:       item.ExpiresAt,
+		CreatedBy:       item.CreatedBy,
+		UpdatedBy:       item.UpdatedBy,
+		CreateTime:      item.CreateTime,
+		UpdateTime:      item.UpdateTime,
+	}
+}
+
+func toMemoryItemDomain(item models.MemoryItemModel) domain.MemoryItem {
+	return domain.MemoryItem{
+		ID:              item.ID,
+		UserID:          item.UserID,
+		ScopeType:       item.ScopeType,
+		ScopeID:         item.ScopeID,
+		MemoryType:      item.MemoryType,
+		SourceMessageID: item.SourceMessageID,
+		Content:         item.Content,
+		Summary:         item.Summary,
+		Confidence:      item.Confidence,
+		Status:          item.Status,
+		LastConfirmedAt: item.LastConfirmedAt,
+		ExpiresAt:       item.ExpiresAt,
+		CreatedBy:       item.CreatedBy,
+		UpdatedBy:       item.UpdatedBy,
+		CreateTime:      item.CreateTime,
+		UpdateTime:      item.UpdateTime,
+	}
+}
+
+func toSessionChunkModel(item domain.SessionChunk) models.SessionChunkModel {
+	return models.SessionChunkModel{
+		ID:             item.ID,
+		ConversationID: item.ConversationID,
+		MessageID:      item.MessageID,
+		UserID:         item.UserID,
+		ChunkIndex:     item.ChunkIndex,
+		Content:        item.Content,
+		ContentSummary: item.ContentSummary,
+		TokenEstimate:  item.TokenEstimate,
+		CreateTime:     item.CreateTime,
+		UpdateTime:     item.UpdateTime,
+	}
+}
+
+func toSessionChunkDomain(item models.SessionChunkModel) domain.SessionChunk {
+	return domain.SessionChunk{
+		ID:             item.ID,
+		ConversationID: item.ConversationID,
+		MessageID:      item.MessageID,
+		UserID:         item.UserID,
+		ChunkIndex:     item.ChunkIndex,
+		Content:        item.Content,
+		ContentSummary: item.ContentSummary,
+		TokenEstimate:  item.TokenEstimate,
 		CreateTime:     item.CreateTime,
 		UpdateTime:     item.UpdateTime,
 	}

@@ -141,6 +141,23 @@ func ReadMapItems(raw any) []map[string]any {
 	}
 }
 
+func LatestInterestingTaskNode(data map[string]any) (string, string, bool) {
+	if len(data) == 0 {
+		return "", "", false
+	}
+	for _, item := range ReadMapItems(data["taskNodeSummary"]) {
+		nodeID := strings.TrimSpace(ReadStringArg(item, "nodeId"))
+		status := strings.ToLower(strings.TrimSpace(ReadStringArg(item, "status")))
+		if nodeID == "" {
+			continue
+		}
+		if status == "failed" || status == "running" {
+			return nodeID, status, true
+		}
+	}
+	return "", "", false
+}
+
 func ReadDataMap(data map[string]any, key string) map[string]any {
 	if len(data) == 0 {
 		return nil

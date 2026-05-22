@@ -5,30 +5,12 @@ import (
 	"strings"
 
 	ragcore "local/rag-project/internal/app/rag/tool/core"
-	systemmod "local/rag-project/internal/app/rag/tool/modules/system"
 )
-
-type TraceNodeItemView struct {
-	NodeID   string
-	NodeType string
-	NodeName string
-	Status   string
-}
-
-type TraceNodeQueryResultView struct {
-	TraceID        string
-	Status         string
-	ConversationID string
-	TaskID         string
-	ErrorMessage   string
-	NodeCount      int
-	Nodes          []TraceNodeItemView
-}
 
 func TraceRetrievalDiagnoseBehavior() ragcore.ToolBehavior {
 	return ragcore.ToolBehavior{
 		Decode: func(result ragcore.Result) (any, error) {
-			view, ok := systemmod.ViewDiagnosisResult(result)
+			view, ok := ViewTraceRetrievalDiagnoseResult(result)
 			if !ok {
 				return nil, fmt.Errorf("trace_retrieval_diagnose result view unavailable")
 			}
@@ -38,14 +20,19 @@ func TraceRetrievalDiagnoseBehavior() ragcore.ToolBehavior {
 			return ragcore.NextDecision{Done: true, Reason: "trace_retrieval_diagnose_terminal", Terminal: true}
 		},
 		Observe: func(result ragcore.Result, _ ragcore.ObserveInput) (ragcore.ObserveResult, bool) {
+			view, ok := ViewTraceRetrievalDiagnoseResult(result)
+			if !ok {
+				return ragcore.ObserveResult{}, false
+			}
 			return ragcore.NewObserveResult(true, "The retrieval diagnosis already provides enough trace-level evidence to answer directly.", ragcore.ObserveState(
 				"complete",
-				result.GetString("conclusion"),
+				ragcore.FirstNonEmpty(view.Conclusion, result.Summary, result.ErrorMessage),
 				1,
 				nil,
 				[]string{result.Name},
 			)), true
 		},
+		RenderContext: renderTraceRetrievalDiagnoseContext,
 	}
 }
 
@@ -70,35 +57,66 @@ func TraceNodeQueryBehavior() ragcore.ToolBehavior {
 				[]string{result.Name},
 			)), true
 		},
+		RenderContext: renderTraceNodeQueryContext,
 	}
 }
 
-func ViewTraceNodeQueryResult(result ragcore.Result) (TraceNodeQueryResultView, bool) {
-	if strings.TrimSpace(result.Name) != "trace_node_query" {
-		return TraceNodeQueryResultView{}, false
+func renderTraceNodeQueryContext(result ragcore.Result) string {
+	view, ok := ViewTraceNodeQueryResult(result)
+	if !ok {
+		return ""
 	}
-	view := TraceNodeQueryResultView{
-		TraceID:        result.GetString("traceId"),
-		Status:         result.GetString("status"),
-		ConversationID: result.GetString("conversationId"),
-		TaskID:         result.GetString("taskId"),
-		ErrorMessage:   result.GetString("errorMessage"),
-		NodeCount:      result.GetInt("nodeCount"),
+
+	lines := make([]string, 0, len(view.Nodes)+2)
+	if view.ErrorMessage != "" {
+		lines = append(lines, "Trace error: "+view.ErrorMessage)
 	}
-	for _, item := range ragcore.ReadMapItems(result.Data["nodes"]) {
-		entry := TraceNodeItemView{
-			NodeID:   ragcore.ReadDataString(item, "nodeId"),
-			NodeType: ragcore.ReadDataString(item, "nodeType"),
-			NodeName: ragcore.ReadDataString(item, "nodeName"),
-			Status:   ragcore.ReadDataString(item, "status"),
-		}
-		if entry.NodeID == "" && entry.NodeName == "" {
+	for idx, node := range view.Nodes {
+		label := ragcore.FirstNonEmpty(strings.TrimSpace(node.NodeName), strings.TrimSpace(node.NodeID))
+		if label == "" {
 			continue
 		}
-		view.Nodes = append(view.Nodes, entry)
+		lines = append(lines, fmt.Sprintf("%d. %s type=%s status=%s", idx+1, label, strings.TrimSpace(node.NodeType), strings.TrimSpace(node.Status)))
+		if summary := renderTraceNodeSummary(node); summary != "" {
+			lines = append(lines, "   "+summary)
+		}
 	}
-	if view.NodeCount == 0 {
-		view.NodeCount = len(view.Nodes)
+	if len(lines) == 0 {
+		return ""
 	}
-	return view, true
+	return "Trace nodes:\n" + strings.Join(lines, "\n")
+}
+
+func renderTraceNodeSummary(node TraceNodeItemView) string {
+	if node.MemoryRecall != nil {
+		if summary := strings.TrimSpace(node.MemoryRecall.Summary); summary != "" {
+			return "memory recall: " + summary
+		}
+	}
+	if summary := strings.TrimSpace(node.Summary); summary != "" {
+		return "summary: " + summary
+	}
+	return ""
+}
+
+func renderTraceRetrievalDiagnoseContext(result ragcore.Result) string {
+	view, ok := ViewTraceRetrievalDiagnoseResult(result)
+	if !ok {
+		return ""
+	}
+
+	lines := make([]string, 0, 4)
+	if conclusion := strings.TrimSpace(view.Conclusion); conclusion != "" {
+		lines = append(lines, "Conclusion: "+conclusion)
+	}
+	if confidence := strings.TrimSpace(view.Confidence); confidence != "" {
+		lines = append(lines, "Confidence: "+confidence)
+	}
+	if len(view.Facts) > 0 {
+		lines = append(lines, "Facts:\n- "+strings.Join(view.Facts, "\n- "))
+	}
+	if len(view.NextActions) > 0 {
+		lines = append(lines, "Suggested next actions:\n- "+strings.Join(view.NextActions, "\n- "))
+	}
+	return strings.Join(lines, "\n")
 }

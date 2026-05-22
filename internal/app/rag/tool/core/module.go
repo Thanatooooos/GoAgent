@@ -19,6 +19,12 @@ type ToolSpec struct {
 	ApprovalRequirement string
 	ReadOnly            bool
 	Family              string
+
+	// After lists tool names that should execute before this tool when both
+	// appear in the same round. "OR" semantics: if any tool in After is also
+	// planned in the same round, it runs in an earlier execution level.
+	// nil/empty means no ordering constraints (fully parallel-safe).
+	After []string
 }
 
 func (s ToolSpec) Normalize() ToolSpec {
@@ -30,6 +36,7 @@ func (s ToolSpec) Normalize() ToolSpec {
 	s.RiskLevel = strings.TrimSpace(strings.ToLower(s.RiskLevel))
 	s.ApprovalRequirement = strings.TrimSpace(strings.ToLower(s.ApprovalRequirement))
 	s.Family = strings.TrimSpace(strings.ToLower(s.Family))
+	s.After = UniqueTrimmedStrings(s.After)
 	if s.ReadOnly {
 		s.Definition.ReadOnly = true
 	} else if s.Definition.ReadOnly {
@@ -76,11 +83,12 @@ type NextDecision struct {
 }
 
 type ToolBehavior struct {
-	Decode        func(result Result) (any, error)
-	Next          func(result Result, input WorkflowInput) NextDecision
-	Observe       func(result Result, input ObserveInput) (ObserveResult, bool)
-	RenderContext func(result Result) string
-	BuildGuidance func(result Result, input GuidanceInput) []GuidanceNote
+	Decode           func(result Result) (any, error)
+	Next             func(result Result, input WorkflowInput) NextDecision
+	Observe          func(result Result, input ObserveInput) (ObserveResult, bool)
+	RenderContext    func(result Result) string
+	BuildGuidance    func(result Result, input GuidanceInput) []GuidanceNote
+	ObserverExamples []string
 }
 
 type ToolModule struct {
@@ -127,21 +135,6 @@ func NewLegacyToolAdapterWithSpec(tool Tool, spec ToolSpec) LegacyToolAdapter {
 	return NewLegacyToolAdapterWithBehavior(tool, spec, ToolBehavior{})
 }
 
-// InferBehavior is an optional hook set by downstream packages to provide
-// behavior inference for legacy tools. When set, NewLegacyToolAdapter calls
-// this function when the supplied behavior is empty.
-var InferBehavior func(name string) ToolBehavior
-
-// SetInferBehavior wires InferBehavior to use the given Registry for behavior lookup.
-func SetInferBehavior(r *Registry) {
-	InferBehavior = func(name string) ToolBehavior {
-		if behavior, ok := r.GetBehavior(name); ok {
-			return behavior
-		}
-		return ToolBehavior{}
-	}
-}
-
 func NewLegacyToolAdapterWithBehavior(tool Tool, spec ToolSpec, behavior ToolBehavior) LegacyToolAdapter {
 	if tool != nil {
 		definition := tool.Definition()
@@ -151,15 +144,6 @@ func NewLegacyToolAdapterWithBehavior(tool Tool, spec ToolSpec, behavior ToolBeh
 		if spec.ReadOnly || definition.ReadOnly {
 			spec.ReadOnly = true
 			spec.Definition.ReadOnly = true
-		}
-	}
-	if isEmptyToolBehavior(behavior) && InferBehavior != nil {
-		name := strings.TrimSpace(spec.Definition.Name)
-		if name == "" && tool != nil {
-			name = strings.TrimSpace(tool.Definition().Name)
-		}
-		if name != "" {
-			behavior = InferBehavior(name)
 		}
 	}
 	return LegacyToolAdapter{
@@ -174,14 +158,8 @@ func isEmptyToolBehavior(behavior ToolBehavior) bool {
 		behavior.Next == nil &&
 		behavior.Observe == nil &&
 		behavior.RenderContext == nil &&
-		behavior.BuildGuidance == nil
-}
-
-func legacyToolName(tool Tool) string {
-	if tool == nil {
-		return ""
-	}
-	return strings.TrimSpace(tool.Definition().Name)
+		behavior.BuildGuidance == nil &&
+		len(behavior.ObserverExamples) == 0
 }
 
 func (a LegacyToolAdapter) Module() ToolModule {

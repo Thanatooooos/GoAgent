@@ -9,25 +9,6 @@ import (
 	"local/rag-project/internal/framework/log"
 )
 
-func newObserveResult(done bool, reasoning string, state AgentState) ObserveResult {
-	return ObserveResult{
-		Done:      done,
-		Reasoning: strings.TrimSpace(reasoning),
-		State:     state.Normalize(),
-	}
-}
-
-func observeState(phase string, hypothesis string, confidence float64, nextHintCalls []HintCall, checkedTools []string, openQuestions ...string) AgentState {
-	return AgentState{
-		Phase:         phase,
-		Hypothesis:    hypothesis,
-		Confidence:    confidence,
-		OpenQuestions: openQuestions,
-		CheckedTools:  checkedTools,
-		NextHintCalls: nextHintCalls,
-	}.Normalize()
-}
-
 // RuleObserver is the lightweight V1 observer built on top of tool results.
 type RuleObserver struct{}
 
@@ -37,13 +18,13 @@ func NewRuleObserver() *RuleObserver {
 
 func (o *RuleObserver) Observe(_ context.Context, input ObserveInput) (ObserveResult, error) {
 	if len(input.RoundResults) == 0 {
-		return newObserveResult(true, "No new tool results were produced in this round, so the agent loop stops here.", AgentState{
+		return NewObserveResult(true, "No new tool results were produced in this round, so the agent loop stops here.", AgentState{
 			Phase:        "complete",
 			CheckedTools: input.PreviousState.CheckedTools,
 		}), nil
 	}
 	if input.ReachedMaxLoop {
-		return newObserveResult(true, fmt.Sprintf("The agent loop already reached the maximum of %d iterations, so it must answer with the current evidence.", input.MaxIterations), AgentState{
+		return NewObserveResult(true, fmt.Sprintf("The agent loop already reached the maximum of %d iterations, so it must answer with the current evidence.", input.MaxIterations), AgentState{
 			Phase:         "complete",
 			Confidence:    input.PreviousState.Confidence,
 			Hypothesis:    input.PreviousState.Hypothesis,
@@ -54,18 +35,18 @@ func (o *RuleObserver) Observe(_ context.Context, input ObserveInput) (ObserveRe
 
 	latest, ok := lastNonThinkResult(input.RoundResults)
 	if !ok {
-		return newObserveResult(true, "All tool results in this round were think calls; no diagnostic evidence to evaluate.", AgentState{
+		return NewObserveResult(true, "All tool results in this round were think calls; no diagnostic evidence to evaluate.", AgentState{
 			Phase:        "complete",
 			CheckedTools: input.PreviousState.CheckedTools,
 		}), nil
 	}
-	if observation, handled := observeWithRegistry(latest, input); handled {
+	if observation, handled := ObserveWithRegistry(latest, input); handled {
 		return observation, nil
 	}
 
 	switch latest.GetString("diagnosisDepth") {
 	case "node_level":
-		return newObserveResult(true, "The diagnosis chain reached node-level evidence. The agent can answer with high confidence.", observeState(
+		return NewObserveResult(true, "The diagnosis chain reached node-level evidence. The agent can answer with high confidence.", ObserveState(
 			"complete",
 			strings.TrimSpace(firstNonEmpty(latest.Summary, latest.ErrorMessage)),
 			0.95,
@@ -73,7 +54,7 @@ func (o *RuleObserver) Observe(_ context.Context, input ObserveInput) (ObserveRe
 			[]string{latest.Name},
 		)), nil
 	case "task_level":
-		return newObserveResult(true, "The diagnosis chain reached task-level evidence but not a specific node. The agent can answer with moderate confidence.", observeState(
+		return NewObserveResult(true, "The diagnosis chain reached task-level evidence but not a specific node. The agent can answer with moderate confidence.", ObserveState(
 			"complete",
 			strings.TrimSpace(firstNonEmpty(latest.Summary, latest.ErrorMessage)),
 			0.75,
@@ -82,7 +63,7 @@ func (o *RuleObserver) Observe(_ context.Context, input ObserveInput) (ObserveRe
 		)), nil
 	default:
 		log.Infof("[observer] no module behavior for %q, falling back to generic completion", strings.TrimSpace(latest.Name))
-		return newObserveResult(true, "The current tool result is already sufficient as supporting context, so the agent loop stops here.", observeState(
+		return NewObserveResult(true, "The current tool result is already sufficient as supporting context, so the agent loop stops here.", ObserveState(
 			"complete",
 			strings.TrimSpace(firstNonEmpty(latest.Summary, latest.ErrorMessage)),
 			0.6,

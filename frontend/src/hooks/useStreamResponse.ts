@@ -2,7 +2,9 @@ import type {
   AgentThinkPayload,
   CompletionPayload,
   FallbackPayload,
+  MemoryStoredPayload,
   MessageDeltaPayload,
+  SessionRecallPayload,
   StreamMetaPayload,
   ToolCallPayload
 } from "@/types";
@@ -11,6 +13,8 @@ export interface StreamHandlers {
   onMeta?: (payload: StreamMetaPayload) => void;
   onFallback?: (payload: FallbackPayload) => void;
   onAgentThink?: (payload: AgentThinkPayload) => void;
+  onMemoryStored?: (payload: MemoryStoredPayload) => void;
+  onSessionRecall?: (payload: SessionRecallPayload) => void;
   onMessage?: (payload: MessageDeltaPayload) => void;
   onThinking?: (payload: MessageDeltaPayload) => void;
   onFinish?: (payload: CompletionPayload) => void;
@@ -71,6 +75,12 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         break;
       case "agent_think":
         handlers.onAgentThink?.(payload as AgentThinkPayload);
+        break;
+      case "memory_stored":
+        handlers.onMemoryStored?.(payload as MemoryStoredPayload);
+        break;
+      case "session_recall":
+        handlers.onSessionRecall?.(payload as SessionRecallPayload);
         break;
       case "message":
         {

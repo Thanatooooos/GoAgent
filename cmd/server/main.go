@@ -232,5 +232,5 @@ func registerRagRoutes(r *gin.Engine, cfg *config.Config, runtime *ragbootstrap.
 	}
 	protected := resolveContextPath(r, cfg).Group("/")
 	protected.Use(umw.RequireLogin())
-	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Feedback, runtime.Chat, runtime.Trace)
+	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Memory, runtime.Feedback, runtime.Chat, runtime.Trace)
 }

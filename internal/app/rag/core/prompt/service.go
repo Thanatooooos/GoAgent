@@ -9,6 +9,8 @@ import (
 
 type Context struct {
 	Question         string
+	MemoryContext    string
+	SessionContext   string
 	KnowledgeContext string
 	ToolContext      string
 	WorkflowPolicy   string
@@ -47,9 +49,15 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 		return nil, fmt.Errorf("build system prompt: %w", err)
 	}
 
-	messages := make([]convention.ChatMessage, 0, len(ctx.History)+5)
+	messages := make([]convention.ChatMessage, 0, len(ctx.History)+6)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, convention.SystemMessage(systemPrompt))
+	}
+	if strings.TrimSpace(ctx.MemoryContext) != "" {
+		messages = append(messages, convention.SystemMessage(formatMemoryContext(ctx.MemoryContext)))
+	}
+	if strings.TrimSpace(ctx.SessionContext) != "" {
+		messages = append(messages, convention.SystemMessage(formatSessionContext(ctx.SessionContext)))
 	}
 	if strings.TrimSpace(ctx.KnowledgeContext) != "" {
 		messages = append(messages, convention.SystemMessage(formatKnowledgeContext(ctx.KnowledgeContext)))
@@ -72,18 +80,26 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 	return messages, nil
 }
 
+func formatMemoryContext(context string) string {
+	return "## Long-Term Memory\nUse these persistent user- or knowledge-base-specific memories when they are relevant to the current question.\n" + strings.TrimSpace(context)
+}
+
+func formatSessionContext(context string) string {
+	return "## 会话上下文片段\n" + strings.TrimSpace(context)
+}
+
 func formatKnowledgeContext(context string) string {
-	return "## 知识上下文\n" + strings.TrimSpace(context)
+	return "## Knowledge Context\n" + strings.TrimSpace(context)
 }
 
 func formatToolContext(context string) string {
-	return "## 工具上下文\n" + strings.TrimSpace(context)
+	return "## Tool Context\n" + strings.TrimSpace(context)
 }
 
 func formatWorkflowPolicy(policy string) string {
-	return "## 执行约束\n" + strings.TrimSpace(policy)
+	return "## Workflow Policy\n" + strings.TrimSpace(policy)
 }
 
 func formatAnswerGuidance(guidance string) string {
-	return "## 回答要求\n" + strings.TrimSpace(guidance)
+	return "## Answer Guidance\n" + strings.TrimSpace(guidance)
 }

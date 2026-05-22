@@ -11,6 +11,17 @@ import (
 // Type aliases for module view types.
 
 type DiagnosisResultView = systemmod.DiagnosisResultView
+type DocumentQueryResultView = systemmod.DocumentQueryResultView
+type DocumentChunkLogItemView = systemmod.DocumentChunkLogItemView
+type DocumentChunkLogQueryResultView = systemmod.DocumentChunkLogQueryResultView
+type DocumentListItemView = systemmod.DocumentListItemView
+type DocumentListResultView = systemmod.DocumentListResultView
+type IngestionTaskNodeSummaryView = systemmod.IngestionTaskNodeSummaryView
+type IngestionTaskQueryResultView = systemmod.IngestionTaskQueryResultView
+type IngestionTaskNodeItemView = systemmod.IngestionTaskNodeItemView
+type IngestionTaskNodeQueryResultView = systemmod.IngestionTaskNodeQueryResultView
+type TaskListItemView = systemmod.TaskListItemView
+type TaskListResultView = systemmod.TaskListResultView
 
 type WebSearchItemView = webmod.WebSearchItemView
 type WebSearchResultView = webmod.WebSearchResultView
@@ -24,7 +35,9 @@ type ExternalEvidenceWorkflowView = webmod.ExternalEvidenceWorkflowView
 type ThinkResultView = metamod.ThinkResultView
 
 type TraceNodeItemView = tracemod.TraceNodeItemView
+type TraceNodeMemoryRecallSummaryView = tracemod.TraceNodeMemoryRecallSummaryView
 type TraceNodeQueryResultView = tracemod.TraceNodeQueryResultView
+type TraceRetrievalDiagnoseResultView = tracemod.TraceRetrievalDiagnoseResultView
 
 type DocumentRootCauseDiagnosisView = graphmod.DocumentRootCauseDiagnosisView
 type DocumentDiagnoseWithSearchView = graphmod.DocumentDiagnoseWithSearchView
@@ -33,6 +46,30 @@ type DocumentDiagnoseWithSearchView = graphmod.DocumentDiagnoseWithSearchView
 
 func ViewDiagnosisResult(result Result) (DiagnosisResultView, bool) {
 	return systemmod.ViewDiagnosisResult(result)
+}
+
+func ViewDocumentQueryResult(result Result) (DocumentQueryResultView, bool) {
+	return systemmod.ViewDocumentQueryResult(result)
+}
+
+func ViewDocumentChunkLogQueryResult(result Result) (DocumentChunkLogQueryResultView, bool) {
+	return systemmod.ViewDocumentChunkLogQueryResult(result)
+}
+
+func ViewDocumentListResult(result Result) (DocumentListResultView, bool) {
+	return systemmod.ViewDocumentListResult(result)
+}
+
+func ViewIngestionTaskQueryResult(result Result) (IngestionTaskQueryResultView, bool) {
+	return systemmod.ViewIngestionTaskQueryResult(result)
+}
+
+func ViewIngestionTaskNodeQueryResult(result Result) (IngestionTaskNodeQueryResultView, bool) {
+	return systemmod.ViewIngestionTaskNodeQueryResult(result)
+}
+
+func ViewTaskListResult(result Result) (TaskListResultView, bool) {
+	return systemmod.ViewTaskListResult(result)
 }
 
 func ViewWebSearchResult(result Result) (WebSearchResultView, bool) {
@@ -49,6 +86,10 @@ func ViewExternalEvidenceWorkflowResult(result Result) (ExternalEvidenceWorkflow
 
 func ViewTraceNodeQueryResult(result Result) (TraceNodeQueryResultView, bool) {
 	return tracemod.ViewTraceNodeQueryResult(result)
+}
+
+func ViewTraceRetrievalDiagnoseResult(result Result) (TraceRetrievalDiagnoseResultView, bool) {
+	return tracemod.ViewTraceRetrievalDiagnoseResult(result)
 }
 
 func ViewDocumentRootCauseDiagnosisResult(result Result) (DocumentRootCauseDiagnosisView, bool) {

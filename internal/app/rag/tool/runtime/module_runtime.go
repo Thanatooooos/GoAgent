@@ -6,7 +6,7 @@ import (
 	. "local/rag-project/internal/app/rag/tool/core"
 )
 
-func nextDecisionWithRegistry(registry *Registry, input WorkflowInput, result Result) NextDecision {
+func NextDecisionWithRegistry(registry *Registry, input WorkflowInput, result Result) NextDecision {
 	if registry != nil {
 		if behavior, ok := registry.GetBehavior(result.Name); ok && behavior.Next != nil {
 			decision := behavior.Next(result, input)
@@ -15,27 +15,15 @@ func nextDecisionWithRegistry(registry *Registry, input WorkflowInput, result Re
 			}
 		}
 	}
-
-	hintCall, done, reason := nextAction(result)
-	decision := NextDecision{
-		Done:     done,
-		Reason:   reason,
-		Terminal: done,
-	}
-	if hintCall != nil {
-		decision.HintCalls = []HintCall{*hintCall}
-		decision.Done = false
-		decision.Terminal = false
-	}
-	return decision
+	return NextDecision{Done: true, Reason: "terminal", Terminal: true}
 }
 
-func planCallsFromResultsWithRegistry(results []Result, input WorkflowInput, registry *Registry) []Call {
+func PlanCallsFromResultsWithRegistry(results []Result, input WorkflowInput, registry *Registry) []Call {
 	if len(results) == 0 {
 		return nil
 	}
 	latest := results[len(results)-1]
-	decision := nextDecisionWithRegistry(registry, input, latest)
+	decision := NextDecisionWithRegistry(registry, input, latest)
 	if decision.Done || decision.Terminal || len(decision.HintCalls) == 0 {
 		return nil
 	}
@@ -55,7 +43,7 @@ func planCallsFromResultsWithRegistry(results []Result, input WorkflowInput, reg
 	return calls
 }
 
-func observeWithRegistry(result Result, input ObserveInput) (ObserveResult, bool) {
+func ObserveWithRegistry(result Result, input ObserveInput) (ObserveResult, bool) {
 	if input.ToolRegistry == nil {
 		return ObserveResult{}, false
 	}
@@ -120,11 +108,6 @@ func BuildAnswerGuidanceWithRegistry(registry *Registry, results []Result) strin
 				return text
 			}
 		}
-		return ""
-	}
-	// Fallback when no registry is available — used by compat paths and tests.
-	if diagnosis, ok := selectDiagnosisResult(results); ok {
-		return buildDiagnosisGuidance(diagnosis, results)
 	}
 	return BuildAnswerGuidance(results)
 }

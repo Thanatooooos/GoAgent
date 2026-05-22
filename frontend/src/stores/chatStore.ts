@@ -6,8 +6,10 @@ import type {
   CompletionPayload,
   FallbackPayload,
   FeedbackValue,
+  MemoryStoredPayload,
   Message,
   MessageDeltaPayload,
+  SessionRecallPayload,
   Session,
   ToolCallPayload
 } from "@/types";
@@ -50,6 +52,8 @@ interface ChatState {
   appendStreamContent: (delta: string) => void;
   appendThinkingContent: (delta: string) => void;
   appendAgentThink: (payload: AgentThinkPayload) => void;
+  appendMemoryStored: (payload: MemoryStoredPayload) => void;
+  appendSessionRecall: (payload: SessionRecallPayload) => void;
   appendToolCall: (call: ToolCallPayload) => void;
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
 }
@@ -497,6 +501,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!payload || typeof payload !== "object") return;
         get().appendAgentThink(payload);
       },
+      onMemoryStored: (payload: MemoryStoredPayload) => {
+        if (!payload || typeof payload !== "object") return;
+        console.info("[chat-debug] onMemoryStored", payload);
+        get().appendMemoryStored(payload);
+      },
+      onSessionRecall: (payload: SessionRecallPayload) => {
+        if (!payload || typeof payload !== "object") return;
+        console.info("[chat-debug] onSessionRecall", payload);
+        get().appendSessionRecall(payload);
+      },
       onReject: (payload: MessageDeltaPayload) => {
         if (!payload || typeof payload !== "object") return;
         get().appendStreamContent(payload.delta);
@@ -742,6 +756,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return {
           ...item,
           agentThinks: [...current, message]
+        };
+      })
+    }));
+  },
+  appendMemoryStored: (payload) => {
+    if (!payload?.messageId) return;
+    set((state) => ({
+      messages: state.messages.map((item) => {
+        if (item.id !== state.streamingMessageId) return item;
+        if (item.status === "cancelled" || item.status === "error") return item;
+        return {
+          ...item,
+          memoryEvents: [...(item.memoryEvents ?? []), payload]
+        };
+      })
+    }));
+  },
+  appendSessionRecall: (payload) => {
+    if (!payload?.used || !payload.hitCount) return;
+    set((state) => ({
+      messages: state.messages.map((item) => {
+        if (item.id !== state.streamingMessageId) return item;
+        if (item.status === "cancelled" || item.status === "error") return item;
+        return {
+          ...item,
+          sessionRecallEvents: [...(item.sessionRecallEvents ?? []), payload]
         };
       })
     }));

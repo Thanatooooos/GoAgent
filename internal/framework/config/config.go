@@ -142,11 +142,40 @@ type RagRateLimitGlobal struct {
 }
 
 type RagMemoryConfig struct {
-	HistoryKeepTurns  int  `mapstructure:"history-keep-turns"`
-	SummaryStartTurns int  `mapstructure:"summary-start-turns"`
-	SummaryEnabled    bool `mapstructure:"summary-enabled"`
-	SummaryMaxChars   int  `mapstructure:"summary-max-chars"`
-	TitleMaxLength    int  `mapstructure:"title-max-length"`
+	HistoryKeepTurns  int                     `mapstructure:"history-keep-turns"`
+	SummaryStartTurns int                     `mapstructure:"summary-start-turns"`
+	SummaryEnabled    bool                    `mapstructure:"summary-enabled"`
+	SummaryMaxChars   int                     `mapstructure:"summary-max-chars"`
+	TitleMaxLength    int                     `mapstructure:"title-max-length"`
+	LongMessage       RagLongMessageConfig    `mapstructure:"long-message"`
+	SessionRecall     RagSessionRecallConfig  `mapstructure:"session-recall"`
+	ExplicitRecall    RagExplicitRecallConfig `mapstructure:"explicit-recall"`
+}
+
+type RagLongMessageConfig struct {
+	Enabled                     bool `mapstructure:"enabled"`
+	DirectContextMaxTokens      int  `mapstructure:"direct-context-max-tokens"`
+	ChunkSummaryThresholdTokens int  `mapstructure:"chunk-summary-threshold-tokens"`
+	LargeChunkTargetTokens      int  `mapstructure:"large-chunk-target-tokens"`
+	LargeChunkOverlapTokens     int  `mapstructure:"large-chunk-overlap-tokens"`
+	MediumSummaryMaxChars       int  `mapstructure:"medium-summary-max-chars"`
+	ChunkSummaryMaxChars        int  `mapstructure:"chunk-summary-max-chars"`
+	LargeSummaryMaxChars        int  `mapstructure:"large-summary-max-chars"`
+}
+
+type RagSessionRecallConfig struct {
+	Enabled              bool `mapstructure:"enabled"`
+	MaxExcerpts          int  `mapstructure:"max-excerpts"`
+	MaxChunksPerMessage  int  `mapstructure:"max-chunks-per-message"`
+	ExcerptTargetTokens  int  `mapstructure:"excerpt-target-tokens"`
+	ExcerptOverlapTokens int  `mapstructure:"excerpt-overlap-tokens"`
+	MaxPromptTokens      int  `mapstructure:"max-prompt-tokens"`
+}
+
+type RagExplicitRecallConfig struct {
+	MaxItems              int `mapstructure:"max-items"`
+	MaxContextChars       int `mapstructure:"max-context-chars"`
+	MaxCandidatesPerScope int `mapstructure:"max-candidates-per-scope"`
 }
 
 type RagKnowledgeConfig struct {

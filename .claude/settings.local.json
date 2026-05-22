@@ -73,7 +73,8 @@
       "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/knowledge/service/test -count=1 -run \"TestPipeline\")",
       "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go test ./internal/app/knowledge/service/test/... -count=1)",
       "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go build ./internal/...)",
-      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go vet ./internal/app/ingestion/... ./internal/adapter/repository/postgres/ingestion/... ./internal/adapter/http/ingestion/... ./internal/bootstrap/ingestion/...)"
+      "Bash(GOCACHE='D:\\\\goagent\\\\.gocache-agent' go vet ./internal/app/ingestion/... ./internal/adapter/repository/postgres/ingestion/... ./internal/adapter/http/ingestion/... ./internal/bootstrap/ingestion/...)",
+      "Bash(go test *)"
     ]
   }
 }

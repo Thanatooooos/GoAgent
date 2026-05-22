@@ -13,27 +13,15 @@ func ThinkBehavior() ToolBehavior {
 }
 
 func WebSearchBehavior() ToolBehavior {
-	behavior := webmod.WebSearchBehavior()
-	behavior.RenderContext = renderWebSearchContextCompat
-	return behavior
+	return webmod.WebSearchBehavior()
 }
 
 func WebFetchBehavior() ToolBehavior {
-	behavior := webmod.WebFetchBehavior()
-	behavior.RenderContext = renderWebFetchContextCompat
-	behavior.BuildGuidance = func(_ Result, input GuidanceInput) []GuidanceNote {
-		return runtimeGuidanceNotes(input.AllResults)
-	}
-	return behavior
+	return webmod.WebFetchBehavior()
 }
 
 func ExternalEvidenceWorkflowBehavior() ToolBehavior {
-	behavior := webmod.ExternalEvidenceWorkflowBehavior()
-	behavior.RenderContext = renderExternalEvidenceContextCompat
-	behavior.BuildGuidance = func(_ Result, input GuidanceInput) []GuidanceNote {
-		return runtimeGuidanceNotes(input.AllResults)
-	}
-	return behavior
+	return webmod.ExternalEvidenceWorkflowBehavior()
 }
 
 func DocumentQueryBehavior() ToolBehavior {
@@ -61,25 +49,15 @@ func IngestionTaskNodeQueryBehavior() ToolBehavior {
 }
 
 func DocumentIngestionDiagnoseBehavior() ToolBehavior {
-	behavior := systemmod.DocumentIngestionDiagnoseBehavior()
-	behavior.BuildGuidance = func(_ Result, input GuidanceInput) []GuidanceNote {
-		return runtimeGuidanceNotes(input.AllResults)
-	}
-	return behavior
+	return systemmod.DocumentIngestionDiagnoseBehavior()
 }
 
 func TaskIngestionDiagnoseBehavior() ToolBehavior {
-	behavior := systemmod.TaskIngestionDiagnoseBehavior()
-	behavior.BuildGuidance = func(_ Result, input GuidanceInput) []GuidanceNote {
-		return runtimeGuidanceNotes(input.AllResults)
-	}
-	return behavior
+	return systemmod.TaskIngestionDiagnoseBehavior()
 }
 
 func TraceNodeQueryBehavior() ToolBehavior {
-	behavior := tracemod.TraceNodeQueryBehavior()
-	behavior.RenderContext = renderTraceNodeQueryContextCompat
-	return behavior
+	return tracemod.TraceNodeQueryBehavior()
 }
 
 func TraceRetrievalDiagnoseBehavior() ToolBehavior {
@@ -87,19 +65,9 @@ func TraceRetrievalDiagnoseBehavior() ToolBehavior {
 }
 
 func DocumentRootCauseDiagnosisBehavior() ToolBehavior {
-	behavior := graphmod.DocumentRootCauseDiagnosisBehavior()
-	behavior.RenderContext = renderDocumentRootCauseDiagnosisContextCompat
-	behavior.BuildGuidance = func(result Result, _ GuidanceInput) []GuidanceNote {
-		return buildDocumentRootCauseDiagnosisGuidanceNotes(result)
-	}
-	return behavior
+	return graphmod.DocumentRootCauseDiagnosisBehavior()
 }
 
 func DocumentDiagnoseWithSearchBehavior() ToolBehavior {
-	behavior := graphmod.DocumentDiagnoseWithSearchBehavior()
-	behavior.RenderContext = renderDocumentDiagnoseWithSearchContextCompat
-	behavior.BuildGuidance = func(result Result, input GuidanceInput) []GuidanceNote {
-		return buildDocumentDiagnoseWithSearchGuidanceNotes(result, input.AllResults)
-	}
-	return behavior
+	return graphmod.DocumentDiagnoseWithSearchBehavior()
 }

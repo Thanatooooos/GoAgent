@@ -33,6 +33,8 @@ export interface Message {
   status?: MessageStatus;
   toolCalls?: ToolCallPayload[];
   agentThinks?: string[];
+  memoryEvents?: MemoryStoredPayload[];
+  sessionRecallEvents?: SessionRecallPayload[];
   fallbackReason?: string;
 }
 
@@ -69,4 +71,31 @@ export interface CompletionPayload {
 
 export interface AgentThinkPayload {
   message: string;
+}
+
+export interface MemoryStoredPayload {
+  conversationId: string;
+  messageId: string;
+  isSummarized: boolean;
+  contentSummary?: string;
+  rawContentLength?: number;
+}
+
+export interface SessionRecallHitPayload {
+  messageId: string;
+  chunkIndex: number;
+  score: number;
+  summary?: string;
+  excerpt?: string;
+  sourceChunkId?: string;
+}
+
+export interface SessionRecallPayload {
+  query?: string;
+  used: boolean;
+  hitCount: number;
+  topScore: number;
+  truncatedBy?: string;
+  candidateCount?: number;
+  hits?: SessionRecallHitPayload[];
 }

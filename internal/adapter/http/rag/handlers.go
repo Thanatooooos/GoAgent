@@ -22,6 +22,7 @@ import (
 type Handler struct {
 	conversationService *ragservice.ConversationService
 	messageService      *ragservice.ConversationMessageService
+	memoryService       *ragservice.MemoryService
 	feedbackService     *ragservice.MessageFeedbackService
 	chatService         *ragservice.RagChatService
 }
@@ -30,12 +31,14 @@ type Handler struct {
 func NewHandler(
 	conversationService *ragservice.ConversationService,
 	messageService *ragservice.ConversationMessageService,
+	memoryService *ragservice.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService *ragservice.RagChatService,
 ) *Handler {
 	return &Handler{
 		conversationService: conversationService,
 		messageService:      messageService,
+		memoryService:       memoryService,
 		feedbackService:     feedbackService,
 		chatService:         chatService,
 	}
@@ -46,15 +49,20 @@ func RegisterRoutes(
 	r gin.IRouter,
 	conversationService *ragservice.ConversationService,
 	messageService *ragservice.ConversationMessageService,
+	memoryService *ragservice.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService *ragservice.RagChatService,
 	traceService *ragservice.TraceService,
 ) {
-	handler := NewHandler(conversationService, messageService, feedbackService, chatService)
+	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, chatService)
 	r.GET("/conversations", handler.ListConversations)
 	r.GET("/conversations/:conversationId/messages", handler.ListMessages)
 	r.PUT("/conversations/:conversationId", handler.RenameConversation)
 	r.DELETE("/conversations/:conversationId", handler.DeleteConversation)
+	r.GET("/rag/v3/memories", handler.ListMemories)
+	r.POST("/rag/v3/memories", handler.Remember)
+	r.POST("/rag/v3/remember", handler.Remember)
+	r.POST("/rag/v3/memories/:memoryId/expire", handler.ExpireMemory)
 	r.POST("/conversations/messages/:messageId/feedback", handler.SubmitFeedback)
 	r.GET("/rag/v3/chat", handler.Chat)
 	r.POST("/rag/v3/stop", handler.StopChat)
@@ -72,6 +80,15 @@ type feedbackRequest struct {
 	Vote int `json:"vote"`
 }
 
+type rememberRequest struct {
+	ScopeType       string `json:"scopeType"`
+	ScopeID         string `json:"scopeId"`
+	MemoryType      string `json:"memoryType"`
+	SourceMessageID string `json:"sourceMessageId"`
+	Content         string `json:"content"`
+	Summary         string `json:"summary"`
+}
+
 type conversationVO struct {
 	ConversationID string     `json:"conversationId"`
 	Title          string     `json:"title"`
@@ -83,10 +100,30 @@ type messageVO struct {
 	ConversationID   string     `json:"conversationId"`
 	Role             string     `json:"role"`
 	Content          string     `json:"content"`
+	RawContent       string     `json:"rawContent,omitempty"`
+	ContentSummary   string     `json:"contentSummary,omitempty"`
+	IsSummarized     bool       `json:"isSummarized,omitempty"`
 	ThinkingContent  string     `json:"thinkingContent,omitempty"`
 	ThinkingDuration *int       `json:"thinkingDuration,omitempty"`
 	Vote             *int       `json:"vote"`
 	CreateTime       *time.Time `json:"createTime,omitempty"`
+}
+
+type memoryItemVO struct {
+	ID              string     `json:"id"`
+	UserID          string     `json:"userId"`
+	ScopeType       string     `json:"scopeType"`
+	ScopeID         string     `json:"scopeId,omitempty"`
+	MemoryType      string     `json:"memoryType"`
+	SourceMessageID string     `json:"sourceMessageId,omitempty"`
+	Content         string     `json:"content"`
+	Summary         string     `json:"summary,omitempty"`
+	Confidence      float64    `json:"confidence"`
+	Status          string     `json:"status"`
+	LastConfirmedAt *time.Time `json:"lastConfirmedAt,omitempty"`
+	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
+	CreateTime      *time.Time `json:"createTime,omitempty"`
+	UpdateTime      *time.Time `json:"updateTime,omitempty"`
 }
 
 // ListConversations 返回当前登录用户的会话列表。
@@ -244,6 +281,14 @@ func (s *sseChatSink) SendAgentThink(message string) error {
 	return s.sender.SendEvent("agent_think", gin.H{"message": message})
 }
 
+func (s *sseChatSink) SendMemoryStored(payload ragservice.RagChatMemoryStoredPayload) error {
+	return s.sender.SendEvent("memory_stored", payload)
+}
+
+func (s *sseChatSink) SendSessionRecall(payload ragservice.RagChatSessionRecallPayload) error {
+	return s.sender.SendEvent("session_recall", payload)
+}
+
 // SendThinking 发送 SSE thinking 事件。
 func (s *sseChatSink) SendThinking(delta string) error {
 	return s.sender.SendEvent("message", gin.H{
@@ -369,6 +414,9 @@ func toMessageVO(item ragservice.ConversationMessageView) messageVO {
 		ConversationID:   item.ConversationID,
 		Role:             string(item.Role),
 		Content:          item.Content,
+		RawContent:       item.RawContent,
+		ContentSummary:   item.ContentSummary,
+		IsSummarized:     item.IsSummarized,
 		ThinkingContent:  item.ThinkingContent,
 		ThinkingDuration: item.ThinkingDuration,
 		Vote:             item.Vote,
@@ -391,4 +439,87 @@ func writeSuccess[T any](c *gin.Context, data T) {
 		RequestID: middleware.RequestID(c),
 		Data:      data,
 	})
+}
+
+func (h *Handler) ListMemories(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	items, err := h.memoryService.ListMemories(c.Request.Context(), ragservice.ListMemoriesInput{
+		UserID:     user.UserID,
+		ScopeType:  c.Query("scopeType"),
+		ScopeID:    c.Query("scopeId"),
+		MemoryType: c.Query("memoryType"),
+		Status:     c.Query("status"),
+		Page:       parsePositiveInt(c.Query("current"), 1),
+		PageSize:   parsePositiveInt(c.Query("size"), 20),
+	})
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	result := make([]memoryItemVO, 0, len(items))
+	for _, item := range items {
+		result = append(result, toMemoryItemVO(item))
+	}
+	writeSuccess(c, result)
+}
+
+func (h *Handler) Remember(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	var req rememberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	item, err := h.memoryService.SaveExplicitMemory(c.Request.Context(), ragservice.SaveExplicitMemoryInput{
+		UserID:          user.UserID,
+		ScopeType:       req.ScopeType,
+		ScopeID:         req.ScopeID,
+		MemoryType:      req.MemoryType,
+		SourceMessageID: req.SourceMessageID,
+		Content:         req.Content,
+		Summary:         req.Summary,
+	})
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	writeSuccess(c, toMemoryItemVO(item))
+}
+
+func (h *Handler) ExpireMemory(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+	item, err := h.memoryService.ExpireMemory(c.Request.Context(), user.UserID, c.Param("memoryId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	writeSuccess(c, toMemoryItemVO(item))
+}
+
+func toMemoryItemVO(item domain.MemoryItem) memoryItemVO {
+	return memoryItemVO{
+		ID:              item.ID,
+		UserID:          item.UserID,
+		ScopeType:       item.ScopeType,
+		ScopeID:         item.ScopeID,
+		MemoryType:      item.MemoryType,
+		SourceMessageID: item.SourceMessageID,
+		Content:         item.Content,
+		Summary:         item.Summary,
+		Confidence:      item.Confidence,
+		Status:          item.Status,
+		LastConfirmedAt: item.LastConfirmedAt,
+		ExpiresAt:       item.ExpiresAt,
+		CreateTime:      timePointer(item.CreateTime),
+		UpdateTime:      timePointer(item.UpdateTime),
+	}
 }

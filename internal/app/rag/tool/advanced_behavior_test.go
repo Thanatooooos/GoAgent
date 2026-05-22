@@ -33,7 +33,7 @@ func TestDocumentIngestionDiagnoseBehaviorNextObserveAndGuidance(t *testing.T) {
 		t.Fatalf("expected observe hook to continue, got handled=%v observation=%+v", handled, observation)
 	}
 
-	notes := behavior.BuildGuidance(result, GuidanceInput{AllResults: []Result{
+	guidance := ragruntime.BuildAnswerGuidanceWithRegistry(testRegistry, []Result{
 		result,
 		{
 			Name: "ingestion_task_node_query",
@@ -44,9 +44,9 @@ func TestDocumentIngestionDiagnoseBehaviorNextObserveAndGuidance(t *testing.T) {
 				"errorMessage": "connection refused",
 			},
 		},
-	}})
-	if len(notes) != 1 || !strings.Contains(notes[0].Text, "connection refused") {
-		t.Fatalf("expected diagnosis guidance with deeper evidence, got %+v", notes)
+	})
+	if !strings.Contains(guidance, "connection refused") {
+		t.Fatalf("expected diagnosis guidance with deeper evidence, got %q", guidance)
 	}
 }
 
@@ -63,7 +63,21 @@ func TestTraceAndThinkBehaviors(t *testing.T) {
 			"nodeCount":    2,
 			"nodes": []map[string]any{
 				{"nodeId": "rewrite", "nodeType": "llm", "nodeName": "rewrite", "status": "failed"},
-				{"nodeId": "retrieve", "nodeType": "retriever", "nodeName": "retrieve", "status": "pending"},
+				{
+					"nodeId":   "long_term_memory",
+					"nodeType": "memory",
+					"nodeName": "long_term_memory",
+					"status":   "success",
+					"summary":  "selected 2/3 memories, contributions hybrid=1, vector_only=1, sources keyword=1, vector=2",
+					"memoryRecall": map[string]any{
+						"candidateCount":     3,
+						"selectedCount":      2,
+						"sourceCounts":       map[string]any{"keyword": 1, "vector": 2},
+						"contributionCounts": map[string]any{"hybrid": 1, "vector_only": 1},
+						"memoryIds":          []any{"mem-1", "mem-2"},
+						"summary":            "selected 2/3 memories, contributions hybrid=1, vector_only=1, sources keyword=1, vector=2",
+					},
+				},
 			},
 		},
 	}
@@ -79,6 +93,43 @@ func TestTraceAndThinkBehaviors(t *testing.T) {
 	rendered := traceBehavior.RenderContext(traceResult)
 	if !strings.Contains(rendered, "Trace nodes") || !strings.Contains(rendered, "rewrite") {
 		t.Fatalf("expected rendered trace nodes, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "memory recall: selected 2/3 memories") || !strings.Contains(rendered, "vector_only=1") {
+		t.Fatalf("expected rendered memory recall summary, got %q", rendered)
+	}
+
+	traceDiagnoseBehavior := TraceRetrievalDiagnoseBehavior()
+	traceDiagnoseResult := Result{
+		Name:   "trace_retrieval_diagnose",
+		Status: CallStatusSuccess,
+		Data: map[string]any{
+			"conclusion":   "retrieve node returned no evidence because the rewritten query was too broad",
+			"confidence":   "high",
+			"facts":        []string{"trace trace-1 ended with empty retrieve result"},
+			"nextActions":  []string{"narrow the query before retrying retrieval"},
+			"latestTaskId": "task-1",
+			"latestNodeId": "retrieve",
+		},
+	}
+
+	decoded, err := traceDiagnoseBehavior.Decode(traceDiagnoseResult)
+	if err != nil {
+		t.Fatalf("decode trace retrieval diagnose: %v", err)
+	}
+	diagnosisView, ok := decoded.(TraceRetrievalDiagnoseResultView)
+	if !ok {
+		t.Fatalf("expected TraceRetrievalDiagnoseResultView, got %T", decoded)
+	}
+	if diagnosisView.LatestNodeID != "retrieve" {
+		t.Fatalf("unexpected trace diagnose node id: %+v", diagnosisView)
+	}
+	observation, handled = traceDiagnoseBehavior.Observe(traceDiagnoseResult, ObserveInput{})
+	if !handled || !observation.Done {
+		t.Fatalf("expected trace diagnose observe hook to complete, got handled=%v observation=%+v", handled, observation)
+	}
+	rendered = traceDiagnoseBehavior.RenderContext(traceDiagnoseResult)
+	if !strings.Contains(rendered, "Conclusion: retrieve node returned no evidence") {
+		t.Fatalf("expected rendered diagnose context, got %q", rendered)
 	}
 
 	thinkBehavior := ThinkBehavior()
@@ -131,7 +182,7 @@ func TestGraphBehaviorsProvideGuidanceAndCompletion(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
-		Question: "doc-1 为什么失败了",
+		Question: "doc-1 涓轰粈涔堝け璐ヤ簡",
 	})
 	if err != nil {
 		t.Fatalf("run agent loop: %v", err)
@@ -186,7 +237,27 @@ func TestDocumentDiagnoseWithSearchBehaviorGuidance(t *testing.T) {
 	if !strings.Contains(guidance, "connection refused troubleshooting") {
 		t.Fatalf("expected search query in diagnose+search guidance, got %q", guidance)
 	}
-	if !strings.Contains(guidance, "不要编造具体修复方案") {
+	if !strings.Contains(guidance, "Do not invent a concrete fix") {
 		t.Fatalf("expected warning about missing fetched page evidence, got %q", guidance)
+	}
+
+	guidance = ragruntime.BuildAnswerGuidanceWithRegistry(registry, []Result{
+		result,
+		{
+			Name:   "external_evidence_workflow",
+			Status: CallStatusSuccess,
+			Data: map[string]any{
+				"selectedUrls": []string{"https://example.com/vector-store"},
+				"pages": []map[string]any{
+					{
+						"url":  "https://example.com/vector-store",
+						"text": "Restart the vector store after confirming the network policy.",
+					},
+				},
+			},
+		},
+	})
+	if !strings.Contains(guidance, "rely only on fetched page content") {
+		t.Fatalf("expected fetched-page guidance when external evidence workflow contains readable pages, got %q", guidance)
 	}
 }
