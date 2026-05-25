@@ -10,7 +10,7 @@ import (
 	ragcache "local/rag-project/internal/app/rag/cache"
 	"local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
-	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/app/rag/port"
 	"local/rag-project/internal/framework/log"
 )
 
@@ -110,7 +110,7 @@ func (c *sessionRecallConversationCache) onStoreEvicted(fullKey string) {
 	}
 }
 
-func (s *defaultSessionRecallService) SetCacheSupport(cache longtermmemory.RecallCache, options SessionRecallCacheOptions) {
+func (s *defaultSessionRecallService) SetCacheSupport(cache port.MemoryRecallCache, options SessionRecallCacheOptions) {
 	if s == nil {
 		return
 	}
@@ -255,7 +255,7 @@ func (s *defaultSessionRecallService) embedQuery(ctx context.Context, query stri
 	}
 
 	if s.sharedRecallCache != nil && s.cacheOptions.Enabled {
-		cacheKey := longtermmemory.QueryEmbeddingCacheKey{
+		cacheKey := port.QueryEmbeddingCacheKey{
 			Query:          query,
 			EmbeddingModel: strings.TrimSpace(s.cacheOptions.EmbeddingModel),
 		}

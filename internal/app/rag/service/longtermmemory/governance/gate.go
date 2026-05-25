@@ -1,4 +1,4 @@
-package longtermmemory
+package governance
 
 import (
 	"strings"
@@ -7,7 +7,7 @@ import (
 	"local/rag-project/internal/framework/exception"
 )
 
-func evaluateExplicitMemoryGate(input normalizedSaveInput) (GateDecision, error) {
+func EvaluateExplicitMemoryGate(input NormalizedSaveInput) (GateDecision, error) {
 	if strings.TrimSpace(input.UserID) == "" {
 		return GateDecision{}, exception.NewClientException("user id is required", nil)
 	}

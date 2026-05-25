@@ -1,4 +1,4 @@
-package longtermmemory
+package governance
 
 import (
 	"context"
@@ -9,12 +9,56 @@ import (
 	"local/rag-project/internal/app/rag/port"
 )
 
+type memoryItemRepoStub struct {
+	listFn func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error)
+}
+
+func (s memoryItemRepoStub) Create(context.Context, domain.MemoryItem) (domain.MemoryItem, error) {
+	return domain.MemoryItem{}, nil
+}
+
+func (s memoryItemRepoStub) Update(context.Context, domain.MemoryItem) (domain.MemoryItem, error) {
+	return domain.MemoryItem{}, nil
+}
+
+func (s memoryItemRepoStub) GetByID(context.Context, string) (domain.MemoryItem, error) {
+	return domain.MemoryItem{}, nil
+}
+
+func (s memoryItemRepoStub) List(ctx context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+	if s.listFn == nil {
+		return nil, nil
+	}
+	return s.listFn(ctx, filter)
+}
+
+func (s memoryItemRepoStub) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
+	if s.listFn == nil {
+		return nil, nil
+	}
+	filter := port.MemoryItemListFilter{
+		UserID:        userID,
+		ScopeTypes:    []string{scopeType},
+		CanonicalKeys: []string{canonicalKey},
+		Statuses:      []string{domain.MemoryStatusActive},
+	}
+	if scopeType == domain.MemoryScopeKB {
+		filter.ScopeIDs = []string{scopeID}
+	}
+	return s.listFn(ctx, filter)
+}
+
+func (s memoryItemRepoStub) ListActiveSingleValueConflicts(context.Context, []string) ([]port.ActiveMemoryConflict, error) {
+	return nil, nil
+}
+
+func (s memoryItemRepoStub) TouchLastUsed(context.Context, string, []string, time.Time) error {
+	return nil
+}
+
 func TestDetectMemoryConflictSingleValuedSupersedesPreviousValue(t *testing.T) {
 	now := time.Date(2026, 5, 22, 9, 0, 0, 0, time.UTC)
 	repo := memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		listFn: func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
 			return []domain.MemoryItem{{
 				ID:           "mem-old",
@@ -46,9 +90,9 @@ func TestDetectMemoryConflictSingleValuedSupersedesPreviousValue(t *testing.T) {
 		Content:      "以后都用中文回答",
 		UpdatedBy:    "user-1",
 	}
-	resolution, err := detectMemoryConflict(context.Background(), repo, func() time.Time { return now }, GateDecision{
+	resolution, err := DetectMemoryConflict(context.Background(), repo, func() time.Time { return now }, GateDecision{
 		Action: GateDecisionCreate,
-		Input: normalizedSaveInput{
+		Input: NormalizedSaveInput{
 			UserID:       "user-1",
 			ScopeType:    domain.MemoryScopeGlobal,
 			CanonicalKey: "response.language",
@@ -73,9 +117,6 @@ func TestDetectMemoryConflictSingleValuedSupersedesPreviousValue(t *testing.T) {
 func TestDetectMemoryConflictMultiValuedSameValueMerges(t *testing.T) {
 	now := time.Date(2026, 5, 22, 9, 30, 0, 0, time.UTC)
 	repo := memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		listFn: func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
 			return []domain.MemoryItem{{
 				ID:              "mem-1",
@@ -110,9 +151,9 @@ func TestDetectMemoryConflictMultiValuedSameValueMerges(t *testing.T) {
 		Content:      "项目已经集成 Slack",
 		UpdatedBy:    "user-1",
 	}
-	resolution, err := detectMemoryConflict(context.Background(), repo, func() time.Time { return now }, GateDecision{
+	resolution, err := DetectMemoryConflict(context.Background(), repo, func() time.Time { return now }, GateDecision{
 		Action: GateDecisionCreate,
-		Input: normalizedSaveInput{
+		Input: NormalizedSaveInput{
 			UserID:       "user-1",
 			ScopeType:    domain.MemoryScopeKB,
 			ScopeID:      "kb-1",
@@ -144,7 +185,7 @@ func TestMemoryItemsEquivalentTreatsJSONObjectsAsStructurallyEqual(t *testing.T)
 		ValueType: domain.MemoryValueTypeJSON,
 		ValueJSON: `{"mode":"offline","allow":false}`,
 	}
-	if !memoryItemsEquivalent(left, right) {
+	if !MemoryItemsEquivalent(left, right) {
 		t.Fatalf("expected JSON objects with reordered keys to be equivalent")
 	}
 }
@@ -162,7 +203,11 @@ func TestMemoryItemsEquivalentDoesNotMergeDifferentContentOnlyByDisplayValue(t *
 		DisplayValue: "GitHub",
 		Content:      "项目集成 GitHub Actions",
 	}
-	if memoryItemsEquivalent(left, right) {
+	if MemoryItemsEquivalent(left, right) {
 		t.Fatalf("expected different content with same display value to stay distinct")
 	}
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
 }

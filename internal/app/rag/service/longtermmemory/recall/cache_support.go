@@ -1,34 +1,33 @@
-package longtermmemory
+package recall
 
 import (
 	"context"
-	"fmt"
-	"sort"
 	"strings"
 
 	ragcache "local/rag-project/internal/app/rag/cache"
 	"local/rag-project/internal/app/rag/cachemetrics"
-	"local/rag-project/internal/app/rag/domain"
+	"local/rag-project/internal/app/rag/port"
+	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
 	"local/rag-project/internal/framework/log"
 )
 
-func (r *recallService) setRecallCache(cache RecallCache, options RecallCacheOptions) {
+func (r *recallService) SetRecallCache(cache port.MemoryRecallCache, options memorytypes.RecallCacheOptions) {
 	if r == nil {
 		return
 	}
 	r.cache = cache
-	r.cacheOptions = normalizeRecallCacheOptions(options)
+	r.cacheOptions = memorytypes.NormalizeRecallCacheOptions(options)
 }
 
-func (r *recallService) setCacheMetrics(metrics *cachemetrics.Service) {
+func (r *recallService) SetCacheMetrics(metrics *cachemetrics.Service) {
 	if r == nil {
 		return
 	}
 	r.cacheMetrics = metrics
 }
 
-func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID string, query string, knowledgeBaseIDs []string) ([]memoryRecallProjection, ScopeVersions, string, string, error) {
-	versions := ScopeVersions{}
+func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID string, query string, knowledgeBaseIDs []string) ([]memoryRecallProjection, port.ScopeVersions, string, string, error) {
+	versions := port.ScopeVersions{}
 	if r.canUseRedisRecallCache() {
 		if loaded, ok := r.readScopeVersions(ctx, userID, knowledgeBaseIDs); ok {
 			versions = loaded
@@ -44,7 +43,7 @@ func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID st
 		r.recordCacheMetric("rule_memories", "redis", "disabled")
 		items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs)
 		if err != nil {
-			return nil, ScopeVersions{}, "disabled", "cache_disabled", err
+			return nil, port.ScopeVersions{}, "disabled", "cache_disabled", err
 		}
 		projections := projectOrderedMemoryItems(query, items)
 		sortRuleMemoryProjections(projections)
@@ -54,7 +53,7 @@ func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID st
 
 	versions, ok := r.readScopeVersions(ctx, userID, knowledgeBaseIDs)
 	if ok {
-		cacheKey := RuleMemoryCacheKey{
+		cacheKey := port.RuleMemoryCacheKey{
 			UserID:           userID,
 			KnowledgeBaseIDs: knowledgeBaseIDs,
 			ScopeVersions:    versions,
@@ -77,7 +76,7 @@ func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID st
 		if err != nil {
 			return nil, versions, "miss", "rule_cache_miss", err
 		}
-		if err := r.cache.SetRuleMemories(ctx, cacheKey, RuleMemoryCacheValue{
+		if err := r.cache.SetRuleMemories(ctx, cacheKey, port.RuleMemoryCacheValue{
 			Items: memoryItemsToCached(items),
 		}, r.cacheOptions.RuleTTL); err != nil {
 			r.recordCacheMetric("rule_memories", "redis", "error")
@@ -94,12 +93,12 @@ func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID st
 	r.recordCacheMetric("rule_memories", "redis", "fallback")
 	items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs)
 	if err != nil {
-		return nil, ScopeVersions{}, "fallback", "scope_version_unavailable", err
+		return nil, port.ScopeVersions{}, "fallback", "scope_version_unavailable", err
 	}
 	projections := projectOrderedMemoryItems(query, items)
 	sortRuleMemoryProjections(projections)
 	r.writeRuleRequestCache(ctx, requestKey, projections)
-	return projections, ScopeVersions{}, "fallback", "scope_version_unavailable", nil
+	return projections, port.ScopeVersions{}, "fallback", "scope_version_unavailable", nil
 }
 
 func (r *recallService) loadFactRankingProjections(
@@ -108,10 +107,10 @@ func (r *recallService) loadFactRankingProjections(
 	query string,
 	knowledgeBaseIDs []string,
 	candidateLimit int,
-) ([]memoryRecallProjection, int, ScopeVersions, string, string, string, error) {
-	requestKey := buildFactRequestCacheKey(userID, query, knowledgeBaseIDs, candidateLimit, r.cacheOptions.EmbeddingModel, r.cacheOptions.RankVersion, ScopeVersions{})
+) ([]memoryRecallProjection, int, port.ScopeVersions, string, string, string, error) {
+	requestKey := buildFactRequestCacheKey(userID, query, knowledgeBaseIDs, candidateLimit, r.cacheOptions.EmbeddingModel, r.cacheOptions.RankVersion, port.ScopeVersions{})
 	if cached, hit := r.readFactRequestCache(ctx, requestKey); hit {
-		return cachedFactProjectionsToRuntime(cached.Items), cached.CandidateCount, ScopeVersions{}, "request", "skipped", "", nil
+		return cachedFactProjectionsToRuntime(cached.Items), cached.CandidateCount, port.ScopeVersions{}, "request", "skipped", "", nil
 	}
 
 	if !r.canUseRedisRecallCache() {
@@ -119,7 +118,7 @@ func (r *recallService) loadFactRankingProjections(
 		r.recordCacheMetric("query_embedding", "redis", "disabled")
 		ranked, candidateCount, embeddingLayer, err := r.computeFactRankingProjections(ctx, userID, query, knowledgeBaseIDs, candidateLimit)
 		r.writeFactRequestCache(ctx, requestKey, ranked, candidateCount)
-		return ranked, candidateCount, ScopeVersions{}, "disabled", embeddingLayer, "cache_disabled", err
+		return ranked, candidateCount, port.ScopeVersions{}, "disabled", embeddingLayer, "cache_disabled", err
 	}
 
 	versions, ok := r.readScopeVersions(ctx, userID, knowledgeBaseIDs)
@@ -129,7 +128,7 @@ func (r *recallService) loadFactRankingProjections(
 			return cachedFactProjectionsToRuntime(cached.Items), cached.CandidateCount, versions, "request", "skipped", "", nil
 		}
 
-		cacheKey := FactRankingCacheKey{
+		cacheKey := port.FactRankingCacheKey{
 			UserID:           userID,
 			Query:            query,
 			KnowledgeBaseIDs: knowledgeBaseIDs,
@@ -159,7 +158,7 @@ func (r *recallService) loadFactRankingProjections(
 		if len(ranked) == 0 {
 			ttl = r.cacheOptions.EmptyFactTTL
 		}
-		if err := r.cache.SetFactRankings(ctx, cacheKey, FactRankingCacheValue{
+		if err := r.cache.SetFactRankings(ctx, cacheKey, port.FactRankingCacheValue{
 			CandidateCount: candidateCount,
 			Items:          runtimeFactProjectionsToCached(ranked),
 		}, ttl); err != nil {
@@ -177,7 +176,7 @@ func (r *recallService) loadFactRankingProjections(
 	if err == nil {
 		r.writeFactRequestCache(ctx, requestKey, ranked, candidateCount)
 	}
-	return ranked, candidateCount, ScopeVersions{}, "fallback", embeddingLayer, "scope_version_unavailable", err
+	return ranked, candidateCount, port.ScopeVersions{}, "fallback", embeddingLayer, "scope_version_unavailable", err
 }
 
 func (r *recallService) computeFactRankingProjections(
@@ -213,7 +212,7 @@ func (r *recallService) embedQuery(ctx context.Context, query string) ([]float32
 		return vector, "request", nil
 	}
 	if r.canUseRedisRecallCache() {
-		key := QueryEmbeddingCacheKey{
+		key := port.QueryEmbeddingCacheKey{
 			Query:          query,
 			EmbeddingModel: modelID,
 		}
@@ -273,14 +272,14 @@ func (r *recallService) canUseRedisRecallCache() bool {
 	return r != nil && r.cache != nil && r.cacheOptions.Enabled
 }
 
-func (r *recallService) readScopeVersions(ctx context.Context, userID string, knowledgeBaseIDs []string) (ScopeVersions, bool) {
+func (r *recallService) readScopeVersions(ctx context.Context, userID string, knowledgeBaseIDs []string) (port.ScopeVersions, bool) {
 	if !r.canUseRedisRecallCache() {
-		return ScopeVersions{}, false
+		return port.ScopeVersions{}, false
 	}
 	versions, err := r.cache.GetScopeVersions(ctx, userID, knowledgeBaseIDs)
 	if err != nil {
 		log.Warnf("long-term memory scope version lookup failed: userID=%s err=%v", userID, err)
-		return ScopeVersions{}, false
+		return port.ScopeVersions{}, false
 	}
 	return versions, true
 }
@@ -300,7 +299,7 @@ func (r *recallService) readRuleRequestCache(ctx context.Context, key string, qu
 		r.recordCacheMetric("rule_memories", "request", "miss")
 		return nil, false
 	}
-	items, ok := value.([]CachedMemoryItem)
+	items, ok := value.([]port.CachedMemoryItem)
 	if !ok {
 		r.recordCacheMetric("rule_memories", "request", "error")
 		return nil, false
@@ -325,7 +324,7 @@ func (r *recallService) writeRuleRequestCache(ctx context.Context, key string, p
 
 type factRequestCacheValue struct {
 	CandidateCount int
-	Items          []CachedFactProjection
+	Items          []port.CachedFactProjection
 }
 
 func (r *recallService) readFactRequestCache(ctx context.Context, key string) (factRequestCacheValue, bool) {
@@ -428,175 +427,4 @@ func (r *recallService) recordDecodeFailure(err error) {
 	if strings.Contains(strings.ToLower(err.Error()), "unmarshal") {
 		r.cacheMetrics.RecordRedisDecodeFailure()
 	}
-}
-
-func buildRuleRequestCacheKey(userID string, knowledgeBaseIDs []string, versions ScopeVersions) string {
-	ids := trimMemoryValues(knowledgeBaseIDs)
-	sort.Strings(ids)
-	return fmt.Sprintf("ltm:rules:%s:%s:%d:%s", strings.TrimSpace(userID), strings.Join(ids, ","), versions.GlobalVersion, hashScopeVersions(versions.KBVersions))
-}
-
-func buildFactRequestCacheKey(userID string, query string, knowledgeBaseIDs []string, candidateLimit int, embeddingModel string, rankVersion string, versions ScopeVersions) string {
-	ids := trimMemoryValues(knowledgeBaseIDs)
-	sort.Strings(ids)
-	return fmt.Sprintf(
-		"ltm:facts:%s:%s:%s:%d:%s:%s:%d:%s",
-		strings.TrimSpace(userID),
-		normalizeQueryCacheText(query),
-		strings.Join(ids, ","),
-		candidateLimit,
-		strings.TrimSpace(embeddingModel),
-		strings.TrimSpace(rankVersion),
-		versions.GlobalVersion,
-		hashScopeVersions(versions.KBVersions),
-	)
-}
-
-func buildEmbeddingRequestCacheKey(query string, modelID string) string {
-	return fmt.Sprintf("embed:%s:%s", strings.TrimSpace(modelID), normalizeQueryCacheText(query))
-}
-
-func normalizeQueryCacheText(query string) string {
-	return strings.ToLower(strings.TrimSpace(query))
-}
-
-func hashScopeVersions(values map[string]int64) string {
-	if len(values) == 0 {
-		return "none"
-	}
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, strings.TrimSpace(key))
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		value := values[key]
-		parts = append(parts, fmt.Sprintf("%s=%d", strings.TrimSpace(key), value))
-	}
-	return strings.Join(parts, ",")
-}
-
-func memoryItemsToCached(items []domain.MemoryItem) []CachedMemoryItem {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]CachedMemoryItem, 0, len(items))
-	for _, item := range items {
-		cached := CachedMemoryItem{
-			ID:           strings.TrimSpace(item.ID),
-			UserID:       strings.TrimSpace(item.UserID),
-			ScopeType:    strings.TrimSpace(item.ScopeType),
-			ScopeID:      strings.TrimSpace(item.ScopeID),
-			Namespace:    strings.TrimSpace(item.Namespace),
-			MemoryType:   strings.TrimSpace(item.MemoryType),
-			Category:     strings.TrimSpace(item.Category),
-			CanonicalKey: strings.TrimSpace(item.CanonicalKey),
-			ValueType:    strings.TrimSpace(item.ValueType),
-			ValueJSON:    strings.TrimSpace(item.ValueJSON),
-			DisplayValue: strings.TrimSpace(item.DisplayValue),
-			Content:      strings.TrimSpace(item.Content),
-			Summary:      strings.TrimSpace(item.Summary),
-			Status:       strings.TrimSpace(item.Status),
-			Importance:   item.Importance,
-			UpdateTime:   item.UpdateTime,
-		}
-		if item.LastConfirmedAt != nil {
-			cached.LastConfirmedAt = *item.LastConfirmedAt
-		}
-		result = append(result, cached)
-	}
-	return result
-}
-
-func cachedMemoryItemsToDomainItems(items []CachedMemoryItem) []domain.MemoryItem {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]domain.MemoryItem, 0, len(items))
-	for _, item := range items {
-		current := domain.MemoryItem{
-			ID:           strings.TrimSpace(item.ID),
-			UserID:       strings.TrimSpace(item.UserID),
-			ScopeType:    strings.TrimSpace(item.ScopeType),
-			ScopeID:      strings.TrimSpace(item.ScopeID),
-			Namespace:    strings.TrimSpace(item.Namespace),
-			MemoryType:   strings.TrimSpace(item.MemoryType),
-			Category:     strings.TrimSpace(item.Category),
-			CanonicalKey: strings.TrimSpace(item.CanonicalKey),
-			ValueType:    strings.TrimSpace(item.ValueType),
-			ValueJSON:    strings.TrimSpace(item.ValueJSON),
-			DisplayValue: strings.TrimSpace(item.DisplayValue),
-			Content:      strings.TrimSpace(item.Content),
-			Summary:      strings.TrimSpace(item.Summary),
-			Status:       strings.TrimSpace(item.Status),
-			Importance:   item.Importance,
-			UpdateTime:   item.UpdateTime,
-		}
-		if !item.LastConfirmedAt.IsZero() {
-			lastConfirmedAt := item.LastConfirmedAt
-			current.LastConfirmedAt = &lastConfirmedAt
-		}
-		result = append(result, current)
-	}
-	return result
-}
-
-func runtimeFactProjectionsToCached(items []memoryRecallProjection) []CachedFactProjection {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]CachedFactProjection, 0, len(items))
-	for _, item := range items {
-		result = append(result, CachedFactProjection{
-			MemoryID:       strings.TrimSpace(item.item.ID),
-			ScopeType:      strings.TrimSpace(item.item.ScopeType),
-			ScopeID:        strings.TrimSpace(item.item.ScopeID),
-			Namespace:      strings.TrimSpace(item.item.Namespace),
-			MemoryType:     strings.TrimSpace(item.item.MemoryType),
-			Category:       strings.TrimSpace(item.item.Category),
-			CanonicalKey:   strings.TrimSpace(item.item.CanonicalKey),
-			DisplayValue:   strings.TrimSpace(item.item.DisplayValue),
-			Summary:        strings.TrimSpace(item.summary),
-			Detail:         strings.TrimSpace(item.detail),
-			KeywordMatched: item.keywordMatched,
-			VectorMatched:  item.vectorMatched,
-			KeywordScore:   item.keywordScore,
-			VectorScore:    item.vectorScore,
-			FinalScore:     item.finalScore,
-			UpdateTime:     item.item.UpdateTime,
-		})
-	}
-	return result
-}
-
-func cachedFactProjectionsToRuntime(items []CachedFactProjection) []memoryRecallProjection {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]memoryRecallProjection, 0, len(items))
-	for _, item := range items {
-		result = append(result, memoryRecallProjection{
-			item: domain.MemoryItem{
-				ID:           strings.TrimSpace(item.MemoryID),
-				ScopeType:    strings.TrimSpace(item.ScopeType),
-				ScopeID:      strings.TrimSpace(item.ScopeID),
-				Namespace:    strings.TrimSpace(item.Namespace),
-				MemoryType:   strings.TrimSpace(item.MemoryType),
-				Category:     strings.TrimSpace(item.Category),
-				CanonicalKey: strings.TrimSpace(item.CanonicalKey),
-				DisplayValue: strings.TrimSpace(item.DisplayValue),
-				UpdateTime:   item.UpdateTime,
-			},
-			summary:        strings.TrimSpace(item.Summary),
-			detail:         strings.TrimSpace(item.Detail),
-			searchableText: normalizeRecallText(strings.TrimSpace(item.Summary) + " " + strings.TrimSpace(item.Detail)),
-			keywordMatched: item.KeywordMatched,
-			vectorMatched:  item.VectorMatched,
-			keywordScore:   item.KeywordScore,
-			vectorScore:    item.VectorScore,
-			finalScore:     item.FinalScore,
-		})
-	}
-	return result
 }

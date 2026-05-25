@@ -10,7 +10,7 @@ import (
 	ragcache "local/rag-project/internal/app/rag/cache"
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
-	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/app/rag/port"
 )
 
 type sessionChunkRepoStub struct {
@@ -259,7 +259,7 @@ func TestSessionRecallServiceUsesConversationCacheAndInvalidatesOnFingerprintCha
 		SessionRecallOptions{Enabled: true},
 	)
 	cacheAware := service.(interface {
-		SetCacheSupport(cache longtermmemory.RecallCache, options SessionRecallCacheOptions)
+		SetCacheSupport(cache port.MemoryRecallCache, options SessionRecallCacheOptions)
 		SetCacheMetrics(metrics *ragcachemetrics.Service)
 	})
 	cacheAware.SetCacheSupport(nil, SessionRecallCacheOptions{
@@ -357,7 +357,7 @@ func TestSessionRecallServiceFingerprintLookupFailureFailsOpen(t *testing.T) {
 		SessionRecallOptions{Enabled: true},
 	)
 	cacheAware := service.(interface {
-		SetCacheSupport(cache longtermmemory.RecallCache, options SessionRecallCacheOptions)
+		SetCacheSupport(cache port.MemoryRecallCache, options SessionRecallCacheOptions)
 		SetCacheMetrics(metrics *ragcachemetrics.Service)
 	})
 	cacheAware.SetCacheSupport(nil, SessionRecallCacheOptions{

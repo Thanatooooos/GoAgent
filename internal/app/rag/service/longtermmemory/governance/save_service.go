@@ -1,26 +1,39 @@
-package longtermmemory
+package governance
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
+	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
+	"local/rag-project/internal/framework/distributedid"
 	"local/rag-project/internal/framework/exception"
 )
 
-func (s *MemoryService) saveExplicitMemoryWithRepo(
+func SaveExplicitMemoryWithRepo(
 	ctx context.Context,
 	repo port.MemoryItemRepository,
-	input SaveExplicitMemoryInput,
+	input memorytypes.SaveExplicitMemoryInput,
+	now func() time.Time,
 ) (domain.MemoryItem, error) {
-	normalized := normalizeSaveExplicitMemoryInput(input)
-	decision, err := evaluateExplicitMemoryGate(normalized)
+	if repo == nil {
+		return domain.MemoryItem{}, exception.NewServiceException("memory item repository is required", nil)
+	}
+	if now == nil {
+		now = time.Now
+	}
+
+	normalized := NormalizeSaveExplicitMemoryInput(input)
+	decision, err := EvaluateExplicitMemoryGate(normalized)
 	if err != nil {
 		return domain.MemoryItem{}, err
 	}
 
-	candidate := s.buildMemoryItemCandidate(normalized)
-	resolution, err := detectMemoryConflict(ctx, repo, s.now, decision, candidate)
+	candidate := BuildMemoryItemCandidate(normalized, now())
+	resolution, err := DetectMemoryConflict(ctx, repo, now, decision, candidate)
 	if err != nil {
 		return domain.MemoryItem{}, err
 	}
@@ -65,11 +78,10 @@ func (s *MemoryService) saveExplicitMemoryWithRepo(
 	}
 }
 
-func (s *MemoryService) buildMemoryItemCandidate(input normalizedSaveInput) domain.MemoryItem {
-	now := s.now()
+func BuildMemoryItemCandidate(input NormalizedSaveInput, now time.Time) domain.MemoryItem {
 	summary := input.Summary
 	if summary == "" {
-		summary = summarizeMemoryText(input.Content, defaultMemorySummaryRunes)
+		summary = summarizeMemoryText(input.Content, memorytypes.DefaultMemorySummaryRunes)
 	}
 	return domain.MemoryItem{
 		UserID:           input.UserID,
@@ -96,4 +108,27 @@ func (s *MemoryService) buildMemoryItemCandidate(input normalizedSaveInput) doma
 		CreateTime:       now,
 		UpdateTime:       now,
 	}
+}
+
+func nextMemoryItemID() (string, error) {
+	id, err := distributedid.NextID()
+	if err != nil {
+		return "", exception.NewServiceException("failed to generate memory item id", err)
+	}
+	return fmt.Sprintf("%d", id), nil
+}
+
+func summarizeMemoryText(value string, maxRunes int) string {
+	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
+	if value == "" {
+		return ""
+	}
+	if maxRunes <= 0 {
+		maxRunes = memorytypes.DefaultMemorySummaryRunes
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
 }

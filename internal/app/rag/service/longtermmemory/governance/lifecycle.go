@@ -1,4 +1,4 @@
-package longtermmemory
+package governance
 
 import (
 	"strings"
@@ -51,7 +51,7 @@ func markMemorySuperseded(existing domain.MemoryItem, updatedBy string, now time
 	return existing
 }
 
-func markMemoryExpired(existing domain.MemoryItem, updatedBy string, now time.Time) domain.MemoryItem {
+func MarkMemoryExpired(existing domain.MemoryItem, updatedBy string, now time.Time) domain.MemoryItem {
 	existing.Status = domain.MemoryStatusExpired
 	existing.UpdatedBy = strings.TrimSpace(updatedBy)
 	existing.UpdateTime = now

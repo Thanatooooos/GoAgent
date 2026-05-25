@@ -21,6 +21,7 @@ import (
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	corevector "local/rag-project/internal/app/rag/core/vector"
+	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
@@ -204,7 +205,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		Estimator:            ragservice.RoughTokenEstimator{},
 	})
 	if cacheAware, ok := sessionRecallService.(interface {
-		SetCacheSupport(cache longtermmemory.RecallCache, options ragservice.SessionRecallCacheOptions)
+		SetCacheSupport(cache port.MemoryRecallCache, options ragservice.SessionRecallCacheOptions)
 	}); ok {
 		cacheAware.SetCacheSupport(recallCache, ragservice.SessionRecallCacheOptions{
 			Enabled:                  cfg.Rag.Memory.Cache.Enabled && readSessionRecallCacheEnabled(cfg),
@@ -329,7 +330,7 @@ func buildMCPManager(cfg *config.Config) *inframcp.Manager {
 
 const defaultMemoryFactRankVersion = "v1"
 
-func buildMemoryRecallCache(cfg *config.Config) (*goredis.Client, longtermmemory.RecallCache) {
+func buildMemoryRecallCache(cfg *config.Config) (*goredis.Client, port.MemoryRecallCache) {
 	if cfg == nil || !cfg.Rag.Memory.Cache.Enabled {
 		return nil, nil
 	}

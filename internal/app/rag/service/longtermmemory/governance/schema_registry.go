@@ -1,4 +1,4 @@
-package longtermmemory
+package governance
 
 import (
 	"sort"
@@ -88,7 +88,7 @@ func allowsMemoryScope(spec MemoryKeySpec, scopeType string) bool {
 	return false
 }
 
-func singleValuedCanonicalKeys() []string {
+func SingleValuedCanonicalKeys() []string {
 	result := make([]string, 0, len(canonicalMemoryKeyRegistry))
 	for key, spec := range canonicalMemoryKeyRegistry {
 		if spec.Cardinality == MemoryCardinalitySingle {

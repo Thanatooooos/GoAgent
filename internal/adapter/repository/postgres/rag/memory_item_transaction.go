@@ -7,10 +7,9 @@ import (
 	"gorm.io/gorm"
 
 	"local/rag-project/internal/app/rag/port"
-	"local/rag-project/internal/app/rag/service/longtermmemory"
 )
 
-func NewMemoryItemTransaction(db *gorm.DB) longtermmemory.MemoryMutationTransaction {
+func NewMemoryItemTransaction(db *gorm.DB) port.MemoryMutationTransaction {
 	return func(
 		ctx context.Context,
 		fn func(ctx context.Context, repo port.MemoryItemRepository) error,

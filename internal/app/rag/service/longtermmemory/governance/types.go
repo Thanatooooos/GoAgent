@@ -1,9 +1,8 @@
-package longtermmemory
+package governance
 
 import (
-	"time"
-
 	"local/rag-project/internal/app/rag/domain"
+	"time"
 )
 
 type MemoryCardinality string
@@ -33,7 +32,7 @@ type MemoryKeySpec struct {
 	AllowedScopeTypes []string
 }
 
-type normalizedSaveInput struct {
+type NormalizedSaveInput struct {
 	UserID           string
 	ScopeType        string
 	ScopeID          string
@@ -54,7 +53,7 @@ type normalizedSaveInput struct {
 
 type GateDecision struct {
 	Action GateDecisionAction
-	Input  normalizedSaveInput
+	Input  NormalizedSaveInput
 	Spec   *MemoryKeySpec
 }
 

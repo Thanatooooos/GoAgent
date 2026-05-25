@@ -1,13 +1,14 @@
-package longtermmemory
+package governance
 
 import (
 	"strings"
 
 	"local/rag-project/internal/app/rag/domain"
+	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
 	"local/rag-project/internal/framework/log"
 )
 
-func normalizeSaveExplicitMemoryInput(input SaveExplicitMemoryInput) normalizedSaveInput {
+func NormalizeSaveExplicitMemoryInput(input memorytypes.SaveExplicitMemoryInput) NormalizedSaveInput {
 	canonicalKey := normalizeCanonicalKey(input.CanonicalKey)
 	spec, hasSpec := lookupMemoryKeySpec(canonicalKey)
 
@@ -52,7 +53,7 @@ func normalizeSaveExplicitMemoryInput(input SaveExplicitMemoryInput) normalizedS
 		if summary != "" {
 			displayValue = summary
 		} else {
-			displayValue = summarizeMemoryText(content, defaultMemorySummaryRunes)
+			displayValue = summarizeMemoryText(content, memorytypes.DefaultMemorySummaryRunes)
 		}
 	}
 
@@ -82,7 +83,7 @@ func normalizeSaveExplicitMemoryInput(input SaveExplicitMemoryInput) normalizedS
 
 	namespace := normalizeMemoryNamespace(input.Namespace, scopeType, scopeID)
 
-	return normalizedSaveInput{
+	return NormalizedSaveInput{
 		UserID:           strings.TrimSpace(input.UserID),
 		ScopeType:        scopeType,
 		ScopeID:          scopeID,

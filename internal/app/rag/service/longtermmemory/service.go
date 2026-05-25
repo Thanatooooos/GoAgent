@@ -3,7 +3,6 @@ package longtermmemory
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -12,7 +11,9 @@ import (
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
-	"local/rag-project/internal/framework/distributedid"
+	"local/rag-project/internal/app/rag/service/longtermmemory/governance"
+	"local/rag-project/internal/app/rag/service/longtermmemory/recall"
+	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
 	"local/rag-project/internal/framework/exception"
 	"local/rag-project/internal/framework/log"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
@@ -34,10 +35,10 @@ type MemoryService struct {
 
 func NewMemoryService(repo port.MemoryItemRepository, options MemoryServiceOptions) *MemoryService {
 	if options.MaxRecallItems <= 0 {
-		options.MaxRecallItems = defaultMemoryRecallItems
+		options.MaxRecallItems = memorytypes.DefaultMemoryRecallItems
 	}
 	if options.MaxRecallChars <= 0 {
-		options.MaxRecallChars = defaultMemoryRecallMaxChars
+		options.MaxRecallChars = memorytypes.DefaultMemoryRecallMaxChars
 	}
 	if options.MaxCandidatesPerScope <= 0 {
 		options.MaxCandidatesPerScope = options.MaxRecallItems * 4
@@ -49,7 +50,7 @@ func NewMemoryService(repo port.MemoryItemRepository, options MemoryServiceOptio
 		repo:    repo,
 		now:     time.Now,
 		options: options,
-		recall:  newRecallService(repo, options),
+		recall:  recall.NewService(repo, options),
 	}
 }
 
@@ -60,7 +61,7 @@ func (s *MemoryService) SaveExplicitMemory(ctx context.Context, input SaveExplic
 
 	var saved domain.MemoryItem
 	err := s.runMemoryMutation(ctx, func(ctx context.Context, repo port.MemoryItemRepository) error {
-		item, err := s.saveExplicitMemoryWithRepo(ctx, repo, input)
+		item, err := governance.SaveExplicitMemoryWithRepo(ctx, repo, input, s.now)
 		if err != nil {
 			return err
 		}
@@ -96,10 +97,10 @@ func (s *MemoryService) ListMemories(ctx context.Context, input ListMemoriesInpu
 	}
 	pageSize := input.PageSize
 	if pageSize <= 0 {
-		pageSize = defaultMemoryListPageSize
+		pageSize = memorytypes.DefaultMemoryListPageSize
 	}
-	if pageSize > maxMemoryListPageSize {
-		pageSize = maxMemoryListPageSize
+	if pageSize > memorytypes.MaxMemoryListPageSize {
+		pageSize = memorytypes.MaxMemoryListPageSize
 	}
 
 	filter := port.MemoryItemListFilter{
@@ -164,7 +165,7 @@ func (s *MemoryService) ExpireMemory(ctx context.Context, userID string, id stri
 	}
 
 	now := s.now()
-	item = markMemoryExpired(item, userID, now)
+	item = governance.MarkMemoryExpired(item, userID, now)
 	updated, err := s.repo.Update(ctx, item)
 	if err != nil {
 		return domain.MemoryItem{}, exception.NewServiceException("failed to expire memory item", err)
@@ -215,16 +216,16 @@ func (s *MemoryService) SetEmbeddingSupport(embedding aiembedding.EmbeddingServi
 	if repo == nil && embedding == nil {
 		return
 	}
-	s.recall = NewVectorAwareRecallService(s.repo, repo, embedding, s.options)
+	s.recall = recall.NewVectorAwareService(s.repo, repo, embedding, s.options)
 	if aware, ok := s.recall.(interface {
-		setRecallCache(cache RecallCache, options RecallCacheOptions)
+		SetRecallCache(cache RecallCache, options RecallCacheOptions)
 	}); ok {
-		aware.setRecallCache(s.recallCache, s.cacheOptions)
+		aware.SetRecallCache(s.recallCache, s.cacheOptions)
 	}
 	if aware, ok := s.recall.(interface {
-		setCacheMetrics(metrics *cachemetrics.Service)
+		SetCacheMetrics(metrics *cachemetrics.Service)
 	}); ok {
-		aware.setCacheMetrics(s.cacheMetrics)
+		aware.SetCacheMetrics(s.cacheMetrics)
 	}
 }
 
@@ -235,9 +236,9 @@ func (s *MemoryService) SetRecallCache(cache RecallCache, options RecallCacheOpt
 	s.recallCache = cache
 	s.cacheOptions = normalizeRecallCacheOptions(options)
 	if aware, ok := s.recall.(interface {
-		setRecallCache(cache RecallCache, options RecallCacheOptions)
+		SetRecallCache(cache RecallCache, options RecallCacheOptions)
 	}); ok {
-		aware.setRecallCache(cache, s.cacheOptions)
+		aware.SetRecallCache(cache, s.cacheOptions)
 	}
 }
 
@@ -247,38 +248,10 @@ func (s *MemoryService) SetCacheMetrics(metrics *cachemetrics.Service) {
 	}
 	s.cacheMetrics = metrics
 	if aware, ok := s.recall.(interface {
-		setCacheMetrics(metrics *cachemetrics.Service)
+		SetCacheMetrics(metrics *cachemetrics.Service)
 	}); ok {
-		aware.setCacheMetrics(metrics)
+		aware.SetCacheMetrics(metrics)
 	}
-}
-
-func memoryScopePriority(scopeType string) int {
-	if scopeType == domain.MemoryScopeKB {
-		return 1000
-	}
-	return 500
-}
-
-func memoryTypePriority(memoryType string) int {
-	switch memoryType {
-	case domain.MemoryTypePreference:
-		return 300
-	case domain.MemoryTypeFeedback:
-		return 250
-	case domain.MemoryTypeKnowledge:
-		return 200
-	default:
-		return 0
-	}
-}
-
-func nextMemoryItemID() (string, error) {
-	id, err := distributedid.NextID()
-	if err != nil {
-		return "", exception.NewServiceException("failed to generate memory item id", err)
-	}
-	return fmt.Sprintf("%d", id), nil
 }
 
 func (s *MemoryService) persistMemoryEmbedding(ctx context.Context, item domain.MemoryItem) {
@@ -380,60 +353,17 @@ func (s *MemoryService) runMemoryMutation(
 	return fn(ctx, s.repo)
 }
 
-func trimMemoryValues(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
-func minMemoryInt(a int, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxMemoryInt(a int, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func summarizeMemoryText(value string, maxRunes int) string {
-	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
-	if value == "" {
-		return ""
-	}
-	if maxRunes <= 0 {
-		maxRunes = defaultMemorySummaryRunes
-	}
-	runes := []rune(value)
-	if len(runes) <= maxRunes {
-		return value
-	}
-	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
-}
-
 func (s *MemoryService) resolveSingleValueUniqueConflict(ctx context.Context, input SaveExplicitMemoryInput, mutationErr error) (domain.MemoryItem, bool, error) {
 	if !isSingleValueActiveUniqueViolation(mutationErr) {
 		return domain.MemoryItem{}, false, nil
 	}
 
-	normalized := normalizeSaveExplicitMemoryInput(input)
-	decision, err := evaluateExplicitMemoryGate(normalized)
+	normalized := governance.NormalizeSaveExplicitMemoryInput(input)
+	decision, err := governance.EvaluateExplicitMemoryGate(normalized)
 	if err != nil {
 		return domain.MemoryItem{}, false, err
 	}
-	if decision.Spec == nil || decision.Spec.Cardinality != MemoryCardinalitySingle || strings.TrimSpace(decision.Input.CanonicalKey) == "" {
+	if decision.Spec == nil || decision.Spec.Cardinality != governance.MemoryCardinalitySingle || strings.TrimSpace(decision.Input.CanonicalKey) == "" {
 		return domain.MemoryItem{}, false, nil
 	}
 
@@ -468,4 +398,39 @@ func isSingleValueActiveUniqueViolation(err error) bool {
 		return pgErr.Code == "23505" && strings.EqualFold(strings.TrimSpace(pgErr.ConstraintName), "uk_memory_item_single_active")
 	}
 	return false
+}
+
+func normalizeMemoryScopeType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return domain.MemoryScopeGlobal
+	}
+	return value
+}
+
+func normalizeMemoryType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return domain.MemoryTypeKnowledge
+	}
+	return value
+}
+
+func normalizeCanonicalKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func renderMemoryScopeLabel(item domain.MemoryItem) string {
+	scope := strings.TrimSpace(item.ScopeType)
+	scopeID := strings.TrimSpace(item.ScopeID)
+	if scope != "" && scopeID != "" {
+		return scope + ":" + scopeID
+	}
+	if scope != "" {
+		return scope
+	}
+	if scopeID != "" {
+		return scopeID
+	}
+	return "unknown"
 }

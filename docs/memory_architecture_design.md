@@ -1,7 +1,7 @@
 # Memory Architecture Design
 
-讨论日期：2026-05-17  
-重写日期：2026-05-22
+讨论日期：2026-05-17
+重写日期：2026-05-25
 
 这份文档基于当前 `goagent` 已落地实现、项目进度文档，以及已确认的长期记忆治理原则，对 memory 设计进行重写。它的目标不是继续发散讨论“要不要做 memory”，而是明确：
 
@@ -391,9 +391,29 @@ User Query
   - `SessionRecallService`
 - `LTM / 长期记忆`
   - `internal/app/rag/service/longtermmemory`
-  - `MemoryService` 负责显式保存与管理
-  - `RecallService` 负责聊天前 recall
-  - `ContextRenderer` 负责生成 `MemoryContext`
+  - root package 保持稳定公开入口
+  - `MemoryService` 负责显式保存、过期与对外装配
+  - 公开输入/输出/option 类型继续从根包导出，避免外部 import path 抖动
+  - `governance/`
+    - 负责 normalize / gate / schema / conflict / save / lifecycle
+  - `recall/`
+    - 负责 recall / ranking / tokens / projection / context rendering / cache support
+  - `types/`
+    - 作为小型叶子包承载共享 public DTO / options，专门用于避免 Go 包循环
+- `cross-layer ports`
+  - `internal/app/rag/port`
+  - `MemoryRecallCache`
+  - `MemoryMutationTransaction`
+
+这意味着当前长期记忆的结构边界已经从“单包承载全部职责”收敛为：
+
+```text
+longtermmemory (stable public entry)
+  -> governance (write-path rules)
+  -> recall (read-path recall/cache/projection)
+
+adapter -> port <- service
+```
 
 同时，`RagChatService` 当前只依赖长期记忆 recall interface，不再直接依赖长期记忆 CRUD service。
 
@@ -1524,3 +1544,124 @@ So the next most reasonable design priorities are now:
 2. metrics refinement / diagnostics hardening
 3. code-structure cleanup around long-term-memory recall and cache logic
 4. only after that, more aggressive `memory_fact` weighting/policy tuning
+
+## 14.10 Additional Update: 2026-05-25 Package Boundary Refactor Landed
+
+### 14.10.1 Status Update
+
+As of `2026-05-25`, the previously planned structural cleanup around long-term-memory recall and cache code is no longer just a recommendation. It has landed in code.
+
+This round stays within the same `Phase 4+` architecture scope. It does not change the product contract, the HTTP contract, or the runtime wiring order. It changes code ownership and dependency boundaries.
+
+### 14.10.2 Root package remains stable, but internal responsibilities are now separated
+
+The public application entry still remains:
+
+- `internal/app/rag/service/longtermmemory`
+
+So existing callers do not need large-scale import churn.
+
+Internally, responsibilities are now split into:
+
+- root package
+  - owns `MemoryService`
+  - keeps public input / output / option exports stable
+  - remains the main application-layer facade
+- `governance/`
+  - owns normalize / gate / schema / conflict detection / save / lifecycle behavior
+- `recall/`
+  - owns recall / ranking / lexical tokens / retrieval projection / context rendering / cache support
+
+This is the main architectural correction of the round: write-path governance and read-path recall are no longer implemented as one flat service package.
+
+### 14.10.3 Cross-layer contracts now live in `port`
+
+The cache and mutation transaction contracts were moved to:
+
+- `internal/app/rag/port/memory_recall_cache.go`
+- `internal/app/rag/port/memory_mutation_transaction.go`
+
+This changes the dependency direction from:
+
+```text
+adapter -> longtermmemory internals
+```
+
+to:
+
+```text
+adapter -> port <- service
+```
+
+So Redis cache and Postgres transaction adapters no longer reverse-depend on the long-term-memory service package just to share contracts.
+
+### 14.10.4 Why a small `types/` leaf package still exists
+
+The original restructuring idea tried to avoid generic package names such as `core/`, and that decision remains correct.
+
+However, a small `types/` leaf package is still intentionally kept under:
+
+- `internal/app/rag/service/longtermmemory/types`
+
+Its purpose is narrow:
+
+- hold shared public DTOs and options
+- let the root package and the `governance` / `recall` subpackages reuse those types
+- avoid Go import cycles between parent package and child packages
+
+So `types/` is not a new "god package" and not a semantic replacement for the old flat implementation. It is a technical leaf package used to preserve stable public API ownership without creating cyclic imports.
+
+### 14.10.5 Recall internals are now split into narrower implementation units
+
+Inside `recall/`, the code is further decomposed into files such as:
+
+- `service.go`
+- `ranking.go`
+- `tokens.go`
+- `projection.go`
+- `context_renderer.go`
+- `cache_support.go`
+- `cache_keys.go`
+- `cache_mappers.go`
+
+This matters because the recall/cache path had already become the densest and most change-prone part of the memory module.
+
+### 14.10.6 Integration impact
+
+The same boundary cleanup now propagates to:
+
+- session recall service/cache integration
+- runtime wiring in `internal/bootstrap/rag/runtime.go`
+- Redis cache adapter
+- Postgres memory transaction adapter
+
+The important point is that behavior stays the same, but ownership is clearer and future refactors no longer require adapters to import business-package internals.
+
+### 14.10.7 Validation
+
+Validated on `2026-05-25`:
+
+```powershell
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/rag/service/longtermmemory -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/rag/service ./internal/bootstrap/rag ./internal/adapter/repository/postgres/rag -count=1
+$env:GOCACHE='D:\code\GoAgent\.gocache-agent'; go test ./internal/app/rag/service/... ./internal/adapter/cache/redis ./internal/adapter/repository/postgres/rag ./internal/bootstrap/rag -run Test^$ -count=1
+```
+
+Current result:
+
+- `internal/app/rag/service/longtermmemory` PASS
+- `internal/app/rag/service` PASS
+- `internal/bootstrap/rag` PASS
+- `internal/adapter/repository/postgres/rag` PASS
+- `internal/adapter/cache/redis` PASS
+
+### 14.10.8 Updated priority judgment
+
+As of `2026-05-25`, "code-structure cleanup around long-term-memory recall and cache logic" should no longer remain on the active near-term priority list.
+
+The more accurate next priorities are now:
+
+1. lifecycle cleanup / maintenance jobs
+2. metrics refinement / diagnostics hardening
+3. direct unit-test coverage for `recall` internals
+4. only after that, further `memory_fact` weighting / policy tuning

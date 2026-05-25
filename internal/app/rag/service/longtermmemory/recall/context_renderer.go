@@ -1,4 +1,4 @@
-package longtermmemory
+package recall
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"local/rag-project/internal/app/rag/domain"
+	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
 )
 
 func buildMemoryRecallContext(ruleItems []memoryRecallProjection, factItems []memoryRecallProjection, maxItems int, maxChars int) ([]memoryRecallProjection, []memoryRecallProjection, string, bool) {
@@ -47,7 +48,7 @@ func buildMemorySectionContext(title string, items []memoryRecallProjection, max
 	if len(items) == 0 || maxItems <= 0 || maxChars <= 0 {
 		return nil, "", false
 	}
-	selected := make([]memoryRecallProjection, 0, minMemoryInt(len(items), maxItems))
+	selected := make([]memoryRecallProjection, 0, minInt(len(items), maxItems))
 	truncated := false
 	for _, item := range items {
 		if len(selected) >= maxItems {
@@ -170,13 +171,13 @@ func projectedMemoryItems(items []memoryRecallProjection) []domain.MemoryItem {
 	return result
 }
 
-func projectedMemoryEntries(items []memoryRecallProjection) []RecallMemoryEntry {
+func projectedMemoryEntries(items []memoryRecallProjection) []memorytypes.RecallMemoryEntry {
 	if len(items) == 0 {
 		return nil
 	}
-	result := make([]RecallMemoryEntry, 0, len(items))
+	result := make([]memorytypes.RecallMemoryEntry, 0, len(items))
 	for _, item := range items {
-		result = append(result, RecallMemoryEntry{
+		result = append(result, memorytypes.RecallMemoryEntry{
 			ID:           strings.TrimSpace(item.item.ID),
 			ScopeType:    strings.TrimSpace(item.item.ScopeType),
 			ScopeID:      strings.TrimSpace(item.item.ScopeID),

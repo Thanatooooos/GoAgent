@@ -1,26 +1,11 @@
-package longtermmemory
+package types
 
 import (
 	"context"
 	"time"
 
 	"local/rag-project/internal/app/rag/domain"
-)
-
-const (
-	defaultMemoryListPageSize   = 20
-	maxMemoryListPageSize       = 100
-	defaultMemoryRecallItems    = 6
-	defaultMemoryRecallMaxChars = 1600
-	defaultMemorySummaryRunes   = 120
-	defaultMemoryDetailRunes    = 220
-
-	memoryHitSourceKeyword           = "keyword"
-	memoryHitSourceVector            = "vector"
-	memoryContributionKeywordOnly    = "keyword_only"
-	memoryContributionVectorOnly     = "vector_only"
-	memoryContributionHybrid         = "hybrid"
-	memoryContributionNoDirectSignal = "none"
+	"local/rag-project/internal/app/rag/port"
 )
 
 type SaveExplicitMemoryInput struct {
@@ -83,7 +68,7 @@ type RecallMemoriesResult struct {
 	RuleCacheLayer      string
 	FactCacheLayer      string
 	EmbeddingCacheLayer string
-	ScopeVersions       ScopeVersions
+	ScopeVersions       port.ScopeVersions
 	RecomputeReason     string
 }
 

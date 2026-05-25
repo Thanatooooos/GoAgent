@@ -1,4 +1,4 @@
-package longtermmemory
+package recall
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
+	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/exception"
 )
@@ -34,7 +35,7 @@ func (r *recallService) SearchFacts(ctx context.Context, request ragretrieve.Fac
 	if topK <= 0 {
 		topK = ragretrieve.DefaultTopK
 	}
-	candidateLimit := maxMemoryInt(r.options.MaxCandidatesPerScope, topK*4)
+	candidateLimit := maxInt(r.options.MaxCandidatesPerScope, topK*4)
 	knowledgeBaseIDs := trimMemoryValues(request.KnowledgeBaseIDs)
 
 	ranked, candidateCount, _, _, _, _, err := r.loadFactRankingProjections(ctx, userID, query, knowledgeBaseIDs, candidateLimit)
@@ -102,7 +103,7 @@ func (r *recallService) loadFactMemoryCandidatesWithLimit(
 		return nil, nil, "skipped", exception.NewServiceException("failed to list global fact memory items", err)
 	}
 
-	candidates := append(append([]domain.MemoryItem(nil), kbItems...), globalItems...)
+	candidates := dedupeMemoryItems(append(append([]domain.MemoryItem(nil), kbItems...), globalItems...))
 	vectorScores := map[string]float32{}
 	if searchText == "" || r.embeddingRepo == nil || r.embedding == nil {
 		return candidates, vectorScores, "skipped", nil
@@ -141,11 +142,30 @@ func (r *recallService) loadFactMemoryCandidatesWithLimit(
 	return candidates, vectorScores, embeddingLayer, nil
 }
 
+func dedupeMemoryItems(items []domain.MemoryItem) []domain.MemoryItem {
+	if len(items) <= 1 {
+		return items
+	}
+	result := make([]domain.MemoryItem, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		id := strings.TrimSpace(item.ID)
+		if id != "" {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
 func normalizeMemoryCandidateLimit(limit int) int {
 	if limit > 0 {
 		return limit
 	}
-	return defaultMemoryRecallItems * 4
+	return memorytypes.DefaultMemoryRecallItems * 4
 }
 
 func projectFactMemoryChunks(items []memoryRecallProjection) []convention.RetrievedChunk {

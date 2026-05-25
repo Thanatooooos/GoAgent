@@ -11,7 +11,6 @@ import (
 	"local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
-	"local/rag-project/internal/app/rag/service/longtermmemory"
 	"local/rag-project/internal/framework/log"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
@@ -83,7 +82,7 @@ type defaultSessionRecallService struct {
 	options           SessionRecallOptions
 	cacheOptions      SessionRecallCacheOptions
 	conversationCache *sessionRecallConversationCache
-	sharedRecallCache longtermmemory.RecallCache
+	sharedRecallCache port.MemoryRecallCache
 	cacheMetrics      *cachemetrics.Service
 }
 

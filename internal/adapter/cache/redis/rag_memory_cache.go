@@ -13,7 +13,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/app/rag/port"
 )
 
 const defaultKeyPrefix = "goagent"
@@ -38,27 +38,27 @@ func NewRagMemoryCacheWithPrefix(client *goredis.Client, prefix string) *RagMemo
 	}
 }
 
-func (c *RagMemoryCache) GetRuleMemories(ctx context.Context, key longtermmemory.RuleMemoryCacheKey) (longtermmemory.RuleMemoryCacheValue, bool, error) {
-	return readJSONValue[longtermmemory.RuleMemoryCacheValue](ctx, c.client, c.ruleKey(key))
+func (c *RagMemoryCache) GetRuleMemories(ctx context.Context, key port.RuleMemoryCacheKey) (port.RuleMemoryCacheValue, bool, error) {
+	return readJSONValue[port.RuleMemoryCacheValue](ctx, c.client, c.ruleKey(key))
 }
 
-func (c *RagMemoryCache) SetRuleMemories(ctx context.Context, key longtermmemory.RuleMemoryCacheKey, value longtermmemory.RuleMemoryCacheValue, ttl time.Duration) error {
+func (c *RagMemoryCache) SetRuleMemories(ctx context.Context, key port.RuleMemoryCacheKey, value port.RuleMemoryCacheValue, ttl time.Duration) error {
 	return writeJSONValue(ctx, c.client, c.ruleKey(key), value, ttl)
 }
 
-func (c *RagMemoryCache) GetFactRankings(ctx context.Context, key longtermmemory.FactRankingCacheKey) (longtermmemory.FactRankingCacheValue, bool, error) {
-	return readJSONValue[longtermmemory.FactRankingCacheValue](ctx, c.client, c.factKey(key))
+func (c *RagMemoryCache) GetFactRankings(ctx context.Context, key port.FactRankingCacheKey) (port.FactRankingCacheValue, bool, error) {
+	return readJSONValue[port.FactRankingCacheValue](ctx, c.client, c.factKey(key))
 }
 
-func (c *RagMemoryCache) SetFactRankings(ctx context.Context, key longtermmemory.FactRankingCacheKey, value longtermmemory.FactRankingCacheValue, ttl time.Duration) error {
+func (c *RagMemoryCache) SetFactRankings(ctx context.Context, key port.FactRankingCacheKey, value port.FactRankingCacheValue, ttl time.Duration) error {
 	return writeJSONValue(ctx, c.client, c.factKey(key), value, ttl)
 }
 
-func (c *RagMemoryCache) GetQueryEmbedding(ctx context.Context, key longtermmemory.QueryEmbeddingCacheKey) ([]float32, bool, error) {
+func (c *RagMemoryCache) GetQueryEmbedding(ctx context.Context, key port.QueryEmbeddingCacheKey) ([]float32, bool, error) {
 	return readJSONValue[[]float32](ctx, c.client, c.embeddingKey(key))
 }
 
-func (c *RagMemoryCache) SetQueryEmbedding(ctx context.Context, key longtermmemory.QueryEmbeddingCacheKey, value []float32, ttl time.Duration) error {
+func (c *RagMemoryCache) SetQueryEmbedding(ctx context.Context, key port.QueryEmbeddingCacheKey, value []float32, ttl time.Duration) error {
 	return writeJSONValue(ctx, c.client, c.embeddingKey(key), value, ttl)
 }
 
@@ -70,8 +70,8 @@ func (c *RagMemoryCache) IncrKBVersion(ctx context.Context, userID string, kbID 
 	return c.client.Incr(ctx, c.kbVersionKey(userID, kbID)).Err()
 }
 
-func (c *RagMemoryCache) GetScopeVersions(ctx context.Context, userID string, kbIDs []string) (longtermmemory.ScopeVersions, error) {
-	result := longtermmemory.ScopeVersions{
+func (c *RagMemoryCache) GetScopeVersions(ctx context.Context, userID string, kbIDs []string) (port.ScopeVersions, error) {
+	result := port.ScopeVersions{
 		KBVersions: map[string]int64{},
 	}
 	keys := []string{c.globalVersionKey(userID)}
@@ -98,7 +98,7 @@ func (c *RagMemoryCache) kbVersionKey(userID string, kbID string) string {
 	return c.joinKey("rag", "memory", "ver", "kb", strings.TrimSpace(userID), strings.TrimSpace(kbID))
 }
 
-func (c *RagMemoryCache) embeddingKey(key longtermmemory.QueryEmbeddingCacheKey) string {
+func (c *RagMemoryCache) embeddingKey(key port.QueryEmbeddingCacheKey) string {
 	model := strings.TrimSpace(key.EmbeddingModel)
 	if model == "" {
 		model = "default"
@@ -106,7 +106,7 @@ func (c *RagMemoryCache) embeddingKey(key longtermmemory.QueryEmbeddingCacheKey)
 	return c.joinKey("rag", "embed", "v1", model, hashText(normalizeQuery(key.Query)))
 }
 
-func (c *RagMemoryCache) ruleKey(key longtermmemory.RuleMemoryCacheKey) string {
+func (c *RagMemoryCache) ruleKey(key port.RuleMemoryCacheKey) string {
 	return c.joinKey(
 		"rag",
 		"memory",
@@ -119,7 +119,7 @@ func (c *RagMemoryCache) ruleKey(key longtermmemory.RuleMemoryCacheKey) string {
 	)
 }
 
-func (c *RagMemoryCache) factKey(key longtermmemory.FactRankingCacheKey) string {
+func (c *RagMemoryCache) factKey(key port.FactRankingCacheKey) string {
 	rankVersion := strings.TrimSpace(key.RankVersion)
 	if rankVersion == "" {
 		rankVersion = "v1"

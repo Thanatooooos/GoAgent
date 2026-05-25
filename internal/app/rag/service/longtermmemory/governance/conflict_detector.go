@@ -1,4 +1,4 @@
-package longtermmemory
+package governance
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"local/rag-project/internal/framework/exception"
 )
 
-func detectMemoryConflict(
+func DetectMemoryConflict(
 	ctx context.Context,
 	repo port.MemoryItemRepository,
 	now func() time.Time,
@@ -43,7 +43,7 @@ func detectMemoryConflict(
 
 	if decision.Input.MemoryType == domain.MemoryTypeFeedback {
 		for idx := range active {
-			if memoryItemsEquivalent(active[idx], candidate) {
+			if MemoryItemsEquivalent(active[idx], candidate) {
 				return ConflictResolution{
 					Action:   GateDecisionIgnore,
 					Existing: &active[idx],
@@ -70,7 +70,7 @@ func detectMemoryConflict(
 			}, nil
 		}
 		existing := active[0]
-		if memoryItemsEquivalent(existing, candidate) {
+		if MemoryItemsEquivalent(existing, candidate) {
 			updated := refreshExistingMemory(existing, candidate, now())
 			return ConflictResolution{
 				Action:          GateDecisionUpdate,
@@ -90,7 +90,7 @@ func detectMemoryConflict(
 	}
 
 	for idx := range active {
-		if memoryItemsEquivalent(active[idx], candidate) {
+		if MemoryItemsEquivalent(active[idx], candidate) {
 			updated := refreshExistingMemory(active[idx], candidate, now())
 			return ConflictResolution{
 				Action:          GateDecisionMerge,
@@ -105,7 +105,7 @@ func detectMemoryConflict(
 	}, nil
 }
 
-func memoryItemsEquivalent(left domain.MemoryItem, right domain.MemoryItem) bool {
+func MemoryItemsEquivalent(left domain.MemoryItem, right domain.MemoryItem) bool {
 	if normalizeValueType(left.ValueType) == domain.MemoryValueTypeJSON && normalizeValueType(right.ValueType) == domain.MemoryValueTypeJSON {
 		if strings.TrimSpace(left.ValueJSON) != "" && strings.TrimSpace(right.ValueJSON) != "" && jsonValuesEquivalent(left.ValueJSON, right.ValueJSON) {
 			return true

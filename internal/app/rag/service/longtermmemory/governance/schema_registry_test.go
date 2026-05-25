@@ -1,4 +1,4 @@
-package longtermmemory
+package governance
 
 import (
 	"testing"

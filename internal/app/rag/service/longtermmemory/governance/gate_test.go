@@ -1,13 +1,14 @@
-package longtermmemory
+package governance
 
 import (
 	"testing"
 
 	"local/rag-project/internal/app/rag/domain"
+	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
 )
 
 func TestEvaluateExplicitMemoryGateRejectsUnknownCanonicalKey(t *testing.T) {
-	_, err := evaluateExplicitMemoryGate(normalizedSaveInput{
+	_, err := EvaluateExplicitMemoryGate(NormalizedSaveInput{
 		UserID:       "user-1",
 		ScopeType:    domain.MemoryScopeGlobal,
 		Namespace:    "global:global",
@@ -23,14 +24,14 @@ func TestEvaluateExplicitMemoryGateRejectsUnknownCanonicalKey(t *testing.T) {
 }
 
 func TestEvaluateExplicitMemoryGateAcceptsCanonicalKeySpecDefaults(t *testing.T) {
-	normalized := normalizeSaveExplicitMemoryInput(SaveExplicitMemoryInput{
+	normalized := NormalizeSaveExplicitMemoryInput(memorytypes.SaveExplicitMemoryInput{
 		UserID:       "user-1",
 		CanonicalKey: "response.language",
 		ValueJSON:    "zh-CN",
 		DisplayValue: "中文",
 		Content:      "以后都用中文回答",
 	})
-	decision, err := evaluateExplicitMemoryGate(normalized)
+	decision, err := EvaluateExplicitMemoryGate(normalized)
 	if err != nil {
 		t.Fatalf("evaluateExplicitMemoryGate returned error: %v", err)
 	}
