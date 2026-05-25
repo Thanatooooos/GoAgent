@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -35,34 +36,55 @@ func (r *SessionChunkRepository) CreateBatch(ctx context.Context, chunks []domai
 }
 
 func (r *SessionChunkRepository) ExistsRecallable(ctx context.Context, conversationID string, userID string, excludeMessageID string) (bool, error) {
+	fingerprint, err := r.GetRecallFingerprint(ctx, conversationID, userID, excludeMessageID)
+	if err != nil {
+		return false, err
+	}
+	return fingerprint.Exists, nil
+}
+
+func (r *SessionChunkRepository) GetRecallFingerprint(ctx context.Context, conversationID string, userID string, excludeMessageID string) (domain.SessionRecallFingerprint, error) {
 	if r == nil || r.db == nil {
-		return false, fmt.Errorf("gorm db is required")
+		return domain.SessionRecallFingerprint{}, fmt.Errorf("gorm db is required")
 	}
 
 	query := strings.TrimSpace(`
-SELECT EXISTS (
-	SELECT 1
-	FROM t_session_chunk AS sc
-	INNER JOIN t_message AS m ON m.id = sc.message_id
-	WHERE sc.deleted = 0
-	  AND m.deleted = 0
-	  AND sc.conversation_id = ?
-	  AND sc.user_id = ?
-	  AND m.role = 'user'
-	  AND m.is_summarized = true
+SELECT
+	COUNT(*) AS recallable_count,
+	COALESCE(MAX(sc.update_time), TIMESTAMP '1970-01-01 00:00:00') AS latest_update_time,
+	COALESCE(MAX(sc.id), '') AS latest_chunk_id,
+	COALESCE(MAX(sc.message_id), '') AS latest_message_id
+FROM t_session_chunk AS sc
+INNER JOIN t_message AS m ON m.id = sc.message_id
+WHERE sc.deleted = 0
+  AND m.deleted = 0
+  AND sc.conversation_id = ?
+  AND sc.user_id = ?
+  AND m.role = 'user'
+  AND m.is_summarized = true
 `)
 	args := []any{strings.TrimSpace(conversationID), strings.TrimSpace(userID)}
 	if trimmed := strings.TrimSpace(excludeMessageID); trimmed != "" {
 		query += "\n  AND sc.message_id <> ?"
 		args = append(args, trimmed)
 	}
-	query += "\n)"
 
-	var exists bool
-	if err := r.db.WithContext(ctx).Raw(query, args...).Scan(&exists).Error; err != nil {
-		return false, fmt.Errorf("check recallable session chunks: %w", err)
+	var row struct {
+		RecallableCount  int
+		LatestUpdateTime time.Time
+		LatestChunkID    string
+		LatestMessageID  string
 	}
-	return exists, nil
+	if err := r.db.WithContext(ctx).Raw(query, args...).Scan(&row).Error; err != nil {
+		return domain.SessionRecallFingerprint{}, fmt.Errorf("build session recall fingerprint: %w", err)
+	}
+	return domain.SessionRecallFingerprint{
+		Exists:           row.RecallableCount > 0,
+		RecallableCount:  row.RecallableCount,
+		LatestUpdateTime: row.LatestUpdateTime,
+		LatestChunkID:    strings.TrimSpace(row.LatestChunkID),
+		LatestMessageID:  strings.TrimSpace(row.LatestMessageID),
+	}, nil
 }
 
 func (r *SessionChunkRepository) SearchRecallableByVector(ctx context.Context, conversationID string, userID string, excludeMessageID string, vector []float32, topK int) ([]domain.SessionChunkSearchHit, error) {

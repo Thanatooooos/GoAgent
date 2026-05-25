@@ -87,6 +87,17 @@ func (m *mockEmbedding) Dimension() int { return 768 }
 
 var _ aiembedding.EmbeddingService = (*mockEmbedding)(nil)
 
+type mockFactMemoryRetriever struct {
+	result FactMemorySearchResult
+	err    error
+	inputs []FactMemorySearchRequest
+}
+
+func (m *mockFactMemoryRetriever) SearchFacts(_ context.Context, request FactMemorySearchRequest) (FactMemorySearchResult, error) {
+	m.inputs = append(m.inputs, request)
+	return m.result, m.err
+}
+
 func TestRetrieveSemanticModeDefault(t *testing.T) {
 	searcher := &mockSearcher{
 		hits: []corevector.SearchHit{
@@ -251,6 +262,173 @@ func TestRetrieveHybridMode(t *testing.T) {
 	}
 	if len(result.ChannelStats) != 3 {
 		t.Fatalf("expected 3 channel stats, got %+v", result.ChannelStats)
+	}
+}
+
+func TestRetrieveHybridModeIncludesFactMemoryChannelWhenConfigured(t *testing.T) {
+	searcher := &mockSearcher{
+		hits: []corevector.SearchHit{
+			{ChunkID: "v1", Text: "vector", Score: 0.9},
+		},
+	}
+	embedding := &mockEmbedding{vector: []float32{0.1}}
+	factRetriever := &mockFactMemoryRetriever{
+		result: FactMemorySearchResult{
+			Chunks: []convention.RetrievedChunk{
+				{
+					ID:    "memory_fact:mem-1",
+					Text:  "Fact memory detail",
+					Score: 88,
+					Metadata: map[string]any{
+						"source":        ChannelMemoryFact,
+						"memory_id":     "mem-1",
+						"canonical_key": "project.constraint.network",
+					},
+				},
+			},
+			CandidateCount:    3,
+			SelectedCount:     1,
+			SelectedMemoryIDs: []string{"mem-1"},
+		},
+	}
+
+	engine := NewEngine(searcher, embedding, nil)
+	engine.SetFactMemoryRetriever(factRetriever)
+
+	result, err := engine.Retrieve(context.Background(), Request{
+		UserID:           "user-1",
+		Query:            "hybrid test",
+		KnowledgeBaseIDs: []string{"kb-1"},
+		SearchMode:       SearchModeHybrid,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(factRetriever.inputs) != 1 {
+		t.Fatalf("expected one fact memory search call, got %+v", factRetriever.inputs)
+	}
+	if factRetriever.inputs[0].UserID != "user-1" {
+		t.Fatalf("expected user id to flow into fact memory search, got %+v", factRetriever.inputs[0])
+	}
+	foundChannel := false
+	foundStat := false
+	for _, name := range result.SearchChannels {
+		if name == ChannelMemoryFact {
+			foundChannel = true
+			break
+		}
+	}
+	for _, stat := range result.ChannelStats {
+		if stat.Name == ChannelMemoryFact {
+			foundStat = true
+			if stat.Metadata["candidateCount"] != 3 || stat.Metadata["selectedCount"] != 1 {
+				t.Fatalf("unexpected fact memory channel metadata: %+v", stat.Metadata)
+			}
+			break
+		}
+	}
+	if !foundChannel || !foundStat {
+		t.Fatalf("expected memory fact channel in result, got channels=%+v stats=%+v", result.SearchChannels, result.ChannelStats)
+	}
+	if len(result.Chunks) != 2 {
+		t.Fatalf("expected fused vector + memory chunks, got %+v", result.Chunks)
+	}
+}
+
+func TestRetrieveKeywordModeSkipsFactMemoryChannel(t *testing.T) {
+	searcher := &mockSearcher{
+		keywordHits: []corevector.SearchHit{
+			{ChunkID: "k1", Text: "keyword result", Score: 1.0},
+		},
+	}
+	factRetriever := &mockFactMemoryRetriever{
+		result: FactMemorySearchResult{
+			Chunks: []convention.RetrievedChunk{{ID: "memory_fact:mem-1", Text: "unused", Score: 50}},
+		},
+	}
+
+	engine := NewEngine(searcher, nil, nil)
+	engine.SetFactMemoryRetriever(factRetriever)
+
+	result, err := engine.Retrieve(context.Background(), Request{
+		UserID:           "user-1",
+		Query:            "keyword test",
+		KnowledgeBaseIDs: []string{"kb-1"},
+		SearchMode:       SearchModeKeyword,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(factRetriever.inputs) != 0 {
+		t.Fatalf("expected keyword mode to skip fact memory channel, got %+v", factRetriever.inputs)
+	}
+	for _, name := range result.SearchChannels {
+		if name == ChannelMemoryFact {
+			t.Fatalf("expected no memory fact channel in keyword mode, got %+v", result.SearchChannels)
+		}
+	}
+}
+
+func TestRetrieveHybridModeWeightsVectorAboveFactMemory(t *testing.T) {
+	searcher := &mockSearcher{
+		hits: []corevector.SearchHit{
+			{ChunkID: "v1", Text: "vector winner", Score: 0.95},
+		},
+	}
+	embedding := &mockEmbedding{vector: []float32{0.1}}
+	factRetriever := &mockFactMemoryRetriever{
+		result: FactMemorySearchResult{
+			Chunks: []convention.RetrievedChunk{
+				{
+					ID:    "memory_fact:mem-1",
+					Text:  "fact memory",
+					Score: 88,
+					Metadata: map[string]any{
+						"source": ChannelMemoryFact,
+					},
+				},
+			},
+		},
+	}
+
+	engine := NewEngine(searcher, embedding, nil)
+	engine.SetFactMemoryRetriever(factRetriever)
+
+	result, err := engine.Retrieve(context.Background(), Request{
+		UserID:           "user-1",
+		Query:            "hybrid test",
+		KnowledgeBaseIDs: []string{"kb-1"},
+		SearchMode:       SearchModeHybrid,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Chunks) < 2 {
+		t.Fatalf("expected at least two fused chunks, got %+v", result.Chunks)
+	}
+	if result.Chunks[0].ID != "v1" {
+		t.Fatalf("expected vector chunk to outrank fact memory under weighted fusion, got %+v", result.Chunks)
+	}
+	var memoryStat *ChannelStat
+	for i := range result.ChannelStats {
+		if result.ChannelStats[i].Name == ChannelMemoryFact {
+			memoryStat = &result.ChannelStats[i]
+			break
+		}
+	}
+	if memoryStat == nil {
+		t.Fatalf("expected memory fact stat, got %+v", result.ChannelStats)
+	}
+	if weight, ok := memoryStat.Metadata["rrfWeight"].(float32); ok {
+		if weight != 0.9 {
+			t.Fatalf("unexpected rrf weight: %+v", memoryStat.Metadata)
+		}
+	} else if weight, ok := memoryStat.Metadata["rrfWeight"].(float64); ok {
+		if weight != 0.9 {
+			t.Fatalf("unexpected rrf weight: %+v", memoryStat.Metadata)
+		}
+	} else {
+		t.Fatalf("expected rrfWeight metadata, got %+v", memoryStat.Metadata)
 	}
 }
 

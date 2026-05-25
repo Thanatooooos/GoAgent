@@ -1,10 +1,17 @@
 package rag
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
 	"local/rag-project/internal/app/rag/domain"
+	"local/rag-project/internal/app/rag/port"
 )
 
 func TestMemoryItemMapperRoundTripsGovernanceFields(t *testing.T) {
@@ -56,5 +63,177 @@ func TestTrimNonEmptyRemovesBlankValues(t *testing.T) {
 	values := trimNonEmpty([]string{" project ", "", "  ", "memory "})
 	if len(values) != 2 || values[0] != "project" || values[1] != "memory" {
 		t.Fatalf("unexpected trimmed values: %+v", values)
+	}
+}
+
+func TestMemoryItemRepositoryListIncludesSearchTextFilter(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	_, err = repo.List(context.Background(), port.MemoryItemListFilter{
+		UserID:      "user-1",
+		ScopeTypes:  []string{domain.MemoryScopeKB},
+		MemoryTypes: []string{domain.MemoryTypeKnowledge},
+		Statuses:    []string{domain.MemoryStatusActive},
+		SearchText:  "chunker",
+		ListOptions: port.ListOptions{Limit: 10},
+	})
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if !strings.Contains(sql, "summary ilike") || !strings.Contains(sql, "content ilike") || !strings.Contains(sql, "display_value ilike") || !strings.Contains(sql, "canonical_key ilike") {
+		t.Fatalf("expected ILIKE prefilter in SQL, got %q", recorder.lastSQL)
+	}
+}
+
+func TestMemoryItemRepositoryListIncludesSearchTokensFilter(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	_, err = repo.List(context.Background(), port.MemoryItemListFilter{
+		UserID:       "user-1",
+		ScopeTypes:   []string{domain.MemoryScopeKB},
+		MemoryTypes:  []string{domain.MemoryTypeKnowledge},
+		Statuses:     []string{domain.MemoryStatusActive},
+		SearchTokens: []string{"vector", "store"},
+		ListOptions:  port.ListOptions{Limit: 10},
+	})
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if strings.Count(sql, "summary ilike") < 2 || strings.Count(sql, "canonical_key ilike") < 2 {
+		t.Fatalf("expected token-based ILIKE groups in SQL, got %q", recorder.lastSQL)
+	}
+	if !strings.Contains(sql, " or ") {
+		t.Fatalf("expected token OR prefilter in SQL, got %q", recorder.lastSQL)
+	}
+}
+
+func TestMemoryItemRepositoryTouchLastUsedScopesByUserAndIDs(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	err = repo.TouchLastUsed(context.Background(), "user-1", []string{"mem-1", "mem-2"}, time.Date(2026, 5, 23, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("TouchLastUsed returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if !strings.Contains(sql, "update") || !strings.Contains(sql, "last_used_at") {
+		t.Fatalf("expected last_used_at update SQL, got %q", recorder.lastSQL)
+	}
+	if !strings.Contains(sql, "user_id") || !strings.Contains(sql, "id in") {
+		t.Fatalf("expected user/id scoping in SQL, got %q", recorder.lastSQL)
+	}
+}
+
+func TestMemoryItemRepositoryListActiveByCanonicalKeyScopesGlobalWithoutScopeIDFilter(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	_, err = repo.ListActiveByCanonicalKey(context.Background(), "user-1", domain.MemoryScopeGlobal, "", "response.language")
+	if err != nil {
+		t.Fatalf("ListActiveByCanonicalKey returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if !strings.Contains(sql, "canonical_key") || !strings.Contains(sql, "status") {
+		t.Fatalf("expected canonical key and active status in SQL, got %q", recorder.lastSQL)
+	}
+	if strings.Contains(sql, "scope_id in") {
+		t.Fatalf("expected no scope_id filter for global scope, got %q", recorder.lastSQL)
+	}
+}
+
+func TestMemoryItemRepositoryListActiveSingleValueConflictsBuildsGroupedQuery(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	_, err = repo.ListActiveSingleValueConflicts(context.Background(), []string{"response.language", "project.constraint.network"})
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "dry run mode unsupported") {
+		t.Fatalf("ListActiveSingleValueConflicts returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if !strings.Contains(sql, "group by") || !strings.Contains(sql, "having count(*) > 1") {
+		t.Fatalf("expected grouped duplicate detection SQL, got %q", recorder.lastSQL)
+	}
+	if !strings.Contains(sql, "coalesce(scope_id, '')") || !strings.Contains(sql, "canonical_key in") {
+		t.Fatalf("expected normalized scope and canonical key filter in SQL, got %q", recorder.lastSQL)
+	}
+}
+
+type gormTraceRecorder struct {
+	logger.Interface
+	lastSQL string
+}
+
+func (r *gormTraceRecorder) LogMode(level logger.LogLevel) logger.Interface {
+	if r.Interface == nil {
+		r.Interface = logger.Default
+	}
+	r.Interface = r.Interface.LogMode(level)
+	return r
+}
+
+func (r *gormTraceRecorder) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	sql, _ := fc()
+	r.lastSQL = sql
+	if r.Interface != nil {
+		r.Interface.Trace(ctx, begin, fc, err)
 	}
 }

@@ -5,13 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	goredis "github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
+	rediscache "local/rag-project/internal/adapter/cache/redis"
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
 	postgresrag "local/rag-project/internal/adapter/repository/postgres/rag"
 	postgresuser "local/rag-project/internal/adapter/repository/postgres/user"
 	pgvectorstore "local/rag-project/internal/adapter/vectorstore/pgvector"
+	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
@@ -38,6 +42,8 @@ type Runtime struct {
 	DB           *gorm.DB
 	ownsDB       bool
 	mcpManager   *inframcp.Manager
+	memoryCache  *goredis.Client
+	CacheMetrics *ragcachemetrics.Service
 	Retrieve     ragretrieve.Service
 	Conversation *ragservice.ConversationService
 	Message      *ragservice.ConversationMessageService
@@ -147,6 +153,19 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	})
 	explicitMemoryService.SetMutationTransaction(postgresrag.NewMemoryItemTransaction(db))
 	explicitMemoryService.SetEmbeddingSupport(aiRuntime.Embedding, memoryItemEmbeddingRepo)
+	memoryCacheMetrics := buildMemoryCacheMetrics(cfg)
+	explicitMemoryService.SetCacheMetrics(memoryCacheMetrics)
+	memoryCacheClient, recallCache := buildMemoryRecallCache(cfg)
+	explicitMemoryService.SetRecallCache(recallCache, longtermmemory.RecallCacheOptions{
+		Enabled:             cfg.Rag.Memory.Cache.Enabled,
+		RequestScopeEnabled: readRequestScopeCacheEnabled(cfg),
+		EmbeddingTTL:        time.Duration(cfg.Rag.Memory.Cache.EmbeddingTTLSeconds) * time.Second,
+		RuleTTL:             time.Duration(cfg.Rag.Memory.Cache.RuleTTLSeconds) * time.Second,
+		FactTTL:             time.Duration(cfg.Rag.Memory.Cache.FactTTLSeconds) * time.Second,
+		EmptyFactTTL:        time.Duration(cfg.Rag.Memory.Cache.EmptyFactTTLSeconds) * time.Second,
+		EmbeddingModel:      strings.TrimSpace(cfg.AI.Embedding.DefaultModel),
+		RankVersion:         defaultMemoryFactRankVersion,
+	})
 
 	// 根据配置决定是否启用 LLM 查询改写；未启用时 retieve 阶段直接使用原始问题。
 	var rewriteService ragrewrite.Service
@@ -155,6 +174,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	}
 	promptService := ragprompt.NewService(nil)
 	retrieveService := ragretrieve.NewEngine(searcher, aiRuntime.Embedding, aiRuntime.Rerank)
+	retrieveService.SetFactMemoryRetriever(explicitMemoryService.FactRetriever())
 	feedbackService := ragservice.NewMessageFeedbackService(messageRepo, feedbackRepo)
 	traceService := ragservice.NewTraceService(traceRunRepo, traceNodeRepo, userRepo)
 	tracer := ragservice.NewChatTracer(traceRunRepo, traceNodeRepo)
@@ -174,7 +194,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
 	}
 	chatService.SetLongTermMemoryRecallService(explicitMemoryService.RecallService())
-	chatService.SetSessionRecallService(ragservice.NewSessionRecallService(sessionChunkRepo, aiRuntime.Embedding, ragservice.SessionRecallOptions{
+	sessionRecallService := ragservice.NewSessionRecallService(sessionChunkRepo, aiRuntime.Embedding, ragservice.SessionRecallOptions{
 		Enabled:              cfg.Rag.Memory.SessionRecall.Enabled,
 		MaxExcerpts:          cfg.Rag.Memory.SessionRecall.MaxExcerpts,
 		MaxChunksPerMessage:  cfg.Rag.Memory.SessionRecall.MaxChunksPerMessage,
@@ -182,13 +202,36 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		ExcerptOverlapTokens: cfg.Rag.Memory.SessionRecall.ExcerptOverlapTokens,
 		MaxPromptTokens:      cfg.Rag.Memory.SessionRecall.MaxPromptTokens,
 		Estimator:            ragservice.RoughTokenEstimator{},
-	}))
+	})
+	if cacheAware, ok := sessionRecallService.(interface {
+		SetCacheSupport(cache longtermmemory.RecallCache, options ragservice.SessionRecallCacheOptions)
+	}); ok {
+		cacheAware.SetCacheSupport(recallCache, ragservice.SessionRecallCacheOptions{
+			Enabled:                  cfg.Rag.Memory.Cache.Enabled && readSessionRecallCacheEnabled(cfg),
+			RequestScopeEnabled:      readRequestScopeCacheEnabled(cfg),
+			ConversationScopeEnabled: readConversationScopeCacheEnabled(cfg),
+			ConversationMaxEntries:   cfg.Rag.Memory.Cache.ConversationMaxEntries,
+			ConversationTTL:          time.Duration(cfg.Rag.Memory.Cache.ConversationTTLSeconds) * time.Second,
+			EmptyResultTTL:           time.Duration(cfg.Rag.Memory.Cache.EmptySessionTTLSeconds) * time.Second,
+			EmbeddingTTL:             time.Duration(cfg.Rag.Memory.Cache.EmbeddingTTLSeconds) * time.Second,
+			EmbeddingModel:           strings.TrimSpace(cfg.AI.Embedding.DefaultModel),
+		})
+	}
+	if metricAware, ok := sessionRecallService.(interface {
+		SetCacheMetrics(metrics *ragcachemetrics.Service)
+	}); ok {
+		metricAware.SetCacheMetrics(memoryCacheMetrics)
+	}
+	chatService.SetSessionRecallService(sessionRecallService)
+	chatService.SetRequestCacheMaxEntries(readRequestCacheMaxEntries(cfg))
 	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, mcpManager, aiRuntime.Chat))
 
 	return &Runtime{
 		DB:           db,
 		ownsDB:       ownsDB,
 		mcpManager:   mcpManager,
+		memoryCache:  memoryCacheClient,
+		CacheMetrics: memoryCacheMetrics,
 		Retrieve:     retrieveService,
 		Conversation: conversationService,
 		Message:      messageService,
@@ -207,6 +250,9 @@ func (r *Runtime) Close() error {
 	var err error
 	if r.mcpManager != nil {
 		err = errors.Join(err, r.mcpManager.Close())
+	}
+	if r.memoryCache != nil {
+		err = errors.Join(err, r.memoryCache.Close())
 	}
 	if r.DB == nil || !r.ownsDB {
 		return err
@@ -279,6 +325,76 @@ func buildMCPManager(cfg *config.Config) *inframcp.Manager {
 		}
 	}
 	return inframcp.NewManager(servers)
+}
+
+const defaultMemoryFactRankVersion = "v1"
+
+func buildMemoryRecallCache(cfg *config.Config) (*goredis.Client, longtermmemory.RecallCache) {
+	if cfg == nil || !cfg.Rag.Memory.Cache.Enabled {
+		return nil, nil
+	}
+	host := strings.TrimSpace(cfg.Spring.Data.Redis.Host)
+	port := cfg.Spring.Data.Redis.Port
+	if host == "" || port <= 0 {
+		return nil, nil
+	}
+	client := goredis.NewClient(&goredis.Options{
+		Addr:     fmt.Sprintf("%s:%d", host, port),
+		Password: cfg.Spring.Data.Redis.Password,
+		DB:       cfg.Spring.Data.Redis.DB,
+	})
+	return client, rediscache.NewRagMemoryCacheWithPrefix(client, cfg.Rag.Memory.Cache.RedisKeyPrefix)
+}
+
+func buildMemoryCacheMetrics(cfg *config.Config) *ragcachemetrics.Service {
+	if cfg == nil || !readMemoryCacheMetricsEnabled(cfg) {
+		return nil
+	}
+	return ragcachemetrics.NewService()
+}
+
+func readRequestScopeCacheEnabled(cfg *config.Config) bool {
+	if cfg == nil || !cfg.Rag.Memory.Cache.Enabled {
+		return false
+	}
+	if cfg.Rag.Memory.Cache.RequestScopeEnabled {
+		return true
+	}
+	return cfg.Rag.Memory.Cache.RequestMaxEntries == 0
+}
+
+func readConversationScopeCacheEnabled(cfg *config.Config) bool {
+	if cfg == nil || !cfg.Rag.Memory.Cache.Enabled {
+		return false
+	}
+	if cfg.Rag.Memory.Cache.ConversationScopeEnabled {
+		return true
+	}
+	return cfg.Rag.Memory.Cache.ConversationMaxEntries == 0 && cfg.Rag.Memory.Cache.ConversationTTLSeconds == 0
+}
+
+func readSessionRecallCacheEnabled(cfg *config.Config) bool {
+	if cfg == nil || !cfg.Rag.Memory.Cache.Enabled {
+		return false
+	}
+	if cfg.Rag.Memory.Cache.SessionRecallEnabled {
+		return true
+	}
+	return cfg.Rag.Memory.Cache.EmptySessionTTLSeconds == 0
+}
+
+func readMemoryCacheMetricsEnabled(cfg *config.Config) bool {
+	if cfg == nil || !cfg.Rag.Memory.Cache.Enabled {
+		return false
+	}
+	return cfg.Rag.Memory.Cache.MetricsEnabled
+}
+
+func readRequestCacheMaxEntries(cfg *config.Config) int {
+	if cfg == nil || cfg.Rag.Memory.Cache.RequestMaxEntries <= 0 {
+		return 128
+	}
+	return cfg.Rag.Memory.Cache.RequestMaxEntries
 }
 
 func cloneMCPEnv(values map[string]string) map[string]string {

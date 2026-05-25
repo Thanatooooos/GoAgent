@@ -21,6 +21,7 @@ const (
 )
 
 type Request struct {
+	UserID           string
 	Query            string
 	KnowledgeBaseIDs []string
 	TopK             int
@@ -45,6 +46,7 @@ type Engine struct {
 	searcher   corevector.Searcher
 	embedding  aiembedding.EmbeddingService
 	reranker   airerank.RerankService
+	factMemory FactMemoryRetriever
 	channels   []SearchChannel
 	processors []SearchResultPostProcessor
 }
@@ -55,17 +57,36 @@ func NewEngine(searcher corevector.Searcher, embedding aiembedding.EmbeddingServ
 		embedding: embedding,
 		reranker:  reranker,
 	}
-	engine.channels = []SearchChannel{
-		NewVectorGlobalChannel(searcher, embedding),
-		NewKeywordChannel(searcher),
-		NewMetadataTitleChannel(searcher),
-	}
+	engine.rebuildChannels()
 	engine.processors = []SearchResultPostProcessor{
 		NewFusionPostProcessor(),
 		NewDedupPostProcessor(),
 		NewRerankPostProcessor(reranker),
 	}
 	return engine
+}
+
+func (e *Engine) SetFactMemoryRetriever(retriever FactMemoryRetriever) {
+	if e == nil {
+		return
+	}
+	e.factMemory = retriever
+	e.rebuildChannels()
+}
+
+func (e *Engine) rebuildChannels() {
+	if e == nil {
+		return
+	}
+	channels := []SearchChannel{
+		NewVectorGlobalChannel(e.searcher, e.embedding),
+		NewKeywordChannel(e.searcher),
+		NewMetadataTitleChannel(e.searcher),
+	}
+	if e.factMemory != nil {
+		channels = append(channels, NewFactMemoryChannel(e.factMemory))
+	}
+	e.channels = channels
 }
 
 func (e *Engine) Retrieve(ctx context.Context, request Request) (Result, error) {
@@ -252,4 +273,3 @@ func toRetrievedChunks(hits []corevector.SearchHit) []convention.RetrievedChunk 
 	}
 	return result
 }
-

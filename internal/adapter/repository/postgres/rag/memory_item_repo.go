@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -75,6 +76,11 @@ func (r *MemoryItemRepository) List(ctx context.Context, filter port.MemoryItemL
 	if values := trimNonEmpty(filter.Statuses); len(values) > 0 {
 		query = query.Where("status IN ?", values)
 	}
+	searchText := strings.TrimSpace(filter.SearchText)
+	searchTokens := trimNonEmpty(filter.SearchTokens)
+	if searchClause, searchArgs := buildMemorySearchClause(searchText, searchTokens); searchClause != "" {
+		query = query.Where(searchClause, searchArgs...)
+	}
 	if sourceMessageID := strings.TrimSpace(filter.SourceMessageID); sourceMessageID != "" {
 		query = query.Where("source_message_id = ?", sourceMessageID)
 	}
@@ -100,6 +106,79 @@ func (r *MemoryItemRepository) List(ctx context.Context, filter port.MemoryItemL
 	return result, nil
 }
 
+func (r *MemoryItemRepository) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
+	filter := port.MemoryItemListFilter{
+		UserID:        strings.TrimSpace(userID),
+		ScopeTypes:    []string{strings.TrimSpace(scopeType)},
+		CanonicalKeys: []string{strings.TrimSpace(canonicalKey)},
+		Statuses:      []string{domain.MemoryStatusActive},
+	}
+	if scopeType = strings.TrimSpace(scopeType); scopeType == domain.MemoryScopeKB {
+		filter.ScopeIDs = []string{strings.TrimSpace(scopeID)}
+	}
+	return r.List(ctx, filter)
+}
+
+func (r *MemoryItemRepository) ListActiveSingleValueConflicts(ctx context.Context, canonicalKeys []string) ([]port.ActiveMemoryConflict, error) {
+	keys := trimNonEmpty(canonicalKeys)
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	type conflictRow struct {
+		UserID       string `gorm:"column:user_id"`
+		ScopeType    string `gorm:"column:scope_type"`
+		ScopeID      string `gorm:"column:scope_id"`
+		CanonicalKey string `gorm:"column:canonical_key"`
+		ActiveCount  int    `gorm:"column:active_count"`
+	}
+	var rows []conflictRow
+	if err := r.db.WithContext(ctx).
+		Table("t_memory_item").
+		Select("user_id, scope_type, COALESCE(scope_id, '') AS scope_id, canonical_key, COUNT(*) AS active_count").
+		Where("deleted = 0").
+		Where("status = ?", domain.MemoryStatusActive).
+		Where("canonical_key IN ?", keys).
+		Group("user_id, scope_type, COALESCE(scope_id, ''), canonical_key").
+		Having("COUNT(*) > 1").
+		Order("user_id, scope_type, COALESCE(scope_id, ''), canonical_key").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list active single-value memory conflicts: %w", err)
+	}
+
+	conflicts := make([]port.ActiveMemoryConflict, 0, len(rows))
+	for _, row := range rows {
+		conflicts = append(conflicts, port.ActiveMemoryConflict{
+			UserID:       row.UserID,
+			ScopeType:    row.ScopeType,
+			ScopeID:      row.ScopeID,
+			CanonicalKey: row.CanonicalKey,
+			ActiveCount:  row.ActiveCount,
+		})
+	}
+	return conflicts, nil
+}
+
+func (r *MemoryItemRepository) TouchLastUsed(ctx context.Context, userID string, ids []string, at time.Time) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || at.IsZero() {
+		return nil
+	}
+	ids = trimNonEmpty(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&models.MemoryItemModel{}).
+		Where("user_id = ?", userID).
+		Where("id IN ?", ids).
+		Update("last_used_at", at).
+		Error; err != nil {
+		return fmt.Errorf("touch memory item last_used_at: %w", err)
+	}
+	return nil
+}
+
 func trimNonEmpty(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -112,4 +191,27 @@ func trimNonEmpty(values []string) []string {
 		}
 	}
 	return result
+}
+
+func buildMemorySearchClause(searchText string, searchTokens []string) (string, []any) {
+	clauses := make([]string, 0, len(searchTokens)+1)
+	args := make([]any, 0, (len(searchTokens)+1)*4)
+	appendClause := func(term string) {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			return
+		}
+		pattern := "%" + term + "%"
+		clauses = append(clauses, "(summary ILIKE ? OR content ILIKE ? OR display_value ILIKE ? OR canonical_key ILIKE ?)")
+		args = append(args, pattern, pattern, pattern, pattern)
+	}
+
+	appendClause(searchText)
+	for _, token := range searchTokens {
+		appendClause(token)
+	}
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return "(" + strings.Join(clauses, " OR ") + ")", args
 }

@@ -26,6 +26,18 @@ type ServletMultipartConfig struct {
 type SpringConfig struct {
 	Servlet    ServletConfig    `mapstructure:"servlet"`
 	Datasource DataSourceConfig `mapstructure:"datasource"`
+	Data       SpringDataConfig `mapstructure:"data"`
+}
+
+type SpringDataConfig struct {
+	Redis RedisConfig `mapstructure:"redis"`
+}
+
+type RedisConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 type Config struct {
@@ -150,6 +162,24 @@ type RagMemoryConfig struct {
 	LongMessage       RagLongMessageConfig    `mapstructure:"long-message"`
 	SessionRecall     RagSessionRecallConfig  `mapstructure:"session-recall"`
 	ExplicitRecall    RagExplicitRecallConfig `mapstructure:"explicit-recall"`
+	Cache             RagMemoryCacheConfig    `mapstructure:"cache"`
+}
+
+type RagMemoryCacheConfig struct {
+	Enabled                  bool   `mapstructure:"enabled"`
+	RequestScopeEnabled      bool   `mapstructure:"request-scope-enabled"`
+	ConversationScopeEnabled bool   `mapstructure:"conversation-scope-enabled"`
+	SessionRecallEnabled     bool   `mapstructure:"session-recall-enabled"`
+	RequestMaxEntries        int    `mapstructure:"request-max-entries"`
+	ConversationMaxEntries   int    `mapstructure:"conversation-max-entries"`
+	ConversationTTLSeconds   int    `mapstructure:"conversation-ttl-seconds"`
+	EmptySessionTTLSeconds   int    `mapstructure:"empty-session-ttl-seconds"`
+	MetricsEnabled           bool   `mapstructure:"metrics-enabled"`
+	RedisKeyPrefix           string `mapstructure:"redis-key-prefix"`
+	EmbeddingTTLSeconds      int    `mapstructure:"embedding-ttl-seconds"`
+	RuleTTLSeconds           int    `mapstructure:"rule-ttl-seconds"`
+	FactTTLSeconds           int    `mapstructure:"fact-ttl-seconds"`
+	EmptyFactTTLSeconds      int    `mapstructure:"empty-fact-ttl-seconds"`
 }
 
 type RagLongMessageConfig struct {

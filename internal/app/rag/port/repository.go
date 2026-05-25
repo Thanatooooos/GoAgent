@@ -38,9 +38,19 @@ type MemoryItemListFilter struct {
 	Categories      []string
 	CanonicalKeys   []string
 	Statuses        []string
+	SearchText      string
+	SearchTokens    []string
 	SourceMessageID string
 	SupersedesID    string
 	ListOptions
+}
+
+type ActiveMemoryConflict struct {
+	UserID       string
+	ScopeType    string
+	ScopeID      string
+	CanonicalKey string
+	ActiveCount  int
 }
 
 type RagTraceRunListFilter struct {
@@ -81,14 +91,18 @@ type MemoryItemRepository interface {
 	Update(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error)
 	GetByID(ctx context.Context, id string) (domain.MemoryItem, error)
 	List(ctx context.Context, filter MemoryItemListFilter) ([]domain.MemoryItem, error)
+	ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error)
+	ListActiveSingleValueConflicts(ctx context.Context, canonicalKeys []string) ([]ActiveMemoryConflict, error)
+	TouchLastUsed(ctx context.Context, userID string, ids []string, at time.Time) error
 }
 
 type MemoryItemEmbeddingSearchFilter struct {
-	UserID     string
-	ScopeTypes []string
-	ScopeIDs   []string
-	Statuses   []string
-	TopK       int
+	UserID      string
+	ScopeTypes  []string
+	ScopeIDs    []string
+	MemoryTypes []string
+	Statuses    []string
+	TopK        int
 }
 
 type MemoryItemEmbeddingRepository interface {
@@ -99,6 +113,7 @@ type MemoryItemEmbeddingRepository interface {
 type SessionChunkRepository interface {
 	CreateBatch(ctx context.Context, chunks []domain.SessionChunk) error
 	ExistsRecallable(ctx context.Context, conversationID string, userID string, excludeMessageID string) (bool, error)
+	GetRecallFingerprint(ctx context.Context, conversationID string, userID string, excludeMessageID string) (domain.SessionRecallFingerprint, error)
 	SearchRecallableByVector(ctx context.Context, conversationID string, userID string, excludeMessageID string, vector []float32, topK int) ([]domain.SessionChunkSearchHit, error)
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	ragcache "local/rag-project/internal/app/rag/cache"
 	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
@@ -85,19 +86,20 @@ type RagChatEventSink interface {
 }
 
 type RagChatService struct {
-	conversationService *ConversationService
-	messageService      *ConversationMessageService
-	historyService      raghistory.Service
-	longTermMemory      longtermmemory.RecallService
-	rewriteService      ragrewrite.Service
-	sessionRecall       SessionRecallService
-	retrieveService     ragretrieve.Service
-	promptService       *ragprompt.Service
-	chatService         aichat.LLMService
-	tracer              *ChatTracer
-	toolWorkflow        ragtool.Workflow
-	confidenceThreshold float64
-	taskRegistry        *TaskRegistry
+	conversationService    *ConversationService
+	messageService         *ConversationMessageService
+	historyService         raghistory.Service
+	longTermMemory         longtermmemory.RecallService
+	rewriteService         ragrewrite.Service
+	sessionRecall          SessionRecallService
+	retrieveService        ragretrieve.Service
+	promptService          *ragprompt.Service
+	chatService            aichat.LLMService
+	tracer                 *ChatTracer
+	toolWorkflow           ragtool.Workflow
+	confidenceThreshold    float64
+	requestCacheMaxEntries int
+	taskRegistry           *TaskRegistry
 }
 
 func NewRagChatService(
@@ -111,15 +113,16 @@ func NewRagChatService(
 	tracer *ChatTracer,
 ) *RagChatService {
 	return &RagChatService{
-		conversationService: conversationService,
-		messageService:      messageService,
-		historyService:      historyService,
-		rewriteService:      rewriteService,
-		retrieveService:     retrieveService,
-		promptService:       promptService,
-		chatService:         chatService,
-		tracer:              tracer,
-		taskRegistry:        NewTaskRegistry(),
+		conversationService:    conversationService,
+		messageService:         messageService,
+		historyService:         historyService,
+		rewriteService:         rewriteService,
+		retrieveService:        retrieveService,
+		promptService:          promptService,
+		chatService:            chatService,
+		tracer:                 tracer,
+		requestCacheMaxEntries: 128,
+		taskRegistry:           NewTaskRegistry(),
 	}
 }
 
@@ -142,6 +145,16 @@ func (s *RagChatService) SetSessionRecallService(service SessionRecallService) {
 		return
 	}
 	s.sessionRecall = service
+}
+
+func (s *RagChatService) SetRequestCacheMaxEntries(maxEntries int) {
+	if s == nil {
+		return
+	}
+	if maxEntries <= 0 {
+		maxEntries = 128
+	}
+	s.requestCacheMaxEntries = maxEntries
 }
 
 func (s *RagChatService) SetLongTermMemoryRecallService(service longtermmemory.RecallService) {
@@ -168,6 +181,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		return exception.NewClientException("user id is required", nil)
 	}
 
+	ctx = ragcache.WithRequestCache(ctx, ragcache.NewRequestCache(s.requestCacheMaxEntries))
 	prepared, err := s.prepareChat(ctx, input)
 	if err != nil {
 		_ = sink.SendError(err)

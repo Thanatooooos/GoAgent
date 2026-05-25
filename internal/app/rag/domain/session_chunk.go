@@ -26,3 +26,11 @@ type SessionChunkSearchHit struct {
 	SessionChunk
 	Score float32
 }
+
+type SessionRecallFingerprint struct {
+	Exists           bool
+	RecallableCount  int
+	LatestUpdateTime time.Time
+	LatestChunkID    string
+	LatestMessageID  string
+}

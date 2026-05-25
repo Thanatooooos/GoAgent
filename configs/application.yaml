@@ -91,6 +91,21 @@ rag:
       max-items: 6
       max-context-chars: 1600
       max-candidates-per-scope: 24
+    cache:
+      enabled: false
+      request-scope-enabled: true
+      conversation-scope-enabled: true
+      session-recall-enabled: true
+      request-max-entries: 128
+      conversation-max-entries: 1000
+      conversation-ttl-seconds: 600
+      empty-session-ttl-seconds: 30
+      metrics-enabled: true
+      redis-key-prefix: goagent
+      embedding-ttl-seconds: 1800
+      rule-ttl-seconds: 600
+      fact-ttl-seconds: 180
+      empty-fact-ttl-seconds: 30
 
   semaphore:
     document-upload:
@@ -128,7 +143,7 @@ rag:
     web-search:
       provider: tavily-mcp      # "duckduckgo", "tavily", or "tavily-mcp"
       fallback-provider: tavily # optional fallback when the primary provider fails
-      api-key: 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       # required for tavily, sign up at https://app.tavily.com
+      api-key: ""       # inject via environment or local override; do not commit real secrets
       mcp:
         server: tavily
         search-tool: tavily-search

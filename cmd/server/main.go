@@ -62,8 +62,8 @@ func main() {
 
 	aiRuntime := infraai.NewRuntime()
 	knowledgeRuntime, err := knowledgebootstrap.NewRuntime(context.Background(), knowledgebootstrap.RuntimeOptions{
-		Config:          cfg,
-		AIRuntime:       aiRuntime,
+		Config:    cfg,
+		AIRuntime: aiRuntime,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "init knowledge runtime failed: %v\n", err)
@@ -232,5 +232,5 @@ func registerRagRoutes(r *gin.Engine, cfg *config.Config, runtime *ragbootstrap.
 	}
 	protected := resolveContextPath(r, cfg).Group("/")
 	protected.Use(umw.RequireLogin())
-	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Memory, runtime.Feedback, runtime.Chat, runtime.Trace)
+	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Memory, runtime.Feedback, runtime.Chat, runtime.Trace, runtime.CacheMetrics)
 }

@@ -12,6 +12,7 @@ import (
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
+	corevector "local/rag-project/internal/app/rag/core/vector"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
@@ -69,6 +70,24 @@ func (s *retrieveServiceStub) Retrieve(ctx context.Context, request ragretrieve.
 func (s *retrieveServiceStub) RetrieveByVector(ctx context.Context, vector []float32, request ragretrieve.Request) (ragretrieve.Result, error) {
 	s.requests = append(s.requests, request)
 	return s.result, s.err
+}
+
+type retrieveSearcherStub struct {
+	hits         []corevector.SearchHit
+	keywordHits  []corevector.SearchHit
+	metadataHits []corevector.SearchHit
+}
+
+func (s *retrieveSearcherStub) Search(context.Context, corevector.SearchRequest) ([]corevector.SearchHit, error) {
+	return append([]corevector.SearchHit(nil), s.hits...), nil
+}
+
+func (s *retrieveSearcherStub) SearchByKeyword(context.Context, string, []string, int) ([]corevector.SearchHit, error) {
+	return append([]corevector.SearchHit(nil), s.keywordHits...), nil
+}
+
+func (s *retrieveSearcherStub) SearchByMetadata(context.Context, string, []string, int) ([]corevector.SearchHit, error) {
+	return append([]corevector.SearchHit(nil), s.metadataHits...), nil
 }
 
 type sessionRecallServiceStub struct {
@@ -149,6 +168,30 @@ func (s *inMemorySessionChunkStore) ExistsRecallable(_ context.Context, conversa
 		return true, nil
 	}
 	return false, nil
+}
+
+func (s *inMemorySessionChunkStore) GetRecallFingerprint(_ context.Context, conversationID string, userID string, excludeMessageID string) (domain.SessionRecallFingerprint, error) {
+	fingerprint := domain.SessionRecallFingerprint{}
+	for _, chunk := range s.chunks {
+		message := s.messages[chunk.MessageID]
+		if chunk.ConversationID != conversationID || chunk.UserID != userID {
+			continue
+		}
+		if strings.TrimSpace(excludeMessageID) != "" && chunk.MessageID == strings.TrimSpace(excludeMessageID) {
+			continue
+		}
+		if message.Role != string(convention.UserRole) || !message.IsSummarized {
+			continue
+		}
+		fingerprint.Exists = true
+		fingerprint.RecallableCount++
+		if chunk.UpdateTime.After(fingerprint.LatestUpdateTime) || (chunk.UpdateTime.Equal(fingerprint.LatestUpdateTime) && chunk.ID > fingerprint.LatestChunkID) {
+			fingerprint.LatestUpdateTime = chunk.UpdateTime
+			fingerprint.LatestChunkID = chunk.ID
+			fingerprint.LatestMessageID = chunk.MessageID
+		}
+	}
+	return fingerprint, nil
 }
 
 func (s *inMemorySessionChunkStore) SearchRecallableByVector(_ context.Context, conversationID string, userID string, excludeMessageID string, vector []float32, topK int) ([]domain.SessionChunkSearchHit, error) {
@@ -765,7 +808,7 @@ func newPrepareChatTestService(
 	t *testing.T,
 	rewriteResult ragrewrite.Result,
 	sessionRecall SessionRecallService,
-	retrieve *retrieveServiceStub,
+	retrieve ragretrieve.Service,
 ) (*RagChatService, *domain.ConversationMessage) {
 	t.Helper()
 
@@ -977,6 +1020,9 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
 			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
+				if len(filter.MemoryTypes) == 1 && filter.MemoryTypes[0] == domain.MemoryTypePreference {
+					return nil, nil
+				}
 				return []domain.MemoryItem{
 					{
 						ID:         "mem-kb-1",
@@ -990,6 +1036,9 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 						UpdateTime: time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC),
 					},
 				}, nil
+			}
+			if len(filter.MemoryTypes) == 1 && filter.MemoryTypes[0] == domain.MemoryTypeKnowledge {
+				return nil, nil
 			}
 			return []domain.MemoryItem{
 				{
@@ -1030,6 +1079,9 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 	if !strings.Contains(prepared.memoryContext, "KB-Scoped Memories:") {
 		t.Fatalf("expected scoped memory context, got %q", prepared.memoryContext)
 	}
+	if !strings.Contains(prepared.memoryContext, "Rule Memories:") || !strings.Contains(prepared.memoryContext, "Fact Memories:") {
+		t.Fatalf("expected split long-term memory sections, got %q", prepared.memoryContext)
+	}
 	if !strings.Contains(prepared.memoryContext, "vector store connectivity") {
 		t.Fatalf("expected projected detail in memory context, got %q", prepared.memoryContext)
 	}
@@ -1056,8 +1108,8 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 	if !strings.Contains(promptStage.messages[1].Content, "## Long-Term Memory") {
 		t.Fatalf("expected dedicated long-term memory section, got %q", promptStage.messages[1].Content)
 	}
-	if !strings.Contains(promptStage.messages[1].Content, "Global Memories:") {
-		t.Fatalf("expected global memory subsection, got %q", promptStage.messages[1].Content)
+	if !strings.Contains(promptStage.messages[1].Content, "Rule Memories:") || !strings.Contains(promptStage.messages[1].Content, "Fact Memories:") {
+		t.Fatalf("expected split memory subsections, got %q", promptStage.messages[1].Content)
 	}
 	if !strings.Contains(promptStage.messages[1].Content, "connection refused") {
 		t.Fatalf("expected memory prompt to include projected detail, got %q", promptStage.messages[1].Content)
@@ -1099,6 +1151,557 @@ func TestPrepareChatUsesExplicitMemoryRecallInterface(t *testing.T) {
 	}
 	if prepared.memoryContext != recall.result.Context {
 		t.Fatalf("expected interface-provided memory context, got %q", prepared.memoryContext)
+	}
+}
+
+func TestPrepareChatRetrieveFallsBackToFactMemoryChannelWhenDocumentSearchMisses(t *testing.T) {
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
+
+	embedding := &embeddingServiceStub{vector: []float32{0.8, 0.1}}
+	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
+		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
+			if len(filter.MemoryTypes) != 1 || filter.MemoryTypes[0] != domain.MemoryTypeKnowledge {
+				t.Fatalf("expected fact projection to only query knowledge memories, got %+v", filter)
+			}
+			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
+				return []domain.MemoryItemSearchHit{
+					{
+						MemoryItem: domain.MemoryItem{
+							ID:           "mem-kb-1",
+							UserID:       "user-1",
+							ScopeType:    domain.MemoryScopeKB,
+							ScopeID:      "kb-ops",
+							Namespace:    "kb:kb-ops",
+							MemoryType:   domain.MemoryTypeKnowledge,
+							Category:     domain.MemoryCategoryProject,
+							CanonicalKey: "project.constraint.network",
+							Summary:      "This service runs inside the internal network.",
+							Content:      "The ingestion service runs inside the internal network and cannot access the public internet directly.",
+							DisplayValue: "internal-only",
+							Status:       domain.MemoryStatusActive,
+							UpdateTime:   time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
+						},
+						Score: 0.93,
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	})
+
+	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
+	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
+
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "Can this service access public websites directly?",
+			SubQuestions:      []string{"Can this service access public websites directly?"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieveEngine,
+	)
+
+	prepared, err := service.prepareChat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "Can this service access public websites directly?",
+		KnowledgeBaseIDs: []string{"kb-ops"},
+	})
+	if err != nil {
+		t.Fatalf("prepareChat returned error: %v", err)
+	}
+	if !prepared.retrievalUsed {
+		t.Fatalf("expected retrieval to be used, got %+v", prepared)
+	}
+	if len(prepared.retrieveResult.Chunks) != 1 {
+		t.Fatalf("expected fact-memory retrieval to rescue the result, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if prepared.retrieveResult.Chunks[0].ID != "memory_fact:mem-kb-1" {
+		t.Fatalf("expected projected fact-memory chunk, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "internal network") {
+		t.Fatalf("expected knowledge context to include projected fact memory, got %q", prepared.retrieveResult.KnowledgeContext)
+	}
+	foundMemoryChannel := false
+	foundMemoryStat := false
+	for _, name := range prepared.retrieveResult.SearchChannels {
+		if name == ragretrieve.ChannelMemoryFact {
+			foundMemoryChannel = true
+			break
+		}
+	}
+	for _, stat := range prepared.retrieveResult.ChannelStats {
+		if stat.Name == ragretrieve.ChannelMemoryFact {
+			foundMemoryStat = true
+			if stat.ChunkCount != 1 {
+				t.Fatalf("expected one fact-memory chunk, got %+v", stat)
+			}
+			if stat.Metadata["candidateCount"] != 1 || stat.Metadata["selectedCount"] != 1 {
+				t.Fatalf("unexpected fact-memory stat metadata: %+v", stat.Metadata)
+			}
+			break
+		}
+	}
+	if !foundMemoryChannel || !foundMemoryStat {
+		t.Fatalf("expected memory_fact observability in retrieve result, got channels=%+v stats=%+v", prepared.retrieveResult.SearchChannels, prepared.retrieveResult.ChannelStats)
+	}
+}
+
+func TestPrepareChatRetrieveKeepsDocumentAheadOfFactMemoryOnSameTopic(t *testing.T) {
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
+
+	embedding := &embeddingServiceStub{vector: []float32{0.7, 0.2}}
+	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
+		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
+			if len(filter.MemoryTypes) != 1 || filter.MemoryTypes[0] != domain.MemoryTypeKnowledge {
+				t.Fatalf("expected fact projection to only query knowledge memories, got %+v", filter)
+			}
+			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
+				return []domain.MemoryItemSearchHit{
+					{
+						MemoryItem: domain.MemoryItem{
+							ID:           "mem-kb-1",
+							UserID:       "user-1",
+							ScopeType:    domain.MemoryScopeKB,
+							ScopeID:      "kb-ops",
+							Namespace:    "kb:kb-ops",
+							MemoryType:   domain.MemoryTypeKnowledge,
+							Category:     domain.MemoryCategoryProject,
+							CanonicalKey: "project.constraint.network",
+							Summary:      "The service stays inside the internal network.",
+							Content:      "The ingestion service stays inside the internal network and needs the egress gateway for public access.",
+							DisplayValue: "egress-gateway",
+							Status:       domain.MemoryStatusActive,
+							UpdateTime:   time.Date(2026, 5, 23, 10, 0, 0, 0, time.UTC),
+						},
+						Score: 0.91,
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	})
+
+	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{
+		hits: []corevector.SearchHit{
+			{
+				ChunkID:         "doc-1",
+				DocumentID:      "doc-1",
+				KnowledgeBaseID: "kb-ops",
+				Text:            "Production deployment note: this service is behind the egress gateway and internal network policy applies.",
+				Score:           0.97,
+				Metadata: map[string]any{
+					"section": "Deployment > Network",
+				},
+			},
+		},
+	}, embedding, nil)
+	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
+
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "Can this service access the public internet directly?",
+			SubQuestions:      []string{"Can this service access the public internet directly?"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieveEngine,
+	)
+
+	prepared, err := service.prepareChat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "Can this service access the public internet directly?",
+		KnowledgeBaseIDs: []string{"kb-ops"},
+	})
+	if err != nil {
+		t.Fatalf("prepareChat returned error: %v", err)
+	}
+	if len(prepared.retrieveResult.Chunks) < 2 {
+		t.Fatalf("expected both document and fact memory hits, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if prepared.retrieveResult.Chunks[0].ID != "doc-1" {
+		t.Fatalf("expected document hit to outrank fact memory, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if prepared.retrieveResult.Chunks[1].ID != "memory_fact:mem-kb-1" {
+		t.Fatalf("expected fact memory hit to remain available, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "egress gateway") || !strings.Contains(prepared.retrieveResult.KnowledgeContext, "internal network") {
+		t.Fatalf("expected knowledge context to include both document and fact-memory evidence, got %q", prepared.retrieveResult.KnowledgeContext)
+	}
+	foundVector := false
+	foundMemory := false
+	for _, name := range prepared.retrieveResult.SearchChannels {
+		if name == ragretrieve.ChannelVectorGlobal {
+			foundVector = true
+		}
+		if name == ragretrieve.ChannelMemoryFact {
+			foundMemory = true
+		}
+	}
+	if !foundVector || !foundMemory {
+		t.Fatalf("expected both vector and memory channels, got %+v", prepared.retrieveResult.SearchChannels)
+	}
+}
+
+func TestPrepareChatRetrieveExcludesPreferenceMemoriesFromRetrieveResults(t *testing.T) {
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			if len(filter.MemoryTypes) != 1 {
+				t.Fatalf("expected single memory type filter, got %+v", filter)
+			}
+			switch filter.MemoryTypes[0] {
+			case domain.MemoryTypePreference:
+				return []domain.MemoryItem{
+					{
+						ID:         "mem-pref-1",
+						UserID:     "user-1",
+						ScopeType:  domain.MemoryScopeGlobal,
+						MemoryType: domain.MemoryTypePreference,
+						Summary:    "Always answer in Chinese.",
+						Content:    "Always answer in Chinese.",
+						Status:     domain.MemoryStatusActive,
+						UpdateTime: time.Date(2026, 5, 23, 8, 0, 0, 0, time.UTC),
+					},
+				}, nil
+			case domain.MemoryTypeKnowledge:
+				return nil, nil
+			default:
+				return nil, nil
+			}
+		},
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
+
+	embedding := &embeddingServiceStub{vector: []float32{0.6, 0.4}}
+	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
+		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
+			if len(filter.MemoryTypes) != 1 || filter.MemoryTypes[0] != domain.MemoryTypeKnowledge {
+				t.Fatalf("expected retrieve projection to only query knowledge memories, got %+v", filter)
+			}
+			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
+				return []domain.MemoryItemSearchHit{
+					{
+						MemoryItem: domain.MemoryItem{
+							ID:           "mem-kb-1",
+							UserID:       "user-1",
+							ScopeType:    domain.MemoryScopeKB,
+							ScopeID:      "kb-ops",
+							Namespace:    "kb:kb-ops",
+							MemoryType:   domain.MemoryTypeKnowledge,
+							Category:     domain.MemoryCategoryProject,
+							CanonicalKey: "project.constraint.network",
+							Summary:      "This service cannot access the public internet directly.",
+							Content:      "The ingestion service cannot access the public internet directly and must use internal network paths.",
+							Status:       domain.MemoryStatusActive,
+							UpdateTime:   time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
+						},
+						Score: 0.89,
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	})
+
+	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
+	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
+
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "Can this service access the public internet directly?",
+			SubQuestions:      []string{"Can this service access the public internet directly?"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieveEngine,
+	)
+	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
+
+	prepared, err := service.prepareChat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "Can this service access the public internet directly?",
+		KnowledgeBaseIDs: []string{"kb-ops"},
+	})
+	if err != nil {
+		t.Fatalf("prepareChat returned error: %v", err)
+	}
+	if !strings.Contains(prepared.memoryContext, "Always answer in Chinese") {
+		t.Fatalf("expected rule memory to stay in MemoryContext, got %q", prepared.memoryContext)
+	}
+	if len(prepared.retrieveResult.Chunks) != 1 {
+		t.Fatalf("expected exactly one fact-memory retrieve result, got %+v", prepared.retrieveResult.Chunks)
+	}
+	chunk := prepared.retrieveResult.Chunks[0]
+	if chunk.ID != "memory_fact:mem-kb-1" {
+		t.Fatalf("expected knowledge memory chunk in retrieve result, got %+v", chunk)
+	}
+	if chunk.Metadata["memory_type"] != domain.MemoryTypeKnowledge {
+		t.Fatalf("expected retrieve result to stay on knowledge memories, got %+v", chunk.Metadata)
+	}
+	if strings.Contains(prepared.retrieveResult.KnowledgeContext, "Always answer in Chinese") {
+		t.Fatalf("expected preference memory to stay out of retrieve knowledge context, got %q", prepared.retrieveResult.KnowledgeContext)
+	}
+}
+
+func TestPrepareChatRetrieveUsesFactMemoryForMainBusRemoval(t *testing.T) {
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
+
+	embedding := &embeddingServiceStub{vector: []float32{0.5, 0.4}}
+	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
+		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
+			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
+				return []domain.MemoryItemSearchHit{
+					{
+						MemoryItem: domain.MemoryItem{
+							ID:           "mem-kb-bus-1",
+							UserID:       "user-1",
+							ScopeType:    domain.MemoryScopeKB,
+							ScopeID:      "kb-arch",
+							Namespace:    "kb:kb-arch",
+							MemoryType:   domain.MemoryTypeKnowledge,
+							Category:     domain.MemoryCategoryProject,
+							CanonicalKey: "project.messaging.main_bus",
+							Summary:      "RocketMQ has been removed from the project.",
+							Content:      "RocketMQ is no longer the project's main message bus and should not be treated as the current integration path.",
+							DisplayValue: "removed",
+							Status:       domain.MemoryStatusActive,
+							UpdateTime:   time.Date(2026, 5, 23, 11, 0, 0, 0, time.UTC),
+						},
+						Score: 0.94,
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	})
+
+	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
+	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
+
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "Is RocketMQ still the project's main message bus?",
+			SubQuestions:      []string{"Is RocketMQ still the project's main message bus?"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieveEngine,
+	)
+
+	prepared, err := service.prepareChat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "Is RocketMQ still the project's main message bus?",
+		KnowledgeBaseIDs: []string{"kb-arch"},
+	})
+	if err != nil {
+		t.Fatalf("prepareChat returned error: %v", err)
+	}
+	if len(prepared.retrieveResult.Chunks) != 1 {
+		t.Fatalf("expected fact-memory-only retrieval, got %+v", prepared.retrieveResult.Chunks)
+	}
+	chunk := prepared.retrieveResult.Chunks[0]
+	if chunk.ID != "memory_fact:mem-kb-bus-1" {
+		t.Fatalf("expected main-bus fact memory chunk, got %+v", chunk)
+	}
+	if chunk.Metadata["canonical_key"] != "project.messaging.main_bus" {
+		t.Fatalf("expected main bus canonical key metadata, got %+v", chunk.Metadata)
+	}
+	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "RocketMQ has been removed") {
+		t.Fatalf("expected knowledge context to capture removal fact, got %q", prepared.retrieveResult.KnowledgeContext)
+	}
+}
+
+func TestPrepareChatRetrieveUsesFactMemoryForDependencyConstraint(t *testing.T) {
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
+
+	embedding := &embeddingServiceStub{vector: []float32{0.4, 0.6}}
+	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
+		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
+			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
+				return []domain.MemoryItemSearchHit{
+					{
+						MemoryItem: domain.MemoryItem{
+							ID:           "mem-kb-dep-1",
+							UserID:       "user-1",
+							ScopeType:    domain.MemoryScopeKB,
+							ScopeID:      "kb-ops",
+							Namespace:    "kb:kb-ops",
+							MemoryType:   domain.MemoryTypeKnowledge,
+							Category:     domain.MemoryCategoryProject,
+							CanonicalKey: "project.fact.dependencies",
+							Summary:      "Check vector store connectivity before retrying indexing.",
+							Content:      "When indexing fails with connection refused, check vector store connectivity before retrying the pipeline or touching parser/chunker code.",
+							DisplayValue: "vector-store",
+							Status:       domain.MemoryStatusActive,
+							UpdateTime:   time.Date(2026, 5, 23, 11, 30, 0, 0, time.UTC),
+						},
+						Score: 0.92,
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	})
+
+	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
+	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
+
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "What dependency should we check first when indexing fails with connection refused?",
+			SubQuestions:      []string{"What dependency should we check first when indexing fails with connection refused?"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieveEngine,
+	)
+
+	prepared, err := service.prepareChat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "What dependency should we check first when indexing fails with connection refused?",
+		KnowledgeBaseIDs: []string{"kb-ops"},
+	})
+	if err != nil {
+		t.Fatalf("prepareChat returned error: %v", err)
+	}
+	if len(prepared.retrieveResult.Chunks) != 1 {
+		t.Fatalf("expected dependency fact-memory retrieval, got %+v", prepared.retrieveResult.Chunks)
+	}
+	chunk := prepared.retrieveResult.Chunks[0]
+	if chunk.ID != "memory_fact:mem-kb-dep-1" {
+		t.Fatalf("expected dependency fact memory chunk, got %+v", chunk)
+	}
+	if chunk.Metadata["canonical_key"] != "project.fact.dependencies" {
+		t.Fatalf("expected dependency canonical key metadata, got %+v", chunk.Metadata)
+	}
+	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "vector store connectivity") {
+		t.Fatalf("expected knowledge context to capture dependency constraint, got %q", prepared.retrieveResult.KnowledgeContext)
+	}
+}
+
+func TestPrepareChatRetrievePrefersKBFactMemoryOverGlobalOnSameQuestion(t *testing.T) {
+	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
+	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
+
+	embedding := &embeddingServiceStub{vector: []float32{0.3, 0.7}}
+	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
+		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
+			switch {
+			case len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB:
+				return []domain.MemoryItemSearchHit{
+					{
+						MemoryItem: domain.MemoryItem{
+							ID:           "mem-kb-1",
+							UserID:       "user-1",
+							ScopeType:    domain.MemoryScopeKB,
+							ScopeID:      "kb-ops",
+							Namespace:    "kb:kb-ops",
+							MemoryType:   domain.MemoryTypeKnowledge,
+							Category:     domain.MemoryCategoryProject,
+							CanonicalKey: "project.constraint.network",
+							Summary:      "In kb-ops, this service cannot access the public internet directly.",
+							Content:      "Within kb-ops, the ingestion service is internal-only and must use the approved egress gateway.",
+							Status:       domain.MemoryStatusActive,
+							UpdateTime:   time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC),
+						},
+						Score: 0.90,
+					},
+				}, nil
+			case len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeGlobal:
+				return []domain.MemoryItemSearchHit{
+					{
+						MemoryItem: domain.MemoryItem{
+							ID:           "mem-global-1",
+							UserID:       "user-1",
+							ScopeType:    domain.MemoryScopeGlobal,
+							Namespace:    "global:global",
+							MemoryType:   domain.MemoryTypeKnowledge,
+							Category:     domain.MemoryCategoryProject,
+							CanonicalKey: "project.constraint.network",
+							Summary:      "Generally, services may use shared outbound access when approved.",
+							Content:      "At the global project level, outbound public access may exist for some services when explicitly approved.",
+							Status:       domain.MemoryStatusActive,
+							UpdateTime:   time.Date(2026, 5, 23, 11, 0, 0, 0, time.UTC),
+						},
+						Score: 0.88,
+					},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	})
+
+	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
+	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
+
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "Can this kb-ops service access the public internet directly?",
+			SubQuestions:      []string{"Can this kb-ops service access the public internet directly?"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieveEngine,
+	)
+
+	prepared, err := service.prepareChat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "Can this kb-ops service access the public internet directly?",
+		KnowledgeBaseIDs: []string{"kb-ops"},
+	})
+	if err != nil {
+		t.Fatalf("prepareChat returned error: %v", err)
+	}
+	if len(prepared.retrieveResult.Chunks) < 2 {
+		t.Fatalf("expected kb + global fact memories, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if prepared.retrieveResult.Chunks[0].ID != "memory_fact:mem-kb-1" {
+		t.Fatalf("expected kb-scoped fact memory to outrank global one, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if prepared.retrieveResult.Chunks[1].ID != "memory_fact:mem-global-1" {
+		t.Fatalf("expected global fact memory to remain available, got %+v", prepared.retrieveResult.Chunks)
+	}
+	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "approved egress gateway") || !strings.Contains(prepared.retrieveResult.KnowledgeContext, "global project level") {
+		t.Fatalf("expected knowledge context to include both kb and global fact memories, got %q", prepared.retrieveResult.KnowledgeContext)
 	}
 }
 
@@ -1183,6 +1786,9 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
 		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
 			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
+				if len(filter.MemoryTypes) == 1 && filter.MemoryTypes[0] == domain.MemoryTypePreference {
+					return nil, nil
+				}
 				return []domain.MemoryItem{
 					{
 						ID:         "mem-kb-1",
@@ -1196,6 +1802,9 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 						UpdateTime: time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC),
 					},
 				}, nil
+			}
+			if len(filter.MemoryTypes) == 1 && filter.MemoryTypes[0] == domain.MemoryTypeKnowledge {
+				return nil, nil
 			}
 			return []domain.MemoryItem{
 				{
@@ -1261,16 +1870,19 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 	if payload["candidateCount"] != float64(2) || payload["selectedCount"] != float64(2) {
 		t.Fatalf("unexpected candidate/selected counts: %+v", payload)
 	}
+	if payload["ruleCount"] != float64(1) || payload["factCandidateCount"] != float64(1) || payload["factSelectedCount"] != float64(1) {
+		t.Fatalf("unexpected rule/fact counts payload: %+v", payload)
+	}
 	scopeCounts, ok := payload["scopeCounts"].(map[string]any)
 	if !ok || scopeCounts[domain.MemoryScopeKB] != float64(1) {
 		t.Fatalf("unexpected scopeCounts payload: %+v", payload["scopeCounts"])
 	}
 	sourceCounts, ok := payload["sourceCounts"].(map[string]any)
-	if !ok || sourceCounts["keyword"] != float64(2) || sourceCounts["vector"] != float64(1) {
+	if !ok || sourceCounts["keyword"] != float64(1) || sourceCounts["vector"] != float64(1) {
 		t.Fatalf("unexpected sourceCounts payload: %+v", payload["sourceCounts"])
 	}
 	contributionCounts, ok := payload["contributionCounts"].(map[string]any)
-	if !ok || contributionCounts["hybrid"] != float64(1) || contributionCounts["keyword_only"] != float64(1) {
+	if !ok || contributionCounts["hybrid"] != float64(1) || contributionCounts["none"] != float64(1) {
 		t.Fatalf("unexpected contributionCounts payload: %+v", payload["contributionCounts"])
 	}
 	selected, ok := payload["selectedMemories"].([]any)
@@ -1281,18 +1893,25 @@ func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T)
 	if !ok {
 		t.Fatalf("expected first selected memory map, got %#v", selected[0])
 	}
-	if first["id"] != "mem-kb-1" || first["scopeID"] != "kb-ops" {
+	if first["id"] != "mem-global-1" || first["memoryType"] != domain.MemoryTypePreference {
 		t.Fatalf("unexpected selected memory payload: %+v", first)
 	}
-	if !strings.Contains(first["detail"].(string), "vector store connectivity") {
-		t.Fatalf("expected selected memory detail to be preserved, got %+v", first)
+	second, ok := selected[1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected second selected memory map, got %#v", selected[1])
 	}
-	hitSources, ok := first["hitSources"].([]any)
+	if second["id"] != "mem-kb-1" || second["scopeID"] != "kb-ops" {
+		t.Fatalf("unexpected fact memory payload: %+v", second)
+	}
+	if !strings.Contains(second["detail"].(string), "vector store connectivity") {
+		t.Fatalf("expected selected memory detail to be preserved, got %+v", second)
+	}
+	hitSources, ok := second["hitSources"].([]any)
 	if !ok || len(hitSources) != 2 || hitSources[0] != "keyword" || hitSources[1] != "vector" {
-		t.Fatalf("unexpected hitSources payload: %+v", first["hitSources"])
+		t.Fatalf("unexpected hitSources payload: %+v", second["hitSources"])
 	}
-	if first["keywordScore"].(float64) <= 0 || first["vectorScore"].(float64) <= 0 || first["finalScore"].(float64) <= first["keywordScore"].(float64) {
-		t.Fatalf("expected fused scoring metadata, got %+v", first)
+	if second["keywordScore"].(float64) <= 0 || second["vectorScore"].(float64) <= 0 || second["finalScore"].(float64) <= second["keywordScore"].(float64) {
+		t.Fatalf("expected fused scoring metadata, got %+v", second)
 	}
 }
 

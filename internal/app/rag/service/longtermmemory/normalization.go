@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"local/rag-project/internal/app/rag/domain"
+	"local/rag-project/internal/framework/log"
 )
 
 func normalizeSaveExplicitMemoryInput(input SaveExplicitMemoryInput) normalizedSaveInput {
@@ -57,7 +58,21 @@ func normalizeSaveExplicitMemoryInput(input SaveExplicitMemoryInput) normalizedS
 
 	valueJSON := strings.TrimSpace(input.ValueJSON)
 	if valueJSON == "" {
-		valueJSON = content
+		if normalizeValueType(valueType) == domain.MemoryValueTypeJSON {
+			if canonical, ok := canonicalizeJSONObject(content); ok {
+				valueJSON = canonical
+			} else {
+				log.Warnf(
+					"long-term memory normalized json value missing valueJSON: userID=%s canonicalKey=%s scopeType=%s scopeID=%s",
+					strings.TrimSpace(input.UserID),
+					canonicalKey,
+					scopeType,
+					scopeID,
+				)
+			}
+		} else {
+			valueJSON = content
+		}
 	}
 
 	extractionMethod := strings.ToLower(strings.TrimSpace(input.ExtractionMethod))

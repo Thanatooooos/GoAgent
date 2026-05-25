@@ -13,9 +13,11 @@ const (
 	ChannelVectorGlobal  = "vector_global"
 	ChannelKeyword       = "keyword"
 	ChannelMetadataTitle = "metadata_title"
+	ChannelMemoryFact    = "memory_fact"
 )
 
 type SearchContext struct {
+	UserID           string
 	Query            string
 	KnowledgeBaseIDs []string
 	TopK             int
@@ -39,6 +41,27 @@ type SearchChannelResult struct {
 	LatencyMs   int64
 	Error       string
 	Metadata    map[string]any
+}
+
+type FactMemorySearchRequest struct {
+	UserID           string
+	Query            string
+	KnowledgeBaseIDs []string
+	TopK             int
+}
+
+type FactMemorySearchResult struct {
+	Chunks             []convention.RetrievedChunk
+	CandidateCount     int
+	SelectedCount      int
+	SelectedMemoryIDs  []string
+	ContributionCounts map[string]int
+	SourceCounts       map[string]int
+	ScopeCounts        map[string]int
+}
+
+type FactMemoryRetriever interface {
+	SearchFacts(ctx context.Context, request FactMemorySearchRequest) (FactMemorySearchResult, error)
 }
 
 type ChannelStat struct {
@@ -69,13 +92,16 @@ func buildSearchContext(request Request) SearchContext {
 	}
 	searchMode := normalizeSearchMode(request.SearchMode)
 	return SearchContext{
+		UserID:           strings.TrimSpace(request.UserID),
 		Query:            strings.TrimSpace(request.Query),
 		KnowledgeBaseIDs: append([]string(nil), request.KnowledgeBaseIDs...),
 		TopK:             topK,
 		ScoreThreshold:   request.ScoreThreshold,
 		RerankTopN:       request.RerankTopN,
 		SearchMode:       searchMode,
-		RouteHints:       map[string]any{},
+		RouteHints: map[string]any{
+			"userID": strings.TrimSpace(request.UserID),
+		},
 	}
 }
 

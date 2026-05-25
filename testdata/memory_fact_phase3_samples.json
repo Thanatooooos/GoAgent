@@ -1,0 +1,242 @@
+{
+  "samples": [
+    {
+      "name": "memory_fact_doc_miss_network_constraint",
+      "query": "Can this service access public websites directly?",
+      "userId": "user-1",
+      "tags": [
+        "memory_fact",
+        "phase3",
+        "doc_miss",
+        "network_constraint"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "memory_fact:mem-kb-1"
+      ],
+      "retrieved": [
+        {
+          "chunkId": "memory_fact:mem-kb-1",
+          "documentId": "mem-kb-1",
+          "score": 0.93,
+          "metadata": {
+            "source": "memory_fact",
+            "memory_type": "knowledge",
+            "canonical_key": "project.constraint.network",
+            "scope_type": "kb"
+          }
+        }
+      ],
+      "knowledgeBaseIds": [
+        "kb-ops"
+      ],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "expectedRelevance": {
+        "memory_fact:mem-kb-1": 3
+      }
+    },
+    {
+      "name": "memory_fact_doc_and_memory_network_priority",
+      "query": "Can this service access the public internet directly?",
+      "userId": "user-1",
+      "tags": [
+        "memory_fact",
+        "phase3",
+        "doc_and_memory",
+        "priority_preserved"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "doc-1",
+        "memory_fact:mem-kb-1"
+      ],
+      "retrieved": [
+        {
+          "chunkId": "doc-1",
+          "documentId": "doc-1",
+          "score": 0.97,
+          "metadata": {
+            "section": "Deployment > Network"
+          }
+        },
+        {
+          "chunkId": "memory_fact:mem-kb-1",
+          "documentId": "mem-kb-1",
+          "score": 0.91,
+          "metadata": {
+            "source": "memory_fact",
+            "memory_type": "knowledge",
+            "canonical_key": "project.constraint.network",
+            "scope_type": "kb"
+          }
+        }
+      ],
+      "knowledgeBaseIds": [
+        "kb-ops"
+      ],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "expectedRelevance": {
+        "doc-1": 3,
+        "memory_fact:mem-kb-1": 2
+      }
+    },
+    {
+      "name": "memory_fact_preference_isolation",
+      "query": "Can this service access the public internet directly?",
+      "userId": "user-1",
+      "tags": [
+        "memory_fact",
+        "phase3",
+        "preference_isolation"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "memory_fact:mem-kb-1"
+      ],
+      "retrieved": [
+        {
+          "chunkId": "memory_fact:mem-kb-1",
+          "documentId": "mem-kb-1",
+          "score": 0.89,
+          "metadata": {
+            "source": "memory_fact",
+            "memory_type": "knowledge",
+            "canonical_key": "project.constraint.network",
+            "scope_type": "kb"
+          }
+        }
+      ],
+      "knowledgeBaseIds": [
+        "kb-ops"
+      ],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "expectedRelevance": {
+        "memory_fact:mem-kb-1": 3
+      }
+    },
+    {
+      "name": "memory_fact_main_bus_removed",
+      "query": "Is RocketMQ still the project's main message bus?",
+      "userId": "user-1",
+      "tags": [
+        "memory_fact",
+        "phase3",
+        "project_fact",
+        "main_bus"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "memory_fact:mem-kb-bus-1"
+      ],
+      "retrieved": [
+        {
+          "chunkId": "memory_fact:mem-kb-bus-1",
+          "documentId": "mem-kb-bus-1",
+          "score": 0.94,
+          "metadata": {
+            "source": "memory_fact",
+            "memory_type": "knowledge",
+            "canonical_key": "project.messaging.main_bus",
+            "scope_type": "kb"
+          }
+        }
+      ],
+      "knowledgeBaseIds": [
+        "kb-arch"
+      ],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "expectedRelevance": {
+        "memory_fact:mem-kb-bus-1": 3
+      }
+    },
+    {
+      "name": "memory_fact_dependency_constraint",
+      "query": "What dependency should we check first when indexing fails with connection refused?",
+      "userId": "user-1",
+      "tags": [
+        "memory_fact",
+        "phase3",
+        "project_fact",
+        "dependency_constraint"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "memory_fact:mem-kb-dep-1"
+      ],
+      "retrieved": [
+        {
+          "chunkId": "memory_fact:mem-kb-dep-1",
+          "documentId": "mem-kb-dep-1",
+          "score": 0.92,
+          "metadata": {
+            "source": "memory_fact",
+            "memory_type": "knowledge",
+            "canonical_key": "project.fact.dependencies",
+            "scope_type": "kb"
+          }
+        }
+      ],
+      "knowledgeBaseIds": [
+        "kb-ops"
+      ],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "expectedRelevance": {
+        "memory_fact:mem-kb-dep-1": 3
+      }
+    },
+    {
+      "name": "memory_fact_kb_scope_beats_global_scope",
+      "query": "Can this kb-ops service access the public internet directly?",
+      "userId": "user-1",
+      "tags": [
+        "memory_fact",
+        "phase3",
+        "scope_priority",
+        "kb_over_global"
+      ],
+      "target": "chunk",
+      "expectedIds": [
+        "memory_fact:mem-kb-1",
+        "memory_fact:mem-global-1"
+      ],
+      "retrieved": [
+        {
+          "chunkId": "memory_fact:mem-kb-1",
+          "documentId": "mem-kb-1",
+          "score": 0.9,
+          "metadata": {
+            "source": "memory_fact",
+            "memory_type": "knowledge",
+            "canonical_key": "project.constraint.network",
+            "scope_type": "kb"
+          }
+        },
+        {
+          "chunkId": "memory_fact:mem-global-1",
+          "documentId": "mem-global-1",
+          "score": 0.88,
+          "metadata": {
+            "source": "memory_fact",
+            "memory_type": "knowledge",
+            "canonical_key": "project.constraint.network",
+            "scope_type": "global"
+          }
+        }
+      ],
+      "knowledgeBaseIds": [
+        "kb-ops"
+      ],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "expectedRelevance": {
+        "memory_fact:mem-kb-1": 3,
+        "memory_fact:mem-global-1": 2
+      }
+    }
+  ]
+}

@@ -26,17 +26,18 @@ type RetrievedItem struct {
 }
 
 type Sample struct {
-	Name             string          `json:"name"`
-	Query            string          `json:"query"`
-	Tags             []string        `json:"tags,omitempty"`
-	Target           Target          `json:"target"`
-	ExpectedIDs      []string        `json:"expectedIds"`
-	Retrieved        []RetrievedItem `json:"retrieved"`
-	KnowledgeBaseIDs []string        `json:"knowledgeBaseIds,omitempty"`
-	SearchMode       string          `json:"searchMode,omitempty"`
-	TopK             int             `json:"topK,omitempty"`
-	ChunkStrategy    string          `json:"chunkStrategy,omitempty"`
-	ExpectedRelevance map[string]int `json:"expectedRelevance,omitempty"`
+	Name              string          `json:"name"`
+	Query             string          `json:"query"`
+	UserID            string          `json:"userId,omitempty"`
+	Tags              []string        `json:"tags,omitempty"`
+	Target            Target          `json:"target"`
+	ExpectedIDs       []string        `json:"expectedIds"`
+	Retrieved         []RetrievedItem `json:"retrieved"`
+	KnowledgeBaseIDs  []string        `json:"knowledgeBaseIds,omitempty"`
+	SearchMode        string          `json:"searchMode,omitempty"`
+	TopK              int             `json:"topK,omitempty"`
+	ChunkStrategy     string          `json:"chunkStrategy,omitempty"`
+	ExpectedRelevance map[string]int  `json:"expectedRelevance,omitempty"`
 }
 
 type SampleResult struct {
@@ -54,11 +55,11 @@ type SampleResult struct {
 }
 
 type AggregateMetrics struct {
-	SampleCount      int              `json:"sampleCount"`
-	HitRateAtK       map[int]float64  `json:"hitRateAtK"`
-	AverageRecallAtK map[int]float64  `json:"averageRecallAtK"`
-	AverageNDCGAtK   map[int]float64  `json:"averageNdcgAtK"`
-	MRR              float64          `json:"mrr"`
+	SampleCount      int             `json:"sampleCount"`
+	HitRateAtK       map[int]float64 `json:"hitRateAtK"`
+	AverageRecallAtK map[int]float64 `json:"averageRecallAtK"`
+	AverageNDCGAtK   map[int]float64 `json:"averageNdcgAtK"`
+	MRR              float64         `json:"mrr"`
 }
 
 type TagSummary struct {
@@ -67,10 +68,10 @@ type TagSummary struct {
 }
 
 type Summary struct {
-	Ks      []int           `json:"ks"`
+	Ks      []int            `json:"ks"`
 	Overall AggregateMetrics `json:"overall"`
-	ByTag   []TagSummary    `json:"byTag"`
-	Samples []SampleResult  `json:"samples"`
+	ByTag   []TagSummary     `json:"byTag"`
+	Samples []SampleResult   `json:"samples"`
 }
 
 func Evaluate(samples []Sample, ks []int) (Summary, error) {
@@ -422,4 +423,3 @@ func dcgAtK(gains []int, k int) float64 {
 	}
 	return total
 }
-

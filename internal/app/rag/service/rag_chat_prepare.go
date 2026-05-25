@@ -10,6 +10,7 @@ import (
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/exception"
+	"local/rag-project/internal/framework/log"
 )
 
 const defaultTopK = 5
@@ -42,11 +43,19 @@ func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (r
 
 	longTermMemoryStage, err := s.runLongTermMemoryStage(ctx, input, rewriteStage.result, runtimeStage.state.traceID)
 	if err != nil {
+		log.Warnf("rag chat long-term memory stage failed open: userID=%s traceID=%s err=%v", strings.TrimSpace(input.UserID), runtimeStage.state.traceID, err)
 		longTermMemoryStage = ragChatLongTermMemoryStageResult{}
 	}
 
 	sessionRecallStage, err := s.runSessionRecallStage(ctx, conversationStage.conversationID, input, userMessageStage.message.ID, rewriteStage.result, runtimeStage.state.traceID)
 	if err != nil {
+		log.Warnf(
+			"rag chat session recall stage failed open: conversationID=%s userID=%s traceID=%s err=%v",
+			conversationStage.conversationID,
+			strings.TrimSpace(input.UserID),
+			runtimeStage.state.traceID,
+			err,
+		)
 		sessionRecallStage = ragChatSessionRecallStageResult{}
 	}
 
@@ -222,6 +231,11 @@ func (s *RagChatService) runSessionRecallStage(
 				"candidateCount":         result.result.candidateCount,
 				"excerptCount":           len(result.result.Hits),
 				"topScore":               result.result.TopScore,
+				"cacheEnabled":           result.result.CacheEnabled,
+				"cacheLayer":             strings.TrimSpace(result.result.CacheLayer),
+				"recallFingerprint":      strings.TrimSpace(result.result.RecallFingerprint),
+				"embeddingCacheLayer":    strings.TrimSpace(result.result.EmbeddingCacheLayer),
+				"recomputeReason":        strings.TrimSpace(result.result.RecomputeReason),
 				"excludedMessageId":      strings.TrimSpace(excludeMessageID),
 				"selectedHits":           hits,
 				"skippedPerMessageLimit": result.result.skippedPerMessageLimit,
@@ -280,15 +294,29 @@ func (s *RagChatService) runLongTermMemoryStage(
 				})
 			}
 			return map[string]any{
-				"used":               result.result.Used,
-				"candidateCount":     result.result.CandidateCount,
-				"selectedCount":      result.result.SelectedCount,
+				"used":                result.result.Used,
+				"candidateCount":      result.result.CandidateCount,
+				"selectedCount":       result.result.SelectedCount,
+				"ruleCount":           result.result.RuleCount,
+				"factCandidateCount":  result.result.FactCandidateCount,
+				"factSelectedCount":   result.result.FactSelectedCount,
+				"cacheEnabled":        result.result.CacheEnabled,
+				"ruleCacheLayer":      strings.TrimSpace(result.result.RuleCacheLayer),
+				"factCacheLayer":      strings.TrimSpace(result.result.FactCacheLayer),
+				"embeddingCacheLayer": strings.TrimSpace(result.result.EmbeddingCacheLayer),
+				"scopeVersions": map[string]any{
+					"global": result.result.ScopeVersions.GlobalVersion,
+					"kb":     result.result.ScopeVersions.KBVersions,
+				},
+				"recomputeReason":    strings.TrimSpace(result.result.RecomputeReason),
 				"truncated":          result.result.Truncated,
 				"scopeCounts":        result.result.ScopeCounts,
 				"sourceCounts":       result.result.SourceCounts,
 				"contributionCounts": result.result.ContributionCounts,
 				"typeCounts":         result.result.TypeCounts,
 				"memoryIds":          result.result.SelectedMemoryIDs,
+				"ruleMemoryIds":      result.result.RuleMemoryIDs,
+				"factMemoryIds":      result.result.FactMemoryIDs,
 				"selectedMemories":   selected,
 			}
 		},
@@ -314,6 +342,7 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 			results := make([]ragretrieve.Result, 0, len(subQuestions))
 			for _, q := range subQuestions {
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
+					UserID:           strings.TrimSpace(input.UserID),
 					Query:            strings.TrimSpace(q),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
 					SearchMode:       ragretrieve.SearchModeHybrid,
@@ -325,6 +354,7 @@ func (s *RagChatService) runRetrieveStage(ctx context.Context, input RagChatInpu
 			}
 			if len(results) == 0 {
 				retrieveResult, err := s.retrieveService.Retrieve(ctx, ragretrieve.Request{
+					UserID:           strings.TrimSpace(input.UserID),
 					Query:            strings.TrimSpace(input.Question),
 					KnowledgeBaseIDs: input.KnowledgeBaseIDs,
 					SearchMode:       ragretrieve.SearchModeHybrid,

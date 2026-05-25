@@ -96,6 +96,7 @@ func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples 
 			searchMode = searchModeOverride
 		}
 		request := ragretrieve.Request{
+			UserID:           strings.TrimSpace(samples[i].UserID),
 			Query:            strings.TrimSpace(samples[i].Query),
 			KnowledgeBaseIDs: append([]string(nil), samples[i].KnowledgeBaseIDs...),
 			SearchMode:       searchMode,

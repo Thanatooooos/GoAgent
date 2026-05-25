@@ -99,8 +99,9 @@ func rrfFuseChannelResults(results []SearchChannelResult) []convention.Retrieved
 	}
 	merged := map[string]*fusionEntry{}
 	for _, result := range results {
+		weight := readChannelRRFWeight(result)
 		for rank, chunk := range result.Chunks {
-			score := float32(1.0) / float32(defaultRRFK+rank+1)
+			score := weight * (float32(1.0) / float32(defaultRRFK+rank+1))
 			if existing, ok := merged[chunk.ID]; ok {
 				existing.rrfScore += score
 				if chunk.Score > existing.chunk.Score {
@@ -130,6 +131,28 @@ func rrfFuseChannelResults(results []SearchChannelResult) []convention.Retrieved
 		fused = append(fused, chunk)
 	}
 	return fused
+}
+
+func readChannelRRFWeight(result SearchChannelResult) float32 {
+	if result.Metadata != nil {
+		if value, ok := result.Metadata["rrfWeight"]; ok {
+			switch typed := value.(type) {
+			case float32:
+				if typed > 0 {
+					return typed
+				}
+			case float64:
+				if typed > 0 {
+					return float32(typed)
+				}
+			case int:
+				if typed > 0 {
+					return float32(typed)
+				}
+			}
+		}
+	}
+	return defaultChannelRRFWeight(result.ChannelName)
 }
 
 func cloneChunks(chunks []convention.RetrievedChunk) []convention.RetrievedChunk {

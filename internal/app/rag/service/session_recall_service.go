@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
+	"local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/framework/log"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
@@ -33,10 +37,15 @@ type SessionRecallHit struct {
 }
 
 type SessionRecallResult struct {
-	Used     bool
-	Hits     []SessionRecallHit
-	Context  string
-	TopScore float32
+	Used                bool
+	Hits                []SessionRecallHit
+	Context             string
+	TopScore            float32
+	CacheEnabled        bool
+	CacheLayer          string
+	RecallFingerprint   string
+	EmbeddingCacheLayer string
+	RecomputeReason     string
 
 	candidateCount         int
 	skippedPerMessageLimit int
@@ -57,10 +66,25 @@ type SessionRecallOptions struct {
 	Estimator            TokenEstimator
 }
 
+type SessionRecallCacheOptions struct {
+	Enabled                  bool
+	RequestScopeEnabled      bool
+	ConversationScopeEnabled bool
+	ConversationMaxEntries   int
+	ConversationTTL          time.Duration
+	EmptyResultTTL           time.Duration
+	EmbeddingTTL             time.Duration
+	EmbeddingModel           string
+}
+
 type defaultSessionRecallService struct {
-	repo      port.SessionChunkRepository
-	embedding aiembedding.EmbeddingService
-	options   SessionRecallOptions
+	repo              port.SessionChunkRepository
+	embedding         aiembedding.EmbeddingService
+	options           SessionRecallOptions
+	cacheOptions      SessionRecallCacheOptions
+	conversationCache *sessionRecallConversationCache
+	sharedRecallCache longtermmemory.RecallCache
+	cacheMetrics      *cachemetrics.Service
 }
 
 func NewSessionRecallService(repo port.SessionChunkRepository, embedding aiembedding.EmbeddingService, options SessionRecallOptions) SessionRecallService {
@@ -108,15 +132,44 @@ func (s *defaultSessionRecallService) Recall(ctx context.Context, input SessionR
 		return SessionRecallResult{}, nil
 	}
 
-	exists, err := s.repo.ExistsRecallable(ctx, conversationID, userID, excludeMessageID)
+	fingerprint, err := s.readRecallFingerprint(ctx, conversationID, userID, excludeMessageID)
+	fingerprintAvailable := err == nil
 	if err != nil {
-		return SessionRecallResult{}, err
+		log.Warnf("session recall fingerprint lookup failed: conversationID=%s userID=%s err=%v", conversationID, userID, err)
+		s.recordCacheMetric("session_recall", "conversation", "fallback")
 	}
-	if !exists {
-		return SessionRecallResult{}, nil
+	fingerprintKey := buildSessionRecallFingerprintKey(fingerprint)
+	baseKey := buildSessionRecallBaseKey(conversationID, userID, query, excludeMessageID, s.options)
+	fullKey := buildSessionRecallCacheKey(baseKey, fingerprintKey)
+	if fingerprintAvailable && !fingerprint.Exists {
+		result := SessionRecallResult{
+			CacheEnabled:      s.canUseSessionRecallCache(),
+			CacheLayer:        "miss",
+			RecallFingerprint: fingerprintKey,
+			RecomputeReason:   "no_recallable_chunks",
+		}
+		s.writeSessionRecallCaches(ctx, baseKey, fullKey, result)
+		return result, nil
 	}
 
-	vector, err := s.embedding.Embed(query)
+	if fingerprintAvailable {
+		if result, hit := s.readSessionRecallRequestCache(ctx, fullKey); hit {
+			result.CacheEnabled = s.canUseSessionRecallCache()
+			result.CacheLayer = "request"
+			result.RecallFingerprint = fingerprintKey
+			return result, nil
+		}
+
+		if result, hit := s.readConversationCache(baseKey, fullKey); hit {
+			result.CacheEnabled = s.canUseSessionRecallCache()
+			result.CacheLayer = "conversation"
+			result.RecallFingerprint = fingerprintKey
+			s.writeSessionRecallRequestCache(ctx, fullKey, result)
+			return result, nil
+		}
+	}
+
+	vector, embeddingLayer, err := s.embedQuery(ctx, query)
 	if err != nil {
 		return SessionRecallResult{}, fmt.Errorf("embed session recall query: %w", err)
 	}
@@ -127,17 +180,36 @@ func (s *defaultSessionRecallService) Recall(ctx context.Context, input SessionR
 		return SessionRecallResult{}, err
 	}
 	if len(candidates) == 0 {
-		return SessionRecallResult{}, nil
+		result := SessionRecallResult{
+			CacheEnabled:        s.canUseSessionRecallCache(),
+			CacheLayer:          "miss",
+			RecallFingerprint:   fingerprintKey,
+			EmbeddingCacheLayer: embeddingLayer,
+			RecomputeReason:     sessionRecallRecomputeReason(fingerprintAvailable, "candidate_search_empty"),
+		}
+		if fingerprintAvailable {
+			s.writeSessionRecallCaches(ctx, baseKey, fullKey, result)
+		}
+		return result, nil
 	}
 
 	hits, selection := s.buildHits(query, candidates)
 	if len(hits) == 0 {
-		return SessionRecallResult{
+		result := SessionRecallResult{
+			CacheEnabled:           s.canUseSessionRecallCache(),
+			CacheLayer:             "miss",
+			RecallFingerprint:      fingerprintKey,
+			EmbeddingCacheLayer:    embeddingLayer,
+			RecomputeReason:        sessionRecallRecomputeReason(fingerprintAvailable, selection.truncatedBy),
 			TopScore:               candidates[0].Score,
 			candidateCount:         len(candidates),
 			skippedPerMessageLimit: selection.skippedPerMessageLimit,
 			truncatedBy:            selection.truncatedBy,
-		}, nil
+		}
+		if fingerprintAvailable {
+			s.writeSessionRecallCaches(ctx, baseKey, fullKey, result)
+		}
+		return result, nil
 	}
 
 	result := SessionRecallResult{
@@ -145,11 +217,30 @@ func (s *defaultSessionRecallService) Recall(ctx context.Context, input SessionR
 		Hits:                   hits,
 		Context:                buildSessionRecallContext(hits),
 		TopScore:               candidates[0].Score,
+		CacheEnabled:           s.canUseSessionRecallCache(),
+		CacheLayer:             "miss",
+		RecallFingerprint:      fingerprintKey,
+		EmbeddingCacheLayer:    embeddingLayer,
+		RecomputeReason:        sessionRecallRecomputeReason(fingerprintAvailable, "conversation_cache_miss"),
 		candidateCount:         len(candidates),
 		skippedPerMessageLimit: selection.skippedPerMessageLimit,
 		truncatedBy:            selection.truncatedBy,
 	}
+	if fingerprintAvailable {
+		s.writeSessionRecallCaches(ctx, baseKey, fullKey, result)
+	}
 	return result, nil
+}
+
+func sessionRecallRecomputeReason(fingerprintAvailable bool, reason string) string {
+	reason = strings.TrimSpace(reason)
+	if fingerprintAvailable {
+		return reason
+	}
+	if reason == "" {
+		return "fingerprint_unavailable"
+	}
+	return "fingerprint_unavailable;" + reason
 }
 
 func (s *defaultSessionRecallService) buildHits(query string, candidates []domain.SessionChunkSearchHit) ([]SessionRecallHit, SessionRecallResult) {

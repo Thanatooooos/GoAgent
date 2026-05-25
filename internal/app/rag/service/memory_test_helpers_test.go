@@ -3,16 +3,21 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
+	"time"
 
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 )
 
 type memoryItemRepoStub struct {
-	createFn func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
-	updateFn func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
-	getByID  func(context.Context, string) (domain.MemoryItem, error)
-	listFn   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error)
+	createFn              func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
+	updateFn              func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
+	getByID               func(context.Context, string) (domain.MemoryItem, error)
+	listFn                func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error)
+	listActiveByKeyFn     func(context.Context, string, string, string, string) ([]domain.MemoryItem, error)
+	listActiveConflictsFn func(context.Context, []string) ([]port.ActiveMemoryConflict, error)
+	touchFn               func(context.Context, string, []string, time.Time) error
 }
 
 func (s memoryItemRepoStub) Create(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
@@ -29,6 +34,39 @@ func (s memoryItemRepoStub) GetByID(ctx context.Context, id string) (domain.Memo
 
 func (s memoryItemRepoStub) List(ctx context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
 	return s.listFn(ctx, filter)
+}
+
+func (s memoryItemRepoStub) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
+	if s.listActiveByKeyFn != nil {
+		return s.listActiveByKeyFn(ctx, userID, scopeType, scopeID, canonicalKey)
+	}
+	if s.listFn == nil {
+		return nil, nil
+	}
+	filter := port.MemoryItemListFilter{
+		UserID:        userID,
+		ScopeTypes:    []string{scopeType},
+		CanonicalKeys: []string{canonicalKey},
+		Statuses:      []string{domain.MemoryStatusActive},
+	}
+	if strings.TrimSpace(scopeType) == domain.MemoryScopeKB {
+		filter.ScopeIDs = []string{scopeID}
+	}
+	return s.listFn(ctx, filter)
+}
+
+func (s memoryItemRepoStub) ListActiveSingleValueConflicts(ctx context.Context, canonicalKeys []string) ([]port.ActiveMemoryConflict, error) {
+	if s.listActiveConflictsFn == nil {
+		return nil, nil
+	}
+	return s.listActiveConflictsFn(ctx, canonicalKeys)
+}
+
+func (s memoryItemRepoStub) TouchLastUsed(ctx context.Context, userID string, ids []string, at time.Time) error {
+	if s.touchFn == nil {
+		return nil
+	}
+	return s.touchFn(ctx, userID, ids, at)
 }
 
 type memoryItemEmbeddingRepoStub struct {

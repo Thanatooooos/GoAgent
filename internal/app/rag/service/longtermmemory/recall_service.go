@@ -4,12 +4,15 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 	"local/rag-project/internal/framework/exception"
+	"local/rag-project/internal/framework/log"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
@@ -30,6 +33,10 @@ type recallService struct {
 	embeddingRepo port.MemoryItemEmbeddingRepository
 	embedding     aiembedding.EmbeddingService
 	options       MemoryServiceOptions
+	cache         RecallCache
+	cacheOptions  RecallCacheOptions
+	cacheMetrics  *cachemetrics.Service
+	now           func() time.Time
 }
 
 func newRecallService(repo port.MemoryItemRepository, options MemoryServiceOptions) RecallService {
@@ -56,6 +63,7 @@ func NewVectorAwareRecallService(
 		embeddingRepo: embeddingRepo,
 		embedding:     embedding,
 		options:       options,
+		now:           time.Now,
 	}
 }
 
@@ -68,81 +76,159 @@ func (r *recallService) RecallMemories(ctx context.Context, input RecallMemories
 		return RecallMemoriesResult{}, exception.NewClientException("user id is required", nil)
 	}
 
-	kbItems, err := r.repo.List(ctx, port.MemoryItemListFilter{
-		UserID:     userID,
-		ScopeTypes: []string{domain.MemoryScopeKB},
-		ScopeIDs:   trimMemoryValues(input.KnowledgeBaseIDs),
-		Statuses:   []string{domain.MemoryStatusActive},
-		ListOptions: port.ListOptions{
-			Limit: r.options.MaxCandidatesPerScope,
-		},
-	})
-	if err != nil {
-		return RecallMemoriesResult{}, exception.NewServiceException("failed to list kb memory items", err)
-	}
-	globalItems, err := r.repo.List(ctx, port.MemoryItemListFilter{
-		UserID:     userID,
-		ScopeTypes: []string{domain.MemoryScopeGlobal},
-		Statuses:   []string{domain.MemoryStatusActive},
-		ListOptions: port.ListOptions{
-			Limit: r.options.MaxCandidatesPerScope,
-		},
-	})
-	if err != nil {
-		return RecallMemoriesResult{}, exception.NewServiceException("failed to list global memory items", err)
-	}
-
 	query := strings.TrimSpace(input.Query)
-	candidates := append(append([]domain.MemoryItem(nil), kbItems...), globalItems...)
-	if len(candidates) == 0 {
-		return RecallMemoriesResult{}, nil
+	knowledgeBaseIDs := trimMemoryValues(input.KnowledgeBaseIDs)
+	ruleCandidates, scopeVersions, ruleCacheLayer, ruleReason, err := r.loadRuleMemoryProjections(ctx, userID, query, knowledgeBaseIDs)
+	if err != nil {
+		return RecallMemoriesResult{}, err
 	}
 
-	vectorScores := map[string]float32{}
-	if query != "" && r.embeddingRepo != nil && r.embedding != nil {
-		vector, err := r.embedding.Embed(query)
-		if err == nil && len(vector) > 0 {
-			kbHits, err := r.embeddingRepo.SearchByVector(ctx, vector, port.MemoryItemEmbeddingSearchFilter{
-				UserID:     userID,
-				ScopeTypes: []string{domain.MemoryScopeKB},
-				ScopeIDs:   trimMemoryValues(input.KnowledgeBaseIDs),
-				Statuses:   []string{domain.MemoryStatusActive},
-				TopK:       r.options.MaxCandidatesPerScope,
-			})
-			if err == nil {
-				candidates = mergeMemorySearchHits(candidates, kbHits, vectorScores)
-			}
-			globalHits, err := r.embeddingRepo.SearchByVector(ctx, vector, port.MemoryItemEmbeddingSearchFilter{
-				UserID:     userID,
-				ScopeTypes: []string{domain.MemoryScopeGlobal},
-				Statuses:   []string{domain.MemoryStatusActive},
-				TopK:       r.options.MaxCandidatesPerScope,
-			})
-			if err == nil {
-				candidates = mergeMemorySearchHits(candidates, globalHits, vectorScores)
-			}
+	rankedFacts, _, factScopeVersions, factCacheLayer, embeddingCacheLayer, factReason, err := r.loadFactRankingProjections(ctx, userID, query, knowledgeBaseIDs, r.options.MaxCandidatesPerScope)
+	if err != nil {
+		return RecallMemoriesResult{}, err
+	}
+	if scopeVersions.GlobalVersion == 0 && len(scopeVersions.KBVersions) == 0 {
+		scopeVersions = factScopeVersions
+	}
+
+	selectedRules, selectedFacts, contextText, truncated := buildMemoryRecallContext(ruleCandidates, rankedFacts, r.options.MaxRecallItems, r.options.MaxRecallChars)
+	selected := append(append([]memoryRecallProjection(nil), selectedRules...), selectedFacts...)
+	r.touchLastUsed(ctx, userID, selected)
+	recomputeReason := strings.TrimSpace(strings.Join([]string{ruleReason, factReason}, ";"))
+	recomputeReason = strings.Trim(recomputeReason, "; ")
+
+	return RecallMemoriesResult{
+		Used:                len(selected) > 0,
+		Context:             contextText,
+		Items:               projectedMemoryItems(selected),
+		SelectedEntries:     projectedMemoryEntries(selected),
+		CandidateCount:      len(ruleCandidates) + len(rankedFacts),
+		SelectedCount:       len(selected),
+		RuleCount:           len(selectedRules),
+		FactCandidateCount:  len(rankedFacts),
+		FactSelectedCount:   len(selectedFacts),
+		Truncated:           truncated,
+		ScopeCounts:         projectedScopeCounts(selected),
+		SourceCounts:        projectedSourceCounts(selected),
+		ContributionCounts:  projectedContributionCounts(selected),
+		TypeCounts:          projectedTypeCounts(selected),
+		SelectedMemoryIDs:   projectedMemoryIDs(selected),
+		RuleMemoryIDs:       projectedMemoryIDs(selectedRules),
+		FactMemoryIDs:       projectedMemoryIDs(selectedFacts),
+		CacheEnabled:        r.canUseRecallCache() || r.cacheOptions.RequestScopeEnabled,
+		RuleCacheLayer:      ruleCacheLayer,
+		FactCacheLayer:      factCacheLayer,
+		EmbeddingCacheLayer: embeddingCacheLayer,
+		ScopeVersions:       scopeVersions,
+		RecomputeReason:     recomputeReason,
+	}, nil
+}
+
+func (r *recallService) loadRuleMemories(ctx context.Context, userID string, knowledgeBaseIDs []string) ([]domain.MemoryItem, error) {
+	var kbItems []domain.MemoryItem
+	var err error
+	if len(knowledgeBaseIDs) > 0 {
+		kbItems, err = r.repo.List(ctx, port.MemoryItemListFilter{
+			UserID:      userID,
+			ScopeTypes:  []string{domain.MemoryScopeKB},
+			ScopeIDs:    knowledgeBaseIDs,
+			MemoryTypes: []string{domain.MemoryTypePreference},
+			Statuses:    []string{domain.MemoryStatusActive},
+			ListOptions: port.ListOptions{
+				Limit: r.options.MaxCandidatesPerScope,
+			},
+		})
+		if err != nil {
+			return nil, exception.NewServiceException("failed to list kb rule memory items", err)
 		}
 	}
-
-	ranked := rankRecallMemories(query, candidates, vectorScores)
-	if len(vectorScores) > 0 {
-		ranked = rerankRecallMemoriesWithVectorScores(ranked, vectorScores)
+	globalItems, err := r.repo.List(ctx, port.MemoryItemListFilter{
+		UserID:      userID,
+		ScopeTypes:  []string{domain.MemoryScopeGlobal},
+		MemoryTypes: []string{domain.MemoryTypePreference},
+		Statuses:    []string{domain.MemoryStatusActive},
+		ListOptions: port.ListOptions{
+			Limit: r.options.MaxCandidatesPerScope,
+		},
+	})
+	if err != nil {
+		return nil, exception.NewServiceException("failed to list global rule memory items", err)
 	}
-	selected, contextText, truncated := buildMemoryRecallContext(ranked, r.options.MaxRecallItems, r.options.MaxRecallChars)
-	return RecallMemoriesResult{
-		Used:               len(selected) > 0,
-		Context:            contextText,
-		Items:              projectedMemoryItems(selected),
-		SelectedEntries:    projectedMemoryEntries(selected),
-		CandidateCount:     len(ranked),
-		SelectedCount:      len(selected),
-		Truncated:          truncated,
-		ScopeCounts:        projectedScopeCounts(selected),
-		SourceCounts:       projectedSourceCounts(selected),
-		ContributionCounts: projectedContributionCounts(selected),
-		TypeCounts:         projectedTypeCounts(selected),
-		SelectedMemoryIDs:  projectedMemoryIDs(selected),
-	}, nil
+	items := append(append([]domain.MemoryItem(nil), kbItems...), globalItems...)
+	sortRuleMemoryItems(items)
+	return items, nil
+}
+
+func (r *recallService) loadFactMemoryCandidates(ctx context.Context, userID string, query string, knowledgeBaseIDs []string) ([]domain.MemoryItem, map[string]float32, string, error) {
+	return r.loadFactMemoryCandidatesWithLimit(ctx, userID, query, knowledgeBaseIDs, r.options.MaxCandidatesPerScope)
+}
+
+func (r *recallService) touchLastUsed(ctx context.Context, userID string, selected []memoryRecallProjection) {
+	if r == nil || r.repo == nil || len(selected) == 0 {
+		return
+	}
+	ids := projectedMemoryIDs(selected)
+	if len(ids) == 0 {
+		return
+	}
+	at := time.Now()
+	if r.now != nil {
+		at = r.now()
+	}
+	if err := r.repo.TouchLastUsed(ctx, userID, ids, at); err != nil {
+		log.Warnf("long-term memory touch last_used_at failed: userID=%s ids=%v err=%v", userID, ids, err)
+	}
+}
+
+func projectOrderedMemoryItems(query string, items []domain.MemoryItem) []memoryRecallProjection {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]memoryRecallProjection, 0, len(items))
+	for _, item := range items {
+		result = append(result, buildMemoryRecallProjection(query, item))
+	}
+	return result
+}
+
+func sortRuleMemoryItems(items []domain.MemoryItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		return compareRuleMemoryOrder(items[i], items[j])
+	})
+}
+
+func sortRuleMemoryProjections(items []memoryRecallProjection) {
+	sort.SliceStable(items, func(i, j int) bool {
+		return compareRuleMemoryOrder(items[i].item, items[j].item)
+	})
+}
+
+func compareRuleMemoryOrder(left domain.MemoryItem, right domain.MemoryItem) bool {
+	if memoryScopePriority(left.ScopeType) != memoryScopePriority(right.ScopeType) {
+		return memoryScopePriority(left.ScopeType) > memoryScopePriority(right.ScopeType)
+	}
+	if left.Importance != right.Importance {
+		return left.Importance > right.Importance
+	}
+	leftConfirmedAt, leftHasConfirmedAt := timeValue(left.LastConfirmedAt)
+	rightConfirmedAt, rightHasConfirmedAt := timeValue(right.LastConfirmedAt)
+	if leftHasConfirmedAt != rightHasConfirmedAt {
+		return leftHasConfirmedAt
+	}
+	if leftHasConfirmedAt && !leftConfirmedAt.Equal(rightConfirmedAt) {
+		return leftConfirmedAt.After(rightConfirmedAt)
+	}
+	if !left.UpdateTime.Equal(right.UpdateTime) {
+		return left.UpdateTime.After(right.UpdateTime)
+	}
+	return left.ID > right.ID
+}
+
+func timeValue(value *time.Time) (time.Time, bool) {
+	if value == nil {
+		return time.Time{}, false
+	}
+	return *value, true
 }
 
 type scoredMemoryItem struct {
@@ -276,20 +362,10 @@ func scoreMemoryText(query string, text string) (int, bool) {
 		score += 120
 		matched = true
 	}
-	for _, token := range extractRecallTokens(query) {
+	for _, token := range buildRecallSearchTokens(query) {
 		if strings.Contains(text, token) {
 			score += 20
 			matched = true
-		}
-	}
-	queryCompact := compactLowerString(query)
-	textCompact := compactLowerString(text)
-	if containsCJKString(queryCompact) {
-		for _, bigram := range buildDistinctCJKBigrams(queryCompact) {
-			if strings.Contains(textCompact, bigram) {
-				score += 8
-				matched = true
-			}
 		}
 	}
 	return score, matched
@@ -405,6 +481,81 @@ func extractRecallTokens(value string) []string {
 	return result
 }
 
+func buildRecallSearchTokens(query string) []string {
+	query = normalizeRecallText(query)
+	if query == "" {
+		return nil
+	}
+
+	const maxRecallSearchTokens = 8
+
+	result := make([]string, 0, maxRecallSearchTokens)
+	seen := make(map[string]struct{}, maxRecallSearchTokens)
+	appendToken := func(token string) {
+		token = strings.TrimSpace(strings.ToLower(token))
+		if token == "" {
+			return
+		}
+		if _, ok := seen[token]; ok {
+			return
+		}
+		if !shouldUseRecallSearchToken(query, token) {
+			return
+		}
+		seen[token] = struct{}{}
+		result = append(result, token)
+	}
+
+	for _, token := range extractRecallTokens(query) {
+		appendToken(token)
+		if len(result) >= maxRecallSearchTokens {
+			return result
+		}
+	}
+
+	queryCompact := compactLowerString(query)
+	if containsCJKString(queryCompact) {
+		for _, token := range buildDistinctCJKSearchBigrams(queryCompact) {
+			appendToken(token)
+			if len(result) >= maxRecallSearchTokens {
+				return result
+			}
+		}
+	}
+
+	return result
+}
+
+func shouldUseRecallSearchToken(query string, token string) bool {
+	if utf8.RuneCountInString(token) < 2 {
+		return false
+	}
+	if isRecallNoiseToken(token) {
+		return false
+	}
+	if !containsCJKString(token) {
+		return true
+	}
+	if token == query && utf8.RuneCountInString(token) > 4 {
+		return false
+	}
+	return true
+}
+
+func isRecallNoiseToken(token string) bool {
+	token = strings.TrimSpace(strings.ToLower(token))
+	if token == "" {
+		return true
+	}
+	if _, ok := recallASCIIStopwords[token]; ok {
+		return true
+	}
+	if _, ok := recallCJKNoiseTokens[token]; ok {
+		return true
+	}
+	return false
+}
+
 func compactLowerString(value string) string {
 	var builder strings.Builder
 	builder.Grow(len(value))
@@ -444,6 +595,54 @@ func buildDistinctCJKBigrams(value string) []string {
 	return result
 }
 
+func buildDistinctCJKSearchBigrams(value string) []string {
+	if value == "" {
+		return nil
+	}
+	runes := []rune(value)
+	result := make([]string, 0, len(runes))
+	seen := make(map[string]struct{}, len(runes))
+	sequence := make([]rune, 0, len(runes))
+	flushSequence := func() {
+		if len(sequence) < 2 {
+			sequence = sequence[:0]
+			return
+		}
+		for _, bigram := range buildDistinctCJKBigrams(string(sequence)) {
+			if _, ok := seen[bigram]; ok {
+				continue
+			}
+			seen[bigram] = struct{}{}
+			result = append(result, bigram)
+		}
+		sequence = sequence[:0]
+	}
+
+	for _, r := range runes {
+		if isCJKRune(r) {
+			sequence = append(sequence, r)
+			continue
+		}
+		flushSequence()
+	}
+	flushSequence()
+	return result
+}
+
 func isCJKRune(r rune) bool {
 	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+}
+
+var recallASCIIStopwords = map[string]struct{}{
+	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {}, "can": {}, "could": {},
+	"did": {}, "do": {}, "does": {}, "for": {}, "from": {}, "had": {}, "has": {}, "have": {}, "how": {},
+	"if": {}, "in": {}, "into": {}, "is": {}, "it": {}, "may": {}, "of": {}, "on": {}, "or": {}, "our": {},
+	"please": {}, "should": {}, "than": {}, "that": {}, "the": {}, "their": {}, "them": {}, "then": {},
+	"there": {}, "these": {}, "they": {}, "this": {}, "to": {}, "we": {}, "what": {}, "when": {},
+	"where": {}, "which": {}, "why": {}, "will": {}, "with": {}, "would": {}, "you": {}, "your": {},
+}
+
+var recallCJKNoiseTokens = map[string]struct{}{
+	"一下": {}, "一下子": {}, "请问": {}, "可以": {}, "如何": {}, "怎么": {}, "怎样": {}, "是否": {},
+	"能否": {}, "了吗": {}, "呢": {}, "吧": {}, "好的": {}, "这个": {}, "那个": {},
 }

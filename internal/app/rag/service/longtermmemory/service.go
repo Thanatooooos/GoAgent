@@ -2,26 +2,34 @@ package longtermmemory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+	"local/rag-project/internal/app/rag/cachemetrics"
+	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 	"local/rag-project/internal/framework/distributedid"
 	"local/rag-project/internal/framework/exception"
+	"local/rag-project/internal/framework/log"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
 // MemoryService owns long-term memory CRUD and exposes the recall capability used by chat.
 type MemoryService struct {
-	repo       port.MemoryItemRepository
-	now        func() time.Time
-	options    MemoryServiceOptions
-	recall     RecallService
-	mutationTx MemoryMutationTransaction
-	embedding  aiembedding.EmbeddingService
-	vectorRepo port.MemoryItemEmbeddingRepository
+	repo         port.MemoryItemRepository
+	now          func() time.Time
+	options      MemoryServiceOptions
+	recall       RecallService
+	recallCache  RecallCache
+	cacheOptions RecallCacheOptions
+	cacheMetrics *cachemetrics.Service
+	mutationTx   MemoryMutationTransaction
+	embedding    aiembedding.EmbeddingService
+	vectorRepo   port.MemoryItemEmbeddingRepository
 }
 
 func NewMemoryService(repo port.MemoryItemRepository, options MemoryServiceOptions) *MemoryService {
@@ -51,17 +59,25 @@ func (s *MemoryService) SaveExplicitMemory(ctx context.Context, input SaveExplic
 	}
 
 	var saved domain.MemoryItem
-	if err := s.runMemoryMutation(ctx, func(ctx context.Context, repo port.MemoryItemRepository) error {
+	err := s.runMemoryMutation(ctx, func(ctx context.Context, repo port.MemoryItemRepository) error {
 		item, err := s.saveExplicitMemoryWithRepo(ctx, repo, input)
 		if err != nil {
 			return err
 		}
 		saved = item
 		return nil
-	}); err != nil {
-		return domain.MemoryItem{}, err
+	})
+	if err != nil {
+		if resolved, ok, resolveErr := s.resolveSingleValueUniqueConflict(ctx, input, err); resolveErr != nil {
+			return domain.MemoryItem{}, resolveErr
+		} else if ok {
+			saved = resolved
+		} else {
+			return domain.MemoryItem{}, err
+		}
 	}
 	s.persistMemoryEmbedding(ctx, saved)
+	s.bumpRecallCacheVersion(ctx, saved)
 	return saved, nil
 }
 
@@ -153,6 +169,7 @@ func (s *MemoryService) ExpireMemory(ctx context.Context, userID string, id stri
 	if err != nil {
 		return domain.MemoryItem{}, exception.NewServiceException("failed to expire memory item", err)
 	}
+	s.bumpRecallCacheVersion(ctx, updated)
 	return updated, nil
 }
 
@@ -168,6 +185,18 @@ func (s *MemoryService) RecallService() RecallService {
 		return nil
 	}
 	return s.recall
+}
+
+func (s *MemoryService) FactRetriever() ragretrieve.FactMemoryRetriever {
+	if s == nil {
+		return nil
+	}
+	retriever, ok := s.recall.(ragretrieve.FactMemoryRetriever)
+	if !ok && s.recall != nil {
+		log.Warnf("long-term memory recall service does not implement fact retriever: recallType=%T", s.recall)
+		return nil
+	}
+	return retriever
 }
 
 func (s *MemoryService) SetMutationTransaction(tx MemoryMutationTransaction) {
@@ -187,6 +216,41 @@ func (s *MemoryService) SetEmbeddingSupport(embedding aiembedding.EmbeddingServi
 		return
 	}
 	s.recall = NewVectorAwareRecallService(s.repo, repo, embedding, s.options)
+	if aware, ok := s.recall.(interface {
+		setRecallCache(cache RecallCache, options RecallCacheOptions)
+	}); ok {
+		aware.setRecallCache(s.recallCache, s.cacheOptions)
+	}
+	if aware, ok := s.recall.(interface {
+		setCacheMetrics(metrics *cachemetrics.Service)
+	}); ok {
+		aware.setCacheMetrics(s.cacheMetrics)
+	}
+}
+
+func (s *MemoryService) SetRecallCache(cache RecallCache, options RecallCacheOptions) {
+	if s == nil {
+		return
+	}
+	s.recallCache = cache
+	s.cacheOptions = normalizeRecallCacheOptions(options)
+	if aware, ok := s.recall.(interface {
+		setRecallCache(cache RecallCache, options RecallCacheOptions)
+	}); ok {
+		aware.setRecallCache(cache, s.cacheOptions)
+	}
+}
+
+func (s *MemoryService) SetCacheMetrics(metrics *cachemetrics.Service) {
+	if s == nil {
+		return
+	}
+	s.cacheMetrics = metrics
+	if aware, ok := s.recall.(interface {
+		setCacheMetrics(metrics *cachemetrics.Service)
+	}); ok {
+		aware.setCacheMetrics(metrics)
+	}
 }
 
 func memoryScopePriority(scopeType string) int {
@@ -226,15 +290,22 @@ func (s *MemoryService) persistMemoryEmbedding(ctx context.Context, item domain.
 		return
 	}
 	vector, err := s.embedding.Embed(text)
-	if err != nil || len(vector) == 0 {
+	if err != nil {
+		log.Warnf("long-term memory embedding generation failed: memoryID=%s err=%v", strings.TrimSpace(item.ID), err)
 		return
 	}
-	_ = s.vectorRepo.UpsertBatch(ctx, []domain.MemoryItemEmbedding{{
+	if len(vector) == 0 {
+		log.Warnf("long-term memory embedding generation returned empty vector: memoryID=%s", strings.TrimSpace(item.ID))
+		return
+	}
+	if err := s.vectorRepo.UpsertBatch(ctx, []domain.MemoryItemEmbedding{{
 		MemoryItemID: strings.TrimSpace(item.ID),
 		Embedding:    vector,
 		CreateTime:   item.CreateTime,
 		UpdateTime:   item.UpdateTime,
-	}})
+	}}); err != nil {
+		log.Warnf("long-term memory embedding persist failed: memoryID=%s err=%v", strings.TrimSpace(item.ID), err)
+	}
 }
 
 func buildMemoryEmbeddingText(item domain.MemoryItem) string {
@@ -256,6 +327,44 @@ func buildMemoryEmbeddingText(item domain.MemoryItem) string {
 		parts = append(parts, "content: "+content)
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func (s *MemoryService) bumpRecallCacheVersion(ctx context.Context, item domain.MemoryItem) {
+	if s == nil || s.recallCache == nil || !s.cacheOptions.Enabled {
+		return
+	}
+	switch strings.TrimSpace(item.MemoryType) {
+	case domain.MemoryTypePreference, domain.MemoryTypeKnowledge:
+	default:
+		return
+	}
+	userID := strings.TrimSpace(item.UserID)
+	if userID == "" {
+		return
+	}
+	var err error
+	switch strings.TrimSpace(item.ScopeType) {
+	case domain.MemoryScopeKB:
+		scopeID := strings.TrimSpace(item.ScopeID)
+		if scopeID == "" {
+			return
+		}
+		err = s.recallCache.IncrKBVersion(ctx, userID, scopeID)
+	default:
+		err = s.recallCache.IncrGlobalVersion(ctx, userID)
+	}
+	if err != nil {
+		log.Warnf("long-term memory cache version bump failed: userID=%s scopeType=%s scopeID=%s err=%v",
+			userID,
+			strings.TrimSpace(item.ScopeType),
+			strings.TrimSpace(item.ScopeID),
+			err,
+		)
+		return
+	}
+	if s.cacheMetrics != nil {
+		s.cacheMetrics.RecordVersionInvalidation()
+	}
 }
 
 func (s *MemoryService) runMemoryMutation(
@@ -292,6 +401,13 @@ func minMemoryInt(a int, b int) int {
 	return b
 }
 
+func maxMemoryInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func summarizeMemoryText(value string, maxRunes int) string {
 	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
 	if value == "" {
@@ -305,4 +421,51 @@ func summarizeMemoryText(value string, maxRunes int) string {
 		return value
 	}
 	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
+}
+
+func (s *MemoryService) resolveSingleValueUniqueConflict(ctx context.Context, input SaveExplicitMemoryInput, mutationErr error) (domain.MemoryItem, bool, error) {
+	if !isSingleValueActiveUniqueViolation(mutationErr) {
+		return domain.MemoryItem{}, false, nil
+	}
+
+	normalized := normalizeSaveExplicitMemoryInput(input)
+	decision, err := evaluateExplicitMemoryGate(normalized)
+	if err != nil {
+		return domain.MemoryItem{}, false, err
+	}
+	if decision.Spec == nil || decision.Spec.Cardinality != MemoryCardinalitySingle || strings.TrimSpace(decision.Input.CanonicalKey) == "" {
+		return domain.MemoryItem{}, false, nil
+	}
+
+	active, err := s.repo.ListActiveByCanonicalKey(
+		ctx,
+		normalized.UserID,
+		normalized.ScopeType,
+		normalized.ScopeID,
+		normalized.CanonicalKey,
+	)
+	if err != nil {
+		return domain.MemoryItem{}, true, exception.NewServiceException("failed to reload active memory items after unique conflict", err)
+	}
+	if len(active) > 1 {
+		return domain.MemoryItem{}, true, exception.NewServiceException(
+			"multiple active memory items detected for single-valued canonical key",
+			nil,
+		)
+	}
+	if len(active) == 0 {
+		return domain.MemoryItem{}, true, exception.NewServiceException("single-valued memory unique conflict occurred but no active memory item was found after retry", mutationErr)
+	}
+	return active[0], true, nil
+}
+
+func isSingleValueActiveUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" && strings.EqualFold(strings.TrimSpace(pgErr.ConstraintName), "uk_memory_item_single_active")
+	}
+	return false
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
@@ -54,6 +55,7 @@ func RegisterRoutes(
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService *ragservice.RagChatService,
 	traceService *ragservice.TraceService,
+	cacheMetrics *ragcachemetrics.Service,
 ) {
 	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, chatService)
 	r.GET("/conversations", handler.ListConversations)
@@ -71,6 +73,7 @@ func RegisterRoutes(
 	admin := r.Group("/")
 	admin.Use(middleware.RequireRole("admin"))
 	RegisterTraceRoutes(admin, traceService)
+	RegisterMemoryCacheMetricsRoutes(admin, cacheMetrics)
 }
 
 type renameConversationRequest struct {

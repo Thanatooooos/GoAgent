@@ -60,6 +60,23 @@ func TestRuntimeCloseClosesMCPManager(t *testing.T) {
 	}
 }
 
+func TestReadMemoryCacheMetricsEnabledRespectsConfig(t *testing.T) {
+	cfg := &config.Config{}
+	if readMemoryCacheMetricsEnabled(cfg) {
+		t.Fatal("expected metrics disabled when memory cache is disabled")
+	}
+
+	cfg.Rag.Memory.Cache.Enabled = true
+	if readMemoryCacheMetricsEnabled(cfg) {
+		t.Fatal("expected metrics disabled when metrics flag is false")
+	}
+
+	cfg.Rag.Memory.Cache.MetricsEnabled = true
+	if !readMemoryCacheMetricsEnabled(cfg) {
+		t.Fatal("expected metrics enabled when metrics flag is true")
+	}
+}
+
 func TestBuildMCPManagerHelperProcess(t *testing.T) {
 	if os.Getenv("GOAGENT_RAG_MCP_HELPER") != "1" {
 		return

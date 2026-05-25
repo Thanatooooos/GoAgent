@@ -1,6 +1,7 @@
 package longtermmemory
 
 import (
+	"sort"
 	"strings"
 
 	"local/rag-project/internal/app/rag/domain"
@@ -85,4 +86,15 @@ func allowsMemoryScope(spec MemoryKeySpec, scopeType string) bool {
 		}
 	}
 	return false
+}
+
+func singleValuedCanonicalKeys() []string {
+	result := make([]string, 0, len(canonicalMemoryKeyRegistry))
+	for key, spec := range canonicalMemoryKeyRegistry {
+		if spec.Cardinality == MemoryCardinalitySingle {
+			result = append(result, key)
+		}
+	}
+	sort.Strings(result)
+	return result
 }

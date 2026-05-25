@@ -1612,3 +1612,350 @@ The next major memory milestones are now:
 
 - `Phase 3` fact-memory retrieval projection
 - stronger lifecycle governance such as `last_used_at` updates, cleanup policy, and background maintenance
+
+## 2026-05-23 Additional Update: Memory V1 Phase 3 Minimal Closure and Phase 4 Cache Skeleton
+
+### Status Summary
+
+- `memory V1` 已从“Phase 2.x 读侧收口完成、Phase 3 待启动”推进到“Phase 3 最小闭环已跑通，Phase 4 cache skeleton 已开始落地”。
+- 这轮工作的重点先后分成两段：
+  - 先把 `knowledge` 型长期记忆接入主 retrieve 管道，形成独立 `memory_fact` channel。
+  - 再为下一阶段的生命周期治理补上 Redis 导向的 recall cache 骨架。
+- 当前 memory 主线状态已经变成：
+  - `Phase 2.1`：显式长期记忆治理闭环完成
+  - `Phase 2.x`：规则型 / 事实型读路径分治完成
+  - `Phase 3`：事实型长期记忆最小 retrieval projection 已完成
+  - `Phase 4`：cache infrastructure 已起步，但 request-scope cache 仍未接入
+
+### Completed So Far
+
+#### 1. `knowledge` 型长期记忆已进入主检索链路
+
+- `internal/app/rag/core/retrieve`
+  - 新增 `memory_fact` search channel
+  - 接入现有 `fusion / dedup / rerank` 流水线
+- `internal/app/rag/service/longtermmemory/retrieve_projection.go`
+  - `RecallService` 现在可把 `knowledge` 型长期记忆投影成 `RetrievedChunk`
+  - 仅 `memory_type=knowledge` 进入该通道
+- `RagChatService.prepareChat(...)`
+  - retrieve 请求已把 `userID` 传入 retrieve engine
+
+结果：
+- 文档 miss 时，事实型长期记忆可以通过 `memory_fact` 救回 retrieve
+- 文档与长期记忆同命中时，文档仍保持优先
+- `preference` 继续只停留在 `MemoryContext`
+- `feedback` 继续不进入 chat retrieve
+
+#### 2. Phase 3 样例回归已形成最小集
+
+- 已补回归样例，覆盖：
+  - `doc miss, memory hit`
+  - `doc + memory hit, doc priority preserved`
+  - `preference` 不进入 retrieve
+  - `main_bus removed`
+  - `dependency constraint`
+  - `kb fact > global fact`
+- 已新增独立样本集：
+  - `testdata/memory_fact_phase3_samples.json`
+- `cmd/retrieve-eval` 已补 `userId` 字段透传，后续真实回放不会因缺失 user 维度失真
+
+#### 3. `memory_fact` 融合权重已收敛到第一版策略
+
+- 当前 channel 侧默认权重：
+  - `vector_global = 1.0`
+  - `memory_fact = 0.9`
+  - `keyword = 0.85`
+  - `metadata_title = 0.8`
+
+这意味着：
+- Phase 3 第一版里，长期事实记忆已是主检索体系的一部分
+- 但它不会默认压过主文档语义检索结果
+
+#### 4. Phase 4 cache skeleton 已开始落地
+
+- 已新增 `RecallCache` 抽象与 Redis 适配器
+- 已在 `longtermmemory` 层接入三类必做缓存的骨架：
+  - `rule memories`
+  - `fact ranking result`
+  - `query embedding`
+- 已接入 scope version 机制：
+  - `global` version
+  - `kb` version
+- `SaveExplicitMemory(...)` 与 `ExpireMemory(...)` 成功后会 bump 对应 version
+- `bootstrap/rag.Runtime` 已支持按配置装配 Redis recall cache
+
+当前仍未完成：
+- request-scope / conversation-scope 的 `L1` recall cache
+- session recall cache
+- cache hit 后的更细粒度观测指标
+
+### Validation
+
+Validated on 2026-05-23:
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; $env:GOPATH='D:\goagent\.gopath'; $env:GOMODCACHE='D:\goagent\.gomodcache'; go test ./internal/bootstrap/rag ./internal/app/rag/service/longtermmemory ./internal/app/rag/service ./internal/app/rag/core/retrieve ./cmd/retrieve-eval -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; go run ./cmd/retrieve-eval -input testdata\memory_fact_phase3_samples.json
+```
+
+Current result:
+
+- `internal/bootstrap/rag` PASS
+- `internal/app/rag/service/longtermmemory` PASS
+- `internal/app/rag/service` PASS
+- `internal/app/rag/core/retrieve` PASS
+- `cmd/retrieve-eval` PASS
+- `memory_fact_phase3_samples.json` 离线评估可正常输出 `Hit@K / Recall@K / MRR`
+
+### Current Conclusion
+
+As of 2026-05-23, `memory V1` is no longer only “governed but externally attached to chat”:
+
+- fact-memory retrieval projection has entered the main retrieve pipeline in a controlled, minimal way
+- `knowledge` 型长期记忆已经具备独立 retrieval channel 形态
+- Phase 4 的缓存建设已从讨论进入基础设施落地
+
+The next major memory milestones are now:
+
+- finish `Phase 4` cache closure with request-scope cache and stronger observability
+- add lifecycle governance such as cleanup / maintenance / metrics
+- continue tuning `memory_fact` only after the cache and operations base is stable
+
+## Additional Update: 2026-05-24 Memory P0 Hardening and P1 Retrieval Quality
+
+### What Changed
+
+Today the memory track moved from "Phase 4 completed, waiting for ops/lifecycle follow-up" into a short hardening and retrieval-quality pass focused on the existing implementation rather than new phases.
+
+This round intentionally did **not** start a new Phase 5 capability. It focused on fixing correctness and quality issues inside the current `Phase 4+` memory stack:
+
+- `P0` governance correctness and degradation closure
+- `P1` rule-memory ordering and fact-memory retrieval quality
+
+### P0 Completed
+
+#### 1. Single-valued memory now has database-level active-version protection
+
+- Added a new migration to enforce a unique active record for single-valued canonical keys:
+  - `response.language`
+  - `workflow.first_step`
+  - `project.constraint.network`
+  - `project.messaging.main_bus`
+- The migration normalizes `scope_id` with `COALESCE(scope_id, '')`, so both `global` and `kb` scopes are covered consistently.
+- The migration also performs a duplicate-active precheck and fails explicitly if dirty data already exists.
+
+#### 2. Save path now converges on concurrent writes instead of writing bad data
+
+- `SaveExplicitMemory(...)` now treats single-valued unique-index conflicts as a governance branch instead of a raw failure.
+- On unique conflict:
+  - reload current active record
+  - if equal, return the existing record
+  - if a concurrent winner already landed, return that winner
+  - if multiple active records are detected, fail fast as governance corruption
+
+#### 3. Conflict detection no longer depends on `Limit: 8`
+
+- Single-valued canonical keys now use precise active-record loading by `(user, scope, canonical_key)`.
+- Multi-valued merge/dedup logic no longer relies on "recent 8 records are probably enough".
+- A reusable active-conflict detection query was added for single-valued canonical keys.
+
+#### 4. Request-scope cache fallback is now closed
+
+- In long-term memory recall, fallback paths caused by:
+  - scope version unavailable
+  - Redis disabled
+  - Redis fallback
+  now still write back into request-scope cache.
+- Result: the system keeps `fail-open`, but no longer recomputes the same recall/ranking work repeatedly inside one request when cache infrastructure degrades.
+
+### P1 Completed
+
+#### 1. Rule-memory ordering now reflects governance intent
+
+- Rule memories are no longer effectively "latest updated first".
+- Ordering is now stabilized by:
+  1. `scope priority`
+  2. `importance`
+  3. `last_confirmed_at`
+  4. `update_time`
+- The same order is preserved on live load, request-cache hit, and Redis-cache hit.
+
+#### 2. Memory equivalence is stricter and safer
+
+- `memoryItemsEquivalent(...)` no longer over-relies on `display_value`.
+- Comparison now prefers:
+  - structured value
+  - then `content`
+  - only then `display_value`
+- This reduces accidental merges where two memories share a short label but represent different facts.
+
+#### 3. Fact-memory lexical prefilter now uses tokenized candidate expansion
+
+- Fact recall no longer depends only on raw full-query `SearchText`.
+- `MemoryItemListFilter` now supports:
+  - `SearchText`
+  - `SearchTokens`
+- The recall layer now builds query-aware tokens for:
+  - ASCII words
+  - continuous CJK bigrams
+  - mixed-language queries
+- Repository SQL now uses:
+  - raw query fallback
+  - token-based `OR` prefilter over `summary / content / display_value / canonical_key`
+
+#### 4. Token noise filtering and scoring alignment are now in place
+
+- Added lightweight lexical denoising for low-value tokens such as:
+  - English function words like `how`, `should`, `the`, `please`
+  - Chinese filler/functional phrases like `请问`, `这个`, `可以`, `怎么`, `了吗`
+- `scoreMemoryText(...)` now reuses the same filtered token logic as DB prefilter construction, so ranking and candidate filtering no longer drift apart.
+
+### Validation
+
+Validated on 2026-05-24:
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/service/longtermmemory ./internal/adapter/repository/postgres/rag -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/service ./internal/bootstrap/rag ./internal/adapter/http/rag/... -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/... ./internal/bootstrap/rag ./internal/adapter/http/rag/... ./internal/adapter/repository/postgres/rag -count=1
+```
+
+Current result:
+
+- `internal/app/rag/service/longtermmemory` PASS
+- `internal/adapter/repository/postgres/rag` PASS
+- `internal/app/rag/service` PASS
+- `internal/bootstrap/rag` PASS
+- `internal/adapter/http/rag/...` PASS
+- `internal/app/rag/...` PASS
+
+### Current Conclusion
+
+As of 2026-05-24, the memory module is still best described as `Phase 4+`, not a new phase:
+
+- `Phase 4` cache closure remains the main completed milestone
+- today’s work hardened the governance path and improved recall quality inside that phase
+- the current focus should now move to:
+  - lifecycle cleanup / maintenance
+  - metrics refinement / diagnostics hardening
+  - structural cleanup of long-term-memory recall code
+
+## Additional Update: 2026-05-23 Memory Phase 4 Cache Closure Completed
+
+### What Changed
+
+`memory V1` 的 Phase 4 已经从 “cache skeleton” 推进到完整闭环，当前新增能力包括：
+
+- `request-scope L1`
+  - 在 `prepareChat(...)` 生命周期内创建共享请求级缓存
+  - 长期记忆 recall、`SearchFacts(...)`、`session recall` 复用同一份 request cache
+- `conversation-scope L1`
+  - 新增进程内 `TTL + LRU` 会话级缓存
+  - 仅用于 `session recall`
+- `Redis L2`
+  - 继续承载长期记忆的：
+    - `rule memories`
+    - `fact ranking result`
+    - `query embedding`
+  - 保留 `global / kb` scope version 失效语义
+
+### Long-Term Memory Cache Closure
+
+当前 `RecallMemories(...)` 与 `SearchFacts(...)` 已统一走：
+
+1. request-scope `L1`
+2. Redis `L2`
+3. DB / vector recompute
+
+已完成的关键点：
+
+- `rule memories / fact rankings / query embeddings` 三类缓存全部接通
+- `RecallMemories(...)` 与 `SearchFacts(...)` 可命中同一份 `fact ranking result`
+- cache hit 下仍保留 `TouchLastUsed(...)` 语义
+- 未缓存以下粗粒度对象：
+  - 最终 `MemoryContext` 文本
+  - 最终 `KnowledgeContext` 文本
+  - 整包 `RetrievedChunk`
+  - 整个 `prepareChat(...)` 结果
+
+### Session Recall Cache
+
+本轮同时把 `session recall` 纳入 Phase 4：
+
+- `SessionChunkRepository` 已新增 recall fingerprint 读取能力
+- fingerprint 包含：
+  - recallable chunk 是否存在
+  - recallable chunk 数量
+  - 最新更新时间
+  - 最新 chunk / message 标识
+- `session recall` 的 cache key 已固定包含：
+  - `userID`
+  - `conversationID`
+  - `rewrittenQuery`
+  - `excludeMessageID`
+  - recall fingerprint
+  - recall 参数集
+- `session recall` 最终结果已进入 conversation-scope cache
+- 空结果允许短 TTL 缓存，用于抑制重复 miss 风暴
+
+### Observability and Runtime Wiring
+
+Phase 4 这次不只是加 cache，也把观测和装配收完整了：
+
+- 新增 `rag.memory.cache.*` 配置项：
+  - `request-scope-enabled`
+  - `conversation-scope-enabled`
+  - `session-recall-enabled`
+  - `request-max-entries`
+  - `conversation-max-entries`
+  - `conversation-ttl-seconds`
+  - `empty-session-ttl-seconds`
+  - `metrics-enabled`
+  - `redis-key-prefix`
+- 新增 `GET /rag/memory/metrics`
+- `long_term_memory` trace 已补：
+  - `cacheEnabled`
+  - `ruleCacheLayer`
+  - `factCacheLayer`
+  - `embeddingCacheLayer`
+  - `scopeVersions`
+  - `recomputeReason`
+- `session_recall` trace 已补：
+  - `cacheEnabled`
+  - `cacheLayer`
+  - `recallFingerprint`
+  - `embeddingCacheLayer`
+  - `recomputeReason`
+- 所有缓存异常保持 `fail-open`
+  - Redis 异常
+  - 反序列化异常
+  - fingerprint 查询异常
+  - local cache 溢出 / evict
+  都只允许降级，不阻断 chat / retrieve 主链路
+
+### Validation
+
+Validated on 2026-05-23:
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; go test ./internal/app/rag/... ./internal/bootstrap/rag ./internal/adapter/http/rag ./internal/adapter/repository/postgres/rag ./cmd/server -count=1
+```
+
+Current result:
+
+- `internal/app/rag/...` PASS
+- `internal/bootstrap/rag` PASS
+- `internal/adapter/http/rag` PASS
+- `internal/adapter/repository/postgres/rag` PASS
+- `cmd/server` PASS
+
+### Current Conclusion
+
+As of 2026-05-23, the memory track has moved past “Phase 4 design / skeleton”:
+
+- `Phase 4` cache closure is now implemented
+- `session recall` has entered the same cache/observability framework
+- memory infrastructure work should now shift to:
+  - lifecycle cleanup / maintenance
+  - metrics refinement and production observation
+  - only then further `memory_fact` tuning

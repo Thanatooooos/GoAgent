@@ -60,6 +60,7 @@ func (c *vectorGlobalChannel) Search(ctx context.Context, searchCtx SearchContex
 		"topK":         searchCtx.TopK,
 		"expandedTopK": expandChannelTopK(searchCtx.TopK, vectorGlobalTopKMultiplier()),
 		"multiplier":   vectorGlobalTopKMultiplier(),
+		"rrfWeight":    defaultChannelRRFWeight(c.Name()),
 	}), nil
 }
 
@@ -95,6 +96,7 @@ func (c *keywordChannel) Search(ctx context.Context, searchCtx SearchContext) (S
 		"topK":         searchCtx.TopK,
 		"expandedTopK": expandChannelTopK(searchCtx.TopK, defaultChannelTopKMultiplier),
 		"multiplier":   defaultChannelTopKMultiplier,
+		"rrfWeight":    defaultChannelRRFWeight(c.Name()),
 	}), nil
 }
 
@@ -131,7 +133,65 @@ func (c *metadataTitleChannel) Search(ctx context.Context, searchCtx SearchConte
 		"expandedTopK": expandChannelTopK(searchCtx.TopK, defaultChannelTopKMultiplier),
 		"multiplier":   defaultChannelTopKMultiplier,
 		"fields":       []string{"document_name", "source_file_name", "section"},
+		"rrfWeight":    defaultChannelRRFWeight(c.Name()),
 	}), nil
+}
+
+type factMemoryChannel struct {
+	retriever FactMemoryRetriever
+}
+
+func NewFactMemoryChannel(retriever FactMemoryRetriever) SearchChannel {
+	return &factMemoryChannel{retriever: retriever}
+}
+
+func (c *factMemoryChannel) Name() string  { return ChannelMemoryFact }
+func (c *factMemoryChannel) Priority() int { return 15 }
+func (c *factMemoryChannel) Enabled(ctx SearchContext) bool {
+	if c == nil || c.retriever == nil {
+		return false
+	}
+	switch normalizeSearchMode(ctx.SearchMode) {
+	case SearchModeAuto, SearchModeSemantic, SearchModeHybrid:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *factMemoryChannel) Search(ctx context.Context, searchCtx SearchContext) (SearchChannelResult, error) {
+	startedAt := time.Now()
+	expandedTopK := expandChannelTopK(searchCtx.TopK, defaultChannelTopKMultiplier)
+	result, err := c.retriever.SearchFacts(ctx, FactMemorySearchRequest{
+		UserID:           strings.TrimSpace(searchCtx.UserID),
+		Query:            strings.TrimSpace(searchCtx.Query),
+		KnowledgeBaseIDs: append([]string(nil), searchCtx.KnowledgeBaseIDs...),
+		TopK:             expandedTopK,
+	})
+	if err != nil {
+		return SearchChannelResult{}, fmt.Errorf("fact memory search: %w", err)
+	}
+
+	metadata := map[string]any{
+		"topK":              searchCtx.TopK,
+		"expandedTopK":      expandedTopK,
+		"multiplier":        defaultChannelTopKMultiplier,
+		"rrfWeight":         defaultChannelRRFWeight(c.Name()),
+		"candidateCount":    result.CandidateCount,
+		"selectedCount":     result.SelectedCount,
+		"selectedMemoryIDs": append([]string(nil), result.SelectedMemoryIDs...),
+	}
+	if len(result.ScopeCounts) > 0 {
+		metadata["scopeCounts"] = result.ScopeCounts
+	}
+	if len(result.SourceCounts) > 0 {
+		metadata["sourceCounts"] = result.SourceCounts
+	}
+	if len(result.ContributionCounts) > 0 {
+		metadata["contributionCounts"] = result.ContributionCounts
+	}
+
+	return newChannelResult(c.Name(), result.Chunks, startedAt, metadata), nil
 }
 
 func expandChannelTopK(topK int, multiplier int) int {
@@ -154,4 +214,19 @@ func vectorGlobalTopKMultiplier() int {
 		return defaultChannelTopKMultiplier
 	}
 	return value
+}
+
+func defaultChannelRRFWeight(channelName string) float32 {
+	switch strings.TrimSpace(channelName) {
+	case ChannelVectorGlobal:
+		return 1.0
+	case ChannelMemoryFact:
+		return 0.9
+	case ChannelKeyword:
+		return 0.85
+	case ChannelMetadataTitle:
+		return 0.8
+	default:
+		return 1.0
+	}
 }

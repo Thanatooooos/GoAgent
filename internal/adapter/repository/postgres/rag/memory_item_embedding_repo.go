@@ -118,6 +118,10 @@ WHERE mi.deleted = 0
 		sqlBuilder.WriteString("  AND mi.scope_id IN ?\n")
 		args = append(args, values)
 	}
+	if values := trimNonEmpty(filter.MemoryTypes); len(values) > 0 {
+		sqlBuilder.WriteString("  AND mi.memory_type IN ?\n")
+		args = append(args, values)
+	}
 	if values := trimNonEmpty(filter.Statuses); len(values) > 0 {
 		sqlBuilder.WriteString("  AND mi.status IN ?\n")
 		args = append(args, values)

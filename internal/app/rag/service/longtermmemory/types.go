@@ -62,18 +62,29 @@ type RecallMemoriesInput struct {
 }
 
 type RecallMemoriesResult struct {
-	Used               bool
-	Context            string
-	Items              []domain.MemoryItem
-	SelectedEntries    []RecallMemoryEntry
-	CandidateCount     int
-	SelectedCount      int
-	Truncated          bool
-	ScopeCounts        map[string]int
-	SourceCounts       map[string]int
-	ContributionCounts map[string]int
-	TypeCounts         map[string]int
-	SelectedMemoryIDs  []string
+	Used                bool
+	Context             string
+	Items               []domain.MemoryItem
+	SelectedEntries     []RecallMemoryEntry
+	CandidateCount      int
+	SelectedCount       int
+	RuleCount           int
+	FactCandidateCount  int
+	FactSelectedCount   int
+	Truncated           bool
+	ScopeCounts         map[string]int
+	SourceCounts        map[string]int
+	ContributionCounts  map[string]int
+	TypeCounts          map[string]int
+	SelectedMemoryIDs   []string
+	RuleMemoryIDs       []string
+	FactMemoryIDs       []string
+	CacheEnabled        bool
+	RuleCacheLayer      string
+	FactCacheLayer      string
+	EmbeddingCacheLayer string
+	ScopeVersions       ScopeVersions
+	RecomputeReason     string
 }
 
 type RecallMemoryEntry struct {

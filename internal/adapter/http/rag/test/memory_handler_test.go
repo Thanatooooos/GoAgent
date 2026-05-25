@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -19,10 +21,13 @@ import (
 )
 
 type memoryRepoStub struct {
-	createFn func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
-	updateFn func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
-	getByID  func(context.Context, string) (domain.MemoryItem, error)
-	listFn   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error)
+	createFn              func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
+	updateFn              func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
+	getByID               func(context.Context, string) (domain.MemoryItem, error)
+	listFn                func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error)
+	listActiveByKeyFn     func(context.Context, string, string, string, string) ([]domain.MemoryItem, error)
+	listActiveConflictsFn func(context.Context, []string) ([]port.ActiveMemoryConflict, error)
+	touchFn               func(context.Context, string, []string, time.Time) error
 }
 
 func (s memoryRepoStub) Create(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
@@ -51,6 +56,39 @@ func (s memoryRepoStub) List(ctx context.Context, filter port.MemoryItemListFilt
 		return s.listFn(ctx, filter)
 	}
 	return nil, nil
+}
+
+func (s memoryRepoStub) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
+	if s.listActiveByKeyFn != nil {
+		return s.listActiveByKeyFn(ctx, userID, scopeType, scopeID, canonicalKey)
+	}
+	if s.listFn == nil {
+		return nil, nil
+	}
+	filter := port.MemoryItemListFilter{
+		UserID:        userID,
+		ScopeTypes:    []string{scopeType},
+		CanonicalKeys: []string{canonicalKey},
+		Statuses:      []string{domain.MemoryStatusActive},
+	}
+	if strings.TrimSpace(scopeType) == domain.MemoryScopeKB {
+		filter.ScopeIDs = []string{scopeID}
+	}
+	return s.listFn(ctx, filter)
+}
+
+func (s memoryRepoStub) ListActiveSingleValueConflicts(ctx context.Context, canonicalKeys []string) ([]port.ActiveMemoryConflict, error) {
+	if s.listActiveConflictsFn != nil {
+		return s.listActiveConflictsFn(ctx, canonicalKeys)
+	}
+	return nil, nil
+}
+
+func (s memoryRepoStub) TouchLastUsed(ctx context.Context, userID string, ids []string, at time.Time) error {
+	if s.touchFn != nil {
+		return s.touchFn(ctx, userID, ids, at)
+	}
+	return nil
 }
 
 func TestMemoryHandlerRememberAcceptsLegacyRequestShape(t *testing.T) {

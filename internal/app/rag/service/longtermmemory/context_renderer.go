@@ -8,7 +8,42 @@ import (
 	"local/rag-project/internal/app/rag/domain"
 )
 
-func buildMemoryRecallContext(items []memoryRecallProjection, maxItems int, maxChars int) ([]memoryRecallProjection, string, bool) {
+func buildMemoryRecallContext(ruleItems []memoryRecallProjection, factItems []memoryRecallProjection, maxItems int, maxChars int) ([]memoryRecallProjection, []memoryRecallProjection, string, bool) {
+	if maxItems <= 0 || maxChars <= 0 {
+		return nil, nil, "", false
+	}
+	if len(ruleItems) == 0 && len(factItems) == 0 {
+		return nil, nil, "", false
+	}
+
+	ruleCharBudget := maxChars
+	factCharBudget := maxChars
+	if len(ruleItems) > 0 && len(factItems) > 0 {
+		ruleCharBudget = maxChars / 2
+		if ruleCharBudget <= 0 {
+			ruleCharBudget = maxChars
+		}
+	}
+
+	selectedRules, ruleSection, ruleTruncated := buildMemorySectionContext("Rule Memories:", ruleItems, maxItems, ruleCharBudget)
+	remainingChars := maxChars - utf8.RuneCountInString(ruleSection)
+	if strings.TrimSpace(ruleSection) != "" && len(factItems) > 0 {
+		remainingChars -= 2
+	}
+	if remainingChars <= 0 {
+		return selectedRules, nil, strings.TrimSpace(ruleSection), ruleTruncated || len(factItems) > 0
+	}
+	if len(ruleItems) == 0 {
+		factCharBudget = maxChars
+	} else if len(factItems) > 0 {
+		factCharBudget = remainingChars
+	}
+	selectedFacts, factSection, factTruncated := buildMemorySectionContext("Fact Memories:", factItems, maxItems, factCharBudget)
+	contextText := joinMemorySections(ruleSection, factSection)
+	return selectedRules, selectedFacts, contextText, ruleTruncated || factTruncated
+}
+
+func buildMemorySectionContext(title string, items []memoryRecallProjection, maxItems int, maxChars int) ([]memoryRecallProjection, string, bool) {
 	if len(items) == 0 || maxItems <= 0 || maxChars <= 0 {
 		return nil, "", false
 	}
@@ -20,7 +55,7 @@ func buildMemoryRecallContext(items []memoryRecallProjection, maxItems int, maxC
 			break
 		}
 		candidate := append(append([]memoryRecallProjection(nil), selected...), item)
-		contextText := renderMemoryRecallContext(candidate)
+		contextText := renderMemorySection(title, candidate)
 		if strings.TrimSpace(contextText) == "" {
 			continue
 		}
@@ -30,10 +65,34 @@ func buildMemoryRecallContext(items []memoryRecallProjection, maxItems int, maxC
 		}
 		selected = append(selected, item)
 	}
-	return selected, renderMemoryRecallContext(selected), truncated
+	return selected, renderMemorySection(title, selected), truncated
 }
 
-func renderMemoryRecallContext(items []memoryRecallProjection) string {
+func joinMemorySections(sections ...string) string {
+	nonEmpty := make([]string, 0, len(sections))
+	for _, section := range sections {
+		section = strings.TrimSpace(section)
+		if section == "" {
+			continue
+		}
+		nonEmpty = append(nonEmpty, section)
+	}
+	return strings.TrimSpace(strings.Join(nonEmpty, "\n\n"))
+}
+
+func renderMemorySection(title string, items []memoryRecallProjection) string {
+	body := renderScopedMemoryEntries(items)
+	if strings.TrimSpace(body) == "" {
+		return ""
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return body
+	}
+	return title + "\n" + body
+}
+
+func renderScopedMemoryEntries(items []memoryRecallProjection) string {
 	if len(items) == 0 {
 		return ""
 	}

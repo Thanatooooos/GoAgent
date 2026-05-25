@@ -134,3 +134,35 @@ func TestDetectMemoryConflictMultiValuedSameValueMerges(t *testing.T) {
 		t.Fatalf("expected updated existing memory, got %+v", resolution)
 	}
 }
+
+func TestMemoryItemsEquivalentTreatsJSONObjectsAsStructurallyEqual(t *testing.T) {
+	left := domain.MemoryItem{
+		ValueType: domain.MemoryValueTypeJSON,
+		ValueJSON: `{"allow":false,"mode":"offline"}`,
+	}
+	right := domain.MemoryItem{
+		ValueType: domain.MemoryValueTypeJSON,
+		ValueJSON: `{"mode":"offline","allow":false}`,
+	}
+	if !memoryItemsEquivalent(left, right) {
+		t.Fatalf("expected JSON objects with reordered keys to be equivalent")
+	}
+}
+
+func TestMemoryItemsEquivalentDoesNotMergeDifferentContentOnlyByDisplayValue(t *testing.T) {
+	left := domain.MemoryItem{
+		CanonicalKey: "project.integrations",
+		ValueType:    domain.MemoryValueTypeText,
+		DisplayValue: "GitHub",
+		Content:      "项目集成 GitHub Enterprise",
+	}
+	right := domain.MemoryItem{
+		CanonicalKey: "project.integrations",
+		ValueType:    domain.MemoryValueTypeText,
+		DisplayValue: "GitHub",
+		Content:      "项目集成 GitHub Actions",
+	}
+	if memoryItemsEquivalent(left, right) {
+		t.Fatalf("expected different content with same display value to stay distinct")
+	}
+}
