@@ -2,47 +2,22 @@ package builtin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
+	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	ragtool "local/rag-project/internal/app/rag/tool"
 	ragcore "local/rag-project/internal/app/rag/tool/core"
 )
 
-// SearchResult is a single web search result returned by any provider.
-type SearchResult struct {
-	Title          string
-	URL            string
-	Snippet        string
-	Domain         string
-	Provider       string
-	ActualProvider string
-	FallbackUsed   bool
-	ProviderScore  *float64
-	SourceType     string
-	Policy         string
-	RiskFlags      []string
-	Reasons        []string
-}
-
-// SearchProvider abstracts an external web search backend.
-type SearchProvider interface {
-	Search(query string) ([]SearchResult, error)
-}
-
 // WebSearchTool performs an external web search via a configurable SearchProvider.
 type WebSearchTool struct {
-	provider     SearchProvider
-	sourcePolicy *SourcePolicyEngine
+	provider     searchprovider.SearchProvider
+	sourcePolicy *searchprovider.SourcePolicyEngine
 }
 
-func NewWebSearchTool(provider SearchProvider, policy ...*SourcePolicyEngine) *WebSearchTool {
-	var engine *SourcePolicyEngine
+func NewWebSearchTool(provider searchprovider.SearchProvider, policy ...*searchprovider.SourcePolicyEngine) *WebSearchTool {
+	var engine *searchprovider.SourcePolicyEngine
 	if len(policy) > 0 {
 		engine = policy[0]
 	}
@@ -111,14 +86,14 @@ func (t *WebSearchTool) Invoke(_ context.Context, call ragtool.Call) (ragtool.Re
 			actualProvider = strings.TrimSpace(result.ActualProvider)
 		}
 		fallbackUsed = fallbackUsed || result.FallbackUsed
-		if result.Policy == SourcePolicyDeny {
+		if result.Policy == searchprovider.SourcePolicyDeny {
 			deniedCount++
-		} else if result.Policy == SourcePolicyAllow {
+		} else if result.Policy == searchprovider.SourcePolicyAllow {
 			allowedCount++
 		} else {
 			neutralCount++
 		}
-		if result.Policy != SourcePolicyDeny && strings.TrimSpace(result.URL) != "" {
+		if result.Policy != searchprovider.SourcePolicyDeny && strings.TrimSpace(result.URL) != "" {
 			fetchableURLs = append(fetchableURLs, strings.TrimSpace(result.URL))
 		}
 		items = append(items, map[string]any{
@@ -157,14 +132,14 @@ func (t *WebSearchTool) Invoke(_ context.Context, call ragtool.Call) (ragtool.Re
 	}, nil
 }
 
-func (t *WebSearchTool) enrichResult(result SearchResult, providerName string) SearchResult {
+func (t *WebSearchTool) enrichResult(result searchprovider.SearchResult, providerName string) searchprovider.SearchResult {
 	result.Title = strings.TrimSpace(result.Title)
 	result.URL = strings.TrimSpace(result.URL)
 	result.Snippet = strings.TrimSpace(result.Snippet)
 	result.Provider = ragcore.FirstNonEmpty(result.Provider, providerName)
 
 	if t.sourcePolicy == nil {
-		t.sourcePolicy = NewSourcePolicyEngine(SourcePolicyConfig{})
+		t.sourcePolicy = searchprovider.NewSourcePolicyEngine(searchprovider.SourcePolicyConfig{})
 	}
 	assessment := t.sourcePolicy.Evaluate(result.URL)
 	result.Domain = ragcore.FirstNonEmpty(result.Domain, assessment.Domain)
@@ -175,22 +150,8 @@ func (t *WebSearchTool) enrichResult(result SearchResult, providerName string) S
 	return result
 }
 
-func searchProviderName(provider SearchProvider) string {
-	if named, ok := provider.(interface{ ProviderName() string }); ok {
-		if name := strings.TrimSpace(named.ProviderName()); name != "" {
-			return name
-		}
-	}
-	switch provider.(type) {
-	case *TavilyProvider:
-		return "tavily"
-	case *TavilyMCPProvider:
-		return "tavily-mcp"
-	case *DuckDuckGoProvider:
-		return "duckduckgo"
-	default:
-		return "unknown"
-	}
+func searchProviderName(provider searchprovider.SearchProvider) string {
+	return searchprovider.ProviderName(provider)
 }
 
 func derefFloat64(value *float64) any {
@@ -203,117 +164,22 @@ func derefFloat64(value *float64) any {
 // Ensure WebSearchTool implements Tool.
 var _ ragtool.Tool = (*WebSearchTool)(nil)
 
-// =============================================================================
-// DuckDuckGo Provider (free, no API key, blocked in mainland China)
-// =============================================================================
-
-const (
-	duckDuckGoAPI       = "https://api.duckduckgo.com/"
-	webSearchTimeout    = 8 * time.Second
-	webSearchMaxResults = 5
-)
-
-type DuckDuckGoProvider struct {
-	client *http.Client
-}
-
-func NewDuckDuckGoProvider() *DuckDuckGoProvider {
-	return &DuckDuckGoProvider{
-		client: &http.Client{Timeout: webSearchTimeout},
+func uniqueTrimmedValues(items []string) []string {
+	if len(items) == 0 {
+		return nil
 	}
-}
-
-func (p *DuckDuckGoProvider) Search(query string) ([]SearchResult, error) {
-	requestURL := fmt.Sprintf("%s?q=%s&format=json&no_html=1&skip_disambig=1", duckDuckGoAPI, url.QueryEscape(query))
-
-	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "goagent/1.0")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<18)) // 256KB limit
-	if err != nil {
-		return nil, err
-	}
-
-	var parsed duckDuckGoResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("parse search results: %w", err)
-	}
-
-	return parsed.extractResults(), nil
-}
-
-type duckDuckGoResponse struct {
-	AbstractText  string            `json:"AbstractText"`
-	AbstractURL   string            `json:"AbstractURL"`
-	Heading       string            `json:"Heading"`
-	Answer        string            `json:"Answer"`
-	RelatedTopics []duckDuckGoTopic `json:"RelatedTopics"`
-}
-
-type duckDuckGoTopic struct {
-	Text     string            `json:"Text"`
-	FirstURL string            `json:"FirstURL"`
-	Topics   []duckDuckGoTopic `json:"Topics,omitempty"`
-}
-
-func (r *duckDuckGoResponse) extractResults() []SearchResult {
-	var results []SearchResult
-
-	if r.AbstractText != "" {
-		results = append(results, SearchResult{
-			Title:   ragcore.FirstNonEmpty(r.Heading, "Abstract"),
-			URL:     r.AbstractURL,
-			Snippet: ragcore.TruncateText(r.AbstractText, 300),
-		})
-	}
-
-	collectTopics := func(topics []duckDuckGoTopic) {
-		for _, topic := range topics {
-			if len(results) >= webSearchMaxResults {
-				return
-			}
-			text := strings.TrimSpace(topic.Text)
-			url := strings.TrimSpace(topic.FirstURL)
-			if text == "" || url == "" {
-				continue
-			}
-			title, snippet := splitTopicText(text)
-			results = append(results, SearchResult{
-				Title:   title,
-				URL:     url,
-				Snippet: snippet,
-			})
+	seen := make(map[string]struct{}, len(items))
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
 		}
-	}
-
-	collectTopics(r.RelatedTopics)
-
-	for _, topic := range r.RelatedTopics {
-		if len(results) >= webSearchMaxResults {
-			break
+		if _, ok := seen[item]; ok {
+			continue
 		}
-		collectTopics(topic.Topics)
+		seen[item] = struct{}{}
+		values = append(values, item)
 	}
-
-	if len(results) > webSearchMaxResults {
-		results = results[:webSearchMaxResults]
-	}
-	return results
-}
-
-func splitTopicText(text string) (string, string) {
-	idx := strings.Index(text, " - ")
-	if idx == -1 {
-		return text, ""
-	}
-	return strings.TrimSpace(text[:idx]), strings.TrimSpace(text[idx+3:])
+	return values
 }

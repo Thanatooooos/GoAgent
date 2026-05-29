@@ -1,4 +1,4 @@
-package builtin
+package provider
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	ragcore "local/rag-project/internal/app/rag/tool/core"
 	inframcp "local/rag-project/internal/infra-mcp"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -76,7 +75,7 @@ func normalizeTavilyMCPResult(result *mcp.CallToolResult) ([]SearchResult, error
 			return nil, fmt.Errorf("tavily mcp result item has unexpected type %T", entry)
 		}
 		title := strings.TrimSpace(readAnyString(item["title"]))
-		url := strings.TrimSpace(readAnyString(item["url"]))
+		rawURL := strings.TrimSpace(readAnyString(item["url"]))
 		content := strings.TrimSpace(readAnyString(item["content"]))
 		if content == "" {
 			content = strings.TrimSpace(readAnyString(item["snippet"]))
@@ -87,8 +86,8 @@ func normalizeTavilyMCPResult(result *mcp.CallToolResult) ([]SearchResult, error
 		score := readAnyFloat(item["score"])
 		normalized = append(normalized, SearchResult{
 			Title:         title,
-			URL:           url,
-			Snippet:       ragcore.TruncateText(content, 300),
+			URL:           rawURL,
+			Snippet:       truncateText(content, 300),
 			Provider:      "tavily-mcp",
 			ProviderScore: score,
 		})
@@ -175,5 +174,3 @@ func readAnyString(value any) string {
 		return fmt.Sprintf("%v", value)
 	}
 }
-
-var _ SearchProvider = (*TavilyMCPProvider)(nil)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	ragtool "local/rag-project/internal/app/rag/tool"
 	inframcp "local/rag-project/internal/infra-mcp"
 
@@ -13,10 +14,10 @@ import (
 
 type stubSearchProvider struct {
 	name   string
-	search func(query string) ([]SearchResult, error)
+	search func(query string) ([]searchprovider.SearchResult, error)
 }
 
-func (p stubSearchProvider) Search(query string) ([]SearchResult, error) {
+func (p stubSearchProvider) Search(query string) ([]searchprovider.SearchResult, error) {
 	return p.search(query)
 }
 
@@ -41,7 +42,7 @@ func (c stubToolClient) Close() error {
 }
 
 func TestTavilyMCPProviderNormalizesStructuredResults(t *testing.T) {
-	provider := NewTavilyMCPProvider(stubToolClient{
+	provider := searchprovider.NewTavilyMCPProvider(stubToolClient{
 		callTool: func(_ context.Context, serverName string, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
 			if serverName != "tavily" || toolName != "tavily-search" {
 				t.Fatalf("unexpected server/tool: %s %s", serverName, toolName)
@@ -83,7 +84,7 @@ func TestTavilyMCPProviderNormalizesStructuredResults(t *testing.T) {
 }
 
 func TestTavilyMCPProviderRejectsMalformedResults(t *testing.T) {
-	provider := NewTavilyMCPProvider(stubToolClient{
+	provider := searchprovider.NewTavilyMCPProvider(stubToolClient{
 		callTool: func(context.Context, string, string, map[string]any) (*mcp.CallToolResult, error) {
 			return &mcp.CallToolResult{
 				StructuredContent: map[string]any{"unexpected": true},
@@ -97,18 +98,18 @@ func TestTavilyMCPProviderRejectsMalformedResults(t *testing.T) {
 }
 
 func TestFallbackSearchProviderFallsBackOnPrimaryError(t *testing.T) {
-	provider := NewFallbackSearchProvider(
+	provider := searchprovider.NewFallbackSearchProvider(
 		"tavily-mcp",
 		stubSearchProvider{
 			name: "tavily-mcp",
-			search: func(string) ([]SearchResult, error) {
+			search: func(string) ([]searchprovider.SearchResult, error) {
 				return nil, errors.New("mcp unavailable")
 			},
 		},
 		stubSearchProvider{
 			name: "tavily",
-			search: func(string) ([]SearchResult, error) {
-				return []SearchResult{{
+			search: func(string) ([]searchprovider.SearchResult, error) {
+				return []searchprovider.SearchResult{{
 					Title:    "Go Generics",
 					URL:      "https://go.dev/doc/tutorial/generics",
 					Snippet:  "An introduction to generics in Go.",
@@ -139,17 +140,17 @@ func TestFallbackSearchProviderFallsBackOnPrimaryError(t *testing.T) {
 
 func TestFallbackSearchProviderDoesNotFallbackOnEmptySuccess(t *testing.T) {
 	secondaryCalled := false
-	provider := NewFallbackSearchProvider(
+	provider := searchprovider.NewFallbackSearchProvider(
 		"tavily-mcp",
 		stubSearchProvider{
 			name: "tavily-mcp",
-			search: func(string) ([]SearchResult, error) {
-				return []SearchResult{}, nil
+			search: func(string) ([]searchprovider.SearchResult, error) {
+				return []searchprovider.SearchResult{}, nil
 			},
 		},
 		stubSearchProvider{
 			name: "tavily",
-			search: func(string) ([]SearchResult, error) {
+			search: func(string) ([]searchprovider.SearchResult, error) {
 				secondaryCalled = true
 				return nil, nil
 			},

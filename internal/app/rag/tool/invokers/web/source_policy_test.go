@@ -1,27 +1,31 @@
 package builtin
 
-import "testing"
+import (
+	"testing"
+
+	searchprovider "local/rag-project/internal/app/agent/search/provider"
+)
 
 func TestSourcePolicyEngineEvaluate(t *testing.T) {
-	engine := NewSourcePolicyEngine(SourcePolicyConfig{
+	engine := searchprovider.NewSourcePolicyEngine(searchprovider.SourcePolicyConfig{
 		AllowDomains:  []string{"go.dev"},
 		DenyDomains:   []string{"quora.com"},
 		AllowSuffixes: []string{".gov", ".edu"},
 	})
 
 	allowed := engine.Evaluate("https://go.dev/doc/tutorial/generics")
-	if allowed.Policy != SourcePolicyAllow {
+	if allowed.Policy != searchprovider.SourcePolicyAllow {
 		t.Fatalf("expected allow policy, got %+v", allowed)
 	}
 	if allowed.Domain != "go.dev" {
 		t.Fatalf("expected go.dev domain, got %q", allowed.Domain)
 	}
-	if allowed.SourceType != SourceTypeOfficialDocs {
+	if allowed.SourceType != searchprovider.SourceTypeOfficialDocs {
 		t.Fatalf("expected official docs source type, got %q", allowed.SourceType)
 	}
 
 	denied := engine.Evaluate("https://www.quora.com/What-is-Go-generics")
-	if denied.Policy != SourcePolicyDeny {
+	if denied.Policy != searchprovider.SourcePolicyDeny {
 		t.Fatalf("expected deny policy, got %+v", denied)
 	}
 	if len(denied.RiskFlags) == 0 {
@@ -29,18 +33,18 @@ func TestSourcePolicyEngineEvaluate(t *testing.T) {
 	}
 
 	suffixAllowed := engine.Evaluate("https://www.nasa.gov/mission")
-	if suffixAllowed.Policy != SourcePolicyAllow {
+	if suffixAllowed.Policy != searchprovider.SourcePolicyAllow {
 		t.Fatalf("expected .gov suffix allow, got %+v", suffixAllowed)
 	}
-	if suffixAllowed.SourceType != SourceTypeGovernment {
+	if suffixAllowed.SourceType != searchprovider.SourceTypeGovernment {
 		t.Fatalf("expected government source type, got %q", suffixAllowed.SourceType)
 	}
 
 	forum := engine.Evaluate("https://stackoverflow.com/questions/123")
-	if forum.Policy != SourcePolicyNeutral {
+	if forum.Policy != searchprovider.SourcePolicyNeutral {
 		t.Fatalf("expected neutral forum policy without explicit rules, got %+v", forum)
 	}
-	if forum.SourceType != SourceTypeForum {
+	if forum.SourceType != searchprovider.SourceTypeForum {
 		t.Fatalf("expected forum source type, got %q", forum.SourceType)
 	}
 	if len(forum.RiskFlags) == 0 || forum.RiskFlags[0] != "user_generated" {

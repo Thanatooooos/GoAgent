@@ -1,7 +1,6 @@
-package builtin
+package provider
 
 import (
-	ragcore "local/rag-project/internal/app/rag/tool/core"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -15,12 +14,9 @@ const (
 	tavilyAPI         = "https://api.tavily.com/search"
 	tavilyTimeout     = 10 * time.Second
 	tavilyMaxResults  = 5
-	tavilyMaxBodySize = 1 << 18 // 256KB
+	tavilyMaxBodySize = 1 << 18
 )
 
-// TavilyProvider uses the Tavily Search API (https://tavily.com), which is
-// designed for AI agents and is accessible from mainland China.
-// Free tier: 1000 searches/month. Sign up at https://app.tavily.com to get an API key.
 type TavilyProvider struct {
 	apiKey string
 	client *http.Client
@@ -87,7 +83,7 @@ func (p *TavilyProvider) Search(query string) ([]SearchResult, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("tavily http %d: %s", resp.StatusCode, ragcore.TruncateText(string(body), 200))
+		return nil, fmt.Errorf("tavily http %d: %s", resp.StatusCode, truncateText(string(body), 200))
 	}
 
 	var parsed tavilyResponse
@@ -96,18 +92,15 @@ func (p *TavilyProvider) Search(query string) ([]SearchResult, error) {
 	}
 
 	results := make([]SearchResult, 0, len(parsed.Results))
-	for _, r := range parsed.Results {
-		score := r.Score
+	for _, entry := range parsed.Results {
+		score := entry.Score
 		results = append(results, SearchResult{
-			Title:         strings.TrimSpace(r.Title),
-			URL:           strings.TrimSpace(r.URL),
-			Snippet:       ragcore.TruncateText(strings.TrimSpace(r.Content), 300),
+			Title:         strings.TrimSpace(entry.Title),
+			URL:           strings.TrimSpace(entry.URL),
+			Snippet:       truncateText(strings.TrimSpace(entry.Content), 300),
 			Provider:      "tavily",
 			ProviderScore: &score,
 		})
 	}
 	return results, nil
 }
-
-// Ensure TavilyProvider implements SearchProvider.
-var _ SearchProvider = (*TavilyProvider)(nil)

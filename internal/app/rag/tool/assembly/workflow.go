@@ -10,6 +10,7 @@ import (
 	postgresingestion "local/rag-project/internal/adapter/repository/postgres/ingestion"
 	postgresknowledge "local/rag-project/internal/adapter/repository/postgres/knowledge"
 	postgresrag "local/rag-project/internal/adapter/repository/postgres/rag"
+	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
 	ingestionservice "local/rag-project/internal/app/ingestion/service"
 	knowledgeservice "local/rag-project/internal/app/knowledge/service"
@@ -283,69 +284,24 @@ func registerModule(
 	registry.MustRegisterModule(ragcore.NewLegacyToolAdapterWithBehavior(tool, spec, behavior).Module())
 }
 
-func buildSearchProvider(cfg *config.Config, mcpManager inframcp.ToolClient) raginvweb.SearchProvider {
-	if cfg == nil {
-		return raginvweb.NewDuckDuckGoProvider()
-	}
-	provider := strings.ToLower(strings.TrimSpace(cfg.Rag.Search.WebSearch.Provider))
-	fallbackProvider := strings.ToLower(strings.TrimSpace(cfg.Rag.Search.WebSearch.FallbackProvider))
-	apiKey := strings.TrimSpace(cfg.Rag.Search.WebSearch.ApiKey)
-
-	switch provider {
-	case "tavily-mcp":
-		serverName := strings.TrimSpace(cfg.Rag.Search.WebSearch.MCP.Server)
-		if serverName == "" {
-			serverName = "tavily"
-		}
-		toolName := strings.TrimSpace(cfg.Rag.Search.WebSearch.MCP.SearchTool)
-		if toolName == "" {
-			toolName = "tavily-search"
-		}
-		primary := raginvweb.NewTavilyMCPProvider(mcpManager, serverName, toolName)
-		secondary := fallbackSearchProvider(fallbackProvider, apiKey)
-		if secondary == nil {
-			log.Warnf("rag.search.web-search.provider=tavily-mcp but fallback-provider is unavailable, MCP failures will surface directly")
-			return primary
-		}
-		return raginvweb.NewFallbackSearchProvider("tavily-mcp", primary, secondary)
-	case "tavily":
-		if apiKey == "" {
-			log.Warnf("rag.search.web-search.provider=tavily but api-key is empty, falling back to duckduckgo")
-			return raginvweb.NewDuckDuckGoProvider()
-		}
-		return raginvweb.NewTavilyProvider(apiKey)
-	default:
-		return raginvweb.NewDuckDuckGoProvider()
-	}
+func buildSearchProvider(cfg *config.Config, mcpManager inframcp.ToolClient) searchprovider.SearchProvider {
+	return searchprovider.BuildProvider(cfg, mcpManager)
 }
 
-func fallbackSearchProvider(name string, tavilyAPIKey string) raginvweb.SearchProvider {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "":
-		return nil
-	case "duckduckgo":
-		return raginvweb.NewDuckDuckGoProvider()
-	case "tavily":
-		if strings.TrimSpace(tavilyAPIKey) == "" {
-			log.Warnf("rag.search.web-search.fallback-provider=tavily but api-key is empty, skipping Tavily fallback")
-			return nil
-		}
-		return raginvweb.NewTavilyProvider(tavilyAPIKey)
-	default:
-		log.Warnf("unsupported rag.search.web-search.fallback-provider=%q, skipping fallback", name)
-		return nil
-	}
+func fallbackSearchProvider(name string, tavilyAPIKey string) searchprovider.SearchProvider {
+	return searchprovider.BuildProvider(&config.Config{
+		Rag: config.RagConfig{
+			Search: config.RagSearchConfig{
+				WebSearch: config.RagWebSearchConfig{
+					Provider:         strings.TrimSpace(name),
+					FallbackProvider: "",
+					ApiKey:           strings.TrimSpace(tavilyAPIKey),
+				},
+			},
+		},
+	}, nil)
 }
 
-func buildSourcePolicyEngine(cfg *config.Config) *raginvweb.SourcePolicyEngine {
-	if cfg == nil {
-		return raginvweb.NewSourcePolicyEngine(raginvweb.SourcePolicyConfig{})
-	}
-	policy := cfg.Rag.Search.WebSearch.SourcePolicy
-	return raginvweb.NewSourcePolicyEngine(raginvweb.SourcePolicyConfig{
-		AllowDomains:  policy.AllowDomains,
-		DenyDomains:   policy.DenyDomains,
-		AllowSuffixes: policy.AllowSuffixes,
-		DenySuffixes:  policy.DenySuffixes,
-	})
+func buildSourcePolicyEngine(cfg *config.Config) *searchprovider.SourcePolicyEngine {
+	return searchprovider.BuildSourcePolicy(cfg)
 }

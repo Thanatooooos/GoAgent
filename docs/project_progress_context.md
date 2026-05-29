@@ -1,5 +1,7 @@
 # Project Progress Context
 
+Latest incremental update: `2026-05-29`
+
 更新时间：2026-05-25
 
 这份文档用于维护 `goagent` 当前项目进度，帮助后续开发快速对齐当前阶段、已完成能力、最新进展、验证状态、已知风险和下一步计划。
@@ -2175,3 +2177,126 @@ The more accurate next priorities are now:
 2. continued direct unit-test coverage and test-file downsizing around long-term-memory internals
 3. only after the operations surface is stable, auto-extraction of user preference / habit memories
 4. later-stage `memory_fact` weighting / policy tuning
+
+## Additional Update: 2026-05-29 Eino-Native Agent Fetch PoC Landed
+
+### Status Update
+
+As of `2026-05-29`, the agent/tool track now has a second implementation line beyond the existing self-built `internal/app/rag/tool` runtime:
+
+- the existing production-oriented self-built `AgentLoop V1`
+- a new independent `internal/app/agent` Eino-native experiment package
+
+This new package is intentionally **not** a compatibility layer over the old tool/runtime contracts. It is a parallel PoC that validates whether a future agent loop can be organized around Eino-native tool, workflow, and session-state boundaries from the start.
+
+So the current agent/tool status should now be read as:
+
+- self-built `AgentLoop V1`: still the main production path
+- Eino graph/workflow inside existing tools: already in use
+- Eino-native outer agent/runtime exploration: now implemented as an executable PoC skeleton
+
+### What Changed
+
+#### 1. A new independent `internal/app/agent` package now exists with explicit package boundaries
+
+The current structure has stabilized into:
+
+- `internal/app/agent/search`
+  - search business kernel
+- `internal/app/agent/websearch`
+  - Eino-native `web_search` tool
+- `internal/app/agent/fetch`
+  - page-fetch business kernel
+- `internal/app/agent/webfetch`
+  - Eino-native `web_fetch` tool
+- `internal/app/agent/workflow`
+  - Eino-native workflow/runtime assembly
+- `internal/app/agent`
+  - public `Request / Response / Service`
+
+This means the experiment is no longer only "one tool can run under Eino". It already has a first-pass package structure that can continue growing without depending on the old `rag/tool` contracts.
+
+#### 2. The Eino-native workflow is no longer search-only
+
+The first search-only loop has been extended into:
+
+- `plan -> web_search -> web_fetch -> observe`
+
+More specifically:
+
+- `search_agent.go`
+  - invokes Eino-native `web_search`
+- `fetch_agent.go`
+  - invokes Eino-native `web_fetch`
+- `observe_agent.go`
+  - combines search result state and fetch result state
+  - decides degraded/final status
+  - emits unified `FinalState`
+
+So the PoC has moved from "single tool demo" into "minimal external-evidence loop".
+
+#### 3. `fetch / webfetch` is now implemented using the same dual-layer discipline as `search / websearch`
+
+The new `fetch` side owns:
+
+- URL normalization
+- concurrent fetching
+- HTML text extraction
+- truncation
+- page-level output aggregation
+
+The new `webfetch` side owns:
+
+- Eino tool schema
+- input/output mapping
+- degraded-output normalization
+
+This was an important structural checkpoint because it confirms the dual-layer split is still maintainable when the tool is no longer only a simple provider call.
+
+#### 4. The new agent service can now return both search and fetched-page outputs
+
+`internal/app/agent.Service` no longer only returns search result summaries.
+
+Its response now includes:
+
+- search results
+- fetched pages
+- combined readable fetched text
+- final degraded/degrade-reason state
+
+This means the PoC has crossed from "tool invocation testbed" into a small but real application-layer entrypoint.
+
+### Validation
+
+Validated on `2026-05-29`:
+
+```powershell
+go test ./internal/app/agent/... -count=1
+go test ./internal/app/rag/tool/invokers/web -count=1
+```
+
+Current result:
+
+- `internal/app/agent` PASS
+- `internal/app/agent/fetch` PASS
+- `internal/app/agent/search` PASS
+- `internal/app/agent/webfetch` PASS
+- `internal/app/agent/websearch` PASS
+- `internal/app/agent/workflow` PASS
+- `internal/app/rag/tool/invokers/web` PASS
+
+### Current Conclusion
+
+As of `2026-05-29`, the framework-based agent exploration should no longer be described as only an idea or directory plan.
+
+The more accurate status is:
+
+1. the Eino-native experiment line is now executable
+2. it already supports a minimal `search -> fetch -> observe` loop
+3. it is still intentionally isolated from the current production chat/runtime path
+4. the next meaningful work is to improve:
+   - URL selection between `web_search` and `web_fetch`
+   - fetch-result quality assessment and stop conditions
+   - additional native tools only after the current loop semantics are clearer
+
+This also means that if the team later wants to compare "self-built loop vs framework-built loop", there is now a real second implementation line to evaluate instead of only a paper design.

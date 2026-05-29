@@ -3,8 +3,8 @@ package assembly
 import (
 	"testing"
 
+	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	ragcore "local/rag-project/internal/app/rag/tool/core"
-	raginvweb "local/rag-project/internal/app/rag/tool/invokers/web"
 	"local/rag-project/internal/framework/config"
 )
 
@@ -31,17 +31,17 @@ func TestBuildSearchProviderBuildsTavilyMCPFallbackChain(t *testing.T) {
 	cfg.Rag.Search.WebSearch.ApiKey = "test-key"
 
 	provider := buildSearchProvider(cfg, nil)
-	fallback, ok := provider.(*raginvweb.FallbackSearchProvider)
+	fallback, ok := provider.(*searchprovider.FallbackSearchProvider)
 	if !ok {
 		t.Fatalf("expected FallbackSearchProvider, got %T", provider)
 	}
 	if fallback.ProviderName() != "tavily-mcp" {
 		t.Fatalf("unexpected provider name: %q", fallback.ProviderName())
 	}
-	if _, ok := fallback.Primary.(*raginvweb.TavilyMCPProvider); !ok {
+	if _, ok := fallback.Primary.(*searchprovider.TavilyMCPProvider); !ok {
 		t.Fatalf("expected TavilyMCPProvider primary, got %T", fallback.Primary)
 	}
-	if _, ok := fallback.Secondary.(*raginvweb.TavilyProvider); !ok {
+	if _, ok := fallback.Secondary.(*searchprovider.TavilyProvider); !ok {
 		t.Fatalf("expected TavilyProvider secondary, got %T", fallback.Secondary)
 	}
 }

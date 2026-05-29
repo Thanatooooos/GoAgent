@@ -78,7 +78,8 @@
       "WebFetch(domain:deepwiki.com)",
       "Bash(xargs wc -l)",
       "Bash(go env *)",
-      "Bash(echo \"D:\\\\\\\\goagent\\\\\\\\.gomodcache\")"
+      "Bash(echo \"D:\\\\\\\\goagent\\\\\\\\.gomodcache\")",
+      "Bash(go doc *)"
     ]
   }
 }

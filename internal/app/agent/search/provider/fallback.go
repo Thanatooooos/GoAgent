@@ -1,4 +1,4 @@
-package builtin
+package provider
 
 import (
 	"fmt"
@@ -24,10 +24,10 @@ func (p *FallbackSearchProvider) ProviderName() string {
 		return strings.TrimSpace(p.Name)
 	}
 	if p.Primary != nil {
-		return searchProviderName(p.Primary)
+		return ProviderName(p.Primary)
 	}
 	if p.Secondary != nil {
-		return searchProviderName(p.Secondary)
+		return ProviderName(p.Secondary)
 	}
 	return "unknown"
 }
@@ -48,14 +48,14 @@ func (p *FallbackSearchProvider) Search(query string) ([]SearchResult, error) {
 		if fallbackErr != nil {
 			return nil, fmt.Errorf("primary provider failed: %v; fallback provider failed: %w", err, fallbackErr)
 		}
-		return annotateFallbackResults(fallbackResults, searchProviderName(p.Secondary)), nil
+		return annotateFallbackResults(fallbackResults, ProviderName(p.Secondary)), nil
 	}
 
 	results, err := p.Secondary.Search(query)
 	if err != nil {
 		return nil, err
 	}
-	return annotateFallbackResults(results, searchProviderName(p.Secondary)), nil
+	return annotateFallbackResults(results, ProviderName(p.Secondary)), nil
 }
 
 func annotateFallbackResults(results []SearchResult, actualProvider string) []SearchResult {
@@ -74,5 +74,3 @@ func annotateFallbackResults(results []SearchResult, actualProvider string) []Se
 	}
 	return tagged
 }
-
-var _ SearchProvider = (*FallbackSearchProvider)(nil)
