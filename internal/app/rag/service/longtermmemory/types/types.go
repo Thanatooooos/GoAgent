@@ -40,6 +40,18 @@ type ListMemoriesInput struct {
 	PageSize     int
 }
 
+type MaintenanceInput struct {
+	UpdatedBy       string
+	DeleteRetention time.Duration
+	ExpireBatchSize int
+	DeleteBatchSize int
+}
+
+type MaintenanceResult struct {
+	ExpiredCount int64
+	DeletedCount int64
+}
+
 type RecallMemoriesInput struct {
 	UserID           string
 	Query            string

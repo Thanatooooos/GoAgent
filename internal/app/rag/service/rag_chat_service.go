@@ -97,6 +97,8 @@ type RagChatService struct {
 	chatService            aichat.LLMService
 	tracer                 *ChatTracer
 	toolWorkflow           ragtool.Workflow
+	parallelSubquestions   bool
+	subquestionConcurrency int
 	confidenceThreshold    float64
 	requestCacheMaxEntries int
 	taskRegistry           *TaskRegistry
@@ -121,6 +123,8 @@ func NewRagChatService(
 		promptService:          promptService,
 		chatService:            chatService,
 		tracer:                 tracer,
+		parallelSubquestions:   true,
+		subquestionConcurrency: 2,
 		requestCacheMaxEntries: 128,
 		taskRegistry:           NewTaskRegistry(),
 	}
@@ -155,6 +159,17 @@ func (s *RagChatService) SetRequestCacheMaxEntries(maxEntries int) {
 		maxEntries = 128
 	}
 	s.requestCacheMaxEntries = maxEntries
+}
+
+func (s *RagChatService) SetParallelSubquestionRetrieval(enabled bool, maxConcurrency int) {
+	if s == nil {
+		return
+	}
+	s.parallelSubquestions = enabled
+	if maxConcurrency <= 0 {
+		maxConcurrency = 2
+	}
+	s.subquestionConcurrency = maxConcurrency
 }
 
 func (s *RagChatService) SetLongTermMemoryRecallService(service longtermmemory.RecallService) {

@@ -105,6 +105,7 @@ type RagConfig struct {
 	Vector       RagVectorConfig       `mapstructure:"vector"`
 	Default      RagDefaultConfig      `mapstructure:"default"`
 	Agent        RagAgentConfig        `mapstructure:"agent"`
+	Retrieve     RagRetrieveConfig     `mapstructure:"retrieve"`
 	QueryRewrite RagQueryRewriteConfig `mapstructure:"query-rewrite"`
 	RateLimit    RagRateLimitConfig    `mapstructure:"rate-limit"`
 	Memory       RagMemoryConfig       `mapstructure:"memory"`
@@ -135,6 +136,15 @@ type RagAgentParallelToolCallConfig struct {
 	MaxConcurrency int  `mapstructure:"max-concurrency"`
 }
 
+type RagRetrieveConfig struct {
+	ParallelSubquestions RagRetrieveParallelSubquestionConfig `mapstructure:"parallel-subquestions"`
+}
+
+type RagRetrieveParallelSubquestionConfig struct {
+	Enabled        bool `mapstructure:"enabled"`
+	MaxConcurrency int  `mapstructure:"max-concurrency"`
+}
+
 type RagQueryRewriteConfig struct {
 	Enabled            bool `mapstructure:"enabled"`
 	MaxHistoryMessages int  `mapstructure:"max-history-messages"`
@@ -154,15 +164,16 @@ type RagRateLimitGlobal struct {
 }
 
 type RagMemoryConfig struct {
-	HistoryKeepTurns  int                     `mapstructure:"history-keep-turns"`
-	SummaryStartTurns int                     `mapstructure:"summary-start-turns"`
-	SummaryEnabled    bool                    `mapstructure:"summary-enabled"`
-	SummaryMaxChars   int                     `mapstructure:"summary-max-chars"`
-	TitleMaxLength    int                     `mapstructure:"title-max-length"`
-	LongMessage       RagLongMessageConfig    `mapstructure:"long-message"`
-	SessionRecall     RagSessionRecallConfig  `mapstructure:"session-recall"`
-	ExplicitRecall    RagExplicitRecallConfig `mapstructure:"explicit-recall"`
-	Cache             RagMemoryCacheConfig    `mapstructure:"cache"`
+	HistoryKeepTurns  int                        `mapstructure:"history-keep-turns"`
+	SummaryStartTurns int                        `mapstructure:"summary-start-turns"`
+	SummaryEnabled    bool                       `mapstructure:"summary-enabled"`
+	SummaryMaxChars   int                        `mapstructure:"summary-max-chars"`
+	TitleMaxLength    int                        `mapstructure:"title-max-length"`
+	LongMessage       RagLongMessageConfig       `mapstructure:"long-message"`
+	SessionRecall     RagSessionRecallConfig     `mapstructure:"session-recall"`
+	ExplicitRecall    RagExplicitRecallConfig    `mapstructure:"explicit-recall"`
+	Cache             RagMemoryCacheConfig       `mapstructure:"cache"`
+	Maintenance       RagMemoryMaintenanceConfig `mapstructure:"maintenance"`
 }
 
 type RagMemoryCacheConfig struct {
@@ -180,6 +191,15 @@ type RagMemoryCacheConfig struct {
 	RuleTTLSeconds           int    `mapstructure:"rule-ttl-seconds"`
 	FactTTLSeconds           int    `mapstructure:"fact-ttl-seconds"`
 	EmptyFactTTLSeconds      int    `mapstructure:"empty-fact-ttl-seconds"`
+}
+
+type RagMemoryMaintenanceConfig struct {
+	Enabled             bool `mapstructure:"enabled"`
+	ScanDelayMs         int  `mapstructure:"scan-delay-ms"`
+	RunTimeoutMs        int  `mapstructure:"run-timeout-ms"`
+	ExpireBatchSize     int  `mapstructure:"expire-batch-size"`
+	DeleteBatchSize     int  `mapstructure:"delete-batch-size"`
+	DeleteRetentionDays int  `mapstructure:"delete-retention-days"`
 }
 
 type RagLongMessageConfig struct {

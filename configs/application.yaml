@@ -51,6 +51,11 @@ rag:
       enabled: true
       max-concurrency: 3
 
+  retrieve:
+    parallel-subquestions:
+      enabled: true
+      max-concurrency: 2
+
   query-rewrite:
     enabled: true
     max-history-messages: 4

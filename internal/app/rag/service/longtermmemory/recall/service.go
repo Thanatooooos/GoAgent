@@ -174,6 +174,9 @@ func (r *recallService) touchLastUsed(ctx context.Context, userID string, select
 		at = r.now()
 	}
 	if err := r.repo.TouchLastUsed(ctx, userID, ids, at); err != nil {
+		if r.cacheMetrics != nil {
+			r.cacheMetrics.RecordTouchLastUsedFailure()
+		}
 		log.Warnf("long-term memory touch last_used_at failed: userID=%s ids=%v err=%v", userID, ids, err)
 	}
 }

@@ -302,6 +302,8 @@ func humanizeDiagnosisFacts(scope string, evidence []string) []string {
 	case "trace_retrieval":
 		appendFact(humanizeTraceStatus(values))
 		appendFact(humanizeRetrieveStats(values))
+		appendFact(humanizeLongTermMemory(values))
+		appendFact(humanizeSessionRecall(values))
 		appendFact(humanizeToolWorkflow(values))
 		appendFact(humanizeFailedTraceNode(values))
 	}

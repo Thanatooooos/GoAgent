@@ -23,6 +23,8 @@ type memoryItemRepoStub struct {
 	listActiveByKeyFn     func(context.Context, string, string, string, string) ([]domain.MemoryItem, error)
 	listActiveConflictsFn func(context.Context, []string) ([]port.ActiveMemoryConflict, error)
 	touchFn               func(context.Context, string, []string, time.Time) error
+	expireByIDsFn         func(context.Context, []string, string, time.Time) (int64, error)
+	deleteBeforeFn        func(context.Context, []string, time.Time, int) (int64, error)
 }
 
 func (s memoryItemRepoStub) Create(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
@@ -72,6 +74,20 @@ func (s memoryItemRepoStub) TouchLastUsed(ctx context.Context, userID string, id
 		return nil
 	}
 	return s.touchFn(ctx, userID, ids, at)
+}
+
+func (s memoryItemRepoStub) ExpireByIDs(ctx context.Context, ids []string, updatedBy string, at time.Time) (int64, error) {
+	if s.expireByIDsFn == nil {
+		return 0, nil
+	}
+	return s.expireByIDsFn(ctx, ids, updatedBy, at)
+}
+
+func (s memoryItemRepoStub) DeleteByStatusesUpdatedBefore(ctx context.Context, statuses []string, updatedBefore time.Time, limit int) (int64, error) {
+	if s.deleteBeforeFn == nil {
+		return 0, nil
+	}
+	return s.deleteBeforeFn(ctx, statuses, updatedBefore, limit)
 }
 
 type memoryItemEmbeddingRepoStub struct {

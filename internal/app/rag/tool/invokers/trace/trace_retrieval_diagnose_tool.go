@@ -9,6 +9,7 @@ import (
 	ragport "local/rag-project/internal/app/rag/port"
 	ragtool "local/rag-project/internal/app/rag/tool"
 	ragcore "local/rag-project/internal/app/rag/tool/core"
+	"local/rag-project/internal/app/rag/traceinsight"
 )
 
 type TraceRetrievalDiagnoseTool struct {
@@ -111,6 +112,11 @@ func diagnoseTraceRetrieval(
 	retrieveNode := findTraceNode(nodes, "retrieve")
 	promptNode := findTraceNode(nodes, "prompt")
 	toolWorkflowNode := findToolWorkflowNode(nodes)
+	longTermMemoryNode := findTraceNode(nodes, "long_term_memory")
+	sessionRecallNode := findTraceNode(nodes, "session_recall")
+	longTermMemory := traceinsight.ParseLongTermMemoryNode(longTermMemoryNode)
+	sessionRecall := traceinsight.ParseSessionRecallNode(sessionRecallNode)
+	evidence = appendTraceMemoryEvidence(evidence, longTermMemory, sessionRecall)
 
 	if rewriteNode == nil && retrieveNode == nil && promptNode == nil {
 		return "trace does not contain key retrieval-phase nodes yet", "low", evidence,
@@ -134,6 +140,18 @@ func diagnoseTraceRetrieval(
 		if chunkCount >= 0 {
 			evidence = append(evidence, fmt.Sprintf("retrieve.chunkCount=%d", chunkCount))
 			if chunkCount == 0 {
+				if sessionRecall != nil && sessionRecall.CandidateCount > 0 && sessionRecall.ExcerptCount == 0 && sessionRecall.TruncatedBy != "" {
+					return "trace retrieval returned no chunks, and session recall also dropped all candidate excerpts because of recall selection limits", diagnosisConfidenceHigh, evidence,
+						[]string{"inspect session recall token budget and per-message limits", "check whether the follow-up question should be narrowed so recall can keep a usable excerpt"}, "session_recall", "truncatedBy=" + sessionRecall.TruncatedBy
+				}
+				if traceMemoryRecallSelectedCount(longTermMemory, sessionRecall) > 0 {
+					return "trace retrieval returned no chunks, but memory recall still contributed prompt context, so answer quality now depends on recalled memory rather than knowledge-base grounding", diagnosisConfidenceMedium, evidence,
+						[]string{"inspect whether the recalled long-term memory or session excerpts were actually relevant to the question", "if the answer should have been grounded in the knowledge base, inspect rewrite quality and knowledge coverage"}, "retrieve", "chunkCount=0 with memory recall context"
+				}
+				if longTermMemory != nil || sessionRecall != nil {
+					return "trace retrieval returned no chunks and no memory recall context was selected either, so the answer likely lacked grounding evidence", diagnosisConfidenceHigh, evidence,
+						[]string{"check query rewrite quality and knowledge base coverage first", "inspect why long-term memory and session recall both produced no usable context"}, "retrieve", "chunkCount=0 and memory/session recall empty"
+				}
 				return "trace retrieval returned no chunks", "high", evidence,
 					[]string{"check query rewrite quality and knowledge base coverage", "inspect retrieval filters, embeddings, and search mode selection"}, "retrieve", "chunkCount=0"
 			}
@@ -142,6 +160,16 @@ func diagnoseTraceRetrieval(
 					[]string{"inspect retrieval recall quality and chunk coverage", "compare semantic, keyword, and hybrid search modes for this query"}, "retrieve", fmt.Sprintf("chunkCount=%d", chunkCount)
 			}
 		}
+	}
+
+	if sessionRecall != nil && sessionRecall.CandidateCount > 0 && sessionRecall.ExcerptCount == 0 && sessionRecall.TruncatedBy != "" {
+		return "session recall found candidates, but no excerpt survived the current prompt-budget or per-message selection limits", diagnosisConfidenceMedium, evidence,
+			[]string{"inspect session recall prompt budget and excerpt limits", "check whether the prior long message should be summarized or chunked differently for recall"}, "session_recall", "truncatedBy=" + sessionRecall.TruncatedBy
+	}
+
+	if hasDegradedMemoryTrace(longTermMemory, sessionRecall) {
+		return "trace completed through a degraded memory recall path, so repeated runs may show unstable cache or fingerprint behavior even if execution succeeded", diagnosisConfidenceMedium, evidence,
+			[]string{"inspect Redis recall cache and scope-version lookup health", "inspect session recall fingerprint generation if the degraded path came from fingerprint_unavailable"}, degradedMemoryTraceNodeID(longTermMemory, sessionRecall), "memory recall degraded"
 	}
 
 	if rewriteNode != nil {

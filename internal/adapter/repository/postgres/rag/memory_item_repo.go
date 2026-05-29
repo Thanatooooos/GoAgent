@@ -87,6 +87,12 @@ func (r *MemoryItemRepository) List(ctx context.Context, filter port.MemoryItemL
 	if supersedesID := strings.TrimSpace(filter.SupersedesID); supersedesID != "" {
 		query = query.Where("supersedes_id = ?", supersedesID)
 	}
+	if filter.ExpiresBefore != nil && !filter.ExpiresBefore.IsZero() {
+		query = query.Where("expires_at IS NOT NULL AND expires_at <= ?", *filter.ExpiresBefore)
+	}
+	if filter.UpdatedBefore != nil && !filter.UpdatedBefore.IsZero() {
+		query = query.Where("update_time < ?", *filter.UpdatedBefore)
+	}
 	query = query.Order("update_time desc")
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
@@ -177,6 +183,55 @@ func (r *MemoryItemRepository) TouchLastUsed(ctx context.Context, userID string,
 		return fmt.Errorf("touch memory item last_used_at: %w", err)
 	}
 	return nil
+}
+
+func (r *MemoryItemRepository) ExpireByIDs(ctx context.Context, ids []string, updatedBy string, at time.Time) (int64, error) {
+	ids = trimNonEmpty(ids)
+	if len(ids) == 0 || at.IsZero() {
+		return 0, nil
+	}
+	updatedBy = strings.TrimSpace(updatedBy)
+	if updatedBy == "" {
+		updatedBy = "memory-maintenance"
+	}
+	result := r.db.WithContext(ctx).
+		Model(&models.MemoryItemModel{}).
+		Where("id IN ?", ids).
+		Where("status <> ?", domain.MemoryStatusExpired).
+		Updates(map[string]any{
+			"status":      domain.MemoryStatusExpired,
+			"updated_by":  updatedBy,
+			"update_time": at,
+			"expires_at":  at,
+		})
+	if result.Error != nil {
+		return 0, fmt.Errorf("expire memory items by ids: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
+func (r *MemoryItemRepository) DeleteByStatusesUpdatedBefore(ctx context.Context, statuses []string, updatedBefore time.Time, limit int) (int64, error) {
+	statuses = trimNonEmpty(statuses)
+	if len(statuses) == 0 || updatedBefore.IsZero() {
+		return 0, nil
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	candidateIDs := r.db.WithContext(ctx).
+		Model(&models.MemoryItemModel{}).
+		Select("id").
+		Where("status IN ?", statuses).
+		Where("update_time < ?", updatedBefore).
+		Order("update_time asc").
+		Limit(limit)
+	result := r.db.WithContext(ctx).
+		Where("id IN (?)", candidateIDs).
+		Delete(&models.MemoryItemModel{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("delete memory items by statuses and updated_before: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 func trimNonEmpty(values []string) []string {

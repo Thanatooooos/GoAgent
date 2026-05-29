@@ -58,8 +58,11 @@ type ragChatLongTermMemoryStageResult struct {
 }
 
 type ragChatRetrieveStageResult struct {
-	result ragretrieve.Result
-	used   bool
+	result             ragretrieve.Result
+	used               bool
+	executionMode      string
+	wallClockDurationMs int64
+	subQuestions       []subQuestionRetrieveResult
 }
 
 type ragChatSessionRecallStageResult struct {

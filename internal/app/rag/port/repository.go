@@ -42,6 +42,8 @@ type MemoryItemListFilter struct {
 	SearchTokens    []string
 	SourceMessageID string
 	SupersedesID    string
+	ExpiresBefore   *time.Time
+	UpdatedBefore   *time.Time
 	ListOptions
 }
 
@@ -94,6 +96,8 @@ type MemoryItemRepository interface {
 	ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error)
 	ListActiveSingleValueConflicts(ctx context.Context, canonicalKeys []string) ([]ActiveMemoryConflict, error)
 	TouchLastUsed(ctx context.Context, userID string, ids []string, at time.Time) error
+	ExpireByIDs(ctx context.Context, ids []string, updatedBy string, at time.Time) (int64, error)
+	DeleteByStatusesUpdatedBefore(ctx context.Context, statuses []string, updatedBefore time.Time, limit int) (int64, error)
 }
 
 type MemoryItemEmbeddingSearchFilter struct {

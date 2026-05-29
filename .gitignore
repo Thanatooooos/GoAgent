@@ -41,4 +41,6 @@ Thumbs.db
 
 .gocache-rag
 
-.\testdata
+testdata
+
+third_party

@@ -278,6 +278,9 @@ func (r *recallService) readScopeVersions(ctx context.Context, userID string, kn
 	}
 	versions, err := r.cache.GetScopeVersions(ctx, userID, knowledgeBaseIDs)
 	if err != nil {
+		if r.cacheMetrics != nil {
+			r.cacheMetrics.RecordScopeVersionLookupFailure()
+		}
 		log.Warnf("long-term memory scope version lookup failed: userID=%s err=%v", userID, err)
 		return port.ScopeVersions{}, false
 	}

@@ -1665,3 +1665,121 @@ The more accurate next priorities are now:
 2. metrics refinement / diagnostics hardening
 3. direct unit-test coverage for `recall` internals
 4. only after that, further `memory_fact` weighting / policy tuning
+
+## 14.11 Additional Update: 2026-05-25 Phase 4 Maintenance and Metrics Closure
+
+### 14.11.1 Status Update
+
+As of `2026-05-25`, the previously pending `Phase 4` operations-side follow-up work has advanced from "next priority" into implemented baseline capability.
+
+This round does not start automatic memory extraction, does not change recall ranking policy, and does not introduce a new product phase. It closes the current long-term-memory lifecycle and observability loop around the existing design.
+
+So the current design status should now be read as:
+
+1. `Phase 4` cache closure: implemented
+2. `Phase 4+` correctness hardening: implemented
+3. package-boundary cleanup: implemented
+4. lifecycle maintenance runtime loop: implemented
+5. first-pass maintenance / fail-open metrics: implemented
+
+### 14.11.2 Lifecycle maintenance is no longer only a service helper
+
+The earlier design gap was:
+
+- `RunMaintenance(...)` existed conceptually
+- maintenance behavior existed at service level
+- but there was no runtime execution path
+
+That gap is now closed.
+
+Current implementation behavior:
+
+- `MemoryService.RunMaintenance(...)` remains the application-layer maintenance entry
+- `internal/bootstrap/rag/runtime.go` now owns the background scheduling loop
+- the loop follows the existing project pattern:
+  - immediate first run
+  - ticker-based periodic execution
+  - per-iteration timeout
+  - panic recovery
+  - graceful stop during `Runtime.Close()`
+
+This means lifecycle cleanup is now part of the runtime contract, not only a callable internal operation.
+
+### 14.11.3 Memory maintenance now has an explicit config boundary
+
+The memory config now includes a dedicated `maintenance` block under `rag.memory`:
+
+- `enabled`
+- `scan-delay-ms`
+- `run-timeout-ms`
+- `expire-batch-size`
+- `delete-batch-size`
+- `delete-retention-days`
+
+Important current design choices:
+
+- maintenance is disabled by default
+- default batch and retention behavior continue to align with the service-layer defaults
+- no new migration or schema change was introduced in this round
+
+This is important because the design is now explicit about lifecycle operations being configurable runtime behavior, not hard-coded background logic.
+
+### 14.11.4 Metrics are no longer limited to cache-layer counters
+
+Before this round, the main formal observability surface was still centered on cache behavior.
+
+`GET /rag/memory/metrics` now keeps backward compatibility while adding counters for:
+
+- `maintenanceRuns`
+- `maintenanceFailures`
+- `maintenanceExpiredCount`
+- `maintenanceDeletedCount`
+- `embeddingGenerationFailures`
+- `embeddingPersistFailures`
+- `touchLastUsedFailures`
+- `scopeVersionLookupFailures`
+
+This matters because several important memory behaviors were previously visible only through logs:
+
+- background cleanup failure
+- embedding pipeline degradation
+- write-back fail-open behavior
+- scope-version fallback behavior
+
+Now these are measurable without changing the endpoint shape.
+
+### 14.11.5 Fail-open remains the policy, but it is no longer silent
+
+The design principle remains unchanged:
+
+- memory infrastructure must degrade without breaking chat
+
+But observability has improved materially:
+
+- embedding generation failure now increments a counter
+- embedding persist failure now increments a counter
+- `touchLastUsed(...)` fail-open now increments a counter
+- scope-version lookup fallback now increments a counter
+- maintenance failure now increments a counter
+
+So current policy is:
+
+```text
+fail-open behavior stays
++
+operations visibility becomes explicit
+```
+
+### 14.11.6 Updated priority judgment
+
+As of `2026-05-25`, the memory module should no longer classify the following as near-term missing basics:
+
+1. lifecycle cleanup / maintenance
+2. first-pass operational metrics for maintenance and fail-open behavior
+
+The more accurate next priorities are now:
+
+1. diagnostics / trace-level hardening beyond counters
+2. continued direct unit-test expansion and large-test-file downsizing
+3. auto-extraction design and implementation for user preference / habit memories
+4. only after the operations surface is stable, further `memory_fact` weighting / policy tuning

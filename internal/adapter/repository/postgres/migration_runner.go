@@ -100,10 +100,13 @@ func applyMigration(db *gorm.DB, filename string) error {
 	})
 }
 
-// splitSQLStatements 按分号拆分 SQL 语句，忽略空语句和注释行。
+// splitSQLStatements splits SQL text into individual statements by semicolons.
+// PostgreSQL dollar-quoted blocks ($$...$$) are kept intact — semicolons inside
+// them do not cause a split.
 func splitSQLStatements(sql string) []string {
 	var statements []string
 	var current strings.Builder
+	inDollarQuote := false
 	for _, line := range strings.Split(sql, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
@@ -111,12 +114,18 @@ func splitSQLStatements(sql string) []string {
 		}
 		current.WriteString(line)
 		current.WriteString("\n")
-		if strings.HasSuffix(trimmed, ";") {
+		// Track dollar-quote boundaries.  A line that ends with $$ or contains
+		// a standalone $$ toggles the flag.  This is deliberately simple: it
+		// covers the common DO $$ … END $$ pattern without a full PL/pgSQL
+		// lexer.
+		if strings.Contains(trimmed, "$$") {
+			inDollarQuote = !inDollarQuote
+		}
+		if strings.HasSuffix(trimmed, ";") && !inDollarQuote {
 			statements = append(statements, strings.TrimSpace(current.String()))
 			current.Reset()
 		}
 	}
-	// 处理最后一条没有分号的语句
 	if current.Len() > 0 {
 		remaining := strings.TrimSpace(current.String())
 		if remaining != "" {

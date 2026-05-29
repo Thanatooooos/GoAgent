@@ -39,6 +39,12 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency != 3 {
 		t.Fatalf("unexpected rag.agent.parallel-tool-calls.max-concurrency: %d", cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency)
 	}
+	if !cfg.Rag.Retrieve.ParallelSubquestions.Enabled {
+		t.Fatal("expected rag.retrieve.parallel-subquestions.enabled to default to true")
+	}
+	if cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency != 2 {
+		t.Fatalf("unexpected rag.retrieve.parallel-subquestions.max-concurrency: %d", cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency)
+	}
 	if cfg.Rag.Search.WebSearch.SourcePolicy.AllowDomains[0] != "go.dev" {
 		t.Fatalf("expected web search source policy allow-domains to load, got %+v", cfg.Rag.Search.WebSearch.SourcePolicy.AllowDomains)
 	}

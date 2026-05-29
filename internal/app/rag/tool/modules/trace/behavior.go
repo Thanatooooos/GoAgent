@@ -93,6 +93,11 @@ func renderTraceNodeSummary(node TraceNodeItemView) string {
 			return "memory recall: " + summary
 		}
 	}
+	if node.SessionRecall != nil {
+		if summary := strings.TrimSpace(node.SessionRecall.Summary); summary != "" {
+			return "session recall: " + summary
+		}
+	}
 	if summary := strings.TrimSpace(node.Summary); summary != "" {
 		return "summary: " + summary
 	}

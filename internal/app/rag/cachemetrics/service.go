@@ -14,20 +14,36 @@ type EventSnapshot struct {
 }
 
 type MetricsSnapshot struct {
-	Events                   []EventSnapshot `json:"events"`
-	LocalEvictions           int64           `json:"localEvictions"`
-	VersionInvalidations     int64           `json:"versionInvalidations"`
-	FingerprintInvalidations int64           `json:"fingerprintInvalidations"`
-	RedisDecodeFailures      int64           `json:"redisDecodeFailures"`
+	Events                      []EventSnapshot `json:"events"`
+	LocalEvictions              int64           `json:"localEvictions"`
+	VersionInvalidations        int64           `json:"versionInvalidations"`
+	FingerprintInvalidations    int64           `json:"fingerprintInvalidations"`
+	RedisDecodeFailures         int64           `json:"redisDecodeFailures"`
+	MaintenanceRuns             int64           `json:"maintenanceRuns"`
+	MaintenanceFailures         int64           `json:"maintenanceFailures"`
+	MaintenanceExpiredCount     int64           `json:"maintenanceExpiredCount"`
+	MaintenanceDeletedCount     int64           `json:"maintenanceDeletedCount"`
+	EmbeddingGenerationFailures int64           `json:"embeddingGenerationFailures"`
+	EmbeddingPersistFailures    int64           `json:"embeddingPersistFailures"`
+	TouchLastUsedFailures       int64           `json:"touchLastUsedFailures"`
+	ScopeVersionLookupFailures  int64           `json:"scopeVersionLookupFailures"`
 }
 
 type Service struct {
-	mu                      sync.RWMutex
-	events                  map[string]int64
-	localEvictions          int64
-	versionInvalidations    int64
-	fingerprintInvalidation int64
-	redisDecodeFailures     int64
+	mu                          sync.RWMutex
+	events                      map[string]int64
+	localEvictions              int64
+	versionInvalidations        int64
+	fingerprintInvalidation     int64
+	redisDecodeFailures         int64
+	maintenanceRuns             int64
+	maintenanceFailures         int64
+	maintenanceExpiredCount     int64
+	maintenanceDeletedCount     int64
+	embeddingGenerationFailures int64
+	embeddingPersistFailures    int64
+	touchLastUsedFailures       int64
+	scopeVersionLookupFailures  int64
 }
 
 func NewService() *Service {
@@ -87,6 +103,62 @@ func (s *Service) RecordRedisDecodeFailure() {
 	s.redisDecodeFailures++
 }
 
+func (s *Service) RecordMaintenanceRun(expiredCount int64, deletedCount int64) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maintenanceRuns++
+	s.maintenanceExpiredCount += expiredCount
+	s.maintenanceDeletedCount += deletedCount
+}
+
+func (s *Service) RecordMaintenanceFailure() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maintenanceFailures++
+}
+
+func (s *Service) RecordEmbeddingGenerationFailure() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.embeddingGenerationFailures++
+}
+
+func (s *Service) RecordEmbeddingPersistFailure() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.embeddingPersistFailures++
+}
+
+func (s *Service) RecordTouchLastUsedFailure() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.touchLastUsedFailures++
+}
+
+func (s *Service) RecordScopeVersionLookupFailure() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scopeVersionLookupFailures++
+}
+
 func (s *Service) Snapshot() MetricsSnapshot {
 	if s == nil {
 		return MetricsSnapshot{}
@@ -95,10 +167,18 @@ func (s *Service) Snapshot() MetricsSnapshot {
 	defer s.mu.RUnlock()
 
 	snapshot := MetricsSnapshot{
-		LocalEvictions:           s.localEvictions,
-		VersionInvalidations:     s.versionInvalidations,
-		FingerprintInvalidations: s.fingerprintInvalidation,
-		RedisDecodeFailures:      s.redisDecodeFailures,
+		LocalEvictions:              s.localEvictions,
+		VersionInvalidations:        s.versionInvalidations,
+		FingerprintInvalidations:    s.fingerprintInvalidation,
+		RedisDecodeFailures:         s.redisDecodeFailures,
+		MaintenanceRuns:             s.maintenanceRuns,
+		MaintenanceFailures:         s.maintenanceFailures,
+		MaintenanceExpiredCount:     s.maintenanceExpiredCount,
+		MaintenanceDeletedCount:     s.maintenanceDeletedCount,
+		EmbeddingGenerationFailures: s.embeddingGenerationFailures,
+		EmbeddingPersistFailures:    s.embeddingPersistFailures,
+		TouchLastUsedFailures:       s.touchLastUsedFailures,
+		ScopeVersionLookupFailures:  s.scopeVersionLookupFailures,
 	}
 	for key, count := range s.events {
 		cacheKind, layer, outcome := splitEventKey(key)

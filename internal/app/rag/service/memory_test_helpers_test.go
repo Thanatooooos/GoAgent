@@ -69,6 +69,14 @@ func (s memoryItemRepoStub) TouchLastUsed(ctx context.Context, userID string, id
 	return s.touchFn(ctx, userID, ids, at)
 }
 
+func (s memoryItemRepoStub) ExpireByIDs(context.Context, []string, string, time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (s memoryItemRepoStub) DeleteByStatusesUpdatedBefore(context.Context, []string, time.Time, int) (int64, error) {
+	return 0, nil
+}
+
 type memoryItemEmbeddingRepoStub struct {
 	upsertFn func(context.Context, []domain.MemoryItemEmbedding) error
 	searchFn func(context.Context, []float32, port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error)

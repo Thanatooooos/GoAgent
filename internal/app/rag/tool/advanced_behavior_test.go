@@ -55,12 +55,12 @@ func TestTraceAndThinkBehaviors(t *testing.T) {
 	traceResult := Result{
 		Name:    "trace_node_query",
 		Status:  CallStatusSuccess,
-		Summary: "trace trace-1 status=failed conversationId=conv-1 nodes=2",
+		Summary: "trace trace-1 status=failed conversationId=conv-1 nodes=3",
 		Data: map[string]any{
 			"traceId":      "trace-1",
 			"status":       "failed",
 			"errorMessage": "rewrite node failed",
-			"nodeCount":    2,
+			"nodeCount":    3,
 			"nodes": []map[string]any{
 				{"nodeId": "rewrite", "nodeType": "llm", "nodeName": "rewrite", "status": "failed"},
 				{
@@ -68,14 +68,41 @@ func TestTraceAndThinkBehaviors(t *testing.T) {
 					"nodeType": "memory",
 					"nodeName": "long_term_memory",
 					"status":   "success",
-					"summary":  "selected 2/3 memories, contributions hybrid=1, vector_only=1, sources keyword=1, vector=2",
+					"summary":  "selected 2/3 memories (rules=1 facts=1/2), cache rule=request fact=redis embedding=request, contributions hybrid=1, vector_only=1, sources keyword=1, vector=2, reason=fact_cache_miss",
 					"memoryRecall": map[string]any{
-						"candidateCount":     3,
-						"selectedCount":      2,
-						"sourceCounts":       map[string]any{"keyword": 1, "vector": 2},
-						"contributionCounts": map[string]any{"hybrid": 1, "vector_only": 1},
-						"memoryIds":          []any{"mem-1", "mem-2"},
-						"summary":            "selected 2/3 memories, contributions hybrid=1, vector_only=1, sources keyword=1, vector=2",
+						"ruleCount":           1,
+						"factCandidateCount":  2,
+						"factSelectedCount":   1,
+						"candidateCount":      3,
+						"selectedCount":       2,
+						"ruleCacheLayer":      "request",
+						"factCacheLayer":      "redis",
+						"embeddingCacheLayer": "request",
+						"recomputeReason":     "fact_cache_miss",
+						"sourceCounts":        map[string]any{"keyword": 1, "vector": 2},
+						"contributionCounts":  map[string]any{"hybrid": 1, "vector_only": 1},
+						"memoryIds":           []any{"mem-1", "mem-2"},
+						"summary":             "selected 2/3 memories (rules=1 facts=1/2), cache rule=request fact=redis embedding=request, contributions hybrid=1, vector_only=1, sources keyword=1, vector=2, reason=fact_cache_miss",
+					},
+				},
+				{
+					"nodeId":   "session_recall",
+					"nodeType": "memory",
+					"nodeName": "session_recall",
+					"status":   "success",
+					"summary":  "recalled 1/4 excerpts, topScore=0.9100, cache session=conversation embedding=request, perMessageSkips=1, truncatedBy=max_prompt_tokens, reason=conversation_cache_miss",
+					"sessionRecall": map[string]any{
+						"candidateCount":         4,
+						"excerptCount":           1,
+						"topScore":               0.91,
+						"cacheLayer":             "conversation",
+						"embeddingCacheLayer":    "request",
+						"recomputeReason":        "conversation_cache_miss",
+						"skippedPerMessageLimit": 1,
+						"truncatedBy":            "max_prompt_tokens",
+						"selectedMessageIds":     []any{"msg-1"},
+						"selectedChunkIds":       []any{"chunk-1"},
+						"summary":                "recalled 1/4 excerpts, topScore=0.9100, cache session=conversation embedding=request, perMessageSkips=1, truncatedBy=max_prompt_tokens, reason=conversation_cache_miss",
 					},
 				},
 			},
@@ -96,6 +123,9 @@ func TestTraceAndThinkBehaviors(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "memory recall: selected 2/3 memories") || !strings.Contains(rendered, "vector_only=1") {
 		t.Fatalf("expected rendered memory recall summary, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "session recall: recalled 1/4 excerpts") || !strings.Contains(rendered, "truncatedBy=max_prompt_tokens") {
+		t.Fatalf("expected rendered session recall summary, got %q", rendered)
 	}
 
 	traceDiagnoseBehavior := TraceRetrievalDiagnoseBehavior()

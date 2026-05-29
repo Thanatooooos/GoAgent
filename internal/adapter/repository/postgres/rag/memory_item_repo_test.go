@@ -161,6 +161,70 @@ func TestMemoryItemRepositoryTouchLastUsedScopesByUserAndIDs(t *testing.T) {
 	}
 }
 
+func TestMemoryItemRepositoryExpireByIDsBuildsScopedUpdate(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	_, err = repo.ExpireByIDs(context.Background(), []string{"mem-1", "mem-2"}, "system", time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ExpireByIDs returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if !strings.Contains(sql, "update") || !strings.Contains(sql, "status") || !strings.Contains(sql, "expires_at") {
+		t.Fatalf("expected expire update SQL, got %q", recorder.lastSQL)
+	}
+	if !strings.Contains(sql, "id in") || !strings.Contains(sql, "status <>") {
+		t.Fatalf("expected id scoping and status guard, got %q", recorder.lastSQL)
+	}
+}
+
+func TestMemoryItemRepositoryDeleteByStatusesUpdatedBeforeBuildsLimitedDelete(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	_, err = repo.DeleteByStatusesUpdatedBefore(
+		context.Background(),
+		[]string{domain.MemoryStatusExpired, domain.MemoryStatusSuperseded},
+		time.Date(2026, 2, 24, 10, 0, 0, 0, time.UTC),
+		25,
+	)
+	if err != nil {
+		t.Fatalf("DeleteByStatusesUpdatedBefore returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if !strings.Contains(sql, "update") || !strings.Contains(sql, "deleted") {
+		t.Fatalf("expected soft delete SQL, got %q", recorder.lastSQL)
+	}
+	if !strings.Contains(sql, "status in") || !strings.Contains(sql, "update_time <") {
+		t.Fatalf("expected status and cutoff filters, got %q", recorder.lastSQL)
+	}
+	if !strings.Contains(sql, "limit 25") {
+		t.Fatalf("expected limited candidate subquery, got %q", recorder.lastSQL)
+	}
+}
+
 func TestMemoryItemRepositoryListActiveByCanonicalKeyScopesGlobalWithoutScopeIDFilter(t *testing.T) {
 	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
 	db, err := gorm.Open(postgres.New(postgres.Config{

@@ -264,6 +264,9 @@ func (s *MemoryService) persistMemoryEmbedding(ctx context.Context, item domain.
 	}
 	vector, err := s.embedding.Embed(text)
 	if err != nil {
+		if s.cacheMetrics != nil {
+			s.cacheMetrics.RecordEmbeddingGenerationFailure()
+		}
 		log.Warnf("long-term memory embedding generation failed: memoryID=%s err=%v", strings.TrimSpace(item.ID), err)
 		return
 	}
@@ -277,6 +280,9 @@ func (s *MemoryService) persistMemoryEmbedding(ctx context.Context, item domain.
 		CreateTime:   item.CreateTime,
 		UpdateTime:   item.UpdateTime,
 	}}); err != nil {
+		if s.cacheMetrics != nil {
+			s.cacheMetrics.RecordEmbeddingPersistFailure()
+		}
 		log.Warnf("long-term memory embedding persist failed: memoryID=%s err=%v", strings.TrimSpace(item.ID), err)
 	}
 }

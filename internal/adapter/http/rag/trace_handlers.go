@@ -11,6 +11,7 @@ import (
 
 	"local/rag-project/internal/app/rag/domain"
 	ragservice "local/rag-project/internal/app/rag/service"
+	"local/rag-project/internal/app/rag/traceinsight"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/exception"
 	"local/rag-project/internal/middleware"
@@ -44,20 +45,61 @@ type ragTraceRunVO struct {
 }
 
 type ragTraceNodeVO struct {
-	TraceID      string     `json:"traceId"`
-	NodeID       string     `json:"nodeId"`
-	ParentNodeID string     `json:"parentNodeId,omitempty"`
-	Depth        *int       `json:"depth,omitempty"`
-	NodeType     string     `json:"nodeType,omitempty"`
-	NodeName     string     `json:"nodeName,omitempty"`
-	ClassName    string     `json:"className,omitempty"`
-	MethodName   string     `json:"methodName,omitempty"`
-	Status       string     `json:"status,omitempty"`
-	ErrorMessage string     `json:"errorMessage,omitempty"`
-	DurationMs   *int64     `json:"durationMs,omitempty"`
-	StartTime    *time.Time `json:"startTime,omitempty"`
-	EndTime      *time.Time `json:"endTime,omitempty"`
-	ExtraData    string     `json:"extraData,omitempty"`
+	TraceID       string                   `json:"traceId"`
+	NodeID        string                   `json:"nodeId"`
+	ParentNodeID  string                   `json:"parentNodeId,omitempty"`
+	Depth         *int                     `json:"depth,omitempty"`
+	NodeType      string                   `json:"nodeType,omitempty"`
+	NodeName      string                   `json:"nodeName,omitempty"`
+	ClassName     string                   `json:"className,omitempty"`
+	MethodName    string                   `json:"methodName,omitempty"`
+	Status        string                   `json:"status,omitempty"`
+	ErrorMessage  string                   `json:"errorMessage,omitempty"`
+	DurationMs    *int64                   `json:"durationMs,omitempty"`
+	StartTime     *time.Time               `json:"startTime,omitempty"`
+	EndTime       *time.Time               `json:"endTime,omitempty"`
+	ExtraData     string                   `json:"extraData,omitempty"`
+	MemoryRecall  *ragTraceMemoryRecallVO  `json:"memoryRecall,omitempty"`
+	SessionRecall *ragTraceSessionRecallVO `json:"sessionRecall,omitempty"`
+}
+
+type ragTraceMemoryRecallVO struct {
+	Used                bool           `json:"used"`
+	CandidateCount      int            `json:"candidateCount"`
+	SelectedCount       int            `json:"selectedCount"`
+	RuleCount           int            `json:"ruleCount"`
+	FactCandidateCount  int            `json:"factCandidateCount"`
+	FactSelectedCount   int            `json:"factSelectedCount"`
+	Truncated           bool           `json:"truncated"`
+	CacheEnabled        bool           `json:"cacheEnabled"`
+	RuleCacheLayer      string         `json:"ruleCacheLayer,omitempty"`
+	FactCacheLayer      string         `json:"factCacheLayer,omitempty"`
+	EmbeddingCacheLayer string         `json:"embeddingCacheLayer,omitempty"`
+	RecomputeReason     string         `json:"recomputeReason,omitempty"`
+	SourceCounts        map[string]int `json:"sourceCounts,omitempty"`
+	ContributionCounts  map[string]int `json:"contributionCounts,omitempty"`
+	TypeCounts          map[string]int `json:"typeCounts,omitempty"`
+	MemoryIDs           []string       `json:"memoryIds,omitempty"`
+	RuleMemoryIDs       []string       `json:"ruleMemoryIds,omitempty"`
+	FactMemoryIDs       []string       `json:"factMemoryIds,omitempty"`
+	Summary             string         `json:"summary,omitempty"`
+}
+
+type ragTraceSessionRecallVO struct {
+	Used                   bool     `json:"used"`
+	CandidateCount         int      `json:"candidateCount"`
+	ExcerptCount           int      `json:"excerptCount"`
+	TopScore               float64  `json:"topScore"`
+	CacheEnabled           bool     `json:"cacheEnabled"`
+	CacheLayer             string   `json:"cacheLayer,omitempty"`
+	EmbeddingCacheLayer    string   `json:"embeddingCacheLayer,omitempty"`
+	RecallFingerprint      string   `json:"recallFingerprint,omitempty"`
+	RecomputeReason        string   `json:"recomputeReason,omitempty"`
+	SkippedPerMessageLimit int      `json:"skippedPerMessageLimit"`
+	TruncatedBy            string   `json:"truncatedBy,omitempty"`
+	SelectedMessageIDs     []string `json:"selectedMessageIds,omitempty"`
+	SelectedChunkIDs       []string `json:"selectedChunkIds,omitempty"`
+	Summary                string   `json:"summary,omitempty"`
 }
 
 type ragTraceDetailVO struct {
@@ -236,7 +278,7 @@ func toRagTraceNodeVOs(items []domain.RagTraceNode) []ragTraceNodeVO {
 
 // toRagTraceNodeVO 转换 trace node 出参。
 func toRagTraceNodeVO(item domain.RagTraceNode) ragTraceNodeVO {
-	return ragTraceNodeVO{
+	node := ragTraceNodeVO{
 		TraceID:      item.TraceID,
 		NodeID:       item.NodeID,
 		ParentNodeID: item.ParentNodeID,
@@ -251,6 +293,62 @@ func toRagTraceNodeVO(item domain.RagTraceNode) ragTraceNodeVO {
 		StartTime:    item.StartTime,
 		EndTime:      item.EndTime,
 		ExtraData:    item.ExtraData,
+	}
+	if summary := traceinsight.ParseLongTermMemoryNode(&item); summary != nil {
+		node.MemoryRecall = toRagTraceMemoryRecallVO(summary)
+	}
+	if summary := traceinsight.ParseSessionRecallNode(&item); summary != nil {
+		node.SessionRecall = toRagTraceSessionRecallVO(summary)
+	}
+	return node
+}
+
+func toRagTraceMemoryRecallVO(summary *traceinsight.LongTermMemorySummary) *ragTraceMemoryRecallVO {
+	if summary == nil {
+		return nil
+	}
+	return &ragTraceMemoryRecallVO{
+		Used:                summary.Used,
+		CandidateCount:      summary.CandidateCount,
+		SelectedCount:       summary.SelectedCount,
+		RuleCount:           summary.RuleCount,
+		FactCandidateCount:  summary.FactCandidateCount,
+		FactSelectedCount:   summary.FactSelectedCount,
+		Truncated:           summary.Truncated,
+		CacheEnabled:        summary.CacheEnabled,
+		RuleCacheLayer:      summary.RuleCacheLayer,
+		FactCacheLayer:      summary.FactCacheLayer,
+		EmbeddingCacheLayer: summary.EmbeddingCacheLayer,
+		RecomputeReason:     summary.RecomputeReason,
+		SourceCounts:        summary.SourceCounts,
+		ContributionCounts:  summary.ContributionCounts,
+		TypeCounts:          summary.TypeCounts,
+		MemoryIDs:           append([]string(nil), summary.MemoryIDs...),
+		RuleMemoryIDs:       append([]string(nil), summary.RuleMemoryIDs...),
+		FactMemoryIDs:       append([]string(nil), summary.FactMemoryIDs...),
+		Summary:             summary.Summary,
+	}
+}
+
+func toRagTraceSessionRecallVO(summary *traceinsight.SessionRecallSummary) *ragTraceSessionRecallVO {
+	if summary == nil {
+		return nil
+	}
+	return &ragTraceSessionRecallVO{
+		Used:                   summary.Used,
+		CandidateCount:         summary.CandidateCount,
+		ExcerptCount:           summary.ExcerptCount,
+		TopScore:               summary.TopScore,
+		CacheEnabled:           summary.CacheEnabled,
+		CacheLayer:             summary.CacheLayer,
+		EmbeddingCacheLayer:    summary.EmbeddingCacheLayer,
+		RecallFingerprint:      summary.RecallFingerprint,
+		RecomputeReason:        summary.RecomputeReason,
+		SkippedPerMessageLimit: summary.SkippedPerMessageLimit,
+		TruncatedBy:            summary.TruncatedBy,
+		SelectedMessageIDs:     append([]string(nil), summary.SelectedMessageIDs...),
+		SelectedChunkIDs:       append([]string(nil), summary.SelectedChunkIDs...),
+		Summary:                summary.Summary,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -26,6 +27,7 @@ import (
 	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
 	"local/rag-project/internal/framework/config"
+	"local/rag-project/internal/framework/log"
 	infraai "local/rag-project/internal/infra-ai"
 	inframcp "local/rag-project/internal/infra-mcp"
 )
@@ -40,18 +42,21 @@ type RuntimeOptions struct {
 
 // Runtime 聚合最小 RAG 闭环需要的服务。
 type Runtime struct {
-	DB           *gorm.DB
-	ownsDB       bool
-	mcpManager   *inframcp.Manager
-	memoryCache  *goredis.Client
-	CacheMetrics *ragcachemetrics.Service
-	Retrieve     ragretrieve.Service
-	Conversation *ragservice.ConversationService
-	Message      *ragservice.ConversationMessageService
-	Memory       *longtermmemory.MemoryService
-	Feedback     *ragservice.MessageFeedbackService
-	Trace        *ragservice.TraceService
-	Chat         *ragservice.RagChatService
+	DB                          *gorm.DB
+	ownsDB                      bool
+	mcpManager                  *inframcp.Manager
+	memoryCache                 *goredis.Client
+	memoryMaintenanceLoopCancel context.CancelFunc
+	memoryMaintenanceLoopWG     sync.WaitGroup
+	memoryMaintenanceRunner     func(context.Context, longtermmemory.MaintenanceInput) (longtermmemory.MaintenanceResult, error)
+	CacheMetrics                *ragcachemetrics.Service
+	Retrieve                    ragretrieve.Service
+	Conversation                *ragservice.ConversationService
+	Message                     *ragservice.ConversationMessageService
+	Memory                      *longtermmemory.MemoryService
+	Feedback                    *ragservice.MessageFeedbackService
+	Trace                       *ragservice.TraceService
+	Chat                        *ragservice.RagChatService
 }
 
 // NewRuntime 创建 RAG 最小运行时。
@@ -194,6 +199,10 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	if cfg != nil {
 		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
 	}
+	chatService.SetParallelSubquestionRetrieval(
+		cfg.Rag.Retrieve.ParallelSubquestions.Enabled,
+		cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
+	)
 	chatService.SetLongTermMemoryRecallService(explicitMemoryService.RecallService())
 	sessionRecallService := ragservice.NewSessionRecallService(sessionChunkRepo, aiRuntime.Embedding, ragservice.SessionRecallOptions{
 		Enabled:              cfg.Rag.Memory.SessionRecall.Enabled,
@@ -227,7 +236,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	chatService.SetRequestCacheMaxEntries(readRequestCacheMaxEntries(cfg))
 	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, mcpManager, aiRuntime.Chat))
 
-	return &Runtime{
+	runtime := &Runtime{
 		DB:           db,
 		ownsDB:       ownsDB,
 		mcpManager:   mcpManager,
@@ -240,7 +249,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		Feedback:     feedbackService,
 		Trace:        traceService,
 		Chat:         chatService,
-	}, nil
+	}
+	runtime.startMemoryMaintenanceLoop(cfg)
+	return runtime, nil
 }
 
 // Close 关闭 runtime 持有的数据库资源。
@@ -255,6 +266,7 @@ func (r *Runtime) Close() error {
 	if r.memoryCache != nil {
 		err = errors.Join(err, r.memoryCache.Close())
 	}
+	r.stopMemoryMaintenanceLoop()
 	if r.DB == nil || !r.ownsDB {
 		return err
 	}
@@ -396,6 +408,108 @@ func readRequestCacheMaxEntries(cfg *config.Config) int {
 		return 128
 	}
 	return cfg.Rag.Memory.Cache.RequestMaxEntries
+}
+
+func (r *Runtime) startMemoryMaintenanceLoop(cfg *config.Config) {
+	if r == nil || !readMemoryMaintenanceEnabled(cfg) {
+		return
+	}
+	runner := r.memoryMaintenanceRunner
+	if runner == nil {
+		if r.Memory == nil {
+			return
+		}
+		runner = r.Memory.RunMaintenance
+	}
+
+	input := buildMemoryMaintenanceInput(cfg)
+	delay := readMemoryMaintenanceScanDelay(cfg)
+	runTimeout := readMemoryMaintenanceRunTimeout(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	r.memoryMaintenanceLoopCancel = cancel
+	r.memoryMaintenanceLoopWG.Add(1)
+
+	go func() {
+		defer r.memoryMaintenanceLoopWG.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Errorf("rag memory maintenance loop panic recovered: %v", recovered)
+			}
+		}()
+
+		ticker := time.NewTicker(delay)
+		defer ticker.Stop()
+
+		run := func() {
+			runCtx, runCancel := context.WithTimeout(ctx, runTimeout)
+			defer runCancel()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.Errorf("rag memory maintenance tick panic recovered: %v", recovered)
+				}
+			}()
+
+			result, err := runner(runCtx, input)
+			if err != nil {
+				log.Warnf("rag memory maintenance failed: %v", err)
+			} else if result.ExpiredCount > 0 || result.DeletedCount > 0 {
+				log.Infof("rag memory maintenance completed: expired=%d deleted=%d", result.ExpiredCount, result.DeletedCount)
+			}
+			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+				log.Warnf("rag memory maintenance iteration timed out after %s", runTimeout)
+			}
+		}
+
+		run()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
+}
+
+func (r *Runtime) stopMemoryMaintenanceLoop() {
+	if r == nil || r.memoryMaintenanceLoopCancel == nil {
+		return
+	}
+	r.memoryMaintenanceLoopCancel()
+	r.memoryMaintenanceLoopWG.Wait()
+	r.memoryMaintenanceLoopCancel = nil
+}
+
+func readMemoryMaintenanceEnabled(cfg *config.Config) bool {
+	return cfg != nil && cfg.Rag.Memory.Maintenance.Enabled
+}
+
+func readMemoryMaintenanceScanDelay(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.Rag.Memory.Maintenance.ScanDelayMs <= 0 {
+		return 10 * time.Minute
+	}
+	return time.Duration(cfg.Rag.Memory.Maintenance.ScanDelayMs) * time.Millisecond
+}
+
+func readMemoryMaintenanceRunTimeout(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.Rag.Memory.Maintenance.RunTimeoutMs <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(cfg.Rag.Memory.Maintenance.RunTimeoutMs) * time.Millisecond
+}
+
+func buildMemoryMaintenanceInput(cfg *config.Config) longtermmemory.MaintenanceInput {
+	input := longtermmemory.MaintenanceInput{}
+	if cfg == nil {
+		return input
+	}
+	input.ExpireBatchSize = cfg.Rag.Memory.Maintenance.ExpireBatchSize
+	input.DeleteBatchSize = cfg.Rag.Memory.Maintenance.DeleteBatchSize
+	if days := cfg.Rag.Memory.Maintenance.DeleteRetentionDays; days > 0 {
+		input.DeleteRetention = time.Duration(days) * 24 * time.Hour
+	}
+	return input
 }
 
 func cloneMCPEnv(values map[string]string) map[string]string {

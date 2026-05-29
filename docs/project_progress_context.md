@@ -2074,3 +2074,104 @@ The more accurate next priorities are now:
 2. metrics refinement / diagnostics hardening
 3. direct unit-test coverage around `recall` package internals
 4. only after that, further `memory_fact` weighting / policy tuning
+
+## Additional Update: 2026-05-25 Memory Phase 4 Maintenance and Metrics Closure
+
+### Status Update
+
+As of `2026-05-25`, the previously pending `Phase 4` follow-up items around lifecycle maintenance and first-pass production metrics are no longer only planned work. The main closure path has landed.
+
+This round still stays within the current `memory V1` scope. It does not introduce automatic preference extraction or a new memory write path. It closes the existing runtime/operations loop around the current long-term-memory implementation.
+
+So the current memory status should now be read as:
+
+- `Phase 4` cache closure: implemented
+- `Phase 4+` correctness hardening and retrieval-quality tuning: implemented
+- structural cleanup of governance / recall / cache code: implemented
+- lifecycle maintenance runtime loop: implemented
+- first-pass maintenance / fail-open metrics: implemented
+
+### What Changed
+
+#### 1. Long-term-memory maintenance is now wired into `RAG runtime`
+
+- `MemoryService.RunMaintenance(...)` is no longer only a service-layer capability
+- `internal/bootstrap/rag/runtime.go` now starts a background maintenance loop when enabled by config
+- loop behavior follows the same engineering pattern already used by `knowledge` background jobs:
+  - immediate first run
+  - ticker-based periodic execution
+  - per-iteration timeout
+  - panic recovery
+  - graceful shutdown on `Runtime.Close()`
+
+This means memory lifecycle cleanup is now a real runtime concern rather than a dormant helper method.
+
+#### 2. `rag.memory.maintenance.*` config boundary has landed
+
+The memory config now includes:
+
+- `enabled`
+- `scan-delay-ms`
+- `run-timeout-ms`
+- `expire-batch-size`
+- `delete-batch-size`
+- `delete-retention-days`
+
+Default behavior stays conservative:
+
+- maintenance is off unless explicitly enabled
+- default retention and batch behavior still align with the existing service defaults
+
+#### 3. Memory metrics are no longer cache-only
+
+`GET /rag/memory/metrics` continues to keep the existing cache metrics contract, but now exposes additional additive counters for:
+
+- maintenance runs / failures
+- total expired / deleted rows
+- embedding generation failures
+- embedding persistence failures
+- `touchLastUsed(...)` fail-open events
+- scope-version lookup fail-open events
+
+This means the memory metrics endpoint has moved from "cache observability only" to "first-pass operational observability for the memory subsystem."
+
+#### 4. Fail-open paths now have explicit counters
+
+Several existing fail-open branches were already present in code, but were only visible through logs.
+
+This round made them measurable:
+
+- query embedding generation failure
+- embedding persist failure
+- `touchLastUsed(...)` write-back failure
+- scope-version lookup fallback
+- maintenance execution failure
+
+So the current memory behavior is still availability-first, but it is no longer silent from an operations perspective.
+
+### Validation
+
+Validated on `2026-05-25`:
+
+```powershell
+$env:GOCACHE='D:\goagent\.gocache-agent'; $env:GOMODCACHE='D:\goagent\.gomodcache'; go test ./internal/app/rag/service/longtermmemory ./internal/app/rag/cachemetrics -count=1
+$env:GOCACHE='D:\goagent\.gocache-agent'; $env:GOMODCACHE='D:\goagent\.gomodcache'; go test ./internal/adapter/http/rag ./internal/bootstrap/rag -count=1
+```
+
+Current result:
+
+- `internal/app/rag/service/longtermmemory` PASS
+- `internal/app/rag/cachemetrics` PASS
+- `internal/adapter/http/rag` PASS
+- `internal/bootstrap/rag` PASS
+
+### Current Conclusion
+
+As of `2026-05-25`, the memory track should no longer treat "lifecycle cleanup / maintenance" and "basic metrics refinement" as pending top-level gaps.
+
+The more accurate next priorities are now:
+
+1. diagnostics / trace-level hardening beyond metrics counters
+2. continued direct unit-test coverage and test-file downsizing around long-term-memory internals
+3. only after the operations surface is stable, auto-extraction of user preference / habit memories
+4. later-stage `memory_fact` weighting / policy tuning

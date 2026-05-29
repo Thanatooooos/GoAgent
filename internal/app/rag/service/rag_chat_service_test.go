@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,18 +59,37 @@ func (s rewriteServiceStub) RewriteWithHistory(question string, history []conven
 }
 
 type retrieveServiceStub struct {
-	result   ragretrieve.Result
-	err      error
-	requests []ragretrieve.Request
+	mu          sync.Mutex
+	result      ragretrieve.Result
+	err         error
+	requests    []ragretrieve.Request
+	retrieveFn  func(context.Context, ragretrieve.Request) (ragretrieve.Result, error)
+	inFlight    int32
+	maxInFlight int32
 }
 
 func (s *retrieveServiceStub) Retrieve(ctx context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
+	s.mu.Lock()
 	s.requests = append(s.requests, request)
+	s.mu.Unlock()
+	if s.retrieveFn != nil {
+		current := atomic.AddInt32(&s.inFlight, 1)
+		for {
+			maxSeen := atomic.LoadInt32(&s.maxInFlight)
+			if current <= maxSeen || atomic.CompareAndSwapInt32(&s.maxInFlight, maxSeen, current) {
+				break
+			}
+		}
+		defer atomic.AddInt32(&s.inFlight, -1)
+		return s.retrieveFn(ctx, request)
+	}
 	return s.result, s.err
 }
 
 func (s *retrieveServiceStub) RetrieveByVector(ctx context.Context, vector []float32, request ragretrieve.Request) (ragretrieve.Result, error) {
+	s.mu.Lock()
 	s.requests = append(s.requests, request)
+	s.mu.Unlock()
 	return s.result, s.err
 }
 
@@ -511,6 +532,25 @@ func TestRagChatServiceSetConfidenceThreshold(t *testing.T) {
 	}
 }
 
+func TestRagChatServiceSetParallelSubquestionRetrieval(t *testing.T) {
+	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetParallelSubquestionRetrieval(false, 0)
+	if svc.parallelSubquestions {
+		t.Fatal("expected parallel subquestion retrieval to be disabled")
+	}
+	if svc.subquestionConcurrency != 2 {
+		t.Fatalf("expected default subquestion concurrency=2, got %d", svc.subquestionConcurrency)
+	}
+
+	svc.SetParallelSubquestionRetrieval(true, 3)
+	if !svc.parallelSubquestions {
+		t.Fatal("expected parallel subquestion retrieval to be enabled")
+	}
+	if svc.subquestionConcurrency != 3 {
+		t.Fatalf("expected subquestion concurrency=3, got %d", svc.subquestionConcurrency)
+	}
+}
+
 func TestRagChatServiceSetToolWorkflow(t *testing.T) {
 	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	workflow := &toolWorkflowStub{}
@@ -529,7 +569,7 @@ func TestRagChatServiceValidateDependencies(t *testing.T) {
 
 func TestRagChatServiceNilSink(t *testing.T) {
 	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
-	if err := svc.Chat(nil, RagChatInput{Question: "test", UserID: "u1"}, nil); err == nil {
+	if err := svc.Chat(nil, RagChatInput{Question: "doc_fail_01 why import failed", UserID: "u1"}, nil); err == nil {
 		t.Fatal("expected error for nil sink")
 	}
 }
@@ -537,7 +577,7 @@ func TestRagChatServiceNilSink(t *testing.T) {
 func TestRagChatServiceEmptyQuestion(t *testing.T) {
 	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	sink := &fallbackSinkStub{}
-	if err := svc.Chat(nil, RagChatInput{Question: "", UserID: "u1"}, sink); err == nil {
+	if err := svc.Chat(nil, RagChatInput{Question: "doc_fail_01 why import failed", UserID: "u1"}, sink); err == nil {
 		t.Fatal("expected error for empty question or missing dependencies")
 	}
 }
@@ -562,17 +602,257 @@ func TestShouldRunRetrieve(t *testing.T) {
 	}
 }
 
+func TestShouldSerializeSubQuestions(t *testing.T) {
+	if !shouldSerializeSubQuestions([]string{"this node error details", "continue checking"}) {
+		t.Fatal("expected dependency-risk subquestions to serialize")
+	}
+	if !shouldSerializeSubQuestions([]string{"which node failed", "What error was returned"}) {
+		t.Fatal("expected short subject-less follow-up to serialize")
+	}
+	if shouldSerializeSubQuestions([]string{"doc-1 indexing failure reason", "vector store connection refused troubleshooting"}) {
+		t.Fatal("expected independent subquestions to remain parallelizable")
+	}
+}
+
+func TestRunRetrieveStageParallelSuccessTrace(t *testing.T) {
+	repo := &traceNodeRepoRecorder{}
+	tracer := NewChatTracer(nil, repo)
+	retrieve := &retrieveServiceStub{
+		retrieveFn: func(ctx context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
+			time.Sleep(50 * time.Millisecond)
+			return ragretrieve.Result{
+				Chunks: []convention.RetrievedChunk{{ID: strings.TrimSpace(request.Query), Score: 0.8}},
+			}, nil
+		},
+	}
+	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, tracer)
+	service.SetParallelSubquestionRetrieval(true, 2)
+
+	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
+		Question:         "original question",
+		UserID:           "user-1",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, ragrewrite.Result{
+		NeedRetrieval: true,
+		SubQuestions:  []string{"first independent question", "second independent question"},
+	}, "trace-1")
+	if err != nil {
+		t.Fatalf("runRetrieveStage returned error: %v", err)
+	}
+	if !result.used {
+		t.Fatal("expected retrieve stage to be used")
+	}
+	if result.executionMode != retrieveExecutionModeParallel {
+		t.Fatalf("expected parallel execution mode, got %q", result.executionMode)
+	}
+	if len(result.subQuestions) != 2 {
+		t.Fatalf("expected 2 subquestion results, got %d", len(result.subQuestions))
+	}
+	if retrieve.maxInFlight < 2 {
+		t.Fatalf("expected parallel in-flight execution, got max=%d", retrieve.maxInFlight)
+	}
+	if result.wallClockDurationMs <= 0 || result.wallClockDurationMs >= 95 {
+		t.Fatalf("expected wall clock to reflect parallel speedup, got %dms", result.wallClockDurationMs)
+	}
+	if len(repo.created) != 1 {
+		t.Fatalf("expected one trace node, got %d", len(repo.created))
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(repo.created[0].ExtraData), &payload); err != nil {
+		t.Fatalf("unmarshal retrieve trace payload: %v", err)
+	}
+	if payload["executionMode"] != retrieveExecutionModeParallel {
+		t.Fatalf("expected executionMode=parallel, got %+v", payload)
+	}
+	if payload["subQuestionSucceeded"] != float64(2) {
+		t.Fatalf("expected two successful subquestions, got %+v", payload)
+	}
+}
+
+func TestRunRetrieveStagePartialFailureStillReturnsMergedResult(t *testing.T) {
+	retrieve := &retrieveServiceStub{
+		retrieveFn: func(ctx context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
+			if strings.Contains(request.Query, "second") {
+				return ragretrieve.Result{}, errors.New("vector store unavailable")
+			}
+			return ragretrieve.Result{
+				Chunks: []convention.RetrievedChunk{{ID: "chunk-1", Score: 0.9}},
+			}, nil
+		},
+	}
+	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
+	service.SetParallelSubquestionRetrieval(true, 2)
+
+	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
+		Question:         "original question",
+		UserID:           "user-1",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, ragrewrite.Result{
+		NeedRetrieval: true,
+		SubQuestions:  []string{"first independent question", "second independent question"},
+	}, "trace-1")
+	if err != nil {
+		t.Fatalf("runRetrieveStage returned error: %v", err)
+	}
+	if len(result.result.Chunks) != 1 {
+		t.Fatalf("expected merged result from successful subquestion, got %+v", result.result.Chunks)
+	}
+	if len(retrieve.requests) != 2 {
+		t.Fatalf("expected no fallback retrieve on partial failure, got requests=%d", len(retrieve.requests))
+	}
+	if result.subQuestions[1].Status != subQuestionStatusFailed {
+		t.Fatalf("expected failed subquestion status, got %+v", result.subQuestions[1])
+	}
+}
+
+func TestRunRetrieveStageFallsBackWhenAllSubQuestionsEmpty(t *testing.T) {
+	retrieve := &retrieveServiceStub{
+		retrieveFn: func(ctx context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
+			if request.Query == "original question" {
+				return ragretrieve.Result{
+					Chunks: []convention.RetrievedChunk{{ID: "fallback", Score: 0.88}},
+				}, nil
+			}
+			return ragretrieve.Result{}, nil
+		},
+	}
+	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
+	service.SetParallelSubquestionRetrieval(true, 2)
+
+	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
+		Question:         "original question",
+		UserID:           "user-1",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, ragrewrite.Result{
+		NeedRetrieval: true,
+		SubQuestions:  []string{"first independent question", "second independent question"},
+	}, "trace-1")
+	if err != nil {
+		t.Fatalf("runRetrieveStage returned error: %v", err)
+	}
+	if len(result.result.Chunks) != 1 || result.result.Chunks[0].ID != "fallback" {
+		t.Fatalf("expected fallback retrieve result, got %+v", result.result.Chunks)
+	}
+	if len(retrieve.requests) != 3 {
+		t.Fatalf("expected two subquestions plus one fallback, got %d requests", len(retrieve.requests))
+	}
+	if retrieve.requests[2].Query != "original question" {
+		t.Fatalf("expected fallback to original question, got %+v", retrieve.requests[2])
+	}
+}
+
+func TestRunRetrieveStageFallsBackWhenAllSubQuestionsFail(t *testing.T) {
+	retrieve := &retrieveServiceStub{
+		retrieveFn: func(ctx context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
+			if request.Query == "original question" {
+				return ragretrieve.Result{
+					Chunks: []convention.RetrievedChunk{{ID: "fallback", Score: 0.77}},
+				}, nil
+			}
+			return ragretrieve.Result{}, errors.New("backend unavailable")
+		},
+	}
+	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
+	service.SetParallelSubquestionRetrieval(true, 2)
+
+	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
+		Question:         "original question",
+		UserID:           "user-1",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, ragrewrite.Result{
+		NeedRetrieval: true,
+		SubQuestions:  []string{"first independent question", "second independent question"},
+	}, "trace-1")
+	if err != nil {
+		t.Fatalf("runRetrieveStage returned error: %v", err)
+	}
+	if len(result.result.Chunks) != 1 || result.result.Chunks[0].ID != "fallback" {
+		t.Fatalf("expected fallback retrieve result, got %+v", result.result.Chunks)
+	}
+}
+
+func TestRunRetrieveStageSerializesDependencyRiskSubQuestions(t *testing.T) {
+	repo := &traceNodeRepoRecorder{}
+	tracer := NewChatTracer(nil, repo)
+	retrieve := &retrieveServiceStub{
+		retrieveFn: func(ctx context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
+			time.Sleep(30 * time.Millisecond)
+			return ragretrieve.Result{
+				Chunks: []convention.RetrievedChunk{{ID: request.Query, Score: 0.6}},
+			}, nil
+		},
+	}
+	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, tracer)
+	service.SetParallelSubquestionRetrieval(true, 2)
+
+	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
+		Question:         "original question",
+		UserID:           "user-1",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, ragrewrite.Result{
+		NeedRetrieval: true,
+		SubQuestions:  []string{"this node error details", "continue checking"},
+	}, "trace-1")
+	if err != nil {
+		t.Fatalf("runRetrieveStage returned error: %v", err)
+	}
+	if result.executionMode != retrieveExecutionModeSerialDependencyRisk {
+		t.Fatalf("expected dependency-risk serial mode, got %q", result.executionMode)
+	}
+	if retrieve.maxInFlight > 1 {
+		t.Fatalf("expected dependency-risk execution to stay serial, got maxInFlight=%d", retrieve.maxInFlight)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(repo.created[0].ExtraData), &payload); err != nil {
+		t.Fatalf("unmarshal retrieve trace payload: %v", err)
+	}
+	if payload["executionMode"] != retrieveExecutionModeSerialDependencyRisk {
+		t.Fatalf("expected serial dependency risk trace mode, got %+v", payload)
+	}
+}
+
+func TestRunRetrieveStageHonorsParallelDisable(t *testing.T) {
+	retrieve := &retrieveServiceStub{
+		retrieveFn: func(ctx context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
+			time.Sleep(20 * time.Millisecond)
+			return ragretrieve.Result{
+				Chunks: []convention.RetrievedChunk{{ID: request.Query, Score: 0.6}},
+			}, nil
+		},
+	}
+	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
+	service.SetParallelSubquestionRetrieval(false, 2)
+
+	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
+		Question:         "original question",
+		UserID:           "user-1",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, ragrewrite.Result{
+		NeedRetrieval: true,
+		SubQuestions:  []string{"first independent question", "second independent question"},
+	}, "trace-1")
+	if err != nil {
+		t.Fatalf("runRetrieveStage returned error: %v", err)
+	}
+	if result.executionMode != retrieveExecutionModeSerial {
+		t.Fatalf("expected serial mode when parallel disabled, got %q", result.executionMode)
+	}
+	if retrieve.maxInFlight > 1 {
+		t.Fatalf("expected serial execution when parallel disabled, got maxInFlight=%d", retrieve.maxInFlight)
+	}
+}
+
 func TestShouldRunToolWorkflow(t *testing.T) {
-	if shouldRunToolWorkflow(RagChatInput{Question: "你好"}, ragrewrite.Result{NeedRetrieval: false}, false) {
+	if shouldRunToolWorkflow(RagChatInput{Question: "hello"}, ragrewrite.Result{NeedRetrieval: false}, false) {
 		t.Fatal("expected no tool workflow for greeting without retrieval")
 	}
-	if !shouldRunToolWorkflow(RagChatInput{Question: "doc_fail_01 为什么失败"}, ragrewrite.Result{NeedRetrieval: false}, false) {
+	if !shouldRunToolWorkflow(RagChatInput{Question: "doc_fail_01 why failed"}, ragrewrite.Result{NeedRetrieval: false}, false) {
 		t.Fatal("expected tool workflow for structured document id question")
 	}
-	if !shouldRunToolWorkflow(RagChatInput{Question: "Go 泛型怎么用"}, ragrewrite.Result{NeedRetrieval: true}, false) {
+	if !shouldRunToolWorkflow(RagChatInput{Question: "How do Go generics work"}, ragrewrite.Result{NeedRetrieval: true}, false) {
 		t.Fatal("expected tool workflow for general retrieval-style question")
 	}
-	if !shouldRunToolWorkflow(RagChatInput{Question: "随便问问"}, ragrewrite.Result{NeedRetrieval: false}, true) {
+	if !shouldRunToolWorkflow(RagChatInput{Question: "random question"}, ragrewrite.Result{NeedRetrieval: false}, true) {
 		t.Fatal("expected tool workflow when retrieval was used")
 	}
 }
@@ -606,7 +886,7 @@ func TestRunToolWorkflowStageRunsForStructuredIDWithoutRetrieve(t *testing.T) {
 
 	result, err := svc.runToolWorkflowStage(
 		context.Background(),
-		RagChatInput{Question: "doc_fail_01 为什么导入失败", UserID: "u1"},
+		RagChatInput{Question: "doc_fail_01 why import failed", UserID: "u1"},
 		nil,
 		ragrewrite.Result{NeedRetrieval: false},
 		ragretrieve.Result{},
@@ -620,7 +900,7 @@ func TestRunToolWorkflowStageRunsForStructuredIDWithoutRetrieve(t *testing.T) {
 	if !result.result.Used {
 		t.Fatal("expected workflow to run for structured id question")
 	}
-	if strings.TrimSpace(workflow.input.Question) != "doc_fail_01 为什么导入失败" {
+	if strings.TrimSpace(workflow.input.Question) != "doc_fail_01 why import failed" {
 		t.Fatalf("unexpected workflow input question: %q", workflow.input.Question)
 	}
 }
@@ -820,7 +1100,7 @@ func newPrepareChatTestService(
 					conversation.ID = "conv-internal-1"
 				}
 				if conversation.Title == "" {
-					conversation.Title = "测试会话"
+					conversation.Title = "test conversation"
 				}
 				return conversation, nil
 			},
@@ -1059,7 +1339,7 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 		t,
 		ragrewrite.Result{
 			RewrittenQuestion: "How should we troubleshoot connection refused for doc-1?",
-			SubQuestions:      []string{"How should we troubleshoot connection refused for doc-1?"},
+			SubQuestions:  []string{"connection refused troubleshooting", "vector store connectivity check"},
 			NeedRetrieval:     false,
 		},
 		nil,
@@ -1106,1055 +1386,10 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 		t.Fatalf("expected prompt to include memory context, got %+v", promptStage.messages)
 	}
 	if !strings.Contains(promptStage.messages[1].Content, "## Long-Term Memory") {
-		t.Fatalf("expected dedicated long-term memory section, got %q", promptStage.messages[1].Content)
+		t.Fatalf("expected long-term memory section, got %q", promptStage.messages[1].Content)
 	}
-	if !strings.Contains(promptStage.messages[1].Content, "Rule Memories:") || !strings.Contains(promptStage.messages[1].Content, "Fact Memories:") {
-		t.Fatalf("expected split memory subsections, got %q", promptStage.messages[1].Content)
-	}
-	if !strings.Contains(promptStage.messages[1].Content, "connection refused") {
-		t.Fatalf("expected memory prompt to include projected detail, got %q", promptStage.messages[1].Content)
-	}
-}
-
-func TestPrepareChatUsesExplicitMemoryRecallInterface(t *testing.T) {
-	recall := &explicitMemoryRecallStub{
-		result: longtermmemory.RecallMemoriesResult{
-			Used:    true,
-			Context: "KB-Scoped Memories:\n- [memory_id=mem-1 scope=kb:kb-ops type=knowledge] Retry vector store connectivity first.",
-		},
-	}
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "How should we troubleshoot doc-1?",
-			NeedRetrieval:     false,
-		},
-		nil,
-		&retrieveServiceStub{},
-	)
-	service.SetLongTermMemoryRecallService(recall)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID:   "conv-1",
-		UserID:           "user-1",
-		Question:         "How should we troubleshoot doc-1?",
-		KnowledgeBaseIDs: []string{"kb-ops"},
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if recall.calls != 1 {
-		t.Fatalf("expected one explicit memory recall call, got %d", recall.calls)
-	}
-	if recall.input.Query != "How should we troubleshoot doc-1?" {
-		t.Fatalf("expected rewritten query to be forwarded, got %q", recall.input.Query)
-	}
-	if prepared.memoryContext != recall.result.Context {
-		t.Fatalf("expected interface-provided memory context, got %q", prepared.memoryContext)
-	}
-}
-
-func TestPrepareChatRetrieveFallsBackToFactMemoryChannelWhenDocumentSearchMisses(t *testing.T) {
-	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
-	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
-
-	embedding := &embeddingServiceStub{vector: []float32{0.8, 0.1}}
-	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
-		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
-			if len(filter.MemoryTypes) != 1 || filter.MemoryTypes[0] != domain.MemoryTypeKnowledge {
-				t.Fatalf("expected fact projection to only query knowledge memories, got %+v", filter)
-			}
-			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:           "mem-kb-1",
-							UserID:       "user-1",
-							ScopeType:    domain.MemoryScopeKB,
-							ScopeID:      "kb-ops",
-							Namespace:    "kb:kb-ops",
-							MemoryType:   domain.MemoryTypeKnowledge,
-							Category:     domain.MemoryCategoryProject,
-							CanonicalKey: "project.constraint.network",
-							Summary:      "This service runs inside the internal network.",
-							Content:      "The ingestion service runs inside the internal network and cannot access the public internet directly.",
-							DisplayValue: "internal-only",
-							Status:       domain.MemoryStatusActive,
-							UpdateTime:   time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
-						},
-						Score: 0.93,
-					},
-				}, nil
-			}
-			return nil, nil
-		},
-	})
-
-	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
-	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
-
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "Can this service access public websites directly?",
-			SubQuestions:      []string{"Can this service access public websites directly?"},
-			NeedRetrieval:     true,
-		},
-		nil,
-		retrieveEngine,
-	)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID:   "conv-1",
-		UserID:           "user-1",
-		Question:         "Can this service access public websites directly?",
-		KnowledgeBaseIDs: []string{"kb-ops"},
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if !prepared.retrievalUsed {
-		t.Fatalf("expected retrieval to be used, got %+v", prepared)
-	}
-	if len(prepared.retrieveResult.Chunks) != 1 {
-		t.Fatalf("expected fact-memory retrieval to rescue the result, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if prepared.retrieveResult.Chunks[0].ID != "memory_fact:mem-kb-1" {
-		t.Fatalf("expected projected fact-memory chunk, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "internal network") {
-		t.Fatalf("expected knowledge context to include projected fact memory, got %q", prepared.retrieveResult.KnowledgeContext)
-	}
-	foundMemoryChannel := false
-	foundMemoryStat := false
-	for _, name := range prepared.retrieveResult.SearchChannels {
-		if name == ragretrieve.ChannelMemoryFact {
-			foundMemoryChannel = true
-			break
-		}
-	}
-	for _, stat := range prepared.retrieveResult.ChannelStats {
-		if stat.Name == ragretrieve.ChannelMemoryFact {
-			foundMemoryStat = true
-			if stat.ChunkCount != 1 {
-				t.Fatalf("expected one fact-memory chunk, got %+v", stat)
-			}
-			if stat.Metadata["candidateCount"] != 1 || stat.Metadata["selectedCount"] != 1 {
-				t.Fatalf("unexpected fact-memory stat metadata: %+v", stat.Metadata)
-			}
-			break
-		}
-	}
-	if !foundMemoryChannel || !foundMemoryStat {
-		t.Fatalf("expected memory_fact observability in retrieve result, got channels=%+v stats=%+v", prepared.retrieveResult.SearchChannels, prepared.retrieveResult.ChannelStats)
-	}
-}
-
-func TestPrepareChatRetrieveKeepsDocumentAheadOfFactMemoryOnSameTopic(t *testing.T) {
-	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
-	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
-
-	embedding := &embeddingServiceStub{vector: []float32{0.7, 0.2}}
-	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
-		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
-			if len(filter.MemoryTypes) != 1 || filter.MemoryTypes[0] != domain.MemoryTypeKnowledge {
-				t.Fatalf("expected fact projection to only query knowledge memories, got %+v", filter)
-			}
-			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:           "mem-kb-1",
-							UserID:       "user-1",
-							ScopeType:    domain.MemoryScopeKB,
-							ScopeID:      "kb-ops",
-							Namespace:    "kb:kb-ops",
-							MemoryType:   domain.MemoryTypeKnowledge,
-							Category:     domain.MemoryCategoryProject,
-							CanonicalKey: "project.constraint.network",
-							Summary:      "The service stays inside the internal network.",
-							Content:      "The ingestion service stays inside the internal network and needs the egress gateway for public access.",
-							DisplayValue: "egress-gateway",
-							Status:       domain.MemoryStatusActive,
-							UpdateTime:   time.Date(2026, 5, 23, 10, 0, 0, 0, time.UTC),
-						},
-						Score: 0.91,
-					},
-				}, nil
-			}
-			return nil, nil
-		},
-	})
-
-	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{
-		hits: []corevector.SearchHit{
-			{
-				ChunkID:         "doc-1",
-				DocumentID:      "doc-1",
-				KnowledgeBaseID: "kb-ops",
-				Text:            "Production deployment note: this service is behind the egress gateway and internal network policy applies.",
-				Score:           0.97,
-				Metadata: map[string]any{
-					"section": "Deployment > Network",
-				},
-			},
-		},
-	}, embedding, nil)
-	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
-
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "Can this service access the public internet directly?",
-			SubQuestions:      []string{"Can this service access the public internet directly?"},
-			NeedRetrieval:     true,
-		},
-		nil,
-		retrieveEngine,
-	)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID:   "conv-1",
-		UserID:           "user-1",
-		Question:         "Can this service access the public internet directly?",
-		KnowledgeBaseIDs: []string{"kb-ops"},
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if len(prepared.retrieveResult.Chunks) < 2 {
-		t.Fatalf("expected both document and fact memory hits, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if prepared.retrieveResult.Chunks[0].ID != "doc-1" {
-		t.Fatalf("expected document hit to outrank fact memory, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if prepared.retrieveResult.Chunks[1].ID != "memory_fact:mem-kb-1" {
-		t.Fatalf("expected fact memory hit to remain available, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "egress gateway") || !strings.Contains(prepared.retrieveResult.KnowledgeContext, "internal network") {
-		t.Fatalf("expected knowledge context to include both document and fact-memory evidence, got %q", prepared.retrieveResult.KnowledgeContext)
-	}
-	foundVector := false
-	foundMemory := false
-	for _, name := range prepared.retrieveResult.SearchChannels {
-		if name == ragretrieve.ChannelVectorGlobal {
-			foundVector = true
-		}
-		if name == ragretrieve.ChannelMemoryFact {
-			foundMemory = true
-		}
-	}
-	if !foundVector || !foundMemory {
-		t.Fatalf("expected both vector and memory channels, got %+v", prepared.retrieveResult.SearchChannels)
-	}
-}
-
-func TestPrepareChatRetrieveExcludesPreferenceMemoriesFromRetrieveResults(t *testing.T) {
-	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
-			if len(filter.MemoryTypes) != 1 {
-				t.Fatalf("expected single memory type filter, got %+v", filter)
-			}
-			switch filter.MemoryTypes[0] {
-			case domain.MemoryTypePreference:
-				return []domain.MemoryItem{
-					{
-						ID:         "mem-pref-1",
-						UserID:     "user-1",
-						ScopeType:  domain.MemoryScopeGlobal,
-						MemoryType: domain.MemoryTypePreference,
-						Summary:    "Always answer in Chinese.",
-						Content:    "Always answer in Chinese.",
-						Status:     domain.MemoryStatusActive,
-						UpdateTime: time.Date(2026, 5, 23, 8, 0, 0, 0, time.UTC),
-					},
-				}, nil
-			case domain.MemoryTypeKnowledge:
-				return nil, nil
-			default:
-				return nil, nil
-			}
-		},
-	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
-
-	embedding := &embeddingServiceStub{vector: []float32{0.6, 0.4}}
-	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
-		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
-			if len(filter.MemoryTypes) != 1 || filter.MemoryTypes[0] != domain.MemoryTypeKnowledge {
-				t.Fatalf("expected retrieve projection to only query knowledge memories, got %+v", filter)
-			}
-			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:           "mem-kb-1",
-							UserID:       "user-1",
-							ScopeType:    domain.MemoryScopeKB,
-							ScopeID:      "kb-ops",
-							Namespace:    "kb:kb-ops",
-							MemoryType:   domain.MemoryTypeKnowledge,
-							Category:     domain.MemoryCategoryProject,
-							CanonicalKey: "project.constraint.network",
-							Summary:      "This service cannot access the public internet directly.",
-							Content:      "The ingestion service cannot access the public internet directly and must use internal network paths.",
-							Status:       domain.MemoryStatusActive,
-							UpdateTime:   time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
-						},
-						Score: 0.89,
-					},
-				}, nil
-			}
-			return nil, nil
-		},
-	})
-
-	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
-	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
-
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "Can this service access the public internet directly?",
-			SubQuestions:      []string{"Can this service access the public internet directly?"},
-			NeedRetrieval:     true,
-		},
-		nil,
-		retrieveEngine,
-	)
-	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID:   "conv-1",
-		UserID:           "user-1",
-		Question:         "Can this service access the public internet directly?",
-		KnowledgeBaseIDs: []string{"kb-ops"},
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if !strings.Contains(prepared.memoryContext, "Always answer in Chinese") {
-		t.Fatalf("expected rule memory to stay in MemoryContext, got %q", prepared.memoryContext)
-	}
-	if len(prepared.retrieveResult.Chunks) != 1 {
-		t.Fatalf("expected exactly one fact-memory retrieve result, got %+v", prepared.retrieveResult.Chunks)
-	}
-	chunk := prepared.retrieveResult.Chunks[0]
-	if chunk.ID != "memory_fact:mem-kb-1" {
-		t.Fatalf("expected knowledge memory chunk in retrieve result, got %+v", chunk)
-	}
-	if chunk.Metadata["memory_type"] != domain.MemoryTypeKnowledge {
-		t.Fatalf("expected retrieve result to stay on knowledge memories, got %+v", chunk.Metadata)
-	}
-	if strings.Contains(prepared.retrieveResult.KnowledgeContext, "Always answer in Chinese") {
-		t.Fatalf("expected preference memory to stay out of retrieve knowledge context, got %q", prepared.retrieveResult.KnowledgeContext)
-	}
-}
-
-func TestPrepareChatRetrieveUsesFactMemoryForMainBusRemoval(t *testing.T) {
-	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
-	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
-
-	embedding := &embeddingServiceStub{vector: []float32{0.5, 0.4}}
-	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
-		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
-			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:           "mem-kb-bus-1",
-							UserID:       "user-1",
-							ScopeType:    domain.MemoryScopeKB,
-							ScopeID:      "kb-arch",
-							Namespace:    "kb:kb-arch",
-							MemoryType:   domain.MemoryTypeKnowledge,
-							Category:     domain.MemoryCategoryProject,
-							CanonicalKey: "project.messaging.main_bus",
-							Summary:      "RocketMQ has been removed from the project.",
-							Content:      "RocketMQ is no longer the project's main message bus and should not be treated as the current integration path.",
-							DisplayValue: "removed",
-							Status:       domain.MemoryStatusActive,
-							UpdateTime:   time.Date(2026, 5, 23, 11, 0, 0, 0, time.UTC),
-						},
-						Score: 0.94,
-					},
-				}, nil
-			}
-			return nil, nil
-		},
-	})
-
-	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
-	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
-
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "Is RocketMQ still the project's main message bus?",
-			SubQuestions:      []string{"Is RocketMQ still the project's main message bus?"},
-			NeedRetrieval:     true,
-		},
-		nil,
-		retrieveEngine,
-	)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID:   "conv-1",
-		UserID:           "user-1",
-		Question:         "Is RocketMQ still the project's main message bus?",
-		KnowledgeBaseIDs: []string{"kb-arch"},
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if len(prepared.retrieveResult.Chunks) != 1 {
-		t.Fatalf("expected fact-memory-only retrieval, got %+v", prepared.retrieveResult.Chunks)
-	}
-	chunk := prepared.retrieveResult.Chunks[0]
-	if chunk.ID != "memory_fact:mem-kb-bus-1" {
-		t.Fatalf("expected main-bus fact memory chunk, got %+v", chunk)
-	}
-	if chunk.Metadata["canonical_key"] != "project.messaging.main_bus" {
-		t.Fatalf("expected main bus canonical key metadata, got %+v", chunk.Metadata)
-	}
-	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "RocketMQ has been removed") {
-		t.Fatalf("expected knowledge context to capture removal fact, got %q", prepared.retrieveResult.KnowledgeContext)
-	}
-}
-
-func TestPrepareChatRetrieveUsesFactMemoryForDependencyConstraint(t *testing.T) {
-	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
-	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
-
-	embedding := &embeddingServiceStub{vector: []float32{0.4, 0.6}}
-	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
-		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
-			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:           "mem-kb-dep-1",
-							UserID:       "user-1",
-							ScopeType:    domain.MemoryScopeKB,
-							ScopeID:      "kb-ops",
-							Namespace:    "kb:kb-ops",
-							MemoryType:   domain.MemoryTypeKnowledge,
-							Category:     domain.MemoryCategoryProject,
-							CanonicalKey: "project.fact.dependencies",
-							Summary:      "Check vector store connectivity before retrying indexing.",
-							Content:      "When indexing fails with connection refused, check vector store connectivity before retrying the pipeline or touching parser/chunker code.",
-							DisplayValue: "vector-store",
-							Status:       domain.MemoryStatusActive,
-							UpdateTime:   time.Date(2026, 5, 23, 11, 30, 0, 0, time.UTC),
-						},
-						Score: 0.92,
-					},
-				}, nil
-			}
-			return nil, nil
-		},
-	})
-
-	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
-	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
-
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "What dependency should we check first when indexing fails with connection refused?",
-			SubQuestions:      []string{"What dependency should we check first when indexing fails with connection refused?"},
-			NeedRetrieval:     true,
-		},
-		nil,
-		retrieveEngine,
-	)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID:   "conv-1",
-		UserID:           "user-1",
-		Question:         "What dependency should we check first when indexing fails with connection refused?",
-		KnowledgeBaseIDs: []string{"kb-ops"},
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if len(prepared.retrieveResult.Chunks) != 1 {
-		t.Fatalf("expected dependency fact-memory retrieval, got %+v", prepared.retrieveResult.Chunks)
-	}
-	chunk := prepared.retrieveResult.Chunks[0]
-	if chunk.ID != "memory_fact:mem-kb-dep-1" {
-		t.Fatalf("expected dependency fact memory chunk, got %+v", chunk)
-	}
-	if chunk.Metadata["canonical_key"] != "project.fact.dependencies" {
-		t.Fatalf("expected dependency canonical key metadata, got %+v", chunk.Metadata)
-	}
-	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "vector store connectivity") {
-		t.Fatalf("expected knowledge context to capture dependency constraint, got %q", prepared.retrieveResult.KnowledgeContext)
-	}
-}
-
-func TestPrepareChatRetrievePrefersKBFactMemoryOverGlobalOnSameQuestion(t *testing.T) {
-	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		listFn:   func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error) { return nil, nil },
-	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200, MaxCandidatesPerScope: 6})
-
-	embedding := &embeddingServiceStub{vector: []float32{0.3, 0.7}}
-	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
-		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
-			switch {
-			case len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB:
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:           "mem-kb-1",
-							UserID:       "user-1",
-							ScopeType:    domain.MemoryScopeKB,
-							ScopeID:      "kb-ops",
-							Namespace:    "kb:kb-ops",
-							MemoryType:   domain.MemoryTypeKnowledge,
-							Category:     domain.MemoryCategoryProject,
-							CanonicalKey: "project.constraint.network",
-							Summary:      "In kb-ops, this service cannot access the public internet directly.",
-							Content:      "Within kb-ops, the ingestion service is internal-only and must use the approved egress gateway.",
-							Status:       domain.MemoryStatusActive,
-							UpdateTime:   time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC),
-						},
-						Score: 0.90,
-					},
-				}, nil
-			case len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeGlobal:
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:           "mem-global-1",
-							UserID:       "user-1",
-							ScopeType:    domain.MemoryScopeGlobal,
-							Namespace:    "global:global",
-							MemoryType:   domain.MemoryTypeKnowledge,
-							Category:     domain.MemoryCategoryProject,
-							CanonicalKey: "project.constraint.network",
-							Summary:      "Generally, services may use shared outbound access when approved.",
-							Content:      "At the global project level, outbound public access may exist for some services when explicitly approved.",
-							Status:       domain.MemoryStatusActive,
-							UpdateTime:   time.Date(2026, 5, 23, 11, 0, 0, 0, time.UTC),
-						},
-						Score: 0.88,
-					},
-				}, nil
-			default:
-				return nil, nil
-			}
-		},
-	})
-
-	retrieveEngine := ragretrieve.NewEngine(&retrieveSearcherStub{}, embedding, nil)
-	retrieveEngine.SetFactMemoryRetriever(explicitMemory.FactRetriever())
-
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "Can this kb-ops service access the public internet directly?",
-			SubQuestions:      []string{"Can this kb-ops service access the public internet directly?"},
-			NeedRetrieval:     true,
-		},
-		nil,
-		retrieveEngine,
-	)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID:   "conv-1",
-		UserID:           "user-1",
-		Question:         "Can this kb-ops service access the public internet directly?",
-		KnowledgeBaseIDs: []string{"kb-ops"},
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if len(prepared.retrieveResult.Chunks) < 2 {
-		t.Fatalf("expected kb + global fact memories, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if prepared.retrieveResult.Chunks[0].ID != "memory_fact:mem-kb-1" {
-		t.Fatalf("expected kb-scoped fact memory to outrank global one, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if prepared.retrieveResult.Chunks[1].ID != "memory_fact:mem-global-1" {
-		t.Fatalf("expected global fact memory to remain available, got %+v", prepared.retrieveResult.Chunks)
-	}
-	if !strings.Contains(prepared.retrieveResult.KnowledgeContext, "approved egress gateway") || !strings.Contains(prepared.retrieveResult.KnowledgeContext, "global project level") {
-		t.Fatalf("expected knowledge context to include both kb and global fact memories, got %q", prepared.retrieveResult.KnowledgeContext)
-	}
-}
-
-func TestChatEmitsMemoryStoredAndSessionRecallEvents(t *testing.T) {
-	recall := &sessionRecallServiceStub{
-		result: SessionRecallResult{
-			Used:           true,
-			TopScore:       0.93,
-			candidateCount: 3,
-			Hits: []SessionRecallHit{
-				{
-					MessageID:     "msg-previous",
-					ChunkIndex:    1,
-					Score:         0.93,
-					Summary:       "Previous retriever timeout log",
-					Excerpt:       "retriever timeout at fetch stage",
-					SourceChunkID: "chunk-1",
-				},
-			},
-		},
-	}
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{
-			RewrittenQuestion: "Where did the retriever timeout happen?",
-			NeedRetrieval:     false,
-		},
-		recall,
-		&retrieveServiceStub{},
-	)
-	service.messageService.SetContentProcessor(summaryProcessorStub{
-		result: ProcessedConversationMessageContent{
-			Content:        "Summarized user log",
-			RawContent:     "module retriever start\nretriever timeout at fetch stage\ndownstream retry exhausted",
-			ContentSummary: "retriever timeout log",
-			IsSummarized:   true,
-		},
-	})
-	service.chatService = &llmServiceStub{
-		streamFn: func(request convention.ChatRequest, callback aichat.StreamCallback) {
-			callback.OnContent("It timed out at fetch stage.")
-			callback.OnComplete()
-		},
-	}
-
-	sink := &fallbackSinkStub{}
-	err := service.Chat(context.Background(), RagChatInput{
-		ConversationID: "conv-1",
-		UserID:         "user-1",
-		Question:       "Where did the retriever timeout happen?",
-	}, sink)
-	if err != nil {
-		t.Fatalf("Chat returned error: %v", err)
-	}
-	if len(sink.memoryStored) != 1 {
-		t.Fatalf("expected one memory_stored event, got %+v", sink.memoryStored)
-	}
-	if strings.TrimSpace(sink.memoryStored[0].MessageID) == "" || !sink.memoryStored[0].IsSummarized {
-		t.Fatalf("unexpected memory_stored payload: %+v", sink.memoryStored[0])
-	}
-	if sink.memoryStored[0].ContentSummary != "retriever timeout log" || sink.memoryStored[0].RawContentLength <= 0 {
-		t.Fatalf("expected summarized memory payload details, got %+v", sink.memoryStored[0])
-	}
-	if len(sink.sessionRecalls) != 1 {
-		t.Fatalf("expected one session_recall event, got %+v", sink.sessionRecalls)
-	}
-	if sink.sessionRecalls[0].HitCount != 1 || len(sink.sessionRecalls[0].Hits) != 1 {
-		t.Fatalf("unexpected session_recall payload: %+v", sink.sessionRecalls[0])
-	}
-	if sink.sessionRecalls[0].Hits[0].MessageID != "msg-previous" || !strings.Contains(sink.sessionRecalls[0].Hits[0].Excerpt, "fetch stage") {
-		t.Fatalf("unexpected session_recall hit payload: %+v", sink.sessionRecalls[0].Hits[0])
-	}
-}
-
-func TestRunLongTermMemoryStageTraceContainsSelectedMemoryMetadata(t *testing.T) {
-	repo := &traceNodeRepoRecorder{}
-	tracer := NewChatTracer(nil, repo)
-	embedding := &embeddingServiceStub{vector: []float32{0.8, 0.2}}
-	explicitMemory := longtermmemory.NewMemoryService(memoryItemRepoStub{
-		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
-		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
-			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
-				if len(filter.MemoryTypes) == 1 && filter.MemoryTypes[0] == domain.MemoryTypePreference {
-					return nil, nil
-				}
-				return []domain.MemoryItem{
-					{
-						ID:         "mem-kb-1",
-						UserID:     "user-1",
-						ScopeType:  domain.MemoryScopeKB,
-						ScopeID:    "kb-ops",
-						MemoryType: domain.MemoryTypeKnowledge,
-						Summary:    "Ops troubleshooting note.",
-						Content:    "When ingestion fails with connection refused, check vector store connectivity before retrying the pipeline.",
-						Status:     domain.MemoryStatusActive,
-						UpdateTime: time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC),
-					},
-				}, nil
-			}
-			if len(filter.MemoryTypes) == 1 && filter.MemoryTypes[0] == domain.MemoryTypeKnowledge {
-				return nil, nil
-			}
-			return []domain.MemoryItem{
-				{
-					ID:         "mem-global-1",
-					UserID:     "user-1",
-					ScopeType:  domain.MemoryScopeGlobal,
-					MemoryType: domain.MemoryTypePreference,
-					Summary:    "Answer with the action order first.",
-					Content:    "For incident-style questions, lead with investigation steps before background explanation.",
-					Status:     domain.MemoryStatusActive,
-					UpdateTime: time.Date(2026, 5, 20, 8, 0, 0, 0, time.UTC),
-				},
-			}, nil
-		},
-	}, longtermmemory.MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200})
-	explicitMemory.SetEmbeddingSupport(embedding, memoryItemEmbeddingRepoStub{
-		searchFn: func(_ context.Context, vector []float32, filter port.MemoryItemEmbeddingSearchFilter) ([]domain.MemoryItemSearchHit, error) {
-			if len(filter.ScopeTypes) == 1 && filter.ScopeTypes[0] == domain.MemoryScopeKB {
-				return []domain.MemoryItemSearchHit{
-					{
-						MemoryItem: domain.MemoryItem{
-							ID:         "mem-kb-1",
-							UserID:     "user-1",
-							ScopeType:  domain.MemoryScopeKB,
-							ScopeID:    "kb-ops",
-							MemoryType: domain.MemoryTypeKnowledge,
-							Summary:    "Ops troubleshooting note.",
-							Content:    "When ingestion fails with connection refused, check vector store connectivity before retrying the pipeline.",
-							Status:     domain.MemoryStatusActive,
-							UpdateTime: time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC),
-						},
-						Score: 0.91,
-					},
-				}, nil
-			}
-			return nil, nil
-		},
-	})
-
-	service := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, tracer)
-	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
-
-	_, err := service.runLongTermMemoryStage(
-		context.Background(),
-		RagChatInput{
-			Question:         "How should we troubleshoot connection refused for doc-1?",
-			UserID:           "user-1",
-			KnowledgeBaseIDs: []string{"kb-ops"},
-		},
-		ragrewrite.Result{RewrittenQuestion: "How should we troubleshoot connection refused for doc-1?"},
-		"trace-1",
-	)
-	if err != nil {
-		t.Fatalf("runLongTermMemoryStage returned error: %v", err)
-	}
-	if len(repo.created) != 1 {
-		t.Fatalf("expected one trace node, got %d", len(repo.created))
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(repo.created[0].ExtraData), &payload); err != nil {
-		t.Fatalf("unmarshal long-term memory extra data: %v", err)
-	}
-	if payload["candidateCount"] != float64(2) || payload["selectedCount"] != float64(2) {
-		t.Fatalf("unexpected candidate/selected counts: %+v", payload)
-	}
-	if payload["ruleCount"] != float64(1) || payload["factCandidateCount"] != float64(1) || payload["factSelectedCount"] != float64(1) {
-		t.Fatalf("unexpected rule/fact counts payload: %+v", payload)
-	}
-	scopeCounts, ok := payload["scopeCounts"].(map[string]any)
-	if !ok || scopeCounts[domain.MemoryScopeKB] != float64(1) {
-		t.Fatalf("unexpected scopeCounts payload: %+v", payload["scopeCounts"])
-	}
-	sourceCounts, ok := payload["sourceCounts"].(map[string]any)
-	if !ok || sourceCounts["keyword"] != float64(1) || sourceCounts["vector"] != float64(1) {
-		t.Fatalf("unexpected sourceCounts payload: %+v", payload["sourceCounts"])
-	}
-	contributionCounts, ok := payload["contributionCounts"].(map[string]any)
-	if !ok || contributionCounts["hybrid"] != float64(1) || contributionCounts["none"] != float64(1) {
-		t.Fatalf("unexpected contributionCounts payload: %+v", payload["contributionCounts"])
-	}
-	selected, ok := payload["selectedMemories"].([]any)
-	if !ok || len(selected) != 2 {
-		t.Fatalf("expected selectedMemories payload, got %+v", payload["selectedMemories"])
-	}
-	first, ok := selected[0].(map[string]any)
-	if !ok {
-		t.Fatalf("expected first selected memory map, got %#v", selected[0])
-	}
-	if first["id"] != "mem-global-1" || first["memoryType"] != domain.MemoryTypePreference {
-		t.Fatalf("unexpected selected memory payload: %+v", first)
-	}
-	second, ok := selected[1].(map[string]any)
-	if !ok {
-		t.Fatalf("expected second selected memory map, got %#v", selected[1])
-	}
-	if second["id"] != "mem-kb-1" || second["scopeID"] != "kb-ops" {
-		t.Fatalf("unexpected fact memory payload: %+v", second)
-	}
-	if !strings.Contains(second["detail"].(string), "vector store connectivity") {
-		t.Fatalf("expected selected memory detail to be preserved, got %+v", second)
-	}
-	hitSources, ok := second["hitSources"].([]any)
-	if !ok || len(hitSources) != 2 || hitSources[0] != "keyword" || hitSources[1] != "vector" {
-		t.Fatalf("unexpected hitSources payload: %+v", second["hitSources"])
-	}
-	if second["keywordScore"].(float64) <= 0 || second["vectorScore"].(float64) <= 0 || second["finalScore"].(float64) <= second["keywordScore"].(float64) {
-		t.Fatalf("expected fused scoring metadata, got %+v", second)
-	}
-}
-
-func TestPrepareChatSessionRecallFailsOpen(t *testing.T) {
-	recall := &sessionRecallServiceStub{
-		err: errors.New("session recall failed"),
-	}
-	service, _ := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{RewrittenQuestion: "rewritten", NeedRetrieval: false},
-		recall,
-		&retrieveServiceStub{},
-	)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID: "conv-1",
-		UserID:         "user-1",
-		Question:       "follow-up question",
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if prepared.sessionContext != "" {
-		t.Fatalf("expected empty session context on fail-open path, got %q", prepared.sessionContext)
-	}
-	if recall.calls != 1 {
-		t.Fatalf("expected one session recall call, got %d", recall.calls)
-	}
-}
-
-func TestPrepareChatUsesSessionRecallWithoutKnowledgeBase(t *testing.T) {
-	recall := &sessionRecallServiceStub{
-		result: SessionRecallResult{
-			Used:    true,
-			Context: "session excerpt context",
-		},
-	}
-	retrieve := &retrieveServiceStub{}
-	service, createdMessage := newPrepareChatTestService(
-		t,
-		ragrewrite.Result{RewrittenQuestion: "rewritten follow-up", NeedRetrieval: false},
-		recall,
-		retrieve,
-	)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID: "conv-1",
-		UserID:         "user-1",
-		Question:       "follow-up question",
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if prepared.sessionContext != "session excerpt context" {
-		t.Fatalf("expected session context to be preserved, got %q", prepared.sessionContext)
-	}
-	if prepared.retrievalUsed {
-		t.Fatalf("expected retrieval to stay unused without knowledge base, got %+v", prepared)
-	}
-	if len(retrieve.requests) != 0 {
-		t.Fatalf("expected no retrieve calls, got %+v", retrieve.requests)
-	}
-	if strings.TrimSpace(recall.input.ExcludeMessageID) == "" {
-		t.Fatalf("expected current message id to be excluded, got %#v", recall.input)
-	}
-	if createdMessage == nil || recall.input.ExcludeMessageID != createdMessage.ID {
-		t.Fatalf("expected exclude id %q to match created message %q", recall.input.ExcludeMessageID, createdMessage.ID)
-	}
-}
-
-func TestPrepareChatRecallsEarlierMediumLogMessageIntoPrompt(t *testing.T) {
-	chunkStore := newInMemorySessionChunkStore()
-	var storedMessages []domain.ConversationMessage
-	messageService := NewConversationMessageService(
-		nil,
-		conversationMessageRepoServiceStub{
-			createFn: func(_ context.Context, message domain.ConversationMessage) (domain.ConversationMessage, error) {
-				storedMessages = append(storedMessages, message)
-				return message, nil
-			},
-			listFn: func(context.Context, port.ConversationMessageListFilter) ([]domain.ConversationMessage, error) {
-				return nil, nil
-			},
-		},
-		conversationSummaryRepoServiceStub{
-			createFn: func(context.Context, domain.ConversationSummary) (domain.ConversationSummary, error) {
-				return domain.ConversationSummary{}, nil
-			},
-		},
-		nil,
-	)
-	messageService.SetContentProcessor(NewLongMessageContentProcessor(LongMessageProcessorOptions{
-		Enabled:                     true,
-		DirectContextMaxTokens:      5,
-		ChunkSummaryThresholdTokens: 40,
-		LargeChunkTargetTokens:      18,
-		LargeChunkOverlapTokens:     4,
-		MediumSummaryMaxChars:       120,
-		ChunkSummaryMaxChars:        80,
-		Estimator:                   fixedTokenEstimator{factor: 4},
-	}))
-	messageService.SetChunkSink(chunkStore)
-
-	previousLongLog := strings.Join([]string{
-		"module retriever start",
-		"request id abc-123",
-		"retriever timeout at fetch stage",
-		"downstream retry exhausted",
-	}, "\n")
-	previousMessage, err := messageService.AddMessage(context.Background(), AddConversationMessageInput{
-		ConversationID: "conv-1",
-		UserID:         "user-1",
-		Role:           convention.UserRole,
-		Content:        previousLongLog,
-	})
-	if err != nil {
-		t.Fatalf("AddMessage returned error: %v", err)
-	}
-	if !previousMessage.IsSummarized {
-		t.Fatalf("expected previous long message to be summarized, got %+v", previousMessage)
-	}
-	if len(chunkStore.chunks) == 0 {
-		t.Fatalf("expected previous long message to persist session chunks")
-	}
-
-	conversationService := NewConversationService(
-		conversationRepoStub{
-			createFn: func(_ context.Context, conversation domain.Conversation) (domain.Conversation, error) {
-				if conversation.ID == "" {
-					conversation.ID = "conv-internal-1"
-				}
-				if conversation.Title == "" {
-					conversation.Title = "测试会话"
-				}
-				return conversation, nil
-			},
-			updateFn: func(_ context.Context, conversation domain.Conversation) (domain.Conversation, error) {
-				if conversation.ID == "" {
-					conversation.ID = "conv-internal-1"
-				}
-				if conversation.Title == "" {
-					conversation.Title = "测试会话"
-				}
-				return conversation, nil
-			},
-			deleteFn: func(context.Context, string) error { return nil },
-			getByConversationIDAndUser: func(context.Context, string, string) (domain.Conversation, error) {
-				return domain.Conversation{ID: "conv-internal-1", ConversationID: "conv-1", UserID: "user-1", Title: "测试会话"}, nil
-			},
-			listByUserIDFn: func(context.Context, string) ([]domain.Conversation, error) { return nil, nil },
-		},
-		conversationMessageRepoStub{deleteFn: func(context.Context, string, string) error { return nil }},
-		conversationSummaryRepoStub{deleteFn: func(context.Context, string, string) error { return nil }},
-		nil,
-		nil,
-		30,
-		nil,
-	)
-
-	recallService := NewSessionRecallService(chunkStore, &sessionRecallEmbeddingStub{}, SessionRecallOptions{
-		Enabled:              true,
-		MaxExcerpts:          3,
-		MaxChunksPerMessage:  2,
-		ExcerptTargetTokens:  20,
-		ExcerptOverlapTokens: 4,
-		MaxPromptTokens:      120,
-		Estimator:            fixedTokenEstimator{factor: 4},
-	})
-
-	service := NewRagChatService(
-		conversationService,
-		messageService,
-		memoryServiceStub{
-			history: []convention.ChatMessage{
-				convention.UserMessage(previousMessage.Content),
-			},
-		},
-		rewriteServiceStub{
-			result: ragrewrite.Result{
-				RewrittenQuestion: "前面日志里的 retriever timeout 在哪一步",
-				SubQuestions:      []string{"前面日志里的 retriever timeout 在哪一步"},
-				NeedRetrieval:     false,
-			},
-		},
-		&retrieveServiceStub{},
-		ragprompt.NewService(nil),
-		nil,
-		NewChatTracer(nil, nil),
-	)
-	service.SetSessionRecallService(recallService)
-
-	prepared, err := service.prepareChat(context.Background(), RagChatInput{
-		ConversationID: "conv-1",
-		UserID:         "user-1",
-		Question:       "前面日志里的 retriever timeout 在哪一步？",
-	})
-	if err != nil {
-		t.Fatalf("prepareChat returned error: %v", err)
-	}
-	if strings.TrimSpace(prepared.sessionContext) == "" {
-		t.Fatalf("expected session context to be recalled")
-	}
-	if !strings.Contains(prepared.sessionContext, previousMessage.ID) {
-		t.Fatalf("expected recalled context to mention previous message id %q, got %q", previousMessage.ID, prepared.sessionContext)
-	}
-	if !strings.Contains(prepared.sessionContext, "retriever timeout") {
-		t.Fatalf("expected recalled context to contain log detail, got %q", prepared.sessionContext)
-	}
-	if len(storedMessages) < 2 {
-		t.Fatalf("expected follow-up question to be persisted as a new message, got %d messages", len(storedMessages))
-	}
-	currentMessageID := storedMessages[len(storedMessages)-1].ID
-	if currentMessageID == previousMessage.ID {
-		t.Fatalf("expected current message id to differ from previous message id")
-	}
-	if strings.Contains(prepared.sessionContext, currentMessageID) {
-		t.Fatalf("expected current message %q to be excluded from recalled context %q", currentMessageID, prepared.sessionContext)
-	}
-
-	promptStage, err := service.runPromptStage(
-		context.Background(),
-		"前面日志里的 retriever timeout 在哪一步？",
-		prepared.history,
-		"",
-		prepared.sessionContext,
-		ragretrieve.Result{},
-		"",
-		"",
-		"",
-		"",
-		prepared.state.traceID,
-	)
-	if err != nil {
-		t.Fatalf("runPromptStage returned error: %v", err)
-	}
-	if len(promptStage.messages) < 2 {
-		t.Fatalf("expected prompt to include system + session context messages, got %+v", promptStage.messages)
-	}
-	if !strings.Contains(promptStage.messages[1].Content, "## 会话上下文片段") {
-		t.Fatalf("expected dedicated session context section, got %q", promptStage.messages[1].Content)
-	}
-	if !strings.Contains(promptStage.messages[1].Content, "retriever timeout") {
-		t.Fatalf("expected session context prompt to include recalled detail, got %q", promptStage.messages[1].Content)
+	if !strings.Contains(promptStage.messages[1].Content, "vector store") {
+		t.Fatalf("expected memory context prompt to include troubleshooting detail, got %q", promptStage.messages[1].Content)
 	}
 }
 
@@ -2221,7 +1456,7 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 					conversation.ID = "conv-internal-1"
 				}
 				if conversation.Title == "" {
-					conversation.Title = "测试会话"
+					conversation.Title = "test conversation"
 				}
 				return conversation, nil
 			},
@@ -2230,13 +1465,13 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 					conversation.ID = "conv-internal-1"
 				}
 				if conversation.Title == "" {
-					conversation.Title = "测试会话"
+					conversation.Title = "test conversation"
 				}
 				return conversation, nil
 			},
 			deleteFn: func(context.Context, string) error { return nil },
 			getByConversationIDAndUser: func(context.Context, string, string) (domain.Conversation, error) {
-				return domain.Conversation{ID: "conv-internal-1", ConversationID: "conv-1", UserID: "user-1", Title: "测试会话"}, nil
+				return domain.Conversation{ID: "conv-internal-1", ConversationID: "conv-1", UserID: "user-1", Title: "test conversation"}, nil
 			},
 			listByUserIDFn: func(context.Context, string) ([]domain.Conversation, error) { return nil, nil },
 		},
@@ -2268,8 +1503,8 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 		},
 		rewriteServiceStub{
 			result: ragrewrite.Result{
-				RewrittenQuestion: "前面配置里的 web-search provider 是什么",
-				SubQuestions:      []string{"前面配置里的 web-search provider 是什么"},
+				RewrittenQuestion: "What was the web-search provider in the earlier config?",
+				SubQuestions:  []string{"public website access policy", "network access constraint"},
 				NeedRetrieval:     false,
 			},
 		},
@@ -2283,7 +1518,7 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 	prepared, err := service.prepareChat(context.Background(), RagChatInput{
 		ConversationID: "conv-1",
 		UserID:         "user-1",
-		Question:       "前面配置里的 web-search provider 是什么？",
+		Question:       "What was the web-search provider in the earlier config?",
 	})
 	if err != nil {
 		t.Fatalf("prepareChat returned error: %v", err)
@@ -2307,7 +1542,7 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 
 	promptStage, err := service.runPromptStage(
 		context.Background(),
-		"前面配置里的 web-search provider 是什么？",
+		"What was the web-search provider in the earlier config?",
 		prepared.history,
 		"",
 		prepared.sessionContext,
@@ -2331,7 +1566,7 @@ func TestRagChatServiceChatStreamsAndFinishes(t *testing.T) {
 		t,
 		ragrewrite.Result{
 			RewrittenQuestion: "hello",
-			SubQuestions:      []string{"hello"},
+			SubQuestions:  []string{"public internet access policy", "service network restriction"},
 			NeedRetrieval:     false,
 		},
 		nil,
@@ -2381,7 +1616,7 @@ func TestRagChatServiceChatTriggersFallbackGuard(t *testing.T) {
 		t,
 		ragrewrite.Result{
 			RewrittenQuestion: "kb question",
-			SubQuestions:      []string{"kb question"},
+			SubQuestions:  []string{"public internet access policy", "service network restriction"},
 			NeedRetrieval:     true,
 		},
 		nil,

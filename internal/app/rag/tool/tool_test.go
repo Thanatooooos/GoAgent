@@ -630,7 +630,7 @@ func TestViewTraceNodeQueryResultParsesNodes(t *testing.T) {
 			"status":         "failed",
 			"conversationId": "conv-1",
 			"taskId":         "task-1",
-			"nodeCount":      2,
+			"nodeCount":      3,
 			"nodes": []any{
 				map[string]any{"nodeId": "rewrite", "nodeType": "llm", "nodeName": "Rewrite", "status": "failed"},
 				map[string]any{
@@ -638,15 +638,45 @@ func TestViewTraceNodeQueryResultParsesNodes(t *testing.T) {
 					"nodeType": "memory",
 					"nodeName": "LongTermMemory",
 					"status":   "success",
-					"summary":  "selected 2/3 memories, contributions hybrid=1, keyword_only=1, sources keyword=2, vector=1",
+					"summary":  "selected 2/3 memories (rules=1 facts=1/2), cache rule=request fact=redis embedding=request, contributions hybrid=1, keyword_only=1, sources keyword=2, vector=1, reason=fact_cache_miss",
 					"memoryRecall": map[string]any{
-						"candidateCount":     3,
-						"selectedCount":      2,
-						"truncated":          false,
-						"sourceCounts":       map[string]any{"keyword": 2, "vector": 1},
-						"contributionCounts": map[string]any{"hybrid": 1, "keyword_only": 1},
-						"memoryIds":          []any{"mem-1", "mem-2"},
-						"summary":            "selected 2/3 memories, contributions hybrid=1, keyword_only=1, sources keyword=2, vector=1",
+						"ruleCount":           1,
+						"factCandidateCount":  2,
+						"factSelectedCount":   1,
+						"candidateCount":      3,
+						"selectedCount":       2,
+						"truncated":           false,
+						"cacheEnabled":        true,
+						"ruleCacheLayer":      "request",
+						"factCacheLayer":      "redis",
+						"embeddingCacheLayer": "request",
+						"recomputeReason":     "fact_cache_miss",
+						"sourceCounts":        map[string]any{"keyword": 2, "vector": 1},
+						"contributionCounts":  map[string]any{"hybrid": 1, "keyword_only": 1},
+						"memoryIds":           []any{"mem-1", "mem-2"},
+						"summary":             "selected 2/3 memories (rules=1 facts=1/2), cache rule=request fact=redis embedding=request, contributions hybrid=1, keyword_only=1, sources keyword=2, vector=1, reason=fact_cache_miss",
+					},
+				},
+				map[string]any{
+					"nodeId":   "session_recall",
+					"nodeType": "memory",
+					"nodeName": "SessionRecall",
+					"status":   "success",
+					"summary":  "recalled 1/4 excerpts, topScore=0.9100, cache session=conversation embedding=request, perMessageSkips=1, truncatedBy=max_prompt_tokens, reason=conversation_cache_miss",
+					"sessionRecall": map[string]any{
+						"candidateCount":         4,
+						"excerptCount":           1,
+						"topScore":               0.91,
+						"cacheEnabled":           true,
+						"cacheLayer":             "conversation",
+						"embeddingCacheLayer":    "request",
+						"recallFingerprint":      "fp-1",
+						"recomputeReason":        "conversation_cache_miss",
+						"skippedPerMessageLimit": 1,
+						"truncatedBy":            "max_prompt_tokens",
+						"selectedMessageIds":     []any{"msg-1"},
+						"selectedChunkIds":       []any{"chunk-1"},
+						"summary":                "recalled 1/4 excerpts, topScore=0.9100, cache session=conversation embedding=request, perMessageSkips=1, truncatedBy=max_prompt_tokens, reason=conversation_cache_miss",
 					},
 				},
 			},
@@ -655,14 +685,20 @@ func TestViewTraceNodeQueryResultParsesNodes(t *testing.T) {
 	if !ok {
 		t.Fatal("expected trace node view to parse")
 	}
-	if view.TraceID != "trace-1" || view.TaskID != "task-1" || len(view.Nodes) != 2 {
+	if view.TraceID != "trace-1" || view.TaskID != "task-1" || len(view.Nodes) != 3 {
 		t.Fatalf("unexpected trace node view: %+v", view)
 	}
-	if view.Nodes[0].NodeID != "rewrite" || view.Nodes[1].NodeType != "memory" {
+	if view.Nodes[0].NodeID != "rewrite" || view.Nodes[1].NodeType != "memory" || view.Nodes[2].NodeID != "session_recall" {
 		t.Fatalf("unexpected trace nodes: %+v", view.Nodes)
 	}
 	if view.Nodes[1].MemoryRecall == nil || view.Nodes[1].MemoryRecall.SelectedCount != 2 || view.Nodes[1].MemoryRecall.SourceCounts["vector"] != 1 {
 		t.Fatalf("expected memory recall summary to parse, got %+v", view.Nodes[1])
+	}
+	if view.Nodes[1].MemoryRecall.RuleCacheLayer != "request" || view.Nodes[1].MemoryRecall.FactSelectedCount != 1 {
+		t.Fatalf("expected extended memory recall details, got %+v", view.Nodes[1].MemoryRecall)
+	}
+	if view.Nodes[2].SessionRecall == nil || view.Nodes[2].SessionRecall.ExcerptCount != 1 || view.Nodes[2].SessionRecall.CacheLayer != "conversation" {
+		t.Fatalf("expected session recall summary to parse, got %+v", view.Nodes[2])
 	}
 }
 

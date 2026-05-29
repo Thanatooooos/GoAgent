@@ -36,6 +36,7 @@ type ThinkResultView = metamod.ThinkResultView
 
 type TraceNodeItemView = tracemod.TraceNodeItemView
 type TraceNodeMemoryRecallSummaryView = tracemod.TraceNodeMemoryRecallSummaryView
+type TraceNodeSessionRecallSummaryView = tracemod.TraceNodeSessionRecallSummaryView
 type TraceNodeQueryResultView = tracemod.TraceNodeQueryResultView
 type TraceRetrievalDiagnoseResultView = tracemod.TraceRetrievalDiagnoseResultView
 
