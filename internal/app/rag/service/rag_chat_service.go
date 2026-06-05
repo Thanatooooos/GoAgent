@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	agentapp "local/rag-project/internal/app/agent"
 	ragcache "local/rag-project/internal/app/rag/cache"
 	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
@@ -28,6 +29,8 @@ type RagChatInput struct {
 	Question         string
 	KnowledgeBaseIDs []string
 	DeepThinking     bool
+	UseAgentRuntime  bool
+	RequireApproval  bool
 }
 
 type RagChatMeta struct {
@@ -71,6 +74,9 @@ type RagChatEventSink interface {
 	SendMeta(meta RagChatMeta) error
 	SendFallback(reason string) error
 	SendAgentThink(message string) error
+	SendAgentOutcome(payload RagChatAgentOutcomePayload) error
+	SendApprovalPending(payload RagChatApprovalPendingPayload) error
+	SendAgentServiceError(payload RagChatAgentServiceErrorPayload) error
 	SendMemoryStored(payload RagChatMemoryStoredPayload) error
 	SendSessionRecall(payload RagChatSessionRecallPayload) error
 	SendThinking(delta string) error
@@ -102,6 +108,8 @@ type RagChatService struct {
 	confidenceThreshold    float64
 	requestCacheMaxEntries int
 	taskRegistry           *TaskRegistry
+	agentRuntime           AgentRuntimeService
+	agentRuntimeMode       string
 }
 
 func NewRagChatService(
@@ -127,6 +135,7 @@ func NewRagChatService(
 		subquestionConcurrency: 2,
 		requestCacheMaxEntries: 128,
 		taskRegistry:           NewTaskRegistry(),
+		agentRuntimeMode:       ragChatAgentModeOff,
 	}
 }
 
@@ -180,9 +189,6 @@ func (s *RagChatService) SetLongTermMemoryRecallService(service longtermmemory.R
 }
 
 func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagChatEventSink) error {
-	if err := s.validateDependencies(); err != nil {
-		return err
-	}
 	if sink == nil {
 		return exception.NewServiceException("rag chat event sink is required", nil)
 	}
@@ -195,10 +201,18 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	if userID == "" {
 		return exception.NewClientException("user id is required", nil)
 	}
+	logRagChatStart(input, s.agentRuntimeMode)
+	if input.UseAgentRuntime {
+		return s.runAgentChat(ctx, input, sink)
+	}
+	if err := s.validateDependencies(); err != nil {
+		return err
+	}
 
 	ctx = ragcache.WithRequestCache(ctx, ragcache.NewRequestCache(s.requestCacheMaxEntries))
 	prepared, err := s.prepareChat(ctx, input)
 	if err != nil {
+		logRagChatTerminalError("", "prepare_chat", err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
@@ -218,6 +232,8 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		ctx,
 		input,
 		prepared.history,
+		prepared.memoryContext,
+		prepared.sessionContext,
 		prepared.rewriteResult,
 		retrieveResult,
 		prepared.retrievalUsed,
@@ -225,6 +241,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		sink,
 	)
 	if err != nil {
+		logRagChatTerminalError(prepared.state.traceID, "tool_stage", err)
 		toolStage = ragChatToolStageResult{
 			result: ragtool.WorkflowResult{
 				Degraded:      true,
@@ -232,11 +249,23 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 			},
 		}
 	}
+	logRagChatToolStageResult(prepared.state.traceID, prepared.state.meta.ConversationID, toolStage)
 	if toolStage.result.Degraded {
 		_ = sink.SendTool("tool_workflow", ragtool.CallStatusFailed, toolStage.result.DegradeReason)
 	}
+	if toolStage.agentRun != nil && toolStage.agentRun.Outcome.Status == agentapp.RunStatusAwaitingApproval {
+		s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, map[string]any{
+			"toolWorkflow": map[string]any{
+				"backend":          firstNonEmptyString(toolStage.backend, "agent_runtime"),
+				"awaitingApproval": true,
+				"checkpointId":     strings.TrimSpace(toolStage.agentRun.Outcome.CheckpointID),
+			},
+		})
+		return s.handleAgentToolStageApproval(ctx, prepared.state, sink, *toolStage.agentRun)
+	}
 	s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, map[string]any{
 		"toolWorkflow": map[string]any{
+			"backend":           firstNonEmptyString(toolStage.backend, "tool_workflow"),
 			"used":              toolStage.result.Used,
 			"degraded":          toolStage.result.Degraded,
 			"degradeReason":     strings.TrimSpace(toolStage.result.DegradeReason),
@@ -264,6 +293,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		prepared.state.traceID,
 	)
 	if err != nil {
+		logRagChatTerminalError(prepared.state.traceID, "prompt_stage", err)
 		s.tracer.finishTraceRun(ctx, prepared.state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
@@ -272,6 +302,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 
 	result, err := s.runStreamingAnswer(ctx, prepared.state, promptStage.messages, input.DeepThinking, sink)
 	if err != nil {
+		logRagChatTerminalError(prepared.state.traceID, "streaming_answer", err)
 		s.tracer.finishTraceRun(ctx, prepared.state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()

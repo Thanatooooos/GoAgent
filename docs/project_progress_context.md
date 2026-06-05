@@ -1,8 +1,8 @@
 # Project Progress Context
 
-Latest incremental update: `2026-05-29`
+Latest incremental update: `2026-06-02`
 
-更新时间：2026-05-25
+更新时间：2026-05-30
 
 这份文档用于维护 `goagent` 当前项目进度，帮助后续开发快速对齐当前阶段、已完成能力、最新进展、验证状态、已知风险和下一步计划。
 
@@ -22,7 +22,7 @@ Latest incremental update: `2026-05-29`
    已形成最小 chat 闭环，支持多轮对话、rewrite、retrieve、prompt、trace、fallback，重点开始转向检索策略优化、可解释性和 Agent 能力扩展。
 
 4. `Agent / Tool`
-   已完成第一阶段基础设施：自研 tool 抽象、tool registry、tool executor、AgentLoop V1（支持并行执行）、LLMPlanner、LLMObserver（支持多 hint + think 隔离 + 解析失败日志），以及接入 `RagChatService` 的扩展点。工具集已从 8 个扩展至 15 个（+ document_list / task_list / web_search / web_fetch / think / 3 Eino Graph）。当前处于“LLM 主决策 + diagnose 一步到位 + 规则 fallback/guardrail + RAG 优先联网搜索 + 外部证据工作流”的稳定 agent 化阶段。
+   已完成两条并行路线：旧 `internal/app/rag/tool` 继续作为稳定生产路径；新 `internal/app/agent` 已完成 `M1 -> capability V2 -> planner/handoff -> runtime approval/resume` 的主链路闭环。当前重点已经从“先把 reactive runtime 跑起来”转向“稳定 capability/runtime/approval 边界，并为第二种 pattern 和后续正式接入上层 chat 流程做准备”。
 
 ## 已完成能力
 
@@ -2300,3 +2300,1526 @@ The more accurate status is:
    - additional native tools only after the current loop semantics are clearer
 
 This also means that if the team later wants to compare "self-built loop vs framework-built loop", there is now a real second implementation line to evaluate instead of only a paper design.
+
+## Additional Update: 2026-05-30 Agent Runtime M0-M1 Closure Progress
+
+### Status Update
+
+As of `2026-05-30`, the Eino-native `internal/app/agent` line is no longer best
+described as only a PoC with a separate ADK workflow entrypoint.
+
+The codebase now has a first runtime-native execution path built around:
+
+- `internal/app/agent/state`
+- `internal/app/agent/runtime`
+- `internal/app/agent/kernel`
+- `internal/app/agent/pattern/reactive`
+
+and the public `internal/app/agent/service.go` entrypoint has been switched to
+that new path.
+
+### What Changed
+
+#### 1. M0 state/runtime abstractions are now consumed by real execution code
+
+The following abstractions are no longer "definition only":
+
+- `RuntimeSession`
+- `StateSnapshot`
+- `RuntimeEvent`
+- `StateDelta`
+- `Reducer`
+- `NodeResult`
+- `DecisionArtifact`
+
+They are now used by the kernel and the first runtime-native reactive pattern.
+
+#### 2. Answer state and reducer closure landed
+
+The previously missing answer-side state path is now present:
+
+- `StateSnapshot.Answer`
+- `AnswerState`
+- `AnswerDelta`
+- reducer support for answer writes
+
+This means the minimal `evaluate -> branch -> answer|degrade` path now has a
+real state target instead of depending on ad-hoc final-state structs.
+
+#### 3. Checkpoint serialization preconditions were wired in
+
+The runtime/state types needed by M1 checkpoint usage now have
+`schema.RegisterName(...)` registration.
+
+This closes the spike-discovered gap where typed state could be designed
+correctly but still fail at checkpoint persistence time if types were not
+registered.
+
+#### 4. A formal M1 kernel skeleton now exists
+
+`internal/app/agent/kernel` now contains:
+
+- runtime-native node protocol
+- graph builder
+- compiled runner
+- memory checkpoint store
+- kernel tests for branch/reducer flow and checkpoint resume
+
+So M1 is no longer only "planned around the spike"; a first formal kernel layer
+now exists in production code.
+
+#### 5. The first runtime-native reactive pattern landed
+
+`internal/app/agent/pattern/reactive` now contains the first real execution
+chain:
+
+- `prepare`
+- `search`
+- `fetch`
+- `observe`
+- `answer`
+- `degrade`
+
+This chain directly uses:
+
+- `search.Service`
+- `fetch.Service`
+
+and writes its outputs back through typed state and reducer merge, rather than
+through ADK session-value keys.
+
+#### 6. The old `internal/app/agent/workflow` PoC path was retired
+
+The earlier ADK-based PoC package using:
+
+- `SequentialAgent`
+- `LoopAgent`
+- session values
+
+has now been removed from `internal/app/agent`.
+
+The public `agent.Service` entrypoint now runs through the runtime-native
+reactive path instead.
+
+### Validation
+
+Validated on `2026-05-30`:
+
+```powershell
+go test ./internal/app/agent/... -count=1
+```
+
+Current result:
+
+- `internal/app/agent` PASS
+- `internal/app/agent/fetch` PASS
+- `internal/app/agent/kernel` PASS
+- `internal/app/agent/kernel/spike` PASS
+- `internal/app/agent/pattern/reactive` PASS
+- `internal/app/agent/search` PASS
+- `internal/app/agent/state` PASS
+- `internal/app/agent/webfetch` PASS
+- `internal/app/agent/websearch` PASS
+
+### Current Conclusion
+
+As of `2026-05-30`, the most accurate agent/runtime status is:
+
+1. M0 abstractions are no longer just design-time structures; they are now used
+   by executable code
+2. an M1 kernel skeleton exists and is tested
+3. the first runtime-native reactive pattern is landed and wired into
+   `agent.Service`
+4. the previous `workflow/` PoC line inside `internal/app/agent` has been
+   retired
+5. the next meaningful work should move to:
+   - richer runtime event / replay surfaces
+   - more operational checkpoint metadata and inspection
+   - additional patterns or more capable answer-generation logic only after the
+     current runtime path is further hardened
+
+## Additional Update: 2026-05-30 Agent Runtime M1 Observability Closure
+
+After the `M0-M1` runtime skeleton was wired into `agent.Service`, the agent
+runtime line continued with a focused `M1` hardening pass aimed at inspection,
+checkpoint lifecycle clarity, and replay quality.
+
+### What Changed
+
+#### 1. Runtime replay now has a formal inspection view
+
+`internal/app/agent/runtime/replay.go` now provides a minimal `ReplayView`
+projection from `RuntimeSession`.
+
+The replay surface now exposes:
+
+- node execution summaries
+- structured decision summaries
+- checkpoint summary
+- final answer / degrade reason
+- evidence sufficiency summary
+- event timeline summary
+
+This means runtime inspection no longer depends only on manually reading the
+raw journal.
+
+#### 2. Checkpoint / resume metadata is now written back into `RuntimeSession`
+
+`internal/app/agent/kernel/runner.go` now updates session-level metadata when a
+checkpointed run interrupts or resumes.
+
+This includes:
+
+- `RuntimeSession.Checkpoint`
+- `SessionMetadata.ResumedFrom`
+- `SessionMetadata.ResumeCount`
+- journal events for interrupt / resume completion
+
+So checkpointing is no longer only a lower-level compose capability; the
+runtime session itself now records the lifecycle in a directly inspectable way.
+
+#### 3. Runtime events are now more structured
+
+`RuntimeEvent` was extended so journal entries can carry:
+
+- `Sequence`
+- structured `Decision`
+- structured `Checkpoint`
+
+Kernel journal appends now consistently assign event sequence numbers and write
+decision/checkpoint structure alongside the existing textual summary.
+
+This reduces replay dependence on string parsing and gives later tooling a more
+stable inspection surface.
+
+#### 4. Delta-backed state projection is now available
+
+The runtime now records `state_applied` events after reducer merge, including
+the applied `StateDelta`.
+
+`internal/app/agent/runtime/projection.go` now provides:
+
+- `ProjectSnapshotAt(...)`
+- `BuildProjectionTimeline(...)`
+
+These rebuild state from:
+
+- `RuntimeSession.InitialSnapshot`
+- ordered `state_applied` delta events
+- the existing reducer rules
+
+This means the runtime can now answer not only:
+
+- "what events happened?"
+
+but also:
+
+- "what did `StateSnapshot` look like at event sequence `N`?"
+
+#### 5. Snapshot / delta cloning support was added for safe replay
+
+`internal/app/agent/state/clone.go` now provides deep-copy helpers for
+`StateSnapshot` and `StateDelta`.
+
+This keeps replay/projection from accidentally sharing backing slices with the
+live session state.
+
+### Validation
+
+Validated on `2026-05-30`:
+
+```powershell
+go test ./internal/app/agent/runtime ./internal/app/agent/kernel ./internal/app/agent/state -count=1
+go test ./internal/app/agent/... -count=1
+```
+
+Current result:
+
+- `internal/app/agent/runtime` PASS
+- `internal/app/agent/kernel` PASS
+- `internal/app/agent/state` PASS
+- `internal/app/agent` PASS
+- `internal/app/agent/pattern/reactive` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-05-30`, the most accurate `M1` status is:
+
+1. the kernel skeleton is implemented and wired into the public agent entry
+2. checkpoint / resume is not only runnable, but session-visible
+3. replay now has a formal summary view
+4. journal events are structurally richer and sequence-aware
+5. state can now be projected at arbitrary event offsets using
+   `InitialSnapshot + applied deltas + reducer`
+
+So the runtime is no longer only "able to run and resume"; it now has a first
+real inspection and state-reconstruction surface, which materially lowers the
+risk of continuing into broader `M2` work.
+
+## Additional Update: 2026-05-30 Agent Runtime M1.5 Hardening and Capability Registry Closure
+
+### Status Update
+
+As of `2026-05-30`, the `internal/app/agent` line should no longer be described
+only as:
+
+- `M0` abstractions landed
+- `M1` kernel skeleton landed
+- one minimal `search -> fetch -> observe -> answer|degrade` path landed
+
+That description is still directionally true, but it now misses a substantial
+`M1.5` hardening pass that has already landed in code.
+
+The current runtime line now also includes:
+
+- normalized runtime event semantics
+- richer replay / checkpoint inspection
+- more coherent execution-state writeback
+- a typed capability seam
+- a minimal capability registry
+- capability-spec-driven approval interrupt wiring
+- reducer-based error-path state updates
+
+So the more accurate status is:
+
+- `M0`: implemented
+- `M1`: implemented
+- first `M2`-style reactive path: implemented
+- `M1.5` hardening and registry closure around that path: implemented
+
+### What Changed
+
+#### 1. Runtime event and journal semantics were normalized
+
+`internal/app/agent/state/event.go` now centralizes the runtime event
+vocabulary, and `internal/app/agent/kernel/journal.go` now normalizes journal
+append behavior.
+
+The current event surface now explicitly includes:
+
+- `node_start`
+- `node_finish`
+- `node_error`
+- `reducer_error`
+- `state_applied`
+- `decision_emitted`
+- `branch_selected`
+- `capability_start`
+- `capability_result`
+- `capability_skipped`
+- `answer_finalized`
+- `degraded`
+- `interrupt`
+- `resume_completed`
+
+This means the runtime now has a more stable internal event contract rather
+than a loosely accumulated set of event strings.
+
+#### 2. Replay / checkpoint inspection is now materially richer
+
+`internal/app/agent/runtime/replay.go` no longer exposes only a minimal
+timeline projection.
+
+It now also provides:
+
+- checkpoint lifecycle summary
+- event type counts
+- capability summaries
+- branch summaries
+- last decision summary
+- more readable `state_applied` delta summaries
+
+So runtime inspection can now answer not only "what happened?" but also:
+
+- "which capability ran?"
+- "which branch was selected?"
+- "is this checkpoint still active or already resumed?"
+- "what state domains changed at this step?"
+
+#### 3. Execution-state writeback was tightened up
+
+`internal/app/agent/pattern/reactive/execution_state.go` now centralizes the
+reactive pattern's execution-state delta helpers.
+
+At the same time, `internal/app/agent/state/reducer.go` now de-duplicates:
+
+- `ScheduledActions`
+- `CompletedActions`
+- `FailedActions`
+
+This means execution-state history is now less prone to duplicate growth across
+repeated reducer merges.
+
+#### 4. Interrupt / resume now update both journal and snapshot execution state
+
+Earlier work already made checkpoint lifecycle visible through:
+
+- `RuntimeSession.Checkpoint`
+- `SessionMetadata.ResumedFrom`
+- `SessionMetadata.ResumeCount`
+- interrupt / resume journal events
+
+This round also made the execution snapshot itself align better with those
+events:
+
+- interrupt writes `Execution.CurrentNode`
+- interrupt sets `Execution.Interrupted=true`
+- interrupt records `Execution.InterruptReason`
+- resume clears the interrupt flags back out
+
+So runtime state and runtime journal are now more coherent on checkpointed
+runs.
+
+#### 5. Search / fetch now run through a typed capability seam
+
+A new `internal/app/agent/capability` package now provides:
+
+- `SearchCapability`
+- `FetchCapability`
+- `Spec`
+- capability construction options
+
+The reactive runtime path no longer directly treats `search.Service` /
+`fetch.Service` as its execution-unit abstraction.
+
+Instead:
+
+- services are adapted into typed capabilities
+- reactive nodes invoke typed capabilities
+- capability-level eventing continues to flow into the runtime journal
+
+#### 6. A minimal capability registry is now real and used by the public path
+
+`internal/app/agent/capability/registry.go` now provides a first registry
+layer, and `internal/app/agent/service.go` now assembles:
+
+- search service
+- fetch service
+- typed capabilities
+- capability registry
+
+`pattern/reactive.Compile(...)` now resolves capabilities from the registry
+instead of receiving capability instances directly.
+
+So the public runtime path has already crossed into registry-mediated
+capability assembly.
+
+#### 7. Approval-gated capability specs now drive compile-time interrupts
+
+Capability spec metadata now includes:
+
+- `RiskLevel`
+- `RequiresApproval`
+- `SupportsParallel`
+- `SupportsResume`
+
+The reactive builder now derives `InterruptBeforeNodes` from those specs.
+
+So when a registered capability is marked `RequiresApproval=true`, the current
+runtime automatically inserts a compile-time interrupt before the corresponding
+node.
+
+This is the first real closure of:
+
+- capability metadata
+- runtime compile configuration
+- approval / interrupt behavior
+
+in one execution path.
+
+#### 8. Builder error-path state updates now go through the reducer
+
+One structural gap remained after the earlier runtime closure:
+
+- successful node execution wrote state through reducer
+- failed node execution still mutated `session.Snapshot.Execution` directly
+
+That gap is now closed.
+
+`internal/app/agent/kernel/builder.go` now constructs an execution error delta
+for node failures and applies it through the reducer before completing the
+error-path journal updates.
+
+This means reducer-mediated state writes are now used in both:
+
+- success path
+- failure path
+
+which is an important consistency improvement for the runtime model.
+
+### Validation
+
+Validated on `2026-05-30`:
+
+```powershell
+go test ./internal/app/agent/runtime ./internal/app/agent/kernel ./internal/app/agent/pattern/reactive ./internal/app/agent -count=1
+go test ./internal/app/agent/capability ./internal/app/agent/pattern/reactive ./internal/app/agent ./internal/app/agent/runtime ./internal/app/agent/kernel -count=1
+go test ./internal/app/agent/... -count=1
+```
+
+Current result:
+
+- `internal/app/agent` PASS
+- `internal/app/agent/capability` PASS
+- `internal/app/agent/fetch` PASS
+- `internal/app/agent/kernel` PASS
+- `internal/app/agent/kernel/spike` PASS
+- `internal/app/agent/pattern/reactive` PASS
+- `internal/app/agent/runtime` PASS
+- `internal/app/agent/search` PASS
+- `internal/app/agent/state` PASS
+- `internal/app/agent/webfetch` PASS
+- `internal/app/agent/websearch` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-05-30`, the most accurate agent/runtime status is:
+
+1. the typed `M0` runtime abstractions are fully implemented and actively used
+2. the `M1` kernel skeleton is implemented, tested, and no longer only a spike
+3. the first `M2`-style reactive path is executable through the public service
+4. `M1.5` hardening has already improved:
+   - event consistency
+   - replay/checkpoint inspection
+   - execution-state coherence
+   - capability assembly boundaries
+   - approval-driven interrupt wiring
+   - failure-path state consistency
+5. the next meaningful work should move to:
+   - real reactive loop / `continue` semantics
+   - broader capability families beyond search/fetch
+   - richer capability metadata (`Dependencies`, schemas, etc.)
+   - later planner / observer / policy-layer upgrades
+
+## Additional Update: 2026-05-31 Agent Runtime Planner, Handoff, and Policy Projection Closure
+
+### Status Update
+
+As of `2026-05-31`, the `internal/app/agent` runtime line has moved beyond:
+
+- a typed reactive loop with `continue`
+- a rule-based observe policy
+- a service-end handoff projection
+
+The runtime now has:
+
+- an `observe`-after structured LLM planner seam
+- planner-guided next-round search/fetch inputs
+- `handoff` as a first-class runtime terminal action
+- an explicit `OutputMode` split between `handoff` and `final_answer`
+- a dedicated `handoff/` projection package
+- capability/profile-derived `WorkflowPolicy` instead of hardcoded prompt text
+
+This means the new runtime is no longer only "able to gather evidence and stop";
+it now has a clearer answer-boundary model and a more realistic integration seam
+for later `RagChatService` wiring.
+
+### What Changed
+
+#### 1. A structured LLM planner now runs after `observe`
+
+The new `internal/app/agent/planner` package now provides a runtime-native
+planner seam:
+
+- `Planner` interface
+- `LLMPlanner`
+- strict planner JSON contract validation
+
+The planner is placed after `observe`, not before the first search round.
+
+Its input is a compressed runtime summary covering:
+
+- request / iteration state
+- search summary
+- fetch summary
+- evidence summary
+- progress summary
+- baseline rule-policy decision
+
+Its output is a strict structured artifact including:
+
+- `decision`
+- `reason`
+- `confidence`
+- `next_query`
+- `preferred_urls`
+- `avoid_urls`
+- `answer_plan`
+
+The runtime validates planner output before accepting it, including:
+
+- allowed-action checks
+- iteration-budget checks
+- evidence-required checks for terminal answer/handoff
+- "known URL only" validation for preferred/avoid URL guidance
+- fallback to the baseline rule policy when validation fails
+
+So planner integration landed as a guarded decision layer rather than an
+unbounded free-text override.
+
+#### 2. The reactive loop can now consume planner guidance across rounds
+
+Planner output is no longer only logged or summarized.
+
+The runtime state now persists the next-round guidance needed by the reactive
+loop:
+
+- `Context.SearchQuery`
+- `Context.PreferredURLs`
+- `Context.AvoidURLs`
+
+This means:
+
+- the next `search` round can use a planner-refined query
+- `fetch` can prioritize preferred URLs
+- `fetch` can skip avoided URLs
+- repeated low-value or duplicate fetches are easier to suppress
+
+This is the first closure where:
+
+- `observe`
+- planner decision
+- next-round execution inputs
+
+are all connected through typed state instead of ad-hoc node-local logic.
+
+#### 3. Fetch text preparation was intentionally kept simple and deterministic
+
+The new planner path needed a cleaner evidence surface, but this round
+intentionally did **not** add relevance scoring or passage-ranking complexity.
+
+Instead, `fetch` text preparation now focuses on deterministic cleanup:
+
+- removing script/style/head/comment noise
+- preserving paragraph structure
+- removing common boilerplate lines
+- deduplicating repeated lines
+- normalizing whitespace
+
+So planner-facing fetched text is now cleaner than the original raw extraction,
+while still avoiding premature LLM-based or scoring-heavy summarization logic.
+
+#### 4. `handoff` is now a first-class runtime terminal, not only a service projection
+
+The reactive pattern no longer treats `answer` as the only positive terminal.
+
+It now supports explicit output-mode-aware terminals:
+
+- `continue`
+- `handoff`
+- `answer`
+- `degrade`
+
+And the public `agent.Service` default path now prefers:
+
+- `OutputModeHandoff`
+
+rather than defaulting to final answer generation.
+
+This is an important architecture clarification:
+
+- the runtime's primary job is now framed as action / evidence / policy
+  orchestration
+- final user-facing answer generation is no longer assumed to be the default
+  runtime responsibility
+
+This also matches the production reality of the old `rag/tool` path more
+closely, where agent execution primarily produced context and answer guidance
+for `RagChatService`.
+
+#### 5. A dedicated `internal/app/agent/handoff` package now owns the handoff projection
+
+The initial single-file handoff projection has now been split into a dedicated
+package with clearer responsibilities:
+
+- `result.go`
+- `build.go`
+- `tool_context.go`
+- `answer_guidance.go`
+- `workflow_policy.go`
+
+This means the runtime now has a cleaner boundary between:
+
+- execution-time typed state
+- post-run prompt-ready handoff projection
+
+The public `agent` package still exposes `HandoffResult`, but the actual
+projection logic is no longer mixed into the top-level service package.
+
+#### 6. `WorkflowPolicy` is now derived from capability metadata and runtime state
+
+The handoff layer no longer hardcodes policy text such as:
+
+- `capability: search`
+- `execution_mode: read_only`
+- `risk_level: low`
+
+Instead, `WorkflowPolicy` is now built from:
+
+- runtime options
+- output mode
+- max iterations
+- actual capability usage
+- capability profile metadata
+- approval requirements
+- highest observed capability risk
+
+This is an important quality step because the handoff prompt surface is now
+closer to the real runtime state, rather than a placeholder string template.
+
+### Validation
+
+Validated on `2026-05-31` with focused package suites:
+
+```powershell
+go test ./internal/app/agent/planner -count=1
+go test ./internal/app/agent/pattern/reactive -count=1
+go test ./internal/app/agent/handoff -count=1
+go test ./internal/app/agent -count=1
+```
+
+Current focused result:
+
+- `internal/app/agent/planner` PASS
+- `internal/app/agent/pattern/reactive` PASS
+- `internal/app/agent/handoff` PASS
+- `internal/app/agent` PASS
+
+In addition, an earlier same-day end-to-end `go test ./internal/app/agent/... -count=1`
+pass was completed before the final handoff-policy derivation cleanup.
+
+### Updated Conclusion
+
+As of the end of `2026-05-31`, the most accurate agent/runtime status is:
+
+1. the reactive runtime now has a guarded post-observe LLM planner seam
+2. planner output can influence the next search/fetch round through typed state
+3. `handoff` is now a first-class runtime terminal and the default public output mode
+4. the handoff projection has been split into a dedicated package with clearer boundaries
+5. `WorkflowPolicy` is no longer placeholder text; it is now derived from capability/runtime metadata
+6. the next meaningful work should move to:
+   - integrating the handoff contract into the future `RagChatService` bridge
+   - deciding how much final-answer generation should remain optional inside `agent`
+   - broadening capability families beyond search/fetch while preserving the same runtime boundaries
+
+## Additional Update: 2026-05-31 Agent Runtime Capability Registry and Pattern Assembly Closure
+
+### Status Update
+
+As of `2026-05-31`, the `internal/app/agent` line has continued past the
+earlier planner / handoff closure and completed a smaller but important
+architecture-hardening pass around:
+
+- capability definition boundaries
+- unified capability registration
+- pattern-facing assembly contracts
+- metadata-driven handoff/profile projection
+
+This work did **not** add a second pattern yet. Instead, it intentionally
+finished the structural cleanup that should happen before adding another
+pattern or wiring the new runtime into `RagChatService`.
+
+### What Changed
+
+#### 1. Capability spec is no longer only a thin search/fetch seam
+
+`internal/app/agent/capability/capability.go` now defines a more complete V1
+capability descriptor.
+
+The runtime capability model now explicitly includes:
+
+- `Name`
+- `Kind`
+- `Family`
+- `Roles`
+- `RiskLevel`
+- `RequiresApproval`
+- `SupportsParallel`
+- `SupportsResume`
+- `Dependencies`
+
+The current kind taxonomy is now:
+
+- `tool`
+- `workflow`
+- `sub_agent`
+
+And the first family / role vocabulary is now formalized in code, including:
+
+- `external_evidence`
+- `document_investigation`
+- `trace_investigation`
+- `discovery`
+- `meta`
+
+plus role constants such as:
+
+- `search`
+- `fetch`
+
+This means capability is now better defined as a runtime-governed execution
+unit, not only "whatever search/fetch adapter happened to exist first."
+
+#### 2. The capability registry is now unified instead of search/fetch-specialized
+
+`internal/app/agent/capability/registry.go` no longer uses separate dedicated
+registration maps as the primary model.
+
+The registry now:
+
+- registers a common `Handle`
+- stores normalized `Spec`
+- indexes capabilities by `name`
+- indexes capabilities by `role`
+- indexes capabilities by `family`
+- resolves typed search/fetch handles from the unified catalog
+
+Registration now also validates:
+
+- required `Name / Kind / Family / Roles`
+- duplicate names
+- self-dependencies
+- missing declared dependencies
+- role/interface consistency
+
+This is an important closure because runtime assembly is now based on one
+capability catalog rather than a hardcoded "search registry + fetch registry"
+split.
+
+#### 3. Role binding is now a reusable capability-layer concept
+
+`internal/app/agent/capability/bindings.go` now provides a reusable
+`RoleBindings` model.
+
+Patterns can now:
+
+- bind a role explicitly to a capability name
+- validate explicit bindings against the registry
+- fall back to automatic resolution when a role has exactly one registered
+  candidate
+- reject ambiguous resolution when multiple capabilities implement the same role
+
+This means pattern assembly is no longer coupled to one-off config fields like
+`SearchCapabilityName` and `FetchCapabilityName`.
+
+#### 4. Pattern-facing assembly contract is now explicit
+
+`internal/app/agent/pattern/config.go` now contains the generic pattern
+assembly contract:
+
+- `AssemblyContext`
+- `RuntimeConfig`
+
+The reactive pattern now consumes that contract instead of carrying its own
+mixed assembly/runtime fields.
+
+This is the first real step toward making `internal/app/agent/pattern` a
+shared pattern layer rather than a folder that only happens to contain one
+reactive implementation.
+
+#### 5. Reactive assembly and handoff projection no longer depend on service-local hardcoding
+
+`internal/app/agent/pattern/reactive` now owns:
+
+- role-to-capability resolution for the reactive pattern
+- reactive-specific handoff node bindings
+
+And `internal/app/agent/handoff/profile_projection.go` now owns:
+
+- capability-profile projection from registry metadata
+- family to workflow-capability mapping rules
+
+The current mapping is now explicit in one place:
+
+- `external_evidence -> search`
+- `document_investigation -> diagnosis`
+- `trace_investigation -> diagnosis`
+- `discovery -> knowledge`
+- default -> `general`
+
+At the same time, `internal/app/agent/service.go` is now closer to a pure
+assembly layer:
+
+- register capabilities
+- declare role bindings
+- compile the reactive pattern
+- build the handoff projector
+
+instead of also hand-owning capability/profile mapping logic.
+
+### Validation
+
+Validated on `2026-05-31` with focused package suites:
+
+```powershell
+go test ./internal/app/agent/capability ./internal/app/agent/pattern/reactive ./internal/app/agent/handoff ./internal/app/agent -count=1
+```
+
+Current focused result:
+
+- `internal/app/agent/capability` PASS
+- `internal/app/agent/pattern/reactive` PASS
+- `internal/app/agent/handoff` PASS
+- `internal/app/agent` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-05-31`, the most accurate additional runtime status is:
+
+1. capability is now better defined as a runtime-managed unit with `kind`,
+   `family`, and `role` semantics
+2. capability registration is unified and metadata-indexed rather than
+   search/fetch-specialized
+3. pattern assembly now has a reusable contract instead of reactive-local
+   config drift
+4. handoff/profile projection is now driven by registry metadata and explicit
+   bindings, not service-local manual mapping
+5. the next meaningful step is still **not** "add many low-level query
+   capabilities," but rather:
+   - decide the second pattern target
+   - add higher-level task-oriented capabilities later on top of this registry
+     model
+   - bridge the new runtime into outer chat flows only after these boundaries
+     stay stable
+
+## Additional Update: 2026-06-01 Agent Runtime Capability V2 and Approval/Resume Closure
+
+### Status Update
+
+As of `2026-06-01`, the `internal/app/agent` line should no longer be described
+as only:
+
+- a reactive runtime skeleton
+- a capability registry hardening pass
+- a handoff-oriented output mode experiment
+
+Those are still true, but they are now incomplete.
+
+The new runtime has now completed another important closure around:
+
+- capability V2 contract uplift
+- metadata-driven runtime behavior
+- runtime approval surfaced as an explicit public outcome
+- approval resume wired into the runtime/service path
+
+This means the current `internal/app/agent` line has moved from "M1 runtime
+with cleaner seams" into "first runnable runtime with capability governance and
+approval lifecycle semantics."
+
+### What Changed
+
+#### 1. Capability V2 is now the real runtime contract
+
+The capability layer is no longer best understood as a thin typed seam for only
+`search` and `fetch`.
+
+The runtime now uses a richer capability model centered on:
+
+- `Spec`
+- `Handle`
+- `InvocationRequest`
+- `InvocationResult`
+- `ActionRecord`
+- `ObservationRecord`
+
+The capability spec now carries runtime-facing metadata such as:
+
+- `InputSchema`
+- `OutputSchema`
+- `Preconditions`
+- `ProducesEvidence`
+- `Idempotency`
+- `SupportsResume`
+
+This is an important milestone because capability metadata is now being used by
+runtime policy rather than only by registration and handoff projection.
+
+#### 2. Search/fetch capability implementation has been separated from the capability root package
+
+`internal/app/agent/capability` now acts as the runtime-facing contract and
+governance layer, while:
+
+- `internal/app/agent/search`
+- `internal/app/agent/fetch`
+
+own their own capability adapters.
+
+At the same time, a higher-level workflow capability sample now exists in:
+
+- `internal/app/agent/external_evidence`
+
+through `external_evidence_collect`.
+
+This means the catalog now carries both:
+
+- low-level tool capability
+- higher-level workflow capability
+
+under the same runtime contract.
+
+#### 3. Capability metadata now affects runtime behavior
+
+The reactive runtime is no longer only "calling generic handles."
+
+It now also consumes richer capability semantics for policy decisions such as:
+
+- `Preconditions`
+- `ErrorClass`
+- `Idempotency`
+- `ProducesEvidence`
+
+In practice, this means:
+
+- invalid input can be rejected through declared capability preconditions
+- permission/dependency/external failures are no longer all treated the same
+- retry/continue behavior now depends on `ErrorClass` and `Idempotency`
+- workflow capabilities can be validated as evidence-producing runtime units
+
+So capability metadata has started becoming runtime policy input, not only
+description metadata.
+
+#### 4. Runtime approval is now a first-class public outcome
+
+The new runtime no longer treats approval-related interruption as only an
+internal execution detail.
+
+`agent.Service` now exposes detailed run outcomes that distinguish:
+
+- `completed`
+- `degraded`
+- `awaiting_approval`
+
+The service layer now also exposes approval-aware APIs such as:
+
+- `RunDetailed`
+- `RunHandoffDetailed`
+- `ResumeAfterApproval`
+- `ResumeHandoffAfterApproval`
+
+This is the first time the new runtime has a clean outward semantic for
+"execution paused pending approval" rather than only a lower-level interrupt
+flag.
+
+#### 5. Approval resume is now wired through session store + checkpoint + reactive approval gate
+
+Compile-time approval and runtime permission-triggered approval are now both
+handled through a shared public lifecycle:
+
+- run reaches an approval boundary
+- outcome becomes `awaiting_approval`
+- service stores the resumable runtime session
+- caller later supplies approval decision
+- runtime resumes and either:
+  - reruns the gated capability path
+  - or ends in degrade when approval is rejected
+
+This closure uses:
+
+- checkpoint persistence in the kernel path
+- runtime session persistence through a dedicated session store
+- a dedicated `ApprovalState`
+- a reactive `approval` gate node that can route resumed execution
+
+Architecturally, this is a major step because the new runtime now supports a
+real human-in-the-loop lifecycle rather than only static interrupt points.
+
+### Validation
+
+Validated on `2026-06-01`:
+
+```powershell
+go test ./internal/app/agent/... -count=1
+```
+
+Current result:
+
+- `internal/app/agent` PASS
+- `internal/app/agent/capability` PASS
+- `internal/app/agent/external_evidence` PASS
+- `internal/app/agent/fetch` PASS
+- `internal/app/agent/handoff` PASS
+- `internal/app/agent/kernel` PASS
+- `internal/app/agent/pattern/reactive` PASS
+- `internal/app/agent/runtime` PASS
+- `internal/app/agent/search` PASS
+- `internal/app/agent/state` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-06-01`, the most accurate `internal/app/agent` status is:
+
+1. capability has been lifted to a richer V2 runtime contract rather than a
+   typed search/fetch seam
+2. capability metadata has begun driving runtime retry/degrade/approval
+   behavior
+3. runtime approval is now exposed as a public run outcome instead of only an
+   internal interrupt detail
+4. approval resume has a working service/runtime closure based on checkpoint +
+   session store + approval gate routing
+5. the next best steps remain:
+   - do **not** rush to wire this into `RagChatService` yet
+   - first stabilize the outward approval contract and approval persistence
+     model
+   - then add a second pattern to validate that the runtime is not reactive-only
+
+## Additional Update: 2026-06-02 Capability Selection LLM Closure for Plan-Execute
+
+### Status Update
+
+As of `2026-06-02`, the most important agent/runtime increment is **not**
+"pattern router landed."
+
+That is intentionally still deferred.
+
+Instead, the runtime line has now completed the first meaningful closure around:
+
+- LLM-driven capability exposure
+- LLM-driven capability selection
+- selector-to-registry resolution and validation
+- selector-driven `plan_execute` step generation
+
+This is an important sequencing decision.
+
+The current direction is now:
+
+- keep `pattern` selection explicit for now
+- first make capability composition and capability choice intelligent
+- only later decide whether request-time pattern routing should also become
+  LLM-driven
+
+### What Changed
+
+#### 1. The runtime now has an explicit capability-selection stack
+
+The capability layer is no longer only:
+
+- `Spec`
+- `Registry`
+- `Handle`
+
+It now also has three new runtime-facing sublayers:
+
+- `capability/catalog`
+- `capability/select`
+- `capability/resolve`
+
+Their roles are intentionally separated:
+
+- `catalog`
+  - builds LLM-facing capability cards from registry metadata
+- `select`
+  - runs structured LLM capability selection
+- `resolve`
+  - turns selector output back into one concrete executable capability
+
+This means capability choice is no longer forced to live:
+
+- inside one pattern node
+- inside service-local wiring
+- or inside hardcoded capability-name conditionals
+
+#### 2. Capability metadata is now being exposed to LLM as a constrained catalog
+
+The registry is still the source of truth, but the LLM no longer has to infer
+everything from raw implementation identity.
+
+The new catalog layer now exposes a reduced capability card containing fields
+such as:
+
+- `name`
+- `kind`
+- `family`
+- `roles`
+- `summary`
+- `input_hints`
+- `requires_approval`
+- `supports_resume`
+- `produces_evidence`
+
+This is a key architecture step because the runtime now has a cleaner bridge
+between:
+
+- governed registry metadata
+- model-visible capability semantics
+
+rather than forcing the planner/pattern layer to hardcode capability names.
+
+#### 3. LLM capability selection now follows the same guarded JSON pattern as the planner
+
+The new `LLMSelector` uses the same general runtime style already proven by the
+planner path:
+
+- strict JSON mode
+- structured response decoding
+- post-response validation
+
+Selector output is constrained to structured capability choices rather than
+free text.
+
+The current selection object can identify a capability through:
+
+- `name`
+- `family`
+- `role`
+- optional `kind`
+- structured `input`
+
+This matters because the runtime is starting to move from:
+
+- "pattern chooses a concrete implementation name"
+
+toward:
+
+- "model chooses a capability by declared semantics, and runtime resolves it"
+
+#### 4. A resolver/validator layer now closes the selector-to-execution gap
+
+One of the main practical risks in LLM-driven capability selection is that a
+model can emit:
+
+- an unknown capability
+- an ambiguous family/role match
+- invalid structured input
+
+That gap is now explicitly handled by the new resolver layer.
+
+It is responsible for:
+
+- matching selector output to registry entries
+- rejecting ambiguous matches
+- normalizing structured input
+- validating preconditions before execution
+
+So the new execution path is now better described as:
+
+`LLM selection -> registry resolution -> input normalization -> capability validation -> execution`
+
+rather than:
+
+`LLM text -> direct invocation`
+
+#### 5. Capability input is no longer limited to already-typed caller-owned structs
+
+To make selector-driven execution actually usable, capability implementations
+now support a shared input-normalization seam.
+
+The capability layer now exposes:
+
+- `InputNormalizer`
+- `DecodeStructuredInput`
+
+And the current concrete capabilities have been upgraded so they can accept
+JSON-like structured input and normalize it into typed runtime input:
+
+- `search`
+- `fetch`
+- `external_evidence`
+- `document_investigation`
+
+This is a very important closure because without it, capability selection would
+only be able to choose names, but not reliably execute LLM-produced inputs.
+
+#### 6. `plan_execute` is now the first pattern to consume selector-driven capability choice
+
+The new selector stack is not only registered in service assembly; it is now
+actually used by the second pattern.
+
+`plan_execute` now supports:
+
+- building a plan from selector output
+- storing selector semantics inside `PlanStep`
+- resolving selected capability at execution time
+
+`PlanStep` has been uplifted so it can carry capability-selection semantics
+instead of only `search/fetch`-specific fields, including:
+
+- `CapabilityKind`
+- `CapabilityFamily`
+- `CapabilityRole`
+- `CapabilityInput`
+
+This means `plan_execute` is now meaningfully less coupled to:
+
+- fixed `search -> fetch` planning
+- concrete capability name hardcoding
+
+even though legacy fallback behavior is still retained.
+
+#### 7. `document_investigation` is now the first selector-driven high-level capability path
+
+The first concrete validation target for this new stack is:
+
+- `document_investigation`
+
+The runtime can now support a path where:
+
+- the request remains on explicit `plan_execute`
+- the selector sees the capability catalog
+- the selector chooses `document_investigation`
+- the runtime resolves it
+- the plan becomes a single selected capability step
+
+This is exactly the kind of higher-level workflow capability path the project
+intended to validate before building a pattern router.
+
+It proves that a new capability can now be:
+
+- registered
+- surfaced to the model
+- selected by semantic metadata
+- executed through the same runtime contract
+
+without first inventing a new pattern.
+
+### Validation
+
+Validated on `2026-06-02`:
+
+```powershell
+go test ./internal/app/agent/pattern/planexecute -count=1
+go test ./internal/app/agent/capability/... -count=1
+go test ./internal/app/agent/... -count=1
+```
+
+Current result:
+
+- `internal/app/agent` PASS
+- `internal/app/agent/capability` PASS
+- `internal/app/agent/document_investigation` PASS
+- `internal/app/agent/external_evidence` PASS
+- `internal/app/agent/fetch` PASS
+- `internal/app/agent/handoff` PASS
+- `internal/app/agent/kernel` PASS
+- `internal/app/agent/pattern/planexecute` PASS
+- `internal/app/agent/pattern/reactive` PASS
+- `internal/app/agent/planner` PASS
+- `internal/app/agent/runtime` PASS
+- `internal/app/agent/search` PASS
+- `internal/app/agent/state` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-06-02`, the most accurate current `internal/app/agent`
+status is:
+
+1. capability is no longer only a governed registry/runtime contract; it now
+   also has an explicit model-facing selection stack
+2. LLM-driven capability choice is now validated on top of the registry rather
+   than bypassing it
+3. `plan_execute` has become the first pattern that can consume selector-driven
+   capability semantics instead of only fixed `search/fetch` planning
+4. `document_investigation` is now the first high-level workflow capability
+   that can be selected and executed through this new path
+5. the most appropriate next steps are:
+   - keep `pattern` routing explicit a little longer
+   - broaden selector-driven capability usage to more scenarios and families
+   - later decide how much of pattern routing should also become LLM-driven
+
+## Additional Update: 2026-06-02 Approval Contract P0 Closure
+
+### Status Update
+
+As of the end of `2026-06-02`, the `internal/app/agent` line should no longer
+be described as only having:
+
+- an internal approval pause/resume mechanism
+- a service-level `awaiting_approval` outcome
+- a partially formed approval lifecycle
+
+Those are still true, but they are now incomplete.
+
+The runtime/service line has now completed a first meaningful **P0 closure**
+around:
+
+- outward approval payload definition
+- outward approval resume contract
+- typed service-level error contract
+- handoff approval resume coverage
+- approval persistence and cleanup semantics
+- approval audit metadata verification
+
+This means the current approval work is no longer just "runtime can pause and
+resume." It now has a more explicit public contract and a better-tested service
+lifecycle.
+
+### What Changed
+
+#### 1. Approval pending is now a richer public payload rather than a minimal interrupt marker
+
+`internal/app/agent/request_response.go` no longer exposes approval to callers
+as only:
+
+- `reason`
+- `node`
+- `capability`
+- `checkpoint_id`
+
+The outward `ApprovalPending` payload now carries a more useful approval-facing
+projection, including:
+
+- approval status
+- reason code + human-readable reason message
+- trigger type
+- rerun node
+- capability metadata such as:
+  - `kind`
+  - `family`
+  - `risk_level`
+  - `supports_resume`
+  - `idempotency`
+- request / execution context such as:
+  - question
+  - search query
+  - current plan step
+  - candidate URLs
+- action semantics such as:
+  - can approve
+  - can reject
+  - reject outcome
+
+This outward projection is now assembled in a dedicated service-layer file:
+
+- `internal/app/agent/service_approval.go`
+
+rather than being hand-assembled inline in `service_run.go`.
+
+#### 2. Approval resume now has an explicit outward decision contract
+
+`ResumeApprovalRequest` no longer needs to be understood only through the old
+`Approved bool` convention.
+
+The public contract now supports an explicit:
+
+- `Decision = approved | rejected`
+
+while still tolerating the previous boolean path as a compatibility fallback.
+
+Decision parsing and validation has been split into:
+
+- `internal/app/agent/service_approval_resume.go`
+
+This matters because approval resume is now less ambiguous for outer callers,
+and invalid decisions now fail through a stable service contract rather than
+only through ad hoc string checks.
+
+#### 3. Agent service errors now have a typed outward contract
+
+The approval work exposed a practical gap:
+
+outer callers previously had to infer behavior from free-form error strings.
+
+That gap has now been reduced through:
+
+- `internal/app/agent/service_error.go`
+
+The service layer now exposes:
+
+- stable error codes
+- error kind classification
+- retryability metadata
+- `DescribeServiceError(...)`
+
+The current error kinds now distinguish categories such as:
+
+- `invalid_request`
+- `not_found`
+- `failed_precondition`
+- `unavailable`
+- `internal`
+
+This means outer layers no longer need to depend only on `err.Error()` string
+matching to understand approval-related failures such as:
+
+- invalid decision
+- missing approval session
+- approval not pending
+- missing question
+
+#### 4. Approval persistence lifecycle is now better defined and tested
+
+The latest P0 closure also hardened the session persistence path used by
+approval pause/resume.
+
+One concrete issue was fixed:
+
+- pending approval sessions were stored under both:
+  - `checkpoint_id`
+  - `session_id`
+- but cleanup previously removed only the checkpoint key
+
+`deletePendingSession(...)` now clears both entries, which avoids stale
+approval-session leftovers after approve / reject / completion paths.
+
+This is important because approval persistence should now be read as a real
+lifecycle contract, not merely "something happened to be stored in memory."
+
+#### 5. Handoff approval resume is now covered alongside final-answer resume
+
+Earlier approval work primarily validated:
+
+- `RunDetailed`
+- `ResumeAfterApproval`
+
+The latest closure also added explicit coverage for:
+
+- `RunHandoffDetailed`
+- `ResumeHandoffAfterApproval`
+
+This means approval semantics are now better aligned across both public output
+modes:
+
+- final answer
+- handoff
+
+rather than being validated only on the final-answer path.
+
+#### 6. Approval audit metadata is now explicitly verified
+
+The latest tests now assert that approval review state is actually preserved in
+runtime session data, including:
+
+- `Approval.RequestedAt`
+- `Approval.ReviewedAt`
+- `Approval.DecisionNote`
+- `Metadata.ApprovalDecision`
+- `Metadata.ApprovalNote`
+- `Metadata.ResumeCount`
+- `Metadata.ResumedFrom`
+
+This is a useful closure because approval is now better represented not only as
+"pause happened / resume happened," but also as an auditable lifecycle with
+review metadata.
+
+### Validation
+
+Validated on `2026-06-02`:
+
+```powershell
+go test ./internal/app/agent -count=1
+```
+
+Current focused result:
+
+- `internal/app/agent` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-06-02`, the most accurate additional `internal/app/agent`
+approval/runtime status is:
+
+1. approval now has a richer outward pending payload rather than only a thin
+   interrupt projection
+2. approval resume now has an explicit outward decision contract instead of
+   relying only on a boolean convention
+3. service-level approval failures are now described through a typed outward
+   error contract with code/kind/retryable semantics
+4. approval persistence cleanup is more correct because both checkpoint and
+   session aliases are now removed on terminal paths
+5. approval audit fields are now explicitly covered by tests, so the current
+   service lifecycle is better defined end-to-end
+6. the next best steps after this P0 closure are no longer inside approval P0
+   itself, but instead move to:
+   - bridging `RunOutcome + ApprovalPending + ServiceError` into outer chat /
+     transport layers
+   - broadening selector-driven capability usage
+   - continuing post-P0 runtime/pattern expansion

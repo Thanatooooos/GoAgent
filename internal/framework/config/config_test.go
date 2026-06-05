@@ -39,6 +39,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency != 3 {
 		t.Fatalf("unexpected rag.agent.parallel-tool-calls.max-concurrency: %d", cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency)
 	}
+	if cfg.Rag.Agent.Chat.Mode != "always" {
+		t.Fatalf("unexpected rag.agent.chat.mode: %q", cfg.Rag.Agent.Chat.Mode)
+	}
 	if !cfg.Rag.Retrieve.ParallelSubquestions.Enabled {
 		t.Fatal("expected rag.retrieve.parallel-subquestions.enabled to default to true")
 	}

@@ -28,6 +28,8 @@ type memoryRepoStub struct {
 	listActiveByKeyFn     func(context.Context, string, string, string, string) ([]domain.MemoryItem, error)
 	listActiveConflictsFn func(context.Context, []string) ([]port.ActiveMemoryConflict, error)
 	touchFn               func(context.Context, string, []string, time.Time) error
+	expireByIDsFn         func(context.Context, []string, string, time.Time) (int64, error)
+	deleteBeforeFn        func(context.Context, []string, time.Time, int) (int64, error)
 }
 
 func (s memoryRepoStub) Create(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error) {
@@ -89,6 +91,20 @@ func (s memoryRepoStub) TouchLastUsed(ctx context.Context, userID string, ids []
 		return s.touchFn(ctx, userID, ids, at)
 	}
 	return nil
+}
+
+func (s memoryRepoStub) ExpireByIDs(ctx context.Context, ids []string, updatedBy string, at time.Time) (int64, error) {
+	if s.expireByIDsFn != nil {
+		return s.expireByIDsFn(ctx, ids, updatedBy, at)
+	}
+	return 0, nil
+}
+
+func (s memoryRepoStub) DeleteByStatusesUpdatedBefore(ctx context.Context, statuses []string, updatedBefore time.Time, limit int) (int64, error) {
+	if s.deleteBeforeFn != nil {
+		return s.deleteBeforeFn(ctx, statuses, updatedBefore, limit)
+	}
+	return 0, nil
 }
 
 func TestMemoryHandlerRememberAcceptsLegacyRequestShape(t *testing.T) {

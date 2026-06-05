@@ -63,3 +63,43 @@ func TestServiceFetchMarksPartialFailureAsDegraded(t *testing.T) {
 		t.Fatalf("unexpected partial failure output: %+v", output)
 	}
 }
+
+func TestExtractTextCleansBoilerplateAndDuplicateLines(t *testing.T) {
+	text := extractText(`
+		<html>
+			<head><title>Ignored</title></head>
+			<body>
+				<header>
+					<nav>Home</nav>
+					<nav>Privacy Policy</nav>
+					<nav>Contact Us</nav>
+				</header>
+				<article>
+					<p>Go generics let you write reusable functions with type parameters.</p>
+					<p>Go generics let you write reusable functions with type parameters.</p>
+					<p>Type parameters help reduce repeated code while preserving type safety.</p>
+				</article>
+				<footer>
+					<p>All rights reserved.</p>
+					<p>Accept cookies</p>
+				</footer>
+			</body>
+		</html>
+	`)
+
+	if strings.Contains(strings.ToLower(text), "privacy policy") {
+		t.Fatalf("expected boilerplate to be removed, got %q", text)
+	}
+	if strings.Contains(strings.ToLower(text), "all rights reserved") {
+		t.Fatalf("expected footer boilerplate to be removed, got %q", text)
+	}
+	if strings.Count(text, "Go generics let you write reusable functions with type parameters.") != 1 {
+		t.Fatalf("expected duplicate body line to be removed, got %q", text)
+	}
+	if !strings.Contains(text, "Type parameters help reduce repeated code while preserving type safety.") {
+		t.Fatalf("expected meaningful content to remain, got %q", text)
+	}
+	if !strings.Contains(text, "\n\n") {
+		t.Fatalf("expected paragraph separation to be preserved, got %q", text)
+	}
+}

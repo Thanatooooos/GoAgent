@@ -11,6 +11,14 @@ import (
 	fwweb "local/rag-project/internal/framework/web"
 )
 
+type resumeApprovalRequest struct {
+	ConversationID string `json:"conversationId"`
+	Question       string `json:"question"`
+	CheckpointID   string `json:"checkpointId"`
+	Decision       string `json:"decision"`
+	DecisionNote   string `json:"decisionNote"`
+}
+
 // Chat 通过 SSE 输出最小聊天闭环的流式结果。
 func (h *Handler) Chat(c *gin.Context) {
 	user := requireLoginUser(c)
@@ -26,6 +34,34 @@ func (h *Handler) Chat(c *gin.Context) {
 		Question:         strings.TrimSpace(c.Query("question")),
 		KnowledgeBaseIDs: splitCommaValues(c.Query("knowledgeBaseId")),
 		DeepThinking:     parseBool(c.Query("deepThinking")),
+		RequireApproval:  parseBool(c.Query("requireApproval")),
+	}, sink); err != nil {
+		return
+	}
+}
+
+// ResumeAfterApproval resumes an agent-runtime chat flow after an approval decision.
+func (h *Handler) ResumeAfterApproval(c *gin.Context) {
+	user := requireLoginUser(c)
+	if user == nil {
+		return
+	}
+
+	var req resumeApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	sender := fwweb.NewSseEmitterSender(c)
+	sink := &sseChatSink{sender: sender}
+	if err := h.chatService.ResumeAfterApproval(c.Request.Context(), ragservice.RagChatApprovalResumeInput{
+		ConversationID: strings.TrimSpace(req.ConversationID),
+		UserID:         user.UserID,
+		Question:       strings.TrimSpace(req.Question),
+		CheckpointID:   strings.TrimSpace(req.CheckpointID),
+		Decision:       strings.TrimSpace(req.Decision),
+		DecisionNote:   strings.TrimSpace(req.DecisionNote),
 	}, sink); err != nil {
 		return
 	}
@@ -62,6 +98,27 @@ func (s *sseChatSink) SendFallback(reason string) error {
 // SendAgentThink 发送 agent 观察/继续规划事件。
 func (s *sseChatSink) SendAgentThink(message string) error {
 	return s.sender.SendEvent("agent_think", gin.H{"message": message})
+}
+
+func (s *sseChatSink) SendAgentOutcome(payload ragservice.RagChatAgentOutcomePayload) error {
+	if err := s.sender.SendEvent("agent_outcome", payload); err != nil {
+		return err
+	}
+	return s.sender.SendEvent("agent_status", newAgentOutcomeStatusEventPayload(payload))
+}
+
+func (s *sseChatSink) SendApprovalPending(payload ragservice.RagChatApprovalPendingPayload) error {
+	if err := s.sender.SendEvent("approval_pending", payload); err != nil {
+		return err
+	}
+	return s.sender.SendEvent("agent_status", newAgentApprovalStatusEventPayload(payload))
+}
+
+func (s *sseChatSink) SendAgentServiceError(payload ragservice.RagChatAgentServiceErrorPayload) error {
+	if err := s.sender.SendEvent("agent_service_error", payload); err != nil {
+		return err
+	}
+	return s.sender.SendEvent("agent_status", newAgentServiceErrorStatusEventPayload(payload))
 }
 
 func (s *sseChatSink) SendMemoryStored(payload ragservice.RagChatMemoryStoredPayload) error {

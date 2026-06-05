@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	agentstate "local/rag-project/internal/app/agent/state"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
@@ -206,7 +207,7 @@ func (s *RagChatService) persistAssistantMessage(
 		UserID:         strings.TrimSpace(input.UserID),
 		Question:       strings.TrimSpace(input.Question),
 		LastTime:       timePointerValue(s.tracer.now()),
-	}); err != nil {
+	}); err != nil && strings.TrimSpace(input.Question) != "" {
 		return RagChatFinishPayload{}, err
 	}
 
@@ -224,9 +225,11 @@ func (s *RagChatService) handleCancelledResult(
 	sink RagChatEventSink,
 ) error {
 	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusCancelled, result)
+	logRagChatCompletion(state.traceID, state.meta.ConversationID, result)
 
 	payload, err := s.persistAssistantMessage(ctx, state, input, result.content, result.thinking)
 	if err != nil {
+		logRagChatTerminalError(state.traceID, "persist_cancelled_result", err)
 		s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
@@ -246,6 +249,8 @@ func (s *RagChatService) handleFailedResult(
 	sink RagChatEventSink,
 ) error {
 	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusFailed, result)
+	logRagChatCompletion(state.traceID, state.meta.ConversationID, result)
+	logRagChatTerminalError(state.traceID, "stream_result", result.err)
 	s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, result.err)
 	_ = sink.SendError(result.err)
 	_ = sink.SendDone()
@@ -260,9 +265,11 @@ func (s *RagChatService) handleSucceededResult(
 	sink RagChatEventSink,
 ) error {
 	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusSuccess, result)
+	logRagChatCompletion(state.traceID, state.meta.ConversationID, result)
 
 	payload, err := s.persistAssistantMessage(ctx, state, input, result.content, result.thinking)
 	if err != nil {
+		logRagChatTerminalError(state.traceID, "persist_succeeded_result", err)
 		s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
@@ -279,21 +286,64 @@ func (s *RagChatService) runToolWorkflowStage(
 	ctx context.Context,
 	input RagChatInput,
 	history []convention.ChatMessage,
+	memoryContext string,
+	sessionContext string,
 	rewriteResult ragrewrite.Result,
 	retrieveResult ragretrieve.Result,
 	retrievalUsed bool,
 	traceID string,
 	sink RagChatEventSink,
 ) (ragChatToolStageResult, error) {
-	if s == nil || s.toolWorkflow == nil || !shouldRunToolWorkflow(input, rewriteResult, retrievalUsed) {
+	if s == nil || !shouldRunToolWorkflow(input, rewriteResult, retrievalUsed) {
 		return ragChatToolStageResult{}, nil
 	}
+	if s.shouldUseAgentRuntimeForToolStage(input, rewriteResult, retrievalUsed) {
+		agentResult, err := s.runAgentToolWorkflowStage(ctx, input, history, memoryContext, sessionContext, rewriteResult, retrieveResult, traceID, sink)
+		if err != nil {
+			return ragChatToolStageResult{}, err
+		}
+		if shouldFallbackFromAgentToolStage(agentResult) && s.toolWorkflow != nil {
+			legacyResult, legacyErr := s.runLegacyToolWorkflowStage(ctx, input, history, rewriteResult, retrieveResult, traceID, sink, true)
+			if legacyErr == nil {
+				legacyResult.fallbackFrom = "agent_runtime"
+				legacyResult.fallbackReason = firstNonEmptyString(agentResult.result.DegradeReason, agentResult.agentError.Message)
+				legacyResult.agentError = agentResult.agentError
+				return legacyResult, nil
+			}
+			return ragChatToolStageResult{}, legacyErr
+		}
+		if agentResult.agentError != nil && sink != nil {
+			_ = sink.SendAgentServiceError(*agentResult.agentError)
+		}
+		return agentResult, nil
+	}
+	return s.runLegacyToolWorkflowStage(ctx, input, history, rewriteResult, retrieveResult, traceID, sink, false)
+}
 
+func (s *RagChatService) runLegacyToolWorkflowStage(
+	ctx context.Context,
+	input RagChatInput,
+	history []convention.ChatMessage,
+	rewriteResult ragrewrite.Result,
+	retrieveResult ragretrieve.Result,
+	traceID string,
+	sink RagChatEventSink,
+	fallback bool,
+) (ragChatToolStageResult, error) {
+	if s == nil || s.toolWorkflow == nil {
+		return ragChatToolStageResult{}, nil
+	}
+	nodeID := "tool_workflow"
+	nodeName := "tool_workflow"
+	if fallback {
+		nodeID = "tool_workflow_fallback"
+		nodeName = "tool_workflow_fallback"
+	}
 	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatToolStageResult]{
 		node: ragChatTraceNode{
-			NodeID:   "tool_workflow",
+			NodeID:   nodeID,
 			NodeType: "tool",
-			NodeName: "tool_workflow",
+			NodeName: nodeName,
 		},
 		run: func(ctx context.Context) (ragChatToolStageResult, error) {
 			result, err := s.toolWorkflow.Run(ctx, ragtool.WorkflowInput{
@@ -311,28 +361,68 @@ func (s *RagChatService) runToolWorkflowStage(
 			if err != nil {
 				return ragChatToolStageResult{}, err
 			}
-			return ragChatToolStageResult{result: result}, nil
+			return ragChatToolStageResult{result: result, backend: "tool_workflow"}, nil
 		},
 		buildExtra: func(result ragChatToolStageResult) map[string]any {
-			names := make([]string, 0, len(result.result.Calls))
-			for _, call := range result.result.Calls {
-				names = append(names, strings.TrimSpace(call.Name))
-			}
-			return map[string]any{
-				"used":                result.result.Used,
-				"toolCallCount":       len(result.result.Calls),
-				"roundCount":          len(result.result.Rounds),
-				"toolNames":           names,
-				"degraded":            result.result.Degraded,
-				"degradeReason":       strings.TrimSpace(result.result.DegradeReason),
-				"capability":          strings.TrimSpace(result.result.TraceMeta.Capability),
-				"executionMode":       strings.TrimSpace(result.result.TraceMeta.ExecutionMode),
-				"riskLevel":           strings.TrimSpace(result.result.TraceMeta.RiskLevel),
-				"approvalRequirement": strings.TrimSpace(result.result.TraceMeta.ApprovalRequirement),
-				"evidenceSources":     append([]string(nil), result.result.TraceMeta.EvidenceSources...),
-			}
+			return buildToolWorkflowStageTraceExtra(result)
 		},
 	})
+}
+
+func (s *RagChatService) runAgentToolWorkflowStage(
+	ctx context.Context,
+	input RagChatInput,
+	history []convention.ChatMessage,
+	memoryContext string,
+	sessionContext string,
+	rewriteResult ragrewrite.Result,
+	retrieveResult ragretrieve.Result,
+	traceID string,
+	sink RagChatEventSink,
+) (ragChatToolStageResult, error) {
+	if s == nil || s.agentRuntime == nil {
+		return ragChatToolStageResult{}, nil
+	}
+
+	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatToolStageResult]{
+		node: ragChatTraceNode{
+			NodeID:   "agent_tool_workflow",
+			NodeType: "agent",
+			NodeName: "agent_tool_workflow",
+		},
+		run: func(ctx context.Context) (ragChatToolStageResult, error) {
+			req := buildAgentToolStageRequest(input, traceID, history, memoryContext, sessionContext, rewriteResult, retrieveResult)
+			req.Options.OutputMode = agentstate.OutputModeFinalAnswer
+			run, err := s.agentRuntime.RunDetailed(ctx, req)
+			if err != nil {
+				payload := newRagChatAgentServiceErrorPayload(err)
+				return ragChatToolStageResult{
+					backend:    "agent_runtime",
+					agentError: &payload,
+					result: ragtool.WorkflowResult{
+						Used:          true,
+						Degraded:      true,
+						DegradeReason: err.Error(),
+						Control:       defaultAgentWorkflowControl(),
+						TraceMeta:     defaultAgentWorkflowTraceMeta(),
+					},
+				}, nil
+			}
+			emitProjectedAgentToolEvents(sink, run)
+			return ragChatToolStageResult{
+				result:   workflowResultFromAgentRun(run),
+				backend:  "agent_runtime",
+				agentRun: &run,
+			}, nil
+		},
+		buildExtra: func(result ragChatToolStageResult) map[string]any {
+			return buildAgentRuntimeToolStageTraceExtra(result)
+		},
+	})
+}
+
+func shouldFallbackFromAgentToolStage(result ragChatToolStageResult) bool {
+	return result.agentRun == nil && result.agentError != nil
 }
 
 func buildFallbackPrompt(question string) string {
@@ -395,6 +485,24 @@ func (s *RagChatService) runPromptStage(
 
 func defaultWorkflowControl() ragtool.WorkflowControl {
 	return ragtool.WorkflowControl{
+		ExecutionMode:       ragtool.ExecutionModeReadOnly,
+		RiskLevel:           ragtool.RiskLevelLow,
+		ApprovalRequirement: ragtool.ApprovalRequirementNone,
+	}
+}
+
+func defaultAgentWorkflowControl() ragtool.WorkflowControl {
+	return ragtool.WorkflowControl{
+		Capability:          ragtool.CapabilityGeneral,
+		ExecutionMode:       ragtool.ExecutionModeReadOnly,
+		RiskLevel:           ragtool.RiskLevelLow,
+		ApprovalRequirement: ragtool.ApprovalRequirementNone,
+	}
+}
+
+func defaultAgentWorkflowTraceMeta() ragtool.WorkflowTraceMeta {
+	return ragtool.WorkflowTraceMeta{
+		Capability:          ragtool.CapabilityGeneral,
 		ExecutionMode:       ragtool.ExecutionModeReadOnly,
 		RiskLevel:           ragtool.RiskLevelLow,
 		ApprovalRequirement: ragtool.ApprovalRequirementNone,

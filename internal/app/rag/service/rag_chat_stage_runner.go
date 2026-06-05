@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	agentapp "local/rag-project/internal/app/agent"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/domain"
@@ -58,11 +59,11 @@ type ragChatLongTermMemoryStageResult struct {
 }
 
 type ragChatRetrieveStageResult struct {
-	result             ragretrieve.Result
-	used               bool
-	executionMode      string
+	result              ragretrieve.Result
+	used                bool
+	executionMode       string
 	wallClockDurationMs int64
-	subQuestions       []subQuestionRetrieveResult
+	subQuestions        []subQuestionRetrieveResult
 }
 
 type ragChatSessionRecallStageResult struct {
@@ -70,7 +71,12 @@ type ragChatSessionRecallStageResult struct {
 }
 
 type ragChatToolStageResult struct {
-	result ragtool.WorkflowResult
+	result         ragtool.WorkflowResult
+	backend        string
+	agentRun       *agentapp.RunResponse
+	agentError     *RagChatAgentServiceErrorPayload
+	fallbackFrom   string
+	fallbackReason string
 }
 
 type ragChatPromptStageResult struct {
@@ -90,9 +96,10 @@ type ragChatPreparedState struct {
 }
 
 type ragChatStage[T any] struct {
-	node       ragChatTraceNode
-	run        func(context.Context) (T, error)
-	buildExtra func(T) map[string]any
+	node            ragChatTraceNode
+	run             func(context.Context) (T, error)
+	buildExtra      func(T) map[string]any
+	buildErrorExtra func(error) map[string]any
 }
 
 func nextConversationExternalID() (string, error) {
@@ -167,9 +174,15 @@ func runRagChatStage[T any](ctx context.Context, tracer *ChatTracer, traceID str
 		endedAt := tracer.now()
 		if err != nil {
 			if strings.TrimSpace(traceID) != "" && stage.node.NodeID != "" {
-				_ = tracer.recordTraceNodeAt(ctx, traceID, stage.node, ragTraceStatusFailed, startedAt, endedAt, map[string]any{
+				extra := map[string]any{
 					"error": err.Error(),
-				})
+				}
+				if stage.buildErrorExtra != nil {
+					for key, value := range stage.buildErrorExtra(err) {
+						extra[key] = value
+					}
+				}
+				_ = tracer.recordTraceNodeAt(ctx, traceID, stage.node, ragTraceStatusFailed, startedAt, endedAt, extra)
 			}
 			return zero, err
 		}

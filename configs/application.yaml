@@ -47,6 +47,8 @@ rag:
 
   agent:
     max-iterations: 3
+    chat:
+      mode: always
     parallel-tool-calls:
       enabled: true
       max-concurrency: 3
@@ -131,13 +133,13 @@ rag:
       max-retries: 2
       retry-backoff-ms: 1000
 
-  mcp:
-    servers:
-      tavily:
-        enabled: false
-        transport: stdio
-        command: npx
-        args:
+    mcp:
+      servers:
+        tavily:
+          enabled: true
+          transport: stdio
+          command: npx
+          args:
           - -y
           - tavily-mcp
         env: {}

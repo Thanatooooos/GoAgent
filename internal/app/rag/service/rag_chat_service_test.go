@@ -305,6 +305,9 @@ type fallbackSinkStub struct {
 	agentThinkCalls int
 	fallbackCalls   int
 	fallbackReason  string
+	agentOutcomes   []RagChatAgentOutcomePayload
+	approvalPending []RagChatApprovalPendingPayload
+	agentErrors     []RagChatAgentServiceErrorPayload
 	memoryStored    []RagChatMemoryStoredPayload
 	sessionRecalls  []RagChatSessionRecallPayload
 	finishCalls     int
@@ -313,6 +316,8 @@ type fallbackSinkStub struct {
 	doneCalls       int
 	toolCalls       int
 	toolNames       []string
+	toolStarts      []ragtool.ToolCallEvent
+	toolResults     []ragtool.ToolCallEvent
 }
 
 func (s *fallbackSinkStub) SendMeta(meta RagChatMeta) error {
@@ -331,6 +336,21 @@ func (s *fallbackSinkStub) SendAgentThink(message string) error {
 	return nil
 }
 
+func (s *fallbackSinkStub) SendAgentOutcome(payload RagChatAgentOutcomePayload) error {
+	s.agentOutcomes = append(s.agentOutcomes, payload)
+	return nil
+}
+
+func (s *fallbackSinkStub) SendApprovalPending(payload RagChatApprovalPendingPayload) error {
+	s.approvalPending = append(s.approvalPending, payload)
+	return nil
+}
+
+func (s *fallbackSinkStub) SendAgentServiceError(payload RagChatAgentServiceErrorPayload) error {
+	s.agentErrors = append(s.agentErrors, payload)
+	return nil
+}
+
 func (s *fallbackSinkStub) SendMemoryStored(payload RagChatMemoryStoredPayload) error {
 	s.memoryStored = append(s.memoryStored, payload)
 	return nil
@@ -344,9 +364,11 @@ func (s *fallbackSinkStub) SendSessionRecall(payload RagChatSessionRecallPayload
 func (s *fallbackSinkStub) SendThinking(delta string) error { return nil }
 func (s *fallbackSinkStub) SendMessage(delta string) error  { return nil }
 func (s *fallbackSinkStub) SendToolStart(payload ragtool.ToolCallEvent) error {
+	s.toolStarts = append(s.toolStarts, payload)
 	return nil
 }
 func (s *fallbackSinkStub) SendToolResult(payload ragtool.ToolCallEvent) error {
+	s.toolResults = append(s.toolResults, payload)
 	return nil
 }
 func (s *fallbackSinkStub) SendTitle(title string) error { return nil }
@@ -863,6 +885,8 @@ func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
 		context.Background(),
 		RagChatInput{Question: "q", UserID: "u"},
 		nil,
+		"",
+		"",
 		ragrewrite.Result{},
 		ragretrieve.Result{},
 		false,
@@ -888,6 +912,8 @@ func TestRunToolWorkflowStageRunsForStructuredIDWithoutRetrieve(t *testing.T) {
 		context.Background(),
 		RagChatInput{Question: "doc_fail_01 why import failed", UserID: "u1"},
 		nil,
+		"",
+		"",
 		ragrewrite.Result{NeedRetrieval: false},
 		ragretrieve.Result{},
 		false,
@@ -930,6 +956,8 @@ func TestRunToolWorkflowStageReturnsWorkflowResult(t *testing.T) {
 			KnowledgeBaseIDs: []string{"kb-1"},
 		},
 		history,
+		"memory context",
+		"session context",
 		rewriteResult,
 		retrieveResult,
 		true,
@@ -1339,7 +1367,7 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 		t,
 		ragrewrite.Result{
 			RewrittenQuestion: "How should we troubleshoot connection refused for doc-1?",
-			SubQuestions:  []string{"connection refused troubleshooting", "vector store connectivity check"},
+			SubQuestions:      []string{"connection refused troubleshooting", "vector store connectivity check"},
 			NeedRetrieval:     false,
 		},
 		nil,
@@ -1504,7 +1532,7 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 		rewriteServiceStub{
 			result: ragrewrite.Result{
 				RewrittenQuestion: "What was the web-search provider in the earlier config?",
-				SubQuestions:  []string{"public website access policy", "network access constraint"},
+				SubQuestions:      []string{"public website access policy", "network access constraint"},
 				NeedRetrieval:     false,
 			},
 		},
@@ -1566,7 +1594,7 @@ func TestRagChatServiceChatStreamsAndFinishes(t *testing.T) {
 		t,
 		ragrewrite.Result{
 			RewrittenQuestion: "hello",
-			SubQuestions:  []string{"public internet access policy", "service network restriction"},
+			SubQuestions:      []string{"public internet access policy", "service network restriction"},
 			NeedRetrieval:     false,
 		},
 		nil,
@@ -1616,7 +1644,7 @@ func TestRagChatServiceChatTriggersFallbackGuard(t *testing.T) {
 		t,
 		ragrewrite.Result{
 			RewrittenQuestion: "kb question",
-			SubQuestions:  []string{"public internet access policy", "service network restriction"},
+			SubQuestions:      []string{"public internet access policy", "service network restriction"},
 			NeedRetrieval:     true,
 		},
 		nil,

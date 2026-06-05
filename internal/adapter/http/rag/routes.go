@@ -16,7 +16,7 @@ func RegisterRoutes(
 	messageService *ragservice.ConversationMessageService,
 	memoryService *longtermmemory.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
-	chatService *ragservice.RagChatService,
+	chatService chatService,
 	traceService *ragservice.TraceService,
 	cacheMetrics *ragcachemetrics.Service,
 ) {
@@ -31,6 +31,7 @@ func RegisterRoutes(
 	r.POST("/rag/v3/memories/:memoryId/expire", handler.ExpireMemory)
 	r.POST("/conversations/messages/:messageId/feedback", handler.SubmitFeedback)
 	r.GET("/rag/v3/chat", handler.Chat)
+	r.POST("/rag/v3/chat/approval/resume", handler.ResumeAfterApproval)
 	r.POST("/rag/v3/stop", handler.StopChat)
 
 	admin := r.Group("/")

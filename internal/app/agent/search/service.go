@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	searchprovider "local/rag-project/internal/app/agent/search/provider"
+	"local/rag-project/internal/framework/log"
 )
 
 type Service struct {
@@ -58,6 +59,12 @@ func (s *Service) Search(_ context.Context, query string) (SearchOutput, error) 
 			Summary:              fmt.Sprintf("web search failed: %v", err),
 			ProviderFallbackUsed: false,
 		}
+		log.Warnf(
+			"agent web search failed: provider=%s query=%q err=%v",
+			strings.TrimSpace(output.Provider),
+			query,
+			err,
+		)
 		return output, err
 	}
 
@@ -104,7 +111,7 @@ func (s *Service) Search(_ context.Context, query string) (SearchOutput, error) 
 		summary = fmt.Sprintf("no results found for query %q", query)
 	}
 
-	return SearchOutput{
+	output := SearchOutput{
 		Query:                query,
 		Provider:             providerName,
 		ProviderActual:       actualProvider,
@@ -116,7 +123,20 @@ func (s *Service) Search(_ context.Context, query string) (SearchOutput, error) 
 		URLs:                 fetchableURLs,
 		Results:              items,
 		Summary:              summary,
-	}, nil
+	}
+	log.Infof(
+		"agent web search completed: provider=%s actualProvider=%s fallbackUsed=%t query=%q results=%d fetchableURLs=%d allow=%d neutral=%d deny=%d",
+		strings.TrimSpace(output.Provider),
+		strings.TrimSpace(output.ProviderActual),
+		output.ProviderFallbackUsed,
+		query,
+		output.ResultCount,
+		len(output.URLs),
+		output.AllowedCount,
+		output.NeutralCount,
+		output.DeniedCount,
+	)
+	return output, nil
 }
 
 func (s *Service) enrichResult(result searchprovider.SearchResult, providerName string) searchprovider.SearchResult {

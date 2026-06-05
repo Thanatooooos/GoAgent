@@ -203,6 +203,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		cfg.Rag.Retrieve.ParallelSubquestions.Enabled,
 		cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
 	)
+	chatService.SetAgentRuntimeMode(cfg.Rag.Agent.Chat.Mode)
 	chatService.SetLongTermMemoryRecallService(explicitMemoryService.RecallService())
 	sessionRecallService := ragservice.NewSessionRecallService(sessionChunkRepo, aiRuntime.Embedding, ragservice.SessionRecallOptions{
 		Enabled:              cfg.Rag.Memory.SessionRecall.Enabled,
@@ -235,6 +236,14 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	chatService.SetSessionRecallService(sessionRecallService)
 	chatService.SetRequestCacheMaxEntries(readRequestCacheMaxEntries(cfg))
 	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, mcpManager, aiRuntime.Chat))
+	agentRuntimeService, err := buildAgentRuntimeService(cfg, mcpManager, aiRuntime.Chat)
+	if err != nil {
+		if ownsDB {
+			_ = closeRuntimeDB(db)
+		}
+		return nil, fmt.Errorf("build agent runtime service: %w", err)
+	}
+	chatService.SetAgentRuntimeService(agentRuntimeService)
 
 	runtime := &Runtime{
 		DB:           db,

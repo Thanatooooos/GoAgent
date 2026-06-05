@@ -79,7 +79,15 @@
       "Bash(xargs wc -l)",
       "Bash(go env *)",
       "Bash(echo \"D:\\\\\\\\goagent\\\\\\\\.gomodcache\")",
-      "Bash(go doc *)"
+      "Bash(go doc *)",
+      "Bash(GOCACHE=/d/goagent/.gocache-agent GOPATH=/d/goagent/.gopath GOMODCACHE=/d/goagent/.gomodcache go test ./internal/app/agent/kernel/spike/... -v -count=1 -timeout=60s)",
+      "Bash(GOCACHE=/d/goagent/.gocache-agent GOPATH=/d/goagent/.gopath GOMODCACHE=/d/goagent/.gomodcache go build ./internal/app/agent/...)",
+      "Bash(git clone *)",
+      "Bash(curl -sI https://github.com)",
+      "Bash(curl -sI https://raw.githubusercontent.com)",
+      "Bash(nslookup github.com)",
+      "Bash(taskkill //F //IM git.exe)",
+      "Bash(rm -rf D:/VictoriaMetrics)"
     ]
   }
 }

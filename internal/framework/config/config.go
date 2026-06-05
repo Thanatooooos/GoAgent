@@ -129,11 +129,16 @@ type RagDefaultConfig struct {
 type RagAgentConfig struct {
 	MaxIterations     int                            `mapstructure:"max-iterations"`
 	ParallelToolCalls RagAgentParallelToolCallConfig `mapstructure:"parallel-tool-calls"`
+	Chat              RagAgentChatConfig             `mapstructure:"chat"`
 }
 
 type RagAgentParallelToolCallConfig struct {
 	Enabled        bool `mapstructure:"enabled"`
 	MaxConcurrency int  `mapstructure:"max-concurrency"`
+}
+
+type RagAgentChatConfig struct {
+	Mode string `mapstructure:"mode"`
 }
 
 type RagRetrieveConfig struct {
