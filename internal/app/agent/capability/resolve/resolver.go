@@ -59,13 +59,29 @@ func (r *RegistryResolver) Resolve(selection selectcapability.CapabilitySelectio
 		return ResolvedCapability{}, err
 	}
 	input := any(selection.Input)
-	if normalizer, ok := handle.(agentcapability.InputNormalizer); ok {
+	if normalizer, ok := handle.(agentcapability.ResolverInputNormalizer); ok {
+		input, err = normalizer.NormalizeResolverInput(selection.Input)
+		if err != nil {
+			return ResolvedCapability{}, InvalidInputError{Name: matched.Name, Err: err}
+		}
+	} else if normalizer, ok := handle.(agentcapability.InputNormalizer); ok {
 		input, err = normalizer.NormalizeInput(selection.Input)
 		if err != nil {
 			return ResolvedCapability{}, InvalidInputError{Name: matched.Name, Err: err}
 		}
 	}
 	if err := agentcapability.ValidateInput(matched.Spec, input); err != nil {
+		if agentcapability.IsPreconditionError(err) {
+			if fallback, ok := handle.(agentcapability.ResolvePreconditionFallback); ok && fallback.ResolveOnPreconditionFailure(err) {
+				return ResolvedCapability{
+					Name:      matched.Name,
+					Spec:      matched.Spec,
+					Handle:    handle,
+					Input:     input,
+					Selection: selection,
+				}, nil
+			}
+		}
 		return ResolvedCapability{}, InvalidInputError{Name: matched.Name, Err: err}
 	}
 	return ResolvedCapability{

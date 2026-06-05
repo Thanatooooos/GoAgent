@@ -1,6 +1,7 @@
 package capability
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -25,6 +26,11 @@ func (e PreconditionError) Error() string {
 		return fmt.Sprintf("capability precondition failed: %s", field)
 	}
 	return fmt.Sprintf("capability precondition failed: %s must satisfy %s", field, requirement)
+}
+
+func IsPreconditionError(err error) bool {
+	var target PreconditionError
+	return errors.As(err, &target)
 }
 
 // ValidateInput checks the declared input preconditions against the provided invocation input.
@@ -59,7 +65,7 @@ func validatePrecondition(value reflect.Value, precondition Precondition) error 
 		return PreconditionError{Field: precondition.Field, Requirement: precondition.Requirement}
 	}
 	switch strings.TrimSpace(precondition.Requirement) {
-	case "non_empty":
+	case PreconditionRequirementNonEmpty:
 		if isEmptyValue(fieldValue) {
 			return PreconditionError{Field: precondition.Field, Requirement: precondition.Requirement}
 		}

@@ -76,11 +76,7 @@ func NewCapability(investigator Investigator, options ...agentcapability.Option)
 			},
 		},
 	}
-	for _, option := range options {
-		if option != nil {
-			option(&spec)
-		}
-	}
+	agentcapability.ApplyOptions(&spec, options...)
 
 	return capabilityAdapter{
 		spec:         spec,
@@ -93,23 +89,20 @@ func (c capabilityAdapter) Spec() agentcapability.Spec {
 }
 
 func (c capabilityAdapter) NormalizeInput(raw any) (any, error) {
-	return decodeCapabilityInput(raw)
+	return agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, raw, "document investigation input is required", "document investigation input")
 }
 
 func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.InvocationRequest) (agentcapability.InvocationResult, error) {
-	input, err := decodeCapabilityInput(req.Input)
+	input, err := agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, req.Input, "document investigation input is required", "document investigation input")
 	if err != nil {
-		return validationFailure(c.spec, err), err
-	}
-	if err := agentcapability.ValidateInput(c.spec, input); err != nil {
-		return validationFailure(c.spec, err), err
+		return agentcapability.ValidationFailureResult(c.spec, "document investigation rejected", err), err
 	}
 
 	document, err := c.investigator.Get(ctx, knowledgeservice.GetKnowledgeDocumentInput{
 		DocumentID: input.DocumentID,
 	})
 	if err != nil {
-		return dependencyFailure(c.spec, "document lookup failed", err), err
+		return agentcapability.DependencyFailureResult(c.spec, "document lookup failed", err), err
 	}
 	chunkLogs, err := c.investigator.PageChunkLogs(ctx, knowledgeservice.KnowledgeDocumentChunkLogPageInput{
 		DocumentID: input.DocumentID,
@@ -117,7 +110,7 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		PageSize:   3,
 	})
 	if err != nil {
-		return dependencyFailure(c.spec, "document chunk-log lookup failed", err), err
+		return agentcapability.DependencyFailureResult(c.spec, "document chunk-log lookup failed", err), err
 	}
 
 	output := diagnose(document, chunkLogs)
@@ -156,46 +149,6 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 			},
 		},
 	}, nil
-}
-
-func decodeCapabilityInput(raw any) (CapabilityInput, error) {
-	input, err := agentcapability.DecodeStructuredInput[CapabilityInput](raw, "document investigation input is required")
-	if err != nil {
-		return CapabilityInput{}, fmt.Errorf("document investigation input has unexpected type %T: %w", raw, err)
-	}
-	return input, nil
-}
-
-func validationFailure(spec agentcapability.Spec, err error) agentcapability.InvocationResult {
-	return agentcapability.InvocationResult{
-		Action: agentcapability.ActionRecord{
-			Name:    spec.Name,
-			Summary: "document investigation rejected",
-		},
-		Observation: agentcapability.ObservationRecord{
-			Summary:    err.Error(),
-			Degraded:   true,
-			ErrorClass: agentcapability.ErrorClassValidation,
-		},
-		Status:     agentcapability.StatusDegraded,
-		ErrorClass: agentcapability.ErrorClassValidation,
-	}
-}
-
-func dependencyFailure(spec agentcapability.Spec, summary string, err error) agentcapability.InvocationResult {
-	return agentcapability.InvocationResult{
-		Action: agentcapability.ActionRecord{
-			Name:    spec.Name,
-			Summary: summary,
-		},
-		Observation: agentcapability.ObservationRecord{
-			Summary:    err.Error(),
-			Degraded:   true,
-			ErrorClass: agentcapability.ErrorClassDependency,
-		},
-		Status:     agentcapability.StatusDegraded,
-		ErrorClass: agentcapability.ErrorClassDependency,
-	}
 }
 
 var (

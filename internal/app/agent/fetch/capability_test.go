@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
+	agentresolve "local/rag-project/internal/app/agent/capability/resolve"
+	selectcapability "local/rag-project/internal/app/agent/capability/select"
 )
 
 type stubCapabilityInvoker struct {
@@ -73,6 +75,37 @@ func TestCapabilityInvokeSkipsWhenNoURLs(t *testing.T) {
 	}
 	if result.Delta.Context == nil || len(result.Delta.Context.Notes) == 0 {
 		t.Fatalf("expected skip note in delta, got %+v", result.Delta)
+	}
+}
+
+func TestCapabilityResolveAllowsSkipWhenNoURLs(t *testing.T) {
+	handle, err := NewCapability(&stubCapabilityInvoker{})
+	if err != nil {
+		t.Fatalf("NewCapability() error = %v", err)
+	}
+
+	registry := agentcapability.NewRegistry()
+	if err := registry.Register(handle); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	resolver := agentresolve.NewRegistryResolver(registry)
+
+	resolved, err := resolver.Resolve(selectcapability.CapabilitySelection{
+		Name:  agentcapability.NameWebFetch,
+		Input: map[string]any{"urls": []string{}},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	result, err := resolved.Handle.Invoke(context.Background(), agentcapability.InvocationRequest{
+		Input: resolved.Input,
+	})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if result.Status != agentcapability.StatusSkipped {
+		t.Fatalf("expected skipped status after resolver path, got %+v", result)
 	}
 }
 

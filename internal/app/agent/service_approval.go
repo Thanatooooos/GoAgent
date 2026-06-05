@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
 	agentstate "local/rag-project/internal/app/agent/state"
+	"local/rag-project/internal/framework/log"
 )
 
 func (s *Service) approvalPendingFromSession(session *agentruntime.RuntimeSession, fallbackCheckpointID string) *ApprovalPending {
@@ -17,6 +19,17 @@ func (s *Service) approvalPendingFromSession(session *agentruntime.RuntimeSessio
 	node := firstNonEmpty(approval.Node, session.Snapshot.Execution.CurrentNode)
 	spec, capabilityName, ok := s.approvalSpecForSession(session, node)
 	step, hasStep := approvalPlanStep(session, capabilityName)
+
+	searchQuery, err := approvalSearchQuery(session, step, hasStep)
+	if err != nil {
+		log.Warnf("agent approval: failed to extract search query from capability input: %v", err)
+		searchQuery = ""
+	}
+	candidateURLs, err := approvalCandidateURLs(session, step, hasStep)
+	if err != nil {
+		log.Warnf("agent approval: failed to extract candidate URLs from capability input: %v", err)
+		candidateURLs = nil
+	}
 
 	return &ApprovalPending{
 		Required:              true,
@@ -40,10 +53,10 @@ func (s *Service) approvalPendingFromSession(session *agentruntime.RuntimeSessio
 		RequestedAt:           approval.RequestedAt,
 		ResumeCount:           session.Metadata.ResumeCount,
 		Question:              approvalQuestion(session),
-		SearchQuery:           approvalSearchQuery(session, step, hasStep),
+		SearchQuery:           searchQuery,
 		CurrentStepID:         approvalPlanStepField(hasStep, step.StepID),
 		CurrentStepTitle:      approvalPlanStepField(hasStep, step.Title),
-		CandidateURLs:         approvalCandidateURLs(session, step, hasStep),
+		CandidateURLs:         candidateURLs,
 		CanApprove:            true,
 		CanReject:             true,
 		RejectOutcome:         RunStatusDegraded,
@@ -68,73 +81,6 @@ func (s *Service) approvalSpecForSession(session *agentruntime.RuntimeSession, n
 		return spec, firstNonEmpty(capabilityName, resolvedName), true
 	}
 	return agentcapability.Spec{}, capabilityName, false
-}
-
-func approvalPlanStep(session *agentruntime.RuntimeSession, capabilityName string) (agentstate.PlanStep, bool) {
-	if session == nil {
-		return agentstate.PlanStep{}, false
-	}
-
-	plan := session.Snapshot.Plan
-	if plan.CurrentStepIndex >= 0 && plan.CurrentStepIndex < len(plan.Steps) {
-		return plan.Steps[plan.CurrentStepIndex], true
-	}
-
-	trimmedCapability := strings.TrimSpace(capabilityName)
-	if trimmedCapability == "" {
-		return agentstate.PlanStep{}, false
-	}
-	for _, step := range plan.Steps {
-		if strings.TrimSpace(step.CapabilityName) != trimmedCapability {
-			continue
-		}
-		if step.Status == agentstate.PlanStepStatusPending || step.Status == agentstate.PlanStepStatusRunning {
-			return step, true
-		}
-	}
-	return agentstate.PlanStep{}, false
-}
-
-func approvalQuestion(session *agentruntime.RuntimeSession) string {
-	if session == nil {
-		return ""
-	}
-	return firstNonEmpty(
-		session.Snapshot.Request.Question,
-		session.Request.Question,
-	)
-}
-
-func approvalSearchQuery(session *agentruntime.RuntimeSession, step agentstate.PlanStep, hasStep bool) string {
-	if hasStep {
-		if query := firstNonEmpty(step.Query, stringCapabilityInput(step.CapabilityInput, "query")); query != "" {
-			return query
-		}
-	}
-	if session == nil {
-		return ""
-	}
-	return firstNonEmpty(
-		session.Snapshot.Context.SearchQuery,
-		session.Snapshot.Context.RewrittenQuery,
-		session.Snapshot.Request.Question,
-		session.Request.Question,
-	)
-}
-
-func approvalCandidateURLs(session *agentruntime.RuntimeSession, step agentstate.PlanStep, hasStep bool) []string {
-	candidates := make([]string, 0, 4)
-	if hasStep {
-		candidates = append(candidates, step.URLs...)
-		candidates = append(candidates, stringSliceCapabilityInput(step.CapabilityInput, "urls")...)
-	}
-	if session != nil {
-		candidates = append(candidates, session.Snapshot.Context.PreferredURLs...)
-		for _, result := range session.Snapshot.Context.SearchResults {
-			candidates = append(candidates, result.URL)
-		}
-	}
-	return uniqueNonEmptyStrings(candidates...)
 }
 
 func approvalReasonMessage(reasonCode string, capabilityName string) string {
@@ -196,43 +142,119 @@ func approvalPlanStepField(hasStep bool, value string) string {
 	return strings.TrimSpace(value)
 }
 
-func stringCapabilityInput(values map[string]any, key string) string {
-	if len(values) == 0 {
+func approvalPlanStep(session *agentruntime.RuntimeSession, capabilityName string) (agentstate.PlanStep, bool) {
+	if session == nil {
+		return agentstate.PlanStep{}, false
+	}
+
+	plan := session.Snapshot.Plan
+	if plan.CurrentStepIndex >= 0 && plan.CurrentStepIndex < len(plan.Steps) {
+		return plan.Steps[plan.CurrentStepIndex], true
+	}
+
+	trimmedCapability := strings.TrimSpace(capabilityName)
+	if trimmedCapability == "" {
+		return agentstate.PlanStep{}, false
+	}
+	for _, step := range plan.Steps {
+		if strings.TrimSpace(step.CapabilityName) != trimmedCapability {
+			continue
+		}
+		if step.Status == agentstate.PlanStepStatusPending || step.Status == agentstate.PlanStepStatusRunning {
+			return step, true
+		}
+	}
+	return agentstate.PlanStep{}, false
+}
+
+func approvalQuestion(session *agentruntime.RuntimeSession) string {
+	if session == nil {
 		return ""
+	}
+	return firstNonEmpty(
+		session.Snapshot.Request.Question,
+		session.Request.Question,
+	)
+}
+
+func approvalSearchQuery(session *agentruntime.RuntimeSession, step agentstate.PlanStep, hasStep bool) (string, error) {
+	if hasStep {
+		capInput, err := stringCapabilityInput(step.CapabilityInput, "query")
+		if err != nil {
+			return "", err
+		}
+		if query := firstNonEmpty(step.Query, capInput); query != "" {
+			return query, nil
+		}
+	}
+	if session == nil {
+		return "", nil
+	}
+	return firstNonEmpty(
+		session.Snapshot.Context.SearchQuery,
+		session.Snapshot.Context.RewrittenQuery,
+		session.Snapshot.Request.Question,
+		session.Request.Question,
+	), nil
+}
+
+func approvalCandidateURLs(session *agentruntime.RuntimeSession, step agentstate.PlanStep, hasStep bool) ([]string, error) {
+	candidates := make([]string, 0, 4)
+	if hasStep {
+		candidates = append(candidates, step.URLs...)
+		urls, err := stringSliceCapabilityInput(step.CapabilityInput, "urls")
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, urls...)
+	}
+	if session != nil {
+		candidates = append(candidates, session.Snapshot.Context.PreferredURLs...)
+		for _, result := range session.Snapshot.Context.SearchResults {
+			candidates = append(candidates, result.URL)
+		}
+	}
+	return uniqueNonEmptyStrings(candidates...), nil
+}
+
+func stringCapabilityInput(values map[string]any, key string) (string, error) {
+	if len(values) == 0 {
+		return "", nil
 	}
 	value, ok := values[key]
 	if !ok {
-		return ""
+		return "", nil
 	}
 	text, ok := value.(string)
 	if !ok {
-		return ""
+		return "", fmt.Errorf("capability input key %q has unexpected type %T, expected string", key, value)
 	}
-	return strings.TrimSpace(text)
+	return strings.TrimSpace(text), nil
 }
 
-func stringSliceCapabilityInput(values map[string]any, key string) []string {
+func stringSliceCapabilityInput(values map[string]any, key string) ([]string, error) {
 	if len(values) == 0 {
-		return nil
+		return nil, nil
 	}
 	value, ok := values[key]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	switch typed := value.(type) {
 	case []string:
-		return uniqueNonEmptyStrings(typed...)
+		return uniqueNonEmptyStrings(typed...), nil
 	case []any:
 		items := make([]string, 0, len(typed))
 		for _, item := range typed {
 			text, ok := item.(string)
-			if ok {
-				items = append(items, text)
+			if !ok {
+				return nil, fmt.Errorf("capability input key %q contains element of unexpected type %T, expected string", key, item)
 			}
+			items = append(items, text)
 		}
-		return uniqueNonEmptyStrings(items...)
+		return uniqueNonEmptyStrings(items...), nil
 	default:
-		return nil
+		return nil, fmt.Errorf("capability input key %q has unexpected type %T, expected []string or []any", key, value)
 	}
 }
 
@@ -257,4 +279,28 @@ func uniqueNonEmptyStrings(values ...string) []string {
 		return nil
 	}
 	return result
+}
+
+type approvalResumeDecision struct {
+	value    string
+	approved bool
+}
+
+func resolveApprovalResumeDecision(req ResumeApprovalRequest) (approvalResumeDecision, error) {
+	switch strings.TrimSpace(req.Decision) {
+	case "":
+		if req.Approved {
+			return approvalResumeDecision{value: agentstate.ApprovalStatusApproved, approved: true}, nil
+		}
+		return approvalResumeDecision{value: agentstate.ApprovalStatusRejected, approved: false}, nil
+	case ApprovalDecisionApproved:
+		return approvalResumeDecision{value: agentstate.ApprovalStatusApproved, approved: true}, nil
+	case ApprovalDecisionRejected:
+		return approvalResumeDecision{value: agentstate.ApprovalStatusRejected, approved: false}, nil
+	default:
+		return approvalResumeDecision{}, serviceError(
+			ErrorCodeApprovalDecisionInvalid,
+			`approval decision must be one of "approved" or "rejected"`,
+		)
+	}
 }

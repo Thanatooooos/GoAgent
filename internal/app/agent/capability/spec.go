@@ -35,6 +35,8 @@ const (
 	IdempotencyUnknown    = "unknown"
 	IdempotencyIdempotent = "idempotent"
 	IdempotencyBestEffort = "best_effort"
+
+	PreconditionRequirementNonEmpty = "non_empty"
 )
 
 // Schema is the minimal Go-runtime-verifiable schema descriptor carried by a capability spec.
@@ -90,4 +92,31 @@ func normalizeTypeName(sample any) string {
 		return typ.String()
 	}
 	return typ.PkgPath() + "." + typ.Name()
+}
+
+func isKnownFamily(family string) bool {
+	switch strings.TrimSpace(family) {
+	case FamilyExternalEvidence, FamilyDocumentInvestigation, FamilyTraceInvestigation, FamilyDiscovery, FamilyMeta:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownRole(role string) bool {
+	switch strings.TrimSpace(role) {
+	case RoleSearch, RoleFetch, RoleInvestigateDocument, RoleInvestigateTrace, RoleDiscover, RoleCollectExternalEvidence:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedPreconditionRequirement(requirement string) bool {
+	switch strings.TrimSpace(requirement) {
+	case PreconditionRequirementNonEmpty:
+		return true
+	default:
+		return false
+	}
 }

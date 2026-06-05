@@ -58,75 +58,41 @@ func NewCapability(invoker SearchInvoker, options ...agentcapability.Option) (ag
 	}, nil
 }
 
+func applyCapabilityOptions(spec *agentcapability.Spec, options ...agentcapability.Option) {
+	agentcapability.ApplyOptions(spec, options...)
+}
+
 func (c capabilityAdapter) Spec() agentcapability.Spec {
 	return c.spec
 }
 
 func (c capabilityAdapter) NormalizeInput(raw any) (any, error) {
-	return decodeCapabilityInput(raw)
+	return agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, raw, "search capability input is required", "search capability input")
 }
 
 func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.InvocationRequest) (agentcapability.InvocationResult, error) {
-	input, err := decodeCapabilityInput(req.Input)
+	input, err := agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, req.Input, "search capability input is required", "search capability input")
 	if err != nil {
-		return agentcapability.InvocationResult{
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: "search invocation rejected",
+		result := agentcapability.ValidationFailureResult(c.spec, "search invocation rejected", err)
+		result.Delta = agentstate.StateDelta{
+			Context: &agentstate.ContextDelta{
+				SearchErrorClass: agentcapability.StringPtr(agentcapability.ErrorClassValidation),
+				Notes:            agentcapability.AppendNonEmpty(nil, err.Error()),
 			},
-			Observation: agentcapability.ObservationRecord{
-				Summary:    err.Error(),
-				Degraded:   true,
-				ErrorClass: agentcapability.ErrorClassValidation,
-			},
-			Status:     agentcapability.StatusDegraded,
-			ErrorClass: agentcapability.ErrorClassValidation,
-		}, err
-	}
-	if err := agentcapability.ValidateInput(c.spec, input); err != nil {
-		return agentcapability.InvocationResult{
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: "search invocation rejected",
-			},
-			Observation: agentcapability.ObservationRecord{
-				Summary:    err.Error(),
-				Degraded:   true,
-				ErrorClass: agentcapability.ErrorClassValidation,
-			},
-			Status:     agentcapability.StatusDegraded,
-			ErrorClass: agentcapability.ErrorClassValidation,
-			Delta: agentstate.StateDelta{
-				Context: &agentstate.ContextDelta{
-					SearchErrorClass: stringPtr(agentcapability.ErrorClassValidation),
-					Notes:            appendNonEmpty(nil, err.Error()),
-				},
-			},
-		}, err
+		}
+		return result, err
 	}
 
 	query := strings.TrimSpace(input.Query)
 	output, invokeErr := c.invoker.Search(ctx, query)
 	if invokeErr != nil && strings.TrimSpace(output.Query) == "" {
-		return agentcapability.InvocationResult{
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: fmt.Sprintf("search web for %q", query),
-			},
-			Observation: agentcapability.ObservationRecord{
-				Summary:    invokeErr.Error(),
-				Degraded:   true,
-				ErrorClass: agentcapability.ErrorClassExternal,
-			},
-			Status:     agentcapability.StatusDegraded,
-			ErrorClass: agentcapability.ErrorClassExternal,
-		}, invokeErr
+		return agentcapability.ExternalFailureResult(c.spec, fmt.Sprintf("search web for %q", query), invokeErr), invokeErr
 	}
 
 	note := output.Summary
 	status := agentcapability.StatusSucceeded
 	if output.Degraded {
-		note = firstNonEmpty(output.DegradeReason, output.ErrorMessage, output.Summary)
+		note = agentcapability.FirstNonEmpty(output.DegradeReason, output.ErrorMessage, output.Summary)
 		status = agentcapability.StatusDegraded
 	}
 
@@ -134,7 +100,7 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		Output: output,
 		Action: agentcapability.ActionRecord{
 			Name:    c.spec.Name,
-			Summary: fmt.Sprintf("search web for %q", firstNonEmpty(output.Query, query)),
+			Summary: fmt.Sprintf("search web for %q", agentcapability.FirstNonEmpty(output.Query, query)),
 		},
 		Observation: agentcapability.ObservationRecord{
 			Summary:    output.Summary,
@@ -143,12 +109,12 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		},
 		Delta: agentstate.StateDelta{
 			Context: &agentstate.ContextDelta{
-				SearchQuery:          stringPtr(output.Query),
-				SearchProvider:       stringPtr(output.Provider),
-				SearchProviderActual: stringPtrIfNotEmpty(output.ProviderActual),
-				SearchErrorClass:     stringPtr(classificationForSearch(output)),
+				SearchQuery:          agentcapability.StringPtr(output.Query),
+				SearchProvider:       agentcapability.StringPtr(output.Provider),
+				SearchProviderActual: agentcapability.StringPtrIfNotEmpty(output.ProviderActual),
+				SearchErrorClass:     agentcapability.StringPtr(classificationForSearch(output)),
 				SearchResults:        toSearchRefs(output.Results, output.ProviderActual, output.Provider),
-				Notes:                appendNonEmpty(nil, note),
+				Notes:                agentcapability.AppendNonEmpty(nil, note),
 			},
 		},
 		Status:     status,
@@ -158,14 +124,6 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		return result, nil
 	}
 	return result, nil
-}
-
-func decodeCapabilityInput(raw any) (CapabilityInput, error) {
-	input, err := agentcapability.DecodeStructuredInput[CapabilityInput](raw, "search capability input is required")
-	if err != nil {
-		return CapabilityInput{}, fmt.Errorf("search capability input has unexpected type %T: %w", raw, err)
-	}
-	return input, nil
 }
 
 func toSearchRefs(items []SearchResultItem, providerActual, provider string) []agentstate.SearchResultRef {
@@ -179,7 +137,7 @@ func toSearchRefs(items []SearchResultItem, providerActual, provider string) []a
 			Title:      item.Title,
 			URL:        item.URL,
 			Snippet:    item.Snippet,
-			Source:     firstNonEmpty(item.Domain, item.SourceType, providerActual, provider),
+			Source:     agentcapability.FirstNonEmpty(item.Domain, item.SourceType, providerActual, provider),
 			Domain:     item.Domain,
 			SourceType: item.SourceType,
 			Policy:     item.Policy,
@@ -194,74 +152,11 @@ func classificationForSearch(output SearchOutput) string {
 	if !output.Degraded {
 		return ""
 	}
-	if matchesPermissionError(output.DegradeReason, output.ErrorMessage, output.Summary) {
+	if agentcapability.MatchesPermissionError(output.DegradeReason, output.ErrorMessage, output.Summary) {
 		return agentcapability.ErrorClassPermission
 	}
-	if matchesDependencyError(output.DegradeReason, output.ErrorMessage, output.Summary) {
+	if agentcapability.MatchesDependencyError(output.DegradeReason, output.ErrorMessage, output.Summary) {
 		return agentcapability.ErrorClassDependency
 	}
 	return agentcapability.ErrorClassExternal
-}
-
-func applyCapabilityOptions(spec *agentcapability.Spec, options ...agentcapability.Option) {
-	for _, option := range options {
-		if option != nil {
-			option(spec)
-		}
-	}
-}
-
-func appendNonEmpty(values []string, candidates ...string) []string {
-	for _, candidate := range candidates {
-		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
-			values = append(values, trimmed)
-		}
-	}
-	if len(values) == 0 {
-		return nil
-	}
-	return values
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
-func matchesPermissionError(values ...string) bool {
-	return containsClassificationKeyword(values, "permission", "forbidden", "unauthorized", "approval", "access denied", "not allowed")
-}
-
-func matchesDependencyError(values ...string) bool {
-	return containsClassificationKeyword(values, "dependency", "upstream unavailable", "provider unavailable")
-}
-
-func containsClassificationKeyword(values []string, keywords ...string) bool {
-	for _, value := range values {
-		normalized := strings.ToLower(strings.TrimSpace(value))
-		if normalized == "" {
-			continue
-		}
-		for _, keyword := range keywords {
-			if strings.Contains(normalized, keyword) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func stringPtr(value string) *string {
-	return &value
-}
-
-func stringPtrIfNotEmpty(value string) *string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	return &value
 }

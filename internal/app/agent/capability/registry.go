@@ -128,9 +128,17 @@ func normalizeSpec(spec Spec) (Spec, string, error) {
 	if spec.Family == "" {
 		return Spec{}, "", fmt.Errorf("capability spec family is required for %q", name)
 	}
+	if !isKnownFamily(spec.Family) {
+		return Spec{}, "", fmt.Errorf("capability spec family %q is not supported for %q", spec.Family, name)
+	}
 	spec.Roles = normalizeNames(spec.Roles)
 	if len(spec.Roles) == 0 {
 		return Spec{}, "", fmt.Errorf("capability spec roles are required for %q", name)
+	}
+	for _, role := range spec.Roles {
+		if !isKnownRole(role) {
+			return Spec{}, "", fmt.Errorf("capability spec role %q is not supported for %q", role, name)
+		}
 	}
 	spec.Description = strings.TrimSpace(spec.Description)
 	if spec.Description == "" {
@@ -143,9 +151,20 @@ func normalizeSpec(spec Spec) (Spec, string, error) {
 		return Spec{}, "", fmt.Errorf("capability spec output schema is required for %q", name)
 	}
 	spec.RiskLevel = normalizeRiskLevel(spec.RiskLevel)
+	if spec.RiskLevel == "" {
+		return Spec{}, "", fmt.Errorf("capability spec risk level is not supported for %q", name)
+	}
 	spec.Dependencies = normalizeNames(spec.Dependencies)
 	spec.Preconditions = normalizePreconditions(spec.Preconditions)
 	spec.Idempotency = normalizeIdempotency(spec.Idempotency)
+	if spec.Idempotency == "" {
+		return Spec{}, "", fmt.Errorf("capability spec idempotency is not supported for %q", name)
+	}
+	for _, precondition := range spec.Preconditions {
+		if !isSupportedPreconditionRequirement(precondition.Requirement) {
+			return Spec{}, "", fmt.Errorf("capability spec precondition requirement %q is not supported for %q", precondition.Requirement, name)
+		}
+	}
 	for _, dependency := range spec.Dependencies {
 		if dependency == name {
 			return Spec{}, "", fmt.Errorf("capability %q cannot depend on itself", name)
@@ -182,7 +201,7 @@ func normalizeRiskLevel(level string) string {
 	case RiskLevelHigh:
 		return RiskLevelHigh
 	default:
-		return trimmed
+		return ""
 	}
 }
 
@@ -195,7 +214,7 @@ func normalizeIdempotency(level string) string {
 	case IdempotencyBestEffort:
 		return IdempotencyBestEffort
 	default:
-		return trimmed
+		return ""
 	}
 }
 

@@ -144,11 +144,3 @@ func WithIdempotency(level string) Option {
 		spec.Idempotency = strings.TrimSpace(level)
 	}
 }
-
-func applyOptions(spec *Spec, options ...Option) {
-	for _, option := range options {
-		if option != nil {
-			option(spec)
-		}
-	}
-}

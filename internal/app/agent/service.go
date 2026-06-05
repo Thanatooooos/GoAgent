@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -11,16 +10,10 @@ import (
 	agentresolve "local/rag-project/internal/app/agent/capability/resolve"
 	selectcapability "local/rag-project/internal/app/agent/capability/select"
 	agentdocumentinvestigation "local/rag-project/internal/app/agent/document_investigation"
-	agentexternal "local/rag-project/internal/app/agent/external_evidence"
 	agentfetch "local/rag-project/internal/app/agent/fetch"
 	agenthandoff "local/rag-project/internal/app/agent/handoff"
 	agentkernel "local/rag-project/internal/app/agent/kernel"
-	agentpattern "local/rag-project/internal/app/agent/pattern"
-	agentplanexecute "local/rag-project/internal/app/agent/pattern/planexecute"
-	agentreactive "local/rag-project/internal/app/agent/pattern/reactive"
-	agentplanner "local/rag-project/internal/app/agent/planner"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
-	agentsearch "local/rag-project/internal/app/agent/search"
 	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	agentstate "local/rag-project/internal/app/agent/state"
 	"local/rag-project/internal/framework/config"
@@ -58,159 +51,6 @@ type Service struct {
 	outputMode    string
 	pattern       string
 	runtimeName   string
-}
-
-func NewService(opts ServiceOptions) (*Service, error) {
-	cfg := opts.Config
-	if cfg == nil {
-		cfg = config.Get()
-	}
-
-	provider := opts.Provider
-	if provider == nil {
-		provider = searchprovider.BuildProvider(cfg, opts.MCPManager)
-	}
-	policy := opts.SourcePolicy
-	if policy == nil {
-		policy = searchprovider.BuildSourcePolicy(cfg)
-	}
-
-	searchService := agentsearch.NewService(provider, policy)
-	fetchService := opts.FetchService
-	if fetchService == nil {
-		fetchService = agentfetch.NewService(opts.HTTPClient)
-	}
-	planner := agentplanner.NewLLMPlanner(opts.LLMService)
-	checkpointStore := opts.CheckpointStore
-	if checkpointStore == nil {
-		checkpointStore = agentkernel.NewMemoryCheckpointStore()
-	}
-	sessionStore := opts.SessionStore
-	if sessionStore == nil {
-		sessionStore = agentruntime.NewMemorySessionStore()
-	}
-	outputMode := strings.TrimSpace(opts.OutputMode)
-	if outputMode == "" {
-		outputMode = agentstate.OutputModeHandoff
-	}
-	patternName := normalizePattern(opts.Pattern)
-	runtimeName := runtimeNameForPattern(patternName)
-	registry, bindings, err := assembleCapabilities(searchService, fetchService, opts.DocumentInvestigator)
-	if err != nil {
-		return nil, err
-	}
-	catalogBuilder := opts.CapabilityCatalogBuilder
-	if catalogBuilder == nil {
-		catalogBuilder = agentcatalog.NewBuilder()
-	}
-	capabilitySelector := opts.CapabilitySelector
-	if capabilitySelector == nil && opts.LLMService != nil {
-		capabilitySelector = selectcapability.NewLLMSelector(opts.LLMService)
-	}
-	capabilityResolver := opts.CapabilityResolver
-	if capabilityResolver == nil {
-		capabilityResolver = agentresolve.NewRegistryResolver(registry)
-	}
-	handoffBuilder := buildHandoffBuilder(registry, bindings, patternName)
-
-	runner, err := compileRunner(context.Background(), patternName, registry, bindings, agentpattern.RuntimeConfig{
-		Planner:                  planner,
-		CapabilityCatalogBuilder: catalogBuilder,
-		CapabilitySelector:       capabilitySelector,
-		CapabilityResolver:       capabilityResolver,
-		OutputMode:               outputMode,
-		ApprovalSessionStore:     sessionStore,
-		Kernel: agentkernel.BuilderConfig{
-			GraphName:       runtimeName,
-			Reducer:         agentstate.DefaultReducer{},
-			CheckpointStore: checkpointStore,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	service := &Service{
-		runner:        runner,
-		handoff:       handoffBuilder,
-		registry:      registry,
-		bindings:      bindings,
-		sessionStore:  sessionStore,
-		reducer:       agentstate.DefaultReducer{},
-		maxIterations: opts.MaxIterations,
-		outputMode:    outputMode,
-		pattern:       patternName,
-		runtimeName:   runtimeName,
-	}
-	logAgentServiceInitialized(service.pattern, service.runtimeName, service.maxIterations, service.outputMode)
-	return service, nil
-}
-
-func compileRunner(ctx context.Context, patternName string, registry *agentcapability.Registry, bindings agentcapability.RoleBindings, runtimeCfg agentpattern.RuntimeConfig) (*agentkernel.Runner, error) {
-	assembly := agentpattern.AssemblyContext{
-		Registry: registry,
-		Bindings: bindings,
-	}
-	switch normalizePattern(patternName) {
-	case PatternPlanExecute:
-		return agentplanexecute.Compile(ctx, agentplanexecute.Config{
-			Assembly: assembly,
-			Runtime:  runtimeCfg,
-		})
-	default:
-		return agentreactive.Compile(ctx, agentreactive.Config{
-			Assembly: assembly,
-			Runtime:  runtimeCfg,
-		})
-	}
-}
-
-func buildHandoffBuilder(registry *agentcapability.Registry, bindings agentcapability.RoleBindings, patternName string) *agenthandoff.Builder {
-	switch normalizePattern(patternName) {
-	case PatternReactive:
-		return agenthandoff.NewBuilderFromRegistry(registry, agentreactive.HandoffBindings(bindings))
-	default:
-		return agenthandoff.NewBuilderFromRegistry(registry, nil)
-	}
-}
-
-func assembleCapabilities(searchService *agentsearch.Service, fetchService *agentfetch.Service, documentInvestigator agentdocumentinvestigation.Investigator) (*agentcapability.Registry, agentcapability.RoleBindings, error) {
-	searchCapability, err := agentsearch.NewCapability(searchService)
-	if err != nil {
-		return nil, nil, err
-	}
-	fetchCapability, err := agentfetch.NewCapability(fetchService)
-	if err != nil {
-		return nil, nil, err
-	}
-	externalEvidenceCapability, err := agentexternal.NewCapability(searchCapability, fetchCapability)
-	if err != nil {
-		return nil, nil, err
-	}
-	var documentInvestigationCapability agentcapability.Handle
-	if documentInvestigator != nil {
-		documentInvestigationCapability, err = agentdocumentinvestigation.NewCapability(documentInvestigator)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	registry := agentcapability.NewRegistry()
-	handles := []agentcapability.Handle{searchCapability, fetchCapability, externalEvidenceCapability}
-	if documentInvestigationCapability != nil {
-		handles = append(handles, documentInvestigationCapability)
-	}
-	for _, handle := range handles {
-		if err := registry.Register(handle); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	bindings := agentcapability.RoleBindings{
-		agentcapability.RoleSearch: agentcapability.NameWebSearch,
-		agentcapability.RoleFetch:  agentcapability.NameWebFetch,
-	}
-	return registry, bindings, nil
 }
 
 func newRuntimeSession(req Request, maxIterations int, outputMode string, runtimeName string) *agentruntime.RuntimeSession {
@@ -280,103 +120,6 @@ func firstPositive(values ...int) int {
 	return 0
 }
 
-func responseFromSession(session *agentruntime.RuntimeSession) Response {
-	if session == nil {
-		return Response{}
-	}
-	results := toSearchResults(session.Snapshot.Context.SearchResults)
-	pages := toPages(session.Snapshot.Context.FetchResults)
-	combinedText := buildCombinedText(pages)
-	summary := firstNonEmpty(
-		session.Snapshot.Answer.Final,
-		latestNote(session.Snapshot.Context.Notes),
-		session.Snapshot.Approval.Reason,
-		session.Snapshot.Evidence.SufficiencyReason,
-	)
-	provider := strings.TrimSpace(firstNonEmpty(
-		session.Snapshot.Context.SearchProviderActual,
-		session.Snapshot.Context.SearchProvider,
-	))
-	degradeReason := strings.TrimSpace(session.Snapshot.Answer.DegradeReason)
-
-	return Response{
-		Query:         firstNonEmpty(session.Snapshot.Context.SearchQuery, session.Request.Question, session.Snapshot.Request.Question),
-		Results:       results,
-		Pages:         pages,
-		CombinedText:  combinedText,
-		Summary:       summary,
-		Provider:      provider,
-		Degraded:      degradeReason != "",
-		DegradeReason: degradeReason,
-	}
-}
-
-func toSearchResults(refs []agentstate.SearchResultRef) []agentsearch.SearchResultItem {
-	if len(refs) == 0 {
-		return nil
-	}
-	results := make([]agentsearch.SearchResultItem, 0, len(refs))
-	for _, ref := range refs {
-		results = append(results, agentsearch.SearchResultItem{
-			Title:      ref.Title,
-			URL:        ref.URL,
-			Snippet:    ref.Snippet,
-			Domain:     ref.Domain,
-			SourceType: ref.SourceType,
-			Policy:     ref.Policy,
-			RiskFlags:  append([]string(nil), ref.RiskFlags...),
-			Reasons:    append([]string(nil), ref.Reasons...),
-		})
-	}
-	return results
-}
-
-func toPages(refs []agentstate.FetchResultRef) []agentfetch.PageResult {
-	if len(refs) == 0 {
-		return nil
-	}
-	pages := make([]agentfetch.PageResult, 0, len(refs))
-	for _, ref := range refs {
-		pages = append(pages, agentfetch.PageResult{
-			URL:            ref.URL,
-			Text:           ref.Text,
-			ErrorMessage:   ref.ErrorReason,
-			OriginalLength: ref.OriginalLength,
-			WasTruncated:   ref.WasTruncated,
-		})
-	}
-	return pages
-}
-
-func buildCombinedText(pages []agentfetch.PageResult) string {
-	if len(pages) == 0 {
-		return ""
-	}
-	var builder strings.Builder
-	for _, page := range pages {
-		if strings.TrimSpace(page.Text) == "" {
-			continue
-		}
-		if builder.Len() > 0 {
-			builder.WriteString("\n\n---\n\n")
-		}
-		builder.WriteString("[")
-		builder.WriteString(page.URL)
-		builder.WriteString("]\n")
-		builder.WriteString(page.Text)
-	}
-	return builder.String()
-}
-
-func latestNote(notes []string) string {
-	for i := len(notes) - 1; i >= 0; i-- {
-		if trimmed := strings.TrimSpace(notes[i]); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -384,4 +127,97 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func seedRuntimeSessionFromToolStage(session *agentruntime.RuntimeSession, context *ToolStageContext) {
+	if session == nil || context == nil {
+		return
+	}
+
+	if conversationID := strings.TrimSpace(context.ConversationID); conversationID != "" {
+		session.Request.ConversationID = conversationID
+		session.Snapshot.Request.ConversationID = conversationID
+	}
+	if knowledgeBaseIDs := uniqueTrimmedStrings(context.KnowledgeBaseIDs); len(knowledgeBaseIDs) > 0 {
+		session.Snapshot.Request.KnowledgeBaseIDs = knowledgeBaseIDs
+	}
+
+	rewrittenQuestion := strings.TrimSpace(context.RewrittenQuestion)
+	if rewrittenQuestion != "" {
+		session.Snapshot.Context.RewrittenQuery = rewrittenQuestion
+	}
+	session.Snapshot.Context.SearchQuery = firstNonEmpty(
+		rewrittenQuestion,
+		strings.TrimSpace(session.Request.Question),
+		strings.TrimSpace(session.Snapshot.Request.Question),
+	)
+
+	notes := buildToolStageNotes(context)
+	if len(notes) > 0 {
+		session.Snapshot.Context.Notes = append([]string(nil), notes...)
+	}
+}
+
+func buildToolStageNotes(context *ToolStageContext) []string {
+	if context == nil {
+		return nil
+	}
+
+	notes := make([]string, 0, 8)
+	if len(context.SubQuestions) > 0 {
+		notes = append(notes, "tool-stage sub-questions: "+strings.Join(uniqueTrimmedStrings(context.SubQuestions), " | "))
+	}
+	if context.NeedRetrieval {
+		notes = append(notes, "tool-stage retrieval was requested before agent handoff")
+	}
+	if summary := summarizeToolStageText("tool-stage history summary", context.HistorySummary, 320); summary != "" {
+		notes = append(notes, summary)
+	}
+	if summary := summarizeToolStageText("tool-stage session context", context.SessionContext, 320); summary != "" {
+		notes = append(notes, summary)
+	}
+	if summary := summarizeToolStageText("tool-stage memory context", context.MemoryContext, 320); summary != "" {
+		notes = append(notes, summary)
+	}
+	if summary := summarizeToolStageText("tool-stage knowledge context", context.KnowledgeContext, 400); summary != "" {
+		notes = append(notes, summary)
+	}
+	if len(context.SearchChannels) > 0 {
+		notes = append(notes, "tool-stage search channels: "+strings.Join(uniqueTrimmedStrings(context.SearchChannels), ", "))
+	}
+	return uniqueTrimmedStrings(notes)
+}
+
+func summarizeToolStageText(label string, value string, limit int) string {
+	trimmed := strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if trimmed == "" {
+		return ""
+	}
+	if limit > 0 && len(trimmed) > limit {
+		trimmed = strings.TrimSpace(trimmed[:limit-3]) + "..."
+	}
+	return label + ": " + trimmed
+}
+
+func uniqueTrimmedStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }

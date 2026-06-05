@@ -80,40 +80,13 @@ func (c capabilityAdapter) Spec() agentcapability.Spec {
 }
 
 func (c capabilityAdapter) NormalizeInput(raw any) (any, error) {
-	return decodeCapabilityInput(raw)
+	return agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, raw, "external evidence input is required", "external evidence input")
 }
 
 func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.InvocationRequest) (agentcapability.InvocationResult, error) {
-	input, err := decodeCapabilityInput(req.Input)
+	input, err := agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, req.Input, "external evidence input is required", "external evidence input")
 	if err != nil {
-		return agentcapability.InvocationResult{
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: "external evidence collection rejected",
-			},
-			Observation: agentcapability.ObservationRecord{
-				Summary:    err.Error(),
-				Degraded:   true,
-				ErrorClass: agentcapability.ErrorClassValidation,
-			},
-			Status:     agentcapability.StatusDegraded,
-			ErrorClass: agentcapability.ErrorClassValidation,
-		}, err
-	}
-	if err := agentcapability.ValidateInput(c.spec, input); err != nil {
-		return agentcapability.InvocationResult{
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: "external evidence collection rejected",
-			},
-			Observation: agentcapability.ObservationRecord{
-				Summary:    err.Error(),
-				Degraded:   true,
-				ErrorClass: agentcapability.ErrorClassValidation,
-			},
-			Status:     agentcapability.StatusDegraded,
-			ErrorClass: agentcapability.ErrorClassValidation,
-		}, err
+		return agentcapability.ValidationFailureResult(c.spec, "external evidence collection rejected", err), err
 	}
 
 	searchResult, err := c.search.Invoke(ctx, agentcapability.InvocationRequest{
@@ -163,23 +136,15 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 			Summary: fmt.Sprintf("collect external evidence for %q", strings.TrimSpace(input.Query)),
 		},
 		Observation: agentcapability.ObservationRecord{
-			Summary:    firstNonEmpty(fetchResult.Observation.Summary, searchResult.Observation.Summary),
+			Summary:    agentcapability.FirstNonEmpty(fetchResult.Observation.Summary, searchResult.Observation.Summary),
 			Degraded:   status == agentcapability.StatusDegraded,
-			ErrorClass: firstNonEmpty(fetchResult.ErrorClass, searchResult.ErrorClass),
+			ErrorClass: agentcapability.FirstNonEmpty(fetchResult.ErrorClass, searchResult.ErrorClass),
 		},
 		Delta:        agentstate.MergeStateDeltas(searchResult.Delta, fetchResult.Delta),
 		Status:       status,
-		ErrorClass:   firstNonEmpty(fetchResult.ErrorClass, searchResult.ErrorClass),
+		ErrorClass:   agentcapability.FirstNonEmpty(fetchResult.ErrorClass, searchResult.ErrorClass),
 		EvidenceRefs: append(append([]agentstate.EvidenceRef(nil), searchResult.EvidenceRefs...), fetchResult.EvidenceRefs...),
 	}, nil
-}
-
-func decodeCapabilityInput(raw any) (CapabilityInput, error) {
-	input, err := agentcapability.DecodeStructuredInput[CapabilityInput](raw, "external evidence input is required")
-	if err != nil {
-		return CapabilityInput{}, fmt.Errorf("external evidence input has unexpected type %T: %w", raw, err)
-	}
-	return input, nil
 }
 
 func decodeSearchOutput(raw any) (agentsearch.SearchOutput, error) {
@@ -212,13 +177,4 @@ func decodeFetchOutput(raw any) (agentfetch.Output, error) {
 
 func collectFetchURLs(output agentsearch.SearchOutput) []string {
 	return append([]string(nil), output.URLs...)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }

@@ -29,6 +29,8 @@ type ServiceErrorDescriptor struct {
 	Retryable bool
 }
 
+// ServiceError is the canonical outward service error contract for agent
+// service boundaries.
 type ServiceError struct {
 	Code      string
 	Message   string
@@ -111,16 +113,75 @@ func DescribeServiceError(err error) ServiceErrorDescriptor {
 func describeServiceErrorCode(code string) ServiceErrorDescriptor {
 	switch code {
 	case ErrorCodeQuestionRequired, ErrorCodeCheckpointIDRequired, ErrorCodeApprovalDecisionInvalid:
-		return ServiceErrorDescriptor{Code: code, Kind: ErrorKindInvalidRequest}
+		return ServiceErrorDescriptor{
+			Code:      code,
+			Message:   defaultServiceErrorMessage(code),
+			Kind:      ErrorKindInvalidRequest,
+			Retryable: false,
+		}
 	case ErrorCodeApprovalSessionNotFound:
-		return ServiceErrorDescriptor{Code: code, Kind: ErrorKindNotFound}
+		return ServiceErrorDescriptor{
+			Code:      code,
+			Message:   defaultServiceErrorMessage(code),
+			Kind:      ErrorKindNotFound,
+			Retryable: false,
+		}
 	case ErrorCodeApprovalNotPending:
-		return ServiceErrorDescriptor{Code: code, Kind: ErrorKindFailedPrecondition}
+		return ServiceErrorDescriptor{
+			Code:      code,
+			Message:   defaultServiceErrorMessage(code),
+			Kind:      ErrorKindFailedPrecondition,
+			Retryable: false,
+		}
 	case ErrorCodeApprovalSessionLoadFailed, ErrorCodeApprovalSessionSaveFailed, ErrorCodeApprovalSessionDeleteFailed, ErrorCodeRuntimeExecutionFailed:
-		return ServiceErrorDescriptor{Code: code, Kind: ErrorKindUnavailable, Retryable: true}
+		return ServiceErrorDescriptor{
+			Code:      code,
+			Message:   defaultServiceErrorMessage(code),
+			Kind:      ErrorKindUnavailable,
+			Retryable: true,
+		}
 	case ErrorCodeServiceNotInitialized, ErrorCodeSessionStoreNotInitialized:
-		return ServiceErrorDescriptor{Code: code, Kind: ErrorKindInternal}
+		return ServiceErrorDescriptor{
+			Code:      code,
+			Message:   defaultServiceErrorMessage(code),
+			Kind:      ErrorKindInternal,
+			Retryable: false,
+		}
 	default:
-		return ServiceErrorDescriptor{Code: code, Kind: ErrorKindInternal}
+		return ServiceErrorDescriptor{
+			Code:      code,
+			Message:   defaultServiceErrorMessage(code),
+			Kind:      ErrorKindInternal,
+			Retryable: false,
+		}
+	}
+}
+
+func defaultServiceErrorMessage(code string) string {
+	switch code {
+	case ErrorCodeServiceNotInitialized:
+		return "agent service is not initialized"
+	case ErrorCodeQuestionRequired:
+		return "question is required"
+	case ErrorCodeSessionStoreNotInitialized:
+		return "agent service session store is not initialized"
+	case ErrorCodeCheckpointIDRequired:
+		return "checkpoint id is required"
+	case ErrorCodeApprovalDecisionInvalid:
+		return `approval decision must be one of "approved" or "rejected"`
+	case ErrorCodeApprovalSessionLoadFailed:
+		return "failed to load approval session"
+	case ErrorCodeApprovalSessionSaveFailed:
+		return "failed to persist approval session"
+	case ErrorCodeApprovalSessionDeleteFailed:
+		return "failed to delete pending approval session"
+	case ErrorCodeApprovalSessionNotFound:
+		return "approval session not found"
+	case ErrorCodeApprovalNotPending:
+		return "approval session is not awaiting approval"
+	case ErrorCodeRuntimeExecutionFailed:
+		return "agent runtime execution failed"
+	default:
+		return ""
 	}
 }

@@ -113,6 +113,65 @@ func TestRegistry_RejectsSelfDependency(t *testing.T) {
 	}
 }
 
+func TestRegistry_RejectsUnsupportedMetadata(t *testing.T) {
+	tests := []struct {
+		name string
+		spec Spec
+	}{
+		{
+			name: "family",
+			spec: func() Spec {
+				spec := validSpec(NameWebSearch, KindTool, "custom_family", []string{RoleSearch})
+				return spec
+			}(),
+		},
+		{
+			name: "role",
+			spec: func() Spec {
+				spec := validSpec(NameWebSearch, KindTool, FamilyExternalEvidence, []string{"custom_role"})
+				return spec
+			}(),
+		},
+		{
+			name: "risk level",
+			spec: func() Spec {
+				spec := validSpec(NameWebSearch, KindTool, FamilyExternalEvidence, []string{RoleSearch})
+				spec.RiskLevel = "custom"
+				return spec
+			}(),
+		},
+		{
+			name: "idempotency",
+			spec: func() Spec {
+				spec := validSpec(NameWebSearch, KindTool, FamilyExternalEvidence, []string{RoleSearch})
+				spec.Idempotency = "custom"
+				return spec
+			}(),
+		},
+		{
+			name: "precondition requirement",
+			spec: func() Spec {
+				spec := validSpec(NameWebSearch, KindTool, FamilyExternalEvidence, []string{RoleSearch})
+				spec.Preconditions = []Precondition{{
+					Field:       "query",
+					Requirement: "custom",
+					Description: "unsupported",
+				}}
+				return spec
+			}(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := NewRegistry()
+			if err := registry.Register(stubHandle{spec: tc.spec}); err == nil {
+				t.Fatalf("expected registration with unsupported %s to fail", tc.name)
+			}
+		})
+	}
+}
+
 func TestResolveBindingRequiresExplicitRoleWhenAmbiguous(t *testing.T) {
 	registry := NewRegistry()
 	primary := stubHandle{spec: validSpec(NameWebSearch, KindTool, FamilyExternalEvidence, []string{RoleSearch})}

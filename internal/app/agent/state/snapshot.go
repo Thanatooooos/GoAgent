@@ -218,3 +218,60 @@ type AnswerState struct {
 	DegradeReason string `json:"degrade_reason,omitempty"`
 	Final         string `json:"final,omitempty"`
 }
+
+// HasContent reports whether the snapshot contains any meaningful state beyond
+// zero values. It is used by both the runtime projection layer and the kernel
+// runner to decide whether InitialSnapshot should be captured.
+func HasContent(snapshot StateSnapshot) bool {
+	return snapshot.Request.Question != "" ||
+		snapshot.Request.UserID != "" ||
+		snapshot.Request.TraceID != "" ||
+		snapshot.Request.ConversationID != "" ||
+		len(snapshot.Request.KnowledgeBaseIDs) > 0 ||
+		snapshot.Request.RuntimeOptions != (RuntimeOptions{}) ||
+		snapshot.Context.RewrittenQuery != "" ||
+		snapshot.Context.SearchQuery != "" ||
+		snapshot.Context.SearchProvider != "" ||
+		snapshot.Context.SearchProviderActual != "" ||
+		snapshot.Context.SearchErrorClass != "" ||
+		snapshot.Context.FetchErrorClass != "" ||
+		len(snapshot.Context.SearchResults) > 0 ||
+		len(snapshot.Context.FetchResults) > 0 ||
+		len(snapshot.Context.PreferredURLs) > 0 ||
+		len(snapshot.Context.AvoidURLs) > 0 ||
+		len(snapshot.Context.SeenURLs) > 0 ||
+		len(snapshot.Context.MemoryRefs) > 0 ||
+		len(snapshot.Context.Notes) > 0 ||
+		len(snapshot.Evidence.Items) > 0 ||
+		snapshot.Evidence.Sufficient ||
+		snapshot.Evidence.SufficiencyReason != "" ||
+		snapshot.Evidence.NewItemsThisRound != 0 ||
+		len(snapshot.Evidence.OpenQuestions) > 0 ||
+		snapshot.Approval.Status != "" ||
+		snapshot.Approval.Reason != "" ||
+		snapshot.Approval.Node != "" ||
+		snapshot.Approval.Capability != "" ||
+		snapshot.Approval.CheckpointID != "" ||
+		snapshot.Approval.RerunNode != "" ||
+		!snapshot.Approval.RequestedAt.IsZero() ||
+		!snapshot.Approval.ReviewedAt.IsZero() ||
+		snapshot.Approval.DecisionNote != "" ||
+		snapshot.Execution.CurrentNode != "" ||
+		snapshot.Execution.Iteration != 0 ||
+		snapshot.Execution.MaxIterations != 0 ||
+		snapshot.Execution.ContinueCount != 0 ||
+		snapshot.Execution.LastBranchTarget != "" ||
+		snapshot.Execution.LastBranchReason != "" ||
+		snapshot.Execution.LastProgressKind != "" ||
+		snapshot.Execution.LastNewURLCount != 0 ||
+		snapshot.Execution.LastNewEvidenceCount != 0 ||
+		snapshot.Execution.ConsecutiveNoProgressRounds != 0 ||
+		len(snapshot.Execution.ScheduledActions) > 0 ||
+		len(snapshot.Execution.CompletedActions) > 0 ||
+		len(snapshot.Execution.FailedActions) > 0 ||
+		snapshot.Execution.Interrupted ||
+		snapshot.Execution.InterruptReason != "" ||
+		snapshot.Answer.Draft != "" ||
+		snapshot.Answer.DegradeReason != "" ||
+		snapshot.Answer.Final != ""
+}

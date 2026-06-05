@@ -7,6 +7,15 @@ import (
 )
 
 // SessionStore persists resumable runtime sessions outside the checkpoint bytes.
+//
+// Responsibility boundary:
+// - checkpoint store owns kernel-level execution recovery bytes
+// - session store owns caller-facing approval/resume lookup state
+//
+// In the current approval lifecycle, agent.Service may store the same session
+// under more than one lookup key, such as checkpoint ID and session ID. A
+// SessionStore implementation must therefore tolerate alias-style Put/Get/Delete
+// access patterns without assuming a one-key-per-session model.
 type SessionStore interface {
 	Put(ctx context.Context, checkpointID string, session *RuntimeSession) error
 	Get(ctx context.Context, checkpointID string) (*RuntimeSession, bool, error)

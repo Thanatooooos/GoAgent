@@ -40,7 +40,7 @@ func (r *Runner) run(ctx context.Context, session *agentruntime.RuntimeSession, 
 	if session == nil {
 		return nil, fmt.Errorf("runtime session is required")
 	}
-	if !hasInitialSnapshot(session.InitialSnapshot) {
+	if !agentstate.HasContent(session.InitialSnapshot) {
 		session.InitialSnapshot = agentstate.CloneSnapshot(session.Snapshot)
 	}
 
@@ -57,58 +57,6 @@ func (r *Runner) run(ctx context.Context, session *agentruntime.RuntimeSession, 
 	}
 	r.updateRunMetadata(finalSession, checkpointID, resume, err)
 	return finalSession, err
-}
-
-func hasInitialSnapshot(snapshot agentstate.StateSnapshot) bool {
-	return snapshot.Request.Question != "" ||
-		snapshot.Request.UserID != "" ||
-		snapshot.Request.TraceID != "" ||
-		snapshot.Request.ConversationID != "" ||
-		len(snapshot.Request.KnowledgeBaseIDs) > 0 ||
-		snapshot.Request.RuntimeOptions != (agentstate.RuntimeOptions{}) ||
-		snapshot.Context.RewrittenQuery != "" ||
-		snapshot.Context.SearchQuery != "" ||
-		snapshot.Context.SearchProvider != "" ||
-		snapshot.Context.SearchProviderActual != "" ||
-		snapshot.Context.SearchErrorClass != "" ||
-		snapshot.Context.FetchErrorClass != "" ||
-		len(snapshot.Context.SearchResults) > 0 ||
-		len(snapshot.Context.FetchResults) > 0 ||
-		len(snapshot.Context.SeenURLs) > 0 ||
-		len(snapshot.Context.MemoryRefs) > 0 ||
-		len(snapshot.Context.Notes) > 0 ||
-		len(snapshot.Evidence.Items) > 0 ||
-		snapshot.Evidence.Sufficient ||
-		snapshot.Evidence.SufficiencyReason != "" ||
-		snapshot.Evidence.NewItemsThisRound != 0 ||
-		len(snapshot.Evidence.OpenQuestions) > 0 ||
-		snapshot.Approval.Status != "" ||
-		snapshot.Approval.Reason != "" ||
-		snapshot.Approval.Node != "" ||
-		snapshot.Approval.Capability != "" ||
-		snapshot.Approval.CheckpointID != "" ||
-		snapshot.Approval.RerunNode != "" ||
-		!snapshot.Approval.RequestedAt.IsZero() ||
-		!snapshot.Approval.ReviewedAt.IsZero() ||
-		snapshot.Approval.DecisionNote != "" ||
-		snapshot.Execution.CurrentNode != "" ||
-		snapshot.Execution.Iteration != 0 ||
-		snapshot.Execution.MaxIterations != 0 ||
-		snapshot.Execution.ContinueCount != 0 ||
-		snapshot.Execution.LastBranchTarget != "" ||
-		snapshot.Execution.LastBranchReason != "" ||
-		snapshot.Execution.LastProgressKind != "" ||
-		snapshot.Execution.LastNewURLCount != 0 ||
-		snapshot.Execution.LastNewEvidenceCount != 0 ||
-		snapshot.Execution.ConsecutiveNoProgressRounds != 0 ||
-		len(snapshot.Execution.ScheduledActions) > 0 ||
-		len(snapshot.Execution.CompletedActions) > 0 ||
-		len(snapshot.Execution.FailedActions) > 0 ||
-		snapshot.Execution.Interrupted ||
-		snapshot.Execution.InterruptReason != "" ||
-		snapshot.Answer.Draft != "" ||
-		snapshot.Answer.DegradeReason != "" ||
-		snapshot.Answer.Final != ""
 }
 
 func (r *Runner) updateRunMetadata(session *agentruntime.RuntimeSession, checkpointID string, resume bool, err error) {

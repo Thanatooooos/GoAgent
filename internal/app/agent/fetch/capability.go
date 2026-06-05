@@ -63,27 +63,23 @@ func (c capabilityAdapter) Spec() agentcapability.Spec {
 }
 
 func (c capabilityAdapter) NormalizeInput(raw any) (any, error) {
-	return decodeCapabilityInput(raw)
+	return agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, raw, "fetch capability input is required", "fetch capability input")
+}
+
+func (c capabilityAdapter) NormalizeResolverInput(raw any) (any, error) {
+	return agentcapability.DecodeInput[CapabilityInput](raw, "fetch capability input is required", "fetch capability input")
+}
+
+func (c capabilityAdapter) ResolveOnPreconditionFailure(err error) bool {
+	return agentcapability.IsPreconditionError(err)
 }
 
 func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.InvocationRequest) (agentcapability.InvocationResult, error) {
-	input, err := decodeCapabilityInput(req.Input)
+	input, err := agentcapability.DecodeAndValidateInput[CapabilityInput](c.spec, req.Input, "fetch capability input is required", "fetch capability input")
 	if err != nil {
-		return agentcapability.InvocationResult{
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: "fetch invocation rejected",
-			},
-			Observation: agentcapability.ObservationRecord{
-				Summary:    err.Error(),
-				Degraded:   true,
-				ErrorClass: agentcapability.ErrorClassValidation,
-			},
-			Status:     agentcapability.StatusDegraded,
-			ErrorClass: agentcapability.ErrorClassValidation,
-		}, err
-	}
-	if err := agentcapability.ValidateInput(c.spec, input); err != nil {
+		if !agentcapability.IsPreconditionError(err) {
+			return agentcapability.ValidationFailureResult(c.spec, "fetch invocation rejected", err), err
+		}
 		return agentcapability.InvocationResult{
 			Action: agentcapability.ActionRecord{
 				Name:    c.spec.Name,
@@ -95,7 +91,7 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 			},
 			Delta: agentstate.StateDelta{
 				Context: &agentstate.ContextDelta{
-					Notes: appendNonEmpty(nil, "web fetch skipped: no fetchable urls"),
+					Notes: agentcapability.AppendNonEmpty(nil, "web fetch skipped: no fetchable urls"),
 				},
 			},
 			Status: agentcapability.StatusSkipped,
@@ -105,25 +101,13 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 	urls := normalizeURLs(input.URLs)
 	output, invokeErr := c.invoker.Fetch(ctx, urls)
 	if invokeErr != nil && len(output.Pages) == 0 {
-		return agentcapability.InvocationResult{
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: fmt.Sprintf("fetch %d web urls", len(urls)),
-			},
-			Observation: agentcapability.ObservationRecord{
-				Summary:    invokeErr.Error(),
-				Degraded:   true,
-				ErrorClass: agentcapability.ErrorClassExternal,
-			},
-			Status:     agentcapability.StatusDegraded,
-			ErrorClass: agentcapability.ErrorClassExternal,
-		}, invokeErr
+		return agentcapability.ExternalFailureResult(c.spec, fmt.Sprintf("fetch %d web urls", len(urls)), invokeErr), invokeErr
 	}
 
 	note := output.Summary
 	status := agentcapability.StatusSucceeded
 	if output.Degraded {
-		note = firstNonEmpty(output.DegradeReason, output.ErrorMessage, output.Summary)
+		note = agentcapability.FirstNonEmpty(output.DegradeReason, output.ErrorMessage, output.Summary)
 		status = agentcapability.StatusDegraded
 	}
 
@@ -140,9 +124,9 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		},
 		Delta: agentstate.StateDelta{
 			Context: &agentstate.ContextDelta{
-				FetchErrorClass: stringPtr(classificationForFetch(output)),
+				FetchErrorClass: agentcapability.StringPtr(classificationForFetch(output)),
 				FetchResults:    toFetchRefs(output),
-				Notes:           appendNonEmpty(nil, note),
+				Notes:           agentcapability.AppendNonEmpty(nil, note),
 			},
 		},
 		Status:     status,
@@ -152,14 +136,6 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		return result, nil
 	}
 	return result, nil
-}
-
-func decodeCapabilityInput(raw any) (CapabilityInput, error) {
-	input, err := agentcapability.DecodeStructuredInput[CapabilityInput](raw, "fetch capability input is required")
-	if err != nil {
-		return CapabilityInput{}, fmt.Errorf("fetch capability input has unexpected type %T: %w", raw, err)
-	}
-	return input, nil
 }
 
 func toFetchRefs(output Output) []agentstate.FetchResultRef {
@@ -197,42 +173,17 @@ func classificationForFetch(output Output) string {
 	if !output.Degraded {
 		return ""
 	}
-	if matchesPermissionError(fetchClassificationMessages(output)...) {
+	if agentcapability.MatchesPermissionError(fetchClassificationMessages(output)...) {
 		return agentcapability.ErrorClassPermission
 	}
-	if matchesDependencyError(fetchClassificationMessages(output)...) {
+	if agentcapability.MatchesDependencyError(fetchClassificationMessages(output)...) {
 		return agentcapability.ErrorClassDependency
 	}
 	return agentcapability.ErrorClassExternal
 }
 
 func applyCapabilityOptions(spec *agentcapability.Spec, options ...agentcapability.Option) {
-	for _, option := range options {
-		if option != nil {
-			option(spec)
-		}
-	}
-}
-
-func appendNonEmpty(values []string, candidates ...string) []string {
-	for _, candidate := range candidates {
-		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
-			values = append(values, trimmed)
-		}
-	}
-	if len(values) == 0 {
-		return nil
-	}
-	return values
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	agentcapability.ApplyOptions(spec, options...)
 }
 
 func fetchClassificationMessages(output Output) []string {
@@ -241,31 +192,4 @@ func fetchClassificationMessages(output Output) []string {
 		values = append(values, page.ErrorMessage)
 	}
 	return values
-}
-
-func matchesPermissionError(values ...string) bool {
-	return containsClassificationKeyword(values, "permission", "forbidden", "unauthorized", "approval", "access denied", "not allowed")
-}
-
-func matchesDependencyError(values ...string) bool {
-	return containsClassificationKeyword(values, "dependency", "upstream unavailable", "provider unavailable")
-}
-
-func containsClassificationKeyword(values []string, keywords ...string) bool {
-	for _, value := range values {
-		normalized := strings.ToLower(strings.TrimSpace(value))
-		if normalized == "" {
-			continue
-		}
-		for _, keyword := range keywords {
-			if strings.Contains(normalized, keyword) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func stringPtr(value string) *string {
-	return &value
 }
