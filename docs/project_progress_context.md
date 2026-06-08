@@ -1,8 +1,8 @@
 # Project Progress Context
 
-Latest incremental update: `2026-06-02`
+Latest incremental update: `2026-06-07`
 
-更新时间：2026-05-30
+更新时间：2026-06-07
 
 这份文档用于维护 `goagent` 当前项目进度，帮助后续开发快速对齐当前阶段、已完成能力、最新进展、验证状态、已知风险和下一步计划。
 
@@ -3823,3 +3823,311 @@ approval/runtime status is:
      transport layers
    - broadening selector-driven capability usage
    - continuing post-P0 runtime/pattern expansion
+
+## Additional Update: 2026-06-07 Plan-Execute Generalization Phase 1-3 Progress
+
+### Status Update
+
+As of `2026-06-07`, the most important `plan_execute` increment is no longer
+only:
+
+- selector-driven single-capability step generation
+- explicit `PlanState` step materialization
+- resolver-mediated capability execution
+
+Those are still true, but they are now incomplete.
+
+The current implementation line has now completed another meaningful closure
+around:
+
+- generalized `PlanStep` / `PlanStepResult` semantics
+- explicit checkpoint-safe step artifacts
+- policy-driven step assessment
+- artifact-first step-to-step consumption with context fallback
+
+This matters because `plan_execute` is now starting to behave less like a
+search/fetch-shaped workflow shell and more like a reusable capability plan
+executor.
+
+### What Changed
+
+#### 1. `PlanStep` and `PlanStepResult` are now materially more general
+
+The plan model is no longer best understood as:
+
+- one selected capability
+- optional `query`
+- optional `urls`
+- a thin result summary
+
+The runtime now carries richer step semantics in `internal/app/agent/state`,
+including fields such as:
+
+- `Goal`
+- `Consumes`
+- `Produces`
+- `CompletionPolicy`
+- `FailurePolicy`
+- `Optional`
+- `MaxAttempts`
+- `AttemptCount`
+
+At the same time, `PlanStepResult` now carries:
+
+- explicit `Artifacts`
+- `Observation`
+- attempt metadata
+- execution timing metadata
+
+This is an important closure because step execution semantics are now more
+explicitly modeled inside state rather than being inferred from a small set of
+search/fetch-specific helper fields.
+
+#### 2. Step artifacts are now a first-class internal contract inside `plan_execute`
+
+The pattern now has a dedicated artifact helper layer in:
+
+- `internal/app/agent/pattern/planexecute/artifacts.go`
+
+The first artifact kinds currently validated are:
+
+- `url_list`
+- `search_results`
+- `fetch_results`
+- `evidence_refs`
+- `structured_output`
+
+This is an architecture improvement because intermediate outputs are no longer
+only "whatever happened to be persisted into snapshot context."
+
+Instead, the pattern now has a clearer internal place where one step can expose
+structured outputs for the next step or for assessment logic to consume.
+
+#### 3. `assess_step` is now policy-driven rather than capability-name driven
+
+`internal/app/agent/pattern/planexecute/nodes_assess_step.go` no longer keeps
+the main completion logic inline through a growing capability-name switch.
+
+That behavior has now been split into:
+
+- `internal/app/agent/pattern/planexecute/assessment_policy.go`
+- `internal/app/agent/pattern/planexecute/assessment_policy_test.go`
+
+The first policy set now includes:
+
+- `expect_search_results`
+- `expect_evidence`
+- `expect_structured_output`
+- `expect_non_empty_observation`
+
+This matters because new capability families now have a better path to
+integration:
+
+- choose or define a completion policy
+- emit the right artifact/observation shape
+- reuse the same assessment pipeline
+
+rather than extending a large capability-specific branch tree.
+
+#### 4. Step-to-step consumption is now artifact-first with context fallback
+
+The current implementation deliberately did **not** jump straight to a
+global-runtime artifact store.
+
+Instead, the current closure uses:
+
+- last-step artifacts first
+- snapshot context second
+
+This is now visible in places such as:
+
+- fetch URL selection
+- search-result completion checks
+- evidence completion checks
+
+Practically, this means:
+
+- `select_step` can now choose fetch URLs from artifact output before falling
+  back to `Context.SearchResults`
+- evidence assessment can now build accepted evidence directly from
+  `evidence_refs` artifacts before falling back to fetch-context-derived items
+- structured-output completion can now succeed from step artifact presence
+  rather than only ad hoc observation text
+
+This is a strong transitional architecture shape because it improves explicit
+step contracts without forcing a large immediate global state redesign.
+
+### Validation
+
+Validated on `2026-06-07`:
+
+```powershell
+go test ./internal/app/agent/state ./internal/app/agent/pattern/planexecute -count=1
+go test ./internal/app/agent/pattern/planexecute -count=1
+```
+
+Current focused result:
+
+- `internal/app/agent/state` PASS
+- `internal/app/agent/pattern/planexecute` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-06-07`, the most accurate current `plan_execute`
+generalization status is:
+
+1. the plan model is no longer just carrying capability identity; it now also
+   carries reusable execution semantics and timing metadata
+2. explicit step artifacts now exist as a checkpoint-safe internal contract
+   inside `plan_execute`
+3. step assessment is no longer primarily capability-name-driven; it is now
+   organized around reusable completion policies
+4. step-to-step data flow has started moving from snapshot-context inference
+   toward artifact-first consumption
+5. the next best steps are now:
+   - extend artifact consumption beyond last-step-only cases where needed
+   - split plan synthesis from execution through a dedicated synthesizer seam
+   - add broader mixed-capability pattern and service-level regression coverage
+
+## Additional Update: 2026-06-07 Plan-Execute Generalization Closure
+
+### Status Update
+
+As of the end of `2026-06-07`, today's `plan_execute` work should no longer be
+described as only:
+
+- generalized step state and artifacts
+- policy-driven assessment
+- artifact-first pattern internals
+
+Those are still true, but they are now incomplete.
+
+The current implementation line has now also completed another meaningful
+closure around:
+
+- `PlanSynthesizer` extraction
+- mixed-capability plan synthesis
+- execution-policy semantics for retry / optional / replan
+- service-level regression coverage for mixed paths and non-search/fetch
+  approval
+
+This matters because `plan_execute` is no longer only "internally more
+general." It is now also better locked at the service/runtime contract level.
+
+### What Changed
+
+#### 1. Plan creation and plan execution are now structurally separated
+
+`nodes_build_plan.go` is no longer the place where plan-generation policy has
+to keep growing inline.
+
+The current implementation now has:
+
+- `internal/app/agent/pattern/planexecute/synthesizer.go`
+- `internal/app/agent/pattern/planexecute/synthesizer_default.go`
+- `internal/app/agent/pattern/planexecute/synthesizer_mixed.go`
+- `internal/app/agent/pattern/planexecute/synthesizer_test.go`
+
+This means `plan_execute` can now evolve:
+
+- deterministic template planning
+- selector-driven single-capability planning
+- mixed-capability template planning
+
+without rewriting the execution node itself.
+
+#### 2. Mixed-capability planning is now validated on a real first path
+
+The runtime no longer validates only:
+
+- one selected capability
+- or a fixed `search -> fetch` path
+
+It now also validates a first real mixed path centered on:
+
+- `document_investigation`
+- `external_evidence`
+
+The currently covered mixed behavior now includes:
+
+- `document_investigation -> external_evidence`
+- `document_investigation -> web_search -> web_fetch`
+- artifact-first downstream query/input preparation
+- retry and optional-step behavior inside the same mixed plan
+
+This is the first strong proof that the second pattern is now actually
+orchestrating more than one capability family.
+
+#### 3. Step failure semantics are now real runtime behavior
+
+The step model is no longer only declaring:
+
+- `FailurePolicy`
+- `Optional`
+- `MaxAttempts`
+- `AttemptCount`
+
+Those fields are now actively consumed by the runtime through a dedicated
+execution-policy seam.
+
+The current pattern can now:
+
+- retry a step until `MaxAttempts` is exhausted
+- skip failed optional steps and continue
+- trigger replan when a step policy allows it
+- degrade only after the above paths are exhausted
+
+This is important because the generalized step model now has actual execution
+meaning rather than only richer state vocabulary.
+
+#### 4. Service-level contract safety is now re-locked
+
+The current implementation line has also completed the originally planned
+service-level regression expansion.
+
+The new focused regression file is:
+
+- `internal/app/agent/service_pattern_planexecute_test.go`
+
+Coverage now includes:
+
+1. mixed-capability answer path
+2. mixed-capability handoff path
+3. approval and resume for document-investigation steps
+4. duplicate resume after terminal plan-execute approval outcomes
+
+This is important because the internal pattern generalization no longer sits
+only under pattern-level tests; it is now validated against the outward
+service contract as well.
+
+### Validation
+
+Validated on `2026-06-07`:
+
+```powershell
+go test ./internal/app/agent -run "TestPlanExecuteService_|TestPatternValidation_PlanExecute|TestNewService_PlanExecutePatternRunDetailed|TestServiceRunDetailed_PlanExecuteApprovalIncludesStepContext" -count=1
+go test ./internal/app/agent/... -count=1
+```
+
+Current result:
+
+- `internal/app/agent` focused `plan_execute` service regressions PASS
+- `internal/app/agent/...` PASS
+
+### Updated Conclusion
+
+As of the end of `2026-06-07`, the most accurate current project-level reading
+is now:
+
+1. `plan_execute` has materially closed its originally scoped six-phase
+   generalization line
+2. the second pattern is no longer only an internal experiment; it now has:
+   - generalized step semantics
+   - replaceable synthesis
+   - mixed-capability validation
+   - service-level contract regression coverage
+3. the current `internal/app/agent` focus can now move away from "finish the
+   basic plan-execute generalization" toward:
+   - broader mixed-capability templates
+   - higher-level chat/service integration
+   - continued runtime/capability naming and contract tightening

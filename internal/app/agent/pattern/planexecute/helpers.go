@@ -2,10 +2,10 @@ package planexecute
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
-	agentresolve "local/rag-project/internal/app/agent/capability/resolve"
 	selectcapability "local/rag-project/internal/app/agent/capability/select"
 	agentfetch "local/rag-project/internal/app/agent/fetch"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
@@ -29,105 +29,6 @@ func normalizeQuery(session *agentruntime.RuntimeSession) string {
 		}
 	}
 	return ""
-}
-
-func buildPlan(session *agentruntime.RuntimeSession) agentstate.PlanState {
-	query := normalizeQuery(session)
-	replanCount := 0
-	if session != nil {
-		replanCount = session.Snapshot.Plan.ReplanCount
-	}
-	return agentstate.PlanState{
-		Goal:   firstNonEmpty(query, "collect external evidence"),
-		PlanID: fmt.Sprintf("plan_%d", replanCount+1),
-		Status: agentstate.PlanStatusActive,
-		Steps: []agentstate.PlanStep{
-			{
-				StepID:           "step_search",
-				Title:            "Search for relevant web sources",
-				CapabilityName:   agentcapability.NameWebSearch,
-				CapabilityKind:   agentcapability.KindTool,
-				CapabilityFamily: agentcapability.FamilyExternalEvidence,
-				CapabilityRole:   agentcapability.RoleSearch,
-				CapabilityInput: map[string]any{
-					"query": query,
-				},
-				Query:            query,
-				Status:           agentstate.PlanStepStatusPending,
-				ExpectedEvidence: []string{"fetchable search results"},
-			},
-			{
-				StepID:           "step_fetch",
-				Title:            "Fetch the best available source",
-				CapabilityName:   agentcapability.NameWebFetch,
-				CapabilityKind:   agentcapability.KindTool,
-				CapabilityFamily: agentcapability.FamilyExternalEvidence,
-				CapabilityRole:   agentcapability.RoleFetch,
-				CapabilityInput:  map[string]any{},
-				DependsOn:        []string{"step_search"},
-				Status:           agentstate.PlanStepStatusPending,
-				ExpectedEvidence: []string{"readable fetched evidence"},
-			},
-		},
-		CurrentStepIndex:   -1,
-		ReplanCount:        replanCount,
-		CompletionCriteria: []string{"at least one readable fetched evidence item"},
-		Confidence:         "medium",
-		LastPlanReason:     reasonPlanBuilt,
-	}
-}
-
-func buildPlanFromSpecs(session *agentruntime.RuntimeSession, searchSpec, fetchSpec agentcapability.Spec) agentstate.PlanState {
-	plan := buildPlan(session)
-	if len(plan.Steps) > 0 {
-		plan.Steps[0].RequiresApproval = searchSpec.RequiresApproval
-	}
-	if len(plan.Steps) > 1 {
-		plan.Steps[1].RequiresApproval = fetchSpec.RequiresApproval
-	}
-	return plan
-}
-
-func buildPlanFromSelection(session *agentruntime.RuntimeSession, matched agentresolve.MatchedCapability, selection selectcapability.CapabilitySelection) agentstate.PlanState {
-	replanCount := 0
-	if session != nil {
-		replanCount = session.Snapshot.Plan.ReplanCount
-	}
-	role := strings.TrimSpace(selection.Role)
-	if role == "" && len(matched.Spec.Roles) > 0 {
-		role = matched.Spec.Roles[0]
-	}
-	expectedEvidence := []string{"structured capability result"}
-	if matched.Spec.ProducesEvidence {
-		expectedEvidence = []string{"grounded evidence produced by selected capability"}
-	}
-	input := cloneInputMap(selection.Input)
-	step := agentstate.PlanStep{
-		StepID:           "step_selected_capability",
-		Title:            buildSelectionStepTitle(matched, selection),
-		CapabilityName:   matched.Name,
-		CapabilityKind:   matched.Spec.Kind,
-		CapabilityFamily: matched.Spec.Family,
-		CapabilityRole:   role,
-		CapabilityInput:  input,
-		Status:           agentstate.PlanStepStatusPending,
-		RequiresApproval: matched.Spec.RequiresApproval,
-		ExpectedEvidence: expectedEvidence,
-	}
-	backfillLegacyStepFields(&step)
-	return agentstate.PlanState{
-		Goal:   firstNonEmpty(normalizeQuery(session), matched.Spec.Description, matched.Name),
-		PlanID: fmt.Sprintf("plan_%d", replanCount+1),
-		Status: agentstate.PlanStatusActive,
-		Steps: []agentstate.PlanStep{
-			step,
-		},
-		CurrentStepIndex:   -1,
-		ReplanCount:        replanCount,
-		CompletionCriteria: []string{"selected capability returns enough evidence to finalize"},
-		Confidence:         strings.TrimSpace(selection.Confidence),
-		LastPlanReason:     reasonPlanBuilt,
-	}
 }
 
 func copyPlan(plan agentstate.PlanState) agentstate.PlanState {
@@ -168,6 +69,10 @@ func selectedFetchURLs(session *agentruntime.RuntimeSession) []string {
 	if session == nil {
 		return nil
 	}
+	artifactURLs := artifactURLs(lastStepArtifacts(session))
+	if len(artifactURLs) > 0 {
+		return selectPreferredURLs(artifactURLs, session.Snapshot.Context.SeenURLs, session.Snapshot.Context.AvoidURLs, session.Snapshot.Context.PreferredURLs)
+	}
 	results := session.Snapshot.Context.SearchResults
 	if len(results) == 0 {
 		return nil
@@ -207,6 +112,45 @@ func selectedFetchURLs(session *agentruntime.RuntimeSession) []string {
 	return nil
 }
 
+func selectPreferredURLs(candidates, seenURLs, avoidURLs, preferredURLs []string) []string {
+	if len(candidates) == 0 {
+		return nil
+	}
+	seen := toStringSet(seenURLs)
+	avoid := toStringSet(avoidURLs)
+	preferred := toStringSet(preferredURLs)
+
+	selectURL := func(prefer bool) string {
+		for _, candidate := range candidates {
+			url := strings.TrimSpace(candidate)
+			if url == "" {
+				continue
+			}
+			if _, skipped := avoid[url]; skipped {
+				continue
+			}
+			if _, alreadySeen := seen[url]; alreadySeen {
+				continue
+			}
+			if prefer {
+				if _, wanted := preferred[url]; !wanted {
+					continue
+				}
+			}
+			return url
+		}
+		return ""
+	}
+
+	if url := selectURL(true); url != "" {
+		return []string{url}
+	}
+	if url := selectURL(false); url != "" {
+		return []string{url}
+	}
+	return nil
+}
+
 func cloneInputMap(input map[string]any) map[string]any {
 	if len(input) == 0 {
 		return nil
@@ -218,40 +162,44 @@ func cloneInputMap(input map[string]any) map[string]any {
 	return cloned
 }
 
-func buildSelectionStepTitle(matched agentresolve.MatchedCapability, selection selectcapability.CapabilitySelection) string {
-	if trimmed := strings.TrimSpace(selection.Reason); trimmed != "" {
-		return trimmed
-	}
-	if trimmed := strings.TrimSpace(matched.Spec.Description); trimmed != "" {
-		return trimmed
-	}
-	return "Run selected capability " + matched.Name
-}
-
-func backfillLegacyStepFields(step *agentstate.PlanStep) {
-	if step == nil || len(step.CapabilityInput) == 0 {
-		return
-	}
-	switch strings.TrimSpace(step.CapabilityName) {
-	case agentcapability.NameWebSearch:
-		if query, ok := step.CapabilityInput["query"].(string); ok {
-			step.Query = strings.TrimSpace(query)
-		}
-	case agentcapability.NameWebFetch:
-		step.URLs = append([]string(nil), toStringSlice(step.CapabilityInput["urls"])...)
-	}
-}
-
 func selectionFromStep(step agentstate.PlanStep) selectcapability.CapabilitySelection {
 	return selectcapability.CapabilitySelection{
 		Name:       step.CapabilityName,
 		Kind:       step.CapabilityKind,
 		Family:     step.CapabilityFamily,
 		Role:       step.CapabilityRole,
-		Input:      cloneInputMap(step.CapabilityInput),
+		Input:      selectionInputFromStep(step),
 		Reason:     step.Title,
 		Confidence: "",
 	}
+}
+
+func selectionInputFromStep(step agentstate.PlanStep) map[string]any {
+	input := cloneInputMap(step.CapabilityInput)
+	switch strings.TrimSpace(step.CapabilityName) {
+	case agentcapability.NameWebSearch:
+		if strings.TrimSpace(step.Query) != "" {
+			if input == nil {
+				input = make(map[string]any, 1)
+			}
+			if _, ok := input["query"]; !ok {
+				input["query"] = step.Query
+			}
+		}
+	case agentcapability.NameWebFetch:
+		if len(step.URLs) > 0 {
+			if input == nil {
+				input = make(map[string]any, 1)
+			}
+			if _, ok := input["urls"]; !ok {
+				input["urls"] = append([]string(nil), step.URLs...)
+			}
+		}
+	}
+	if len(input) == 0 {
+		return nil
+	}
+	return input
 }
 
 func toStringSlice(raw any) []string {
@@ -274,6 +222,24 @@ func toStringSlice(raw any) []string {
 func newEvidenceFromFetch(session *agentruntime.RuntimeSession) []agentstate.EvidenceItem {
 	if session == nil {
 		return nil
+	}
+	if items := evidenceItemsFromArtifacts(lastStepArtifacts(session)); len(items) > 0 {
+		existing := make(map[string]struct{}, len(session.Snapshot.Evidence.Items))
+		for _, item := range session.Snapshot.Evidence.Items {
+			existing[evidenceKey(item)] = struct{}{}
+		}
+		filtered := make([]agentstate.EvidenceItem, 0, len(items))
+		for _, item := range items {
+			key := evidenceKey(item)
+			if _, ok := existing[key]; ok {
+				continue
+			}
+			existing[key] = struct{}{}
+			filtered = append(filtered, item)
+		}
+		if len(filtered) > 0 {
+			return filtered
+		}
 	}
 	existing := make(map[string]struct{}, len(session.Snapshot.Evidence.Items))
 	for _, item := range session.Snapshot.Evidence.Items {
@@ -357,17 +323,101 @@ func resultSummary(step agentstate.PlanStep, status, errorClass string, output a
 		Status:         status,
 		ErrorClass:     errorClass,
 		Summary:        summary,
+		Observation:    summary,
 		URLs:           append([]string(nil), step.URLs...),
 	}
 	switch value := output.(type) {
 	case agentsearch.SearchOutput:
 		result.URLs = append([]string(nil), value.URLs...)
+		result.Artifacts = append(result.Artifacts, agentstate.PlanStepArtifact{
+			Name:         artifactKindSearchResults,
+			Kind:         artifactKindSearchResults,
+			SourceStepID: step.StepID,
+			Summary:      firstNonEmpty(value.Summary, summary),
+			StringValues: append([]string(nil), value.URLs...),
+			Refs:         append([]string(nil), value.URLs...),
+			Metadata: map[string]string{
+				"query":        strings.TrimSpace(value.Query),
+				"result_count": strconv.Itoa(len(value.Results)),
+			},
+		})
 	case *agentsearch.SearchOutput:
 		if value != nil {
 			result.URLs = append([]string(nil), value.URLs...)
+			result.Artifacts = append(result.Artifacts, agentstate.PlanStepArtifact{
+				Name:         artifactKindSearchResults,
+				Kind:         artifactKindSearchResults,
+				SourceStepID: step.StepID,
+				Summary:      firstNonEmpty(value.Summary, summary),
+				StringValues: append([]string(nil), value.URLs...),
+				Refs:         append([]string(nil), value.URLs...),
+				Metadata: map[string]string{
+					"query":        strings.TrimSpace(value.Query),
+					"result_count": strconv.Itoa(len(value.Results)),
+				},
+			})
+		}
+	case agentfetch.Output:
+		result.Artifacts = append(result.Artifacts, buildFetchArtifacts(step.StepID, summary, value)...)
+	case *agentfetch.Output:
+		if value != nil {
+			result.Artifacts = append(result.Artifacts, buildFetchArtifacts(step.StepID, summary, *value)...)
 		}
 	}
+	if output != nil && !hasStructuredArtifact(result.Artifacts) {
+		result.Artifacts = append(result.Artifacts, agentstate.PlanStepArtifact{
+			Name:         artifactKindStructuredOutput,
+			Kind:         artifactKindStructuredOutput,
+			SourceStepID: step.StepID,
+			Summary:      summary,
+			StringValues: []string{summary},
+			Metadata: map[string]string{
+				"capability_name": step.CapabilityName,
+				"status":          status,
+			},
+		})
+	}
+	if len(result.URLs) > 0 {
+		result.Artifacts = append(result.Artifacts, agentstate.PlanStepArtifact{
+			Name:         "urls",
+			Kind:         artifactKindURLs,
+			SourceStepID: step.StepID,
+			Summary:      "candidate URLs produced by plan step",
+			StringValues: append([]string(nil), result.URLs...),
+			Refs:         append([]string(nil), result.URLs...),
+		})
+	}
 	return result
+}
+
+func buildFetchArtifacts(stepID, fallbackSummary string, output agentfetch.Output) []agentstate.PlanStepArtifact {
+	artifacts := []agentstate.PlanStepArtifact{
+		{
+			Name:         artifactKindFetchResults,
+			Kind:         artifactKindFetchResults,
+			SourceStepID: stepID,
+			Summary:      firstNonEmpty(output.Summary, fallbackSummary),
+			StringValues: append([]string(nil), output.URLs...),
+			Refs:         append([]string(nil), output.URLs...),
+			Metadata: map[string]string{
+				"page_count": strconv.Itoa(len(output.Pages)),
+			},
+		},
+	}
+	for _, page := range output.Pages {
+		if strings.TrimSpace(page.Text) == "" || strings.TrimSpace(page.ErrorMessage) != "" {
+			continue
+		}
+		artifacts = append(artifacts, agentstate.PlanStepArtifact{
+			Name:         artifactKindEvidenceRefs,
+			Kind:         artifactKindEvidenceRefs,
+			SourceStepID: stepID,
+			Summary:      firstNonEmpty(page.URL, fallbackSummary),
+			StringValues: []string{firstNonEmpty(page.Text)},
+			Refs:         []string{page.URL},
+		})
+	}
+	return artifacts
 }
 
 func requiresRuntimeApproval(session *agentruntime.RuntimeSession, step agentstate.PlanStep) bool {

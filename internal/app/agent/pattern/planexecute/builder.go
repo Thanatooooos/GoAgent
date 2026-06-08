@@ -32,6 +32,17 @@ func Compile(ctx context.Context, cfg Config) (*agentkernel.Runner, error) {
 	fetchName := bindings.Resolve(agentcapability.RoleFetch)
 	searchSpec, _ := cfg.Assembly.Registry.Spec(searchName)
 	fetchSpec, _ := cfg.Assembly.Registry.Spec(fetchName)
+	synthesizer := cfg.Synthesizer
+	if synthesizer == nil {
+		synthesizer = newDefaultPlanSynthesizer(
+			cfg.Assembly.Registry,
+			searchSpec,
+			fetchSpec,
+			cfg.Runtime.CapabilityCatalogBuilder,
+			cfg.Runtime.CapabilitySelector,
+			cfg.Runtime.CapabilityResolver,
+		)
+	}
 
 	kernelCfg := cfg.Runtime.Kernel
 	if strings.TrimSpace(kernelCfg.GraphName) == "" {
@@ -44,14 +55,7 @@ func Compile(ctx context.Context, cfg Config) (*agentkernel.Runner, error) {
 	kernelCfg.InterruptBeforeNodes = agentpattern.MergeInterruptBeforeNodes(kernelCfg.InterruptBeforeNodes, requiredInterruptBeforeNodes(approvalResumeEnabled))
 
 	builder := agentkernel.NewBuilder(kernelCfg)
-	buildPlan, err := newBuildPlanNode(
-		cfg.Assembly.Registry,
-		searchSpec,
-		fetchSpec,
-		cfg.Runtime.CapabilityCatalogBuilder,
-		cfg.Runtime.CapabilitySelector,
-		cfg.Runtime.CapabilityResolver,
-	)
+	buildPlan, err := newBuildPlanNode(synthesizer)
 	if err != nil {
 		return nil, err
 	}

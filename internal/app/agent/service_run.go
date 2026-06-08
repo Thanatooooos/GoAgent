@@ -102,15 +102,16 @@ func (s *Service) outcomeFromSession(session *agentruntime.RuntimeSession) RunOu
 		checkpointID = strings.TrimSpace(session.Checkpoint.ID)
 	}
 	outcome := RunOutcome{
-		Interrupted:     session.Snapshot.Execution.Interrupted,
-		InterruptReason: firstNonEmpty(session.Snapshot.Approval.Reason, session.Snapshot.Execution.InterruptReason),
+		Interrupted: session.Snapshot.Execution.Interrupted,
 	}
 	if s.isAwaitingApproval(session) {
+		outcome.InterruptReason = firstNonEmpty(session.Snapshot.Approval.Reason, session.Snapshot.Execution.InterruptReason)
 		outcome.CheckpointID = firstNonEmpty(session.Snapshot.Approval.CheckpointID, checkpointID)
 		outcome.Status = RunStatusAwaitingApproval
 		outcome.Approval = s.approvalPendingFromSession(session, checkpointID)
 		return outcome
 	}
+	outcome.Interrupted = false
 	if strings.TrimSpace(session.Snapshot.Answer.DegradeReason) != "" {
 		outcome.Status = RunStatusDegraded
 		return outcome
@@ -191,6 +192,8 @@ func (s *Service) specFromRole(role string, rerunNode string) (agentcapability.S
 	return spec, name, rerunNode, ok
 }
 
+// storePendingSession persists one pending approval session under the canonical
+// checkpoint lookup key and, when distinct, a secondary session-id alias.
 func (s *Service) storePendingSession(ctx context.Context, checkpointID string, session *agentruntime.RuntimeSession) error {
 	if s == nil || s.sessionStore == nil {
 		return nil
@@ -204,6 +207,8 @@ func (s *Service) storePendingSession(ctx context.Context, checkpointID string, 
 	return nil
 }
 
+// deletePendingSession clears both the canonical checkpoint lookup entry and
+// any secondary session-id alias for the same pending approval session.
 func (s *Service) deletePendingSession(ctx context.Context, checkpointID string) error {
 	if s == nil || s.sessionStore == nil || strings.TrimSpace(checkpointID) == "" {
 		return nil

@@ -2034,6 +2034,316 @@ now:
    - keep stabilizing the same outward contract before full chat-path adoption
    - continue broader post-P0 runtime evolution outside the approval P0 scope
 
+## Additional Update: 2026-06-07 Plan-Execute State Semantics, Policy Closure, and Artifact-First Consumption
+
+### Status Update
+
+As of `2026-06-07`, the most important `plan_execute` architecture increment is
+no longer only:
+
+- selector-driven capability selection
+- explicit plan-step materialization
+- resolver-mediated execution
+
+Those are still true, but they are now incomplete.
+
+The current implementation line has now completed another meaningful closure
+around:
+
+- generalized step semantics in runtime state
+- explicit step-artifact representation
+- policy-driven completion assessment
+- artifact-first step-to-step consumption with context fallback
+
+This is important because the second pattern is now moving from
+"capability-selected search/fetch flow" toward a more reusable capability-plan
+execution model.
+
+### `PlanStep` Should Now Be Read as Carrying Execution Semantics, Not Only Capability Identity
+
+The earlier `2026-06-02` closure already established that `PlanStep` could
+carry capability-selection semantics such as:
+
+- `CapabilityName`
+- `CapabilityKind`
+- `CapabilityFamily`
+- `CapabilityRole`
+- `CapabilityInput`
+
+That remains true, but as of `2026-06-07` it is no longer sufficient to
+describe the current design direction.
+
+`PlanStep` should now also be read as carrying reusable execution semantics
+including fields such as:
+
+- `Goal`
+- `Consumes`
+- `Produces`
+- `CompletionPolicy`
+- `FailurePolicy`
+- `Optional`
+- `MaxAttempts`
+- `AttemptCount`
+
+Architecturally, this matters because a step is now beginning to model:
+
+- what it is trying to accomplish
+- what upstream artifacts it expects
+- what downstream artifacts it should emit
+- how its completion should be judged
+- how failure should be handled
+
+not only "which capability should run."
+
+### `PlanStepResult` Is Now Better Understood as a Step Artifact Envelope
+
+The earlier shape of `PlanStepResult` was still relatively thin and heavily
+aligned to replay-friendly summary output.
+
+That is still one of its jobs, but the current implementation line now makes it
+clearer that `PlanStepResult` is also becoming the envelope where step outputs
+are projected for later pattern consumption.
+
+It now carries richer fields such as:
+
+- `Artifacts`
+- `Observation`
+- attempt metadata
+- execution timing metadata
+
+This is an important architecture improvement because step outputs are no
+longer only visible indirectly through:
+
+- snapshot context mutations
+- ad hoc result-shape inspection
+
+The pattern now has a clearer internal seam for structured intermediate output.
+
+### Artifact Consumption Is Now a Real Pattern Concern
+
+The earlier generalization plan correctly said that intermediate outputs should
+become explicit.
+
+As of `2026-06-07`, this is no longer only a future direction. It now has a
+first concrete implementation seam in:
+
+- `internal/app/agent/pattern/planexecute/artifacts.go`
+
+The first validated artifact kinds include:
+
+- `url_list`
+- `search_results`
+- `fetch_results`
+- `evidence_refs`
+- `structured_output`
+
+Architecturally, this matters because `plan_execute` is now beginning to carry
+its own internal dataflow contract rather than inferring everything from
+runtime-global context.
+
+### Assessment Is Now Better Understood as Policy-Driven
+
+The earlier plan said `assess_step` should stop growing a capability switch.
+
+As of `2026-06-07`, that direction has now materially landed.
+
+The pattern now has a dedicated assessment seam in:
+
+- `internal/app/agent/pattern/planexecute/assessment_policy.go`
+
+with the first reusable policy set including:
+
+- `expect_search_results`
+- `expect_evidence`
+- `expect_structured_output`
+- `expect_non_empty_observation`
+
+This is an important shape change because the pattern is now moving from:
+
+- "know each capability's completion behavior inline"
+
+toward:
+
+- "evaluate a step by declared completion semantics plus emitted artifacts"
+
+That is a stronger long-term seam for integrating new capability families.
+
+### Artifact-First with Context Fallback Is the Current Transitional Strategy
+
+It would be possible to interpret this work as a signal that all intermediate
+state should immediately move into a global artifact store.
+
+That is **not** the current design reading.
+
+The current preferred path should now be read as:
+
+1. make step artifacts explicit inside `plan_execute`
+2. consume artifacts first where the pattern itself benefits
+3. keep snapshot-context fallback during the transition
+4. only later decide whether a broader runtime-level artifact system is needed
+
+This matters because it preserves forward momentum without forcing a large
+state-model rewrite too early.
+
+### Updated Architectural Implication
+
+With this `2026-06-07` closure, the most accurate design reading is now:
+
+1. `plan_execute` step state is no longer just capability-selection metadata;
+   it now also carries explicit execution semantics
+2. `PlanStepResult` is now becoming the first structured envelope for
+   intermediate step outputs inside the pattern
+3. step completion is no longer best understood as capability-name branching;
+   it is becoming policy-driven
+4. the pattern has now started its transition from context-inferred dataflow to
+   artifact-first dataflow
+5. the best next design steps are:
+   - widen artifact consumption beyond last-step-only cases where necessary
+   - split plan synthesis from execution through a dedicated synthesizer seam
+   - continue proving the same model across more capability families
+
+## Additional Update: 2026-06-07 Plan-Execute Synthesis, Mixed-Capability, and Service Closure
+
+### Status Update
+
+As of the end of `2026-06-07`, the most important additional reading for the
+new runtime is that the second pattern is no longer only validating:
+
+- selector-driven capability semantics
+- generalized step state
+- policy-driven step completion
+
+Those are still true, but they are now incomplete.
+
+The current implementation line has now also completed another meaningful
+closure around:
+
+- separating plan synthesis from plan execution
+- validating mixed-capability orchestration
+- turning declared failure semantics into real execution behavior
+- re-locking outward service contracts for the second pattern
+
+This is important because the runtime is now validating not only the
+**internal shape** of `plan_execute`, but also its **pattern-level and
+service-level closure**.
+
+### Plan Synthesis Is Now a First-Class Pattern Seam
+
+Earlier design guidance said that `plan_execute` should stop coupling:
+
+- how a plan is built
+- how a plan is executed
+
+As of `2026-06-07`, that direction has now landed.
+
+The current pattern now has an explicit synthesis seam in:
+
+- `internal/app/agent/pattern/planexecute/synthesizer.go`
+- `internal/app/agent/pattern/planexecute/synthesizer_default.go`
+- `internal/app/agent/pattern/planexecute/synthesizer_mixed.go`
+
+Architecturally, this matters because `build_plan` is no longer the place that
+must keep accumulating:
+
+- deterministic templates
+- selector-driven capability planning
+- mixed-capability template logic
+
+The runtime can now evolve these planning modes without rewriting the core
+execution node.
+
+### Mixed-Capability Orchestration Is Now More Than a Design Goal
+
+Earlier updates said the runtime should validate more than one capability
+family before claiming that the second pattern is general.
+
+As of `2026-06-07`, that is no longer only a future recommendation.
+
+The current implementation now validates mixed paths centered on:
+
+- `document_investigation`
+- `external_evidence`
+- `web_search`
+- `web_fetch`
+
+The key point is not only that multiple families can appear in the same plan.
+
+The more important point is that the runtime is now validating:
+
+- explicit artifact-driven downstream inputs
+- mixed-family step sequencing
+- retry and optional semantics inside the same multi-step plan
+
+That is a much stronger signal that `plan_execute` is becoming a real
+capability-plan executor rather than a renamed search/fetch flow.
+
+### Declared Step Failure Semantics Now Have Runtime Meaning
+
+The earlier design direction introduced generalized fields such as:
+
+- `FailurePolicy`
+- `Optional`
+- `MaxAttempts`
+- `AttemptCount`
+
+As of `2026-06-07`, these should no longer be read only as richer state-model
+fields.
+
+They now have active runtime behavior through the execution-policy seam, which
+means the pattern can now:
+
+- retry a step before exhausting the plan
+- skip optional failed steps and keep moving
+- trigger replan according to step policy
+- degrade only after those declared paths are exhausted
+
+Architecturally, this is an important closure because the generalized plan
+model now affects real control flow rather than only replay/debug structure.
+
+### The Second Pattern Is Now Better Anchored at the Service Boundary
+
+Another important closure is that the second pattern is no longer validated
+only under `pattern/planexecute` tests.
+
+Service-level regression coverage now exists in:
+
+- `internal/app/agent/service_pattern_planexecute_test.go`
+
+The current service closure now explicitly validates:
+
+1. mixed-capability answer projection
+2. mixed-capability handoff projection
+3. approval/resume for non-search/fetch document-investigation steps
+4. duplicate resume behavior after terminal approval outcomes
+
+This matters because the runtime architecture can now be read as having a
+stronger public boundary:
+
+- internal runtime semantics
+- pattern semantics
+- service projection and resume contract
+
+rather than stopping at pattern-internal correctness.
+
+### Updated Architectural Implication
+
+With this additional `2026-06-07` closure, the most accurate design reading is
+now:
+
+1. `plan_execute` is no longer only a second compiled graph; it now has its
+   own replaceable planning seam
+2. mixed-capability execution is no longer only a target architecture idea; it
+   now has working validated paths
+3. generalized step failure semantics now influence runtime control flow for
+   retry / skip / replan / degrade
+4. the second pattern is now better anchored at the service contract layer, so
+   runtime evolution is no longer validated only internally
+5. the best next design steps are:
+   - broaden mixed-capability templates beyond the first validated set
+   - continue widening artifact-first downstream preparation
+   - expand this generalized pattern into higher-level product integration
+     paths
+
 ## 十七、M1 Spike 验证结果
 
 日期：2026-05-29

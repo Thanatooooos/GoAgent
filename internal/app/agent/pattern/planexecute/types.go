@@ -3,6 +3,15 @@ package planexecute
 const (
 	defaultMaxReplans = 1
 
+	completionPolicySearchResults       = "expect_search_results"
+	completionPolicyFetchResults        = "expect_fetch_results"
+	completionPolicyEvidence            = "expect_evidence"
+	completionPolicyStructuredOutput    = "expect_structured_output"
+	completionPolicyNonEmptyObservation = "expect_non_empty_observation"
+
+	failurePolicyReplan  = "replan"
+	failurePolicyDegrade = "degrade"
+
 	branchExecute  = "execute_step"
 	branchFinalize = "finalize"
 	branchContinue = "continue"
@@ -13,6 +22,8 @@ const (
 	reasonNoActiveStep         = "no_active_step"
 	reasonSearchResultsReady   = "search_results_ready"
 	reasonSearchResultsMissing = "search_results_missing"
+	reasonFetchResultsReady    = "fetch_results_ready"
+	reasonFetchResultsMissing  = "fetch_results_missing"
 	reasonFetchEvidenceReady   = "fetched_readable_evidence"
 	reasonFetchEvidenceMissing = "no_readable_evidence"
 	reasonPlanCompleted        = "plan_completed"

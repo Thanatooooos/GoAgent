@@ -3,10 +3,8 @@ package agent
 import (
 	"context"
 	"strings"
-	"time"
 
 	agentruntime "local/rag-project/internal/app/agent/runtime"
-	agentstate "local/rag-project/internal/app/agent/state"
 )
 
 func (s *Service) ResumeAfterApproval(ctx context.Context, req ResumeApprovalRequest) (RunResponse, error) {
@@ -55,6 +53,9 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeApprovalSessionLoadFailed, "failed to load approval session", "load_approval_session", err)
 	}
 	if !ok || session == nil {
+		return nil, RunOutcome{}, serviceError(ErrorCodeApprovalSessionNotFound, "approval session not found for checkpoint "+checkpointID)
+	}
+	if !approvalCheckpointMatchesRequest(session, checkpointID) {
 		return nil, RunOutcome{}, serviceError(ErrorCodeApprovalSessionNotFound, "approval session not found for checkpoint "+checkpointID)
 	}
 	if !s.isAwaitingApproval(session) {
@@ -115,85 +116,4 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 	outcome := s.outcomeFromSession(final)
 	logAgentRunCompleted(final, outcome)
 	return final, outcome, nil
-}
-
-func (s *Service) applyApprovalDecision(session *agentruntime.RuntimeSession, checkpointID string, req ResumeApprovalRequest, decision approvalResumeDecision) error {
-	if session == nil {
-		return nil
-	}
-	now := time.Now()
-	reason := session.Snapshot.Approval.Reason
-	finalCheckpointID := firstNonEmpty(session.Snapshot.Approval.CheckpointID, checkpointID)
-	if err := s.applySessionDelta(session, "approval", agentstate.StateDelta{
-		Approval: &agentstate.ApprovalDelta{
-			Status:       stringPtr(decision.value),
-			CheckpointID: stringPtr(finalCheckpointID),
-			DecisionNote: stringPtr(strings.TrimSpace(req.DecisionNote)),
-			ReviewedAt:   &now,
-		},
-		Execution: &agentstate.ExecutionDelta{
-			InterruptReason: stringPtr(reason),
-		},
-	}, now); err != nil {
-		return err
-	}
-	session.Metadata.ApprovalDecision = decision.value
-	session.Metadata.ApprovalNote = strings.TrimSpace(req.DecisionNote)
-	session.Metadata.UpdatedAt = now
-	return nil
-}
-
-func (s *Service) finalizeRejectedApproval(session *agentruntime.RuntimeSession) (*agentruntime.RuntimeSession, error) {
-	if session == nil {
-		return nil, nil
-	}
-	now := time.Now()
-	reason := "approval_rejected"
-	final := "I couldn't continue because the required approval was not granted."
-	reviewedAt := session.Snapshot.Approval.ReviewedAt
-	if reviewedAt.IsZero() {
-		reviewedAt = now
-	}
-
-	if err := s.applySessionDelta(session, "degrade", agentstate.StateDelta{
-		Approval: &agentstate.ApprovalDelta{
-			Status:     stringPtr(agentstate.ApprovalStatusRejected),
-			ReviewedAt: &reviewedAt,
-		},
-		Evidence: &agentstate.EvidenceDelta{
-			SufficiencyReason: stringPtr(reason),
-		},
-		Execution: &agentstate.ExecutionDelta{
-			CurrentNode:      stringPtr("degrade"),
-			LastBranchTarget: stringPtr("degrade"),
-			LastBranchReason: stringPtr(reason),
-			Interrupted:      boolPtr(false),
-			InterruptReason:  stringPtr(""),
-		},
-		Answer: &agentstate.AnswerDelta{
-			DegradeReason: stringPtr(reason),
-			Final:         stringPtr(final),
-		},
-	}, now); err != nil {
-		return nil, err
-	}
-	session.Metadata.ApprovalDecision = agentstate.ApprovalStatusRejected
-	session.Metadata.UpdatedAt = now
-
-	appendRuntimeEvent(session, agentstate.NewRuntimeEventAt(now, session.SessionID, "degrade", agentstate.EventTypeDegraded, reason))
-	return session, nil
-}
-
-func appendRuntimeEvent(session *agentruntime.RuntimeSession, event agentstate.RuntimeEvent) {
-	if session == nil {
-		return
-	}
-	event.Sequence = len(session.Journal) + 1
-	if event.Timestamp.IsZero() {
-		event.Timestamp = time.Now()
-	}
-	if strings.TrimSpace(event.SessionID) == "" {
-		event.SessionID = session.SessionID
-	}
-	session.Journal = append(session.Journal, event)
 }

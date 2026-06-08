@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	agentcapability "local/rag-project/internal/app/agent/capability"
 	agentkernel "local/rag-project/internal/app/agent/kernel"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
 	agentstate "local/rag-project/internal/app/agent/state"
@@ -19,9 +18,7 @@ func newSelectStepNode() (agentkernel.Node, error) {
 		branch := branchFinalize
 		if index >= 0 {
 			plan.CurrentStepIndex = index
-			if plan.Steps[index].CapabilityName == agentcapability.NameWebFetch && len(plan.Steps[index].URLs) == 0 {
-				plan.Steps[index].URLs = selectedFetchURLs(session)
-			}
+			prepareStepInputs(session, &plan.Steps[index])
 			reason = plan.Steps[index].StepID
 			branch = branchExecute
 			if requiresRuntimeApproval(session, plan.Steps[index]) && session.Snapshot.Approval.Status != agentstate.ApprovalStatusApproved {

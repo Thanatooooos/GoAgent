@@ -13,6 +13,7 @@ func init() {
 	schema.RegisterName[PlanState]("agent_state_PlanState")
 	schema.RegisterName[PlanStep]("agent_state_PlanStep")
 	schema.RegisterName[PlanStepResult]("agent_state_PlanStepResult")
+	schema.RegisterName[PlanStepArtifact]("agent_state_PlanStepArtifact")
 	schema.RegisterName[EvidenceState]("agent_state_EvidenceState")
 	schema.RegisterName[ApprovalState]("agent_state_ApprovalState")
 	schema.RegisterName[EvidenceItem]("agent_state_EvidenceItem")

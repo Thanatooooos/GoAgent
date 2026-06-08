@@ -165,6 +165,8 @@ func clonePlanSteps(items []PlanStep) []PlanStep {
 	for i, item := range items {
 		cloned[i] = item
 		cloned[i].CapabilityInput = cloneStringAnyMap(item.CapabilityInput)
+		cloned[i].Consumes = append([]string(nil), item.Consumes...)
+		cloned[i].Produces = append([]string(nil), item.Produces...)
 		cloned[i].URLs = append([]string(nil), item.URLs...)
 		cloned[i].DependsOn = append([]string(nil), item.DependsOn...)
 		cloned[i].ExpectedEvidence = append([]string(nil), item.ExpectedEvidence...)
@@ -175,6 +177,21 @@ func clonePlanSteps(items []PlanStep) []PlanStep {
 func clonePlanStepResult(item PlanStepResult) PlanStepResult {
 	cloned := item
 	cloned.URLs = append([]string(nil), item.URLs...)
+	cloned.Artifacts = clonePlanStepArtifacts(item.Artifacts)
+	return cloned
+}
+
+func clonePlanStepArtifacts(items []PlanStepArtifact) []PlanStepArtifact {
+	if len(items) == 0 {
+		return nil
+	}
+	cloned := make([]PlanStepArtifact, len(items))
+	for i, item := range items {
+		cloned[i] = item
+		cloned[i].StringValues = append([]string(nil), item.StringValues...)
+		cloned[i].Refs = append([]string(nil), item.Refs...)
+		cloned[i].Metadata = cloneStringStringMap(item.Metadata)
+	}
 	return cloned
 }
 
@@ -233,6 +250,17 @@ func cloneStringAnyMap(value map[string]any) map[string]any {
 	cloned := make(map[string]any, len(value))
 	for key, item := range value {
 		cloned[key] = cloneJSONLikeValue(item)
+	}
+	return cloned
+}
+
+func cloneStringStringMap(value map[string]string) map[string]string {
+	if len(value) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(value))
+	for key, item := range value {
+		cloned[key] = item
 	}
 	return cloned
 }

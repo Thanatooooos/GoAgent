@@ -38,10 +38,19 @@ func newExecuteStepNode(registry *agentcapability.Registry, resolver agentresolv
 		}
 
 		step.Status = agentstate.PlanStepStatusRunning
+		step.AttemptCount++
 		step.LastSummary = firstNonEmpty(result.Observation.Summary, result.Action.Summary, step.Title)
+		step.LastError = ""
 		step.LastErrorClass = result.ErrorClass
+		if result.ErrorClass != "" {
+			step.LastError = step.LastSummary
+		}
 		resultState := resultSummary(step, result.Status, result.ErrorClass, result.Output, result.Observation.Summary)
 		resultState.ProducedEvidence = stepHasEvidence(spec, step, result)
+		resultState.Attempt = step.AttemptCount
+		resultState.StartedAt = startedAt
+		resultState.CompletedAt = time.Now()
+		resultState.DurationMs = resultState.CompletedAt.Sub(resultState.StartedAt).Milliseconds()
 		plan.Steps[plan.CurrentStepIndex] = step
 		plan.LastStepResult = resultState
 

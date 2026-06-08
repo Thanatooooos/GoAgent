@@ -27,109 +27,48 @@ func newAssessStepNode() (agentkernel.Node, error) {
 		evidenceItems := []agentstate.EvidenceItem(nil)
 		contextDelta := &agentstate.ContextDelta{}
 		var approvalDelta *agentstate.ApprovalDelta
+		assessment := assessStepCompletion(session, currentStep, last)
+		evidenceItems = append(evidenceItems, assessment.evidenceItems...)
+		if assessment.contextDelta != nil {
+			contextDelta = assessment.contextDelta
+		}
 
-		switch currentStep.CapabilityName {
-		case agentcapability.NameWebSearch:
-			if last.Status == agentcapability.StatusSucceeded && len(session.Snapshot.Context.SearchResults) > 0 {
-				plan.Steps[plan.CurrentStepIndex].Status = agentstate.PlanStepStatusCompleted
-				branch = branchContinue
-				reason = reasonSearchResultsReady
-				progress = progressStepCompleted
-			} else if canReplan(plan) {
-				plan.ReplanCount++
-				branch = branchReplan
-				reason = reasonSearchResultsMissing
-				progress = progressPlanReplanned
-			} else {
-				plan.Status = agentstate.PlanStatusDegraded
-				plan.Steps[plan.CurrentStepIndex].Status = agentstate.PlanStepStatusFailed
-				branch = branchDegrade
-				reason = reasonSearchResultsMissing
-				progress = progressPlanDegraded
-			}
-		case agentcapability.NameWebFetch:
-			evidenceItems = newEvidenceFromFetch(session)
-			if len(last.URLs) > 0 {
-				contextDelta.SeenURLs = append([]string(nil), last.URLs...)
-			}
-			if last.Status == agentcapability.StatusSucceeded && len(evidenceItems) > 0 {
-				plan.Steps[plan.CurrentStepIndex].Status = agentstate.PlanStepStatusCompleted
-				plan.Status = agentstate.PlanStatusCompleted
-				branch = branchFinalize
-				reason = reasonFetchEvidenceReady
-				progress = progressPlanFinalized
-				sufficient = true
-			} else if last.ErrorClass == agentcapability.ErrorClassPermission && requiresRuntimeApproval(session, currentStep) {
-				branch = "approval"
-				reason = currentStep.CapabilityName + "_approval_required"
-				progress = progressPlanDegraded
-				status := agentstate.ApprovalStatusPending
-				node := "approval"
-				capability := currentStep.CapabilityName
-				rerunNode := "execute_step"
-				requestedAt := time.Now()
-				approvalDelta = &agentstate.ApprovalDelta{
-					Status:      &status,
-					Reason:      &reason,
-					Node:        &node,
-					Capability:  &capability,
-					RerunNode:   &rerunNode,
-					RequestedAt: &requestedAt,
-				}
-			} else if canReplan(plan) {
-				plan.ReplanCount++
-				branch = branchReplan
-				reason = reasonFetchEvidenceMissing
-				progress = progressPlanReplanned
-			} else {
-				plan.Status = agentstate.PlanStatusDegraded
-				plan.Steps[plan.CurrentStepIndex].Status = agentstate.PlanStepStatusFailed
-				branch = branchDegrade
-				reason = reasonFetchEvidenceMissing
-				progress = progressPlanDegraded
+		switch {
+		case assessment.disposition == assessmentSatisfied:
+			decision := decideStepExecutionOutcome(plan, currentStep, last, assessment)
+			plan.Steps[plan.CurrentStepIndex].Status = decision.currentStepStatus
+			plan.Status = firstNonEmpty(decision.planStatus, plan.Status)
+			reason = decision.reason
+			branch = decision.branch
+			progress = decision.progress
+			sufficient = decision.sufficient
+		case last.ErrorClass == agentcapability.ErrorClassPermission && requiresRuntimeApproval(session, currentStep):
+			branch = "approval"
+			reason = currentStep.CapabilityName + "_approval_required"
+			progress = progressPlanDegraded
+			status := agentstate.ApprovalStatusPending
+			node := "approval"
+			capability := currentStep.CapabilityName
+			rerunNode := "execute_step"
+			requestedAt := time.Now()
+			approvalDelta = &agentstate.ApprovalDelta{
+				Status:      &status,
+				Reason:      &reason,
+				Node:        &node,
+				Capability:  &capability,
+				RerunNode:   &rerunNode,
+				RequestedAt: &requestedAt,
 			}
 		default:
-			if last.Status == agentcapability.StatusSucceeded && last.ProducedEvidence {
-				plan.Steps[plan.CurrentStepIndex].Status = agentstate.PlanStepStatusCompleted
-				plan.Status = agentstate.PlanStatusCompleted
-				branch = branchFinalize
-				reason = reasonPlanCompleted
-				progress = progressPlanFinalized
-				sufficient = true
-			} else if last.ErrorClass == agentcapability.ErrorClassPermission && requiresRuntimeApproval(session, currentStep) {
-				branch = "approval"
-				reason = currentStep.CapabilityName + "_approval_required"
-				progress = progressPlanDegraded
-				status := agentstate.ApprovalStatusPending
-				node := "approval"
-				capability := currentStep.CapabilityName
-				rerunNode := "execute_step"
-				requestedAt := time.Now()
-				approvalDelta = &agentstate.ApprovalDelta{
-					Status:      &status,
-					Reason:      &reason,
-					Node:        &node,
-					Capability:  &capability,
-					RerunNode:   &rerunNode,
-					RequestedAt: &requestedAt,
-				}
-			} else if last.Status == agentcapability.StatusSucceeded {
-				plan.Steps[plan.CurrentStepIndex].Status = agentstate.PlanStepStatusCompleted
-				branch = branchContinue
-				reason = reasonPlanCompleted
-				progress = progressStepCompleted
-			} else if canReplan(plan) {
+			decision := decideStepExecutionOutcome(plan, currentStep, last, assessment)
+			plan.Steps[plan.CurrentStepIndex].Status = decision.currentStepStatus
+			if decision.replan {
 				plan.ReplanCount++
-				branch = branchReplan
-				reason = reasonPlanFailed
-				progress = progressPlanReplanned
-			} else {
-				plan.Status = agentstate.PlanStatusDegraded
-				plan.Steps[plan.CurrentStepIndex].Status = agentstate.PlanStepStatusFailed
-				branch = branchDegrade
-				reason = reasonPlanFailed
-				progress = progressPlanDegraded
 			}
+			plan.Status = firstNonEmpty(decision.planStatus, plan.Status)
+			branch = decision.branch
+			reason = decision.reason
+			progress = decision.progress
 		}
 
 		plan.LastAssessment = reason

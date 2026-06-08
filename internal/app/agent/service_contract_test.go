@@ -31,6 +31,9 @@ func TestRunDetailedCompletedOutcomeContract(t *testing.T) {
 	if result.Outcome.Interrupted {
 		t.Fatalf("expected completed outcome to be non-interrupted, got %+v", result.Outcome)
 	}
+	if strings.TrimSpace(result.Outcome.InterruptReason) != "" {
+		t.Fatalf("expected completed outcome interrupt reason to be empty, got %+v", result.Outcome)
+	}
 	if strings.TrimSpace(result.Outcome.CheckpointID) != "" {
 		t.Fatalf("expected completed outcome checkpoint to be empty, got %+v", result.Outcome)
 	}
@@ -84,6 +87,42 @@ func TestRunDetailedAwaitingApprovalOutcomeContract(t *testing.T) {
 	}
 	if result.Outcome.Approval.RejectOutcome != RunStatusDegraded {
 		t.Fatalf("expected reject outcome to degrade, got %+v", result.Outcome.Approval)
+	}
+	if strings.TrimSpace(result.Outcome.InterruptReason) == "" {
+		t.Fatalf("expected awaiting approval outcome to expose an interrupt reason, got %+v", result.Outcome)
+	}
+}
+
+func TestRunDetailedDegradedOutcomeContract(t *testing.T) {
+	service := newDegradedContractTestService(t)
+
+	result, err := service.RunDetailed(context.Background(), Request{
+		Question: "degraded contract flow",
+		Options: RequestOptions{
+			OutputMode: agentstate.OutputModeFinalAnswer,
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunDetailed() error = %v", err)
+	}
+
+	if result.Outcome.Status != RunStatusDegraded {
+		t.Fatalf("expected degraded outcome, got %+v", result.Outcome)
+	}
+	if result.Outcome.Interrupted {
+		t.Fatalf("expected degraded outcome to clear interrupted state, got %+v", result.Outcome)
+	}
+	if strings.TrimSpace(result.Outcome.InterruptReason) != "" {
+		t.Fatalf("expected degraded outcome interrupt reason to be empty, got %+v", result.Outcome)
+	}
+	if strings.TrimSpace(result.Outcome.CheckpointID) != "" || result.Outcome.Approval != nil {
+		t.Fatalf("expected degraded outcome to expose no resume state, got %+v", result.Outcome)
+	}
+	if !result.Response.Degraded || strings.TrimSpace(result.Response.DegradeReason) == "" {
+		t.Fatalf("expected degraded response projection, got %+v", result.Response)
+	}
+	if strings.TrimSpace(result.Response.Summary) == "" {
+		t.Fatalf("expected degraded summary to remain caller-readable, got %+v", result.Response)
 	}
 }
 
@@ -171,6 +210,19 @@ func TestResolveApprovalResumeDecisionSupportsBooleanCompatibility(t *testing.T)
 	}
 	if rejected.approved || rejected.value != agentstate.ApprovalStatusRejected {
 		t.Fatalf("expected false bool fallback to resolve rejected, got %+v", rejected)
+	}
+}
+
+func TestResolveApprovalResumeDecisionPrefersCanonicalDecisionOverBooleanCompatibility(t *testing.T) {
+	decision, err := resolveApprovalResumeDecision(ResumeApprovalRequest{
+		Decision: ApprovalDecisionRejected,
+		Approved: true,
+	})
+	if err != nil {
+		t.Fatalf("resolveApprovalResumeDecision() error = %v", err)
+	}
+	if decision.approved || decision.value != agentstate.ApprovalStatusRejected {
+		t.Fatalf("expected explicit decision to win over compatibility bool, got %+v", decision)
 	}
 }
 
@@ -379,6 +431,53 @@ func newContractTestService(t *testing.T, requireApproval bool) *Service {
 			}, nil
 		},
 	}, agentcapability.WithRequiresApproval(requireApproval))
+	if err != nil {
+		t.Fatalf("fetch.NewCapability() error = %v", err)
+	}
+
+	return newTestAgentService(t, searchHandle, fetchHandle)
+}
+
+func newDegradedContractTestService(t *testing.T) *Service {
+	t.Helper()
+
+	searchHandle, err := agentsearch.NewCapability(contractSearchInvoker{
+		search: func(_ context.Context, query string) (agentsearch.SearchOutput, error) {
+			return agentsearch.SearchOutput{
+				Query:        query,
+				Provider:     "contract-provider",
+				ResultCount:  1,
+				AllowedCount: 1,
+				URLs:         []string{"https://contract.example/degraded"},
+				Results: []agentsearch.SearchResultItem{
+					{
+						Title:   "Contract Degraded Evidence",
+						URL:     "https://contract.example/degraded",
+						Snippet: "degraded contract evidence for " + query,
+						Domain:  "contract.example",
+					},
+				},
+				Summary: "degraded contract search evidence",
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("search.NewCapability() error = %v", err)
+	}
+
+	fetchHandle, err := agentfetch.NewCapability(stubFetchFlow{
+		fetch: func(_ context.Context, urls []string) (agentfetch.Output, error) {
+			return agentfetch.Output{
+				Summary:       "degraded contract evidence",
+				Degraded:      true,
+				DegradeReason: "contract_degraded",
+				ErrorMessage:  "synthetic contract degrade",
+				Pages: []agentfetch.PageResult{
+					{URL: urls[0], ErrorMessage: "contract degraded page"},
+				},
+			}, nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("fetch.NewCapability() error = %v", err)
 	}

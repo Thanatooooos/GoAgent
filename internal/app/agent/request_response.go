@@ -85,6 +85,11 @@ const (
 // ApprovalPending is the public approval-facing projection for a run paused at
 // an approval boundary.
 //
+// Stable outward fields:
+// - ReasonCode is the canonical machine-readable reason field.
+// - CapabilityName is the canonical capability identity field.
+// - RerunNode is the canonical post-approval rerun node field.
+//
 // Compatibility fields:
 // - Reason is kept as a compatibility alias of ReasonCode.
 // - Capability is kept as a compatibility alias of CapabilityName.
@@ -101,7 +106,9 @@ type ApprovalPending struct {
 	ReasonMessage string
 	// Trigger describes what surfaced the approval boundary.
 	Trigger string
-	// Node is the runtime node currently blocked on approval.
+	// Node is the runtime node that surfaced the current approval state. It is
+	// kept for readability and compatibility; RerunNode is the canonical field
+	// for resume behavior.
 	Node string
 	// RerunNode is the node expected to rerun after approval resume.
 	RerunNode string
@@ -115,36 +122,49 @@ type ApprovalPending struct {
 	RiskLevel             string
 	SupportsResume        bool
 	Idempotency           string
-	CheckpointID          string
-	SessionID             string
-	RequestedAt           time.Time
+	// CheckpointID is the canonical outward lookup key for resume requests.
+	CheckpointID string
+	// SessionID is a secondary projection for audit and debugging. It is not
+	// currently accepted as a public resume input.
+	SessionID   string
+	RequestedAt time.Time
 	// ResumeCount reports how many successful resume attempts have already been
 	// recorded on this runtime session.
-	ResumeCount      int
-	Question         string
+	ResumeCount int
+	// Question echoes the effective user question when available.
+	Question string
+	// SearchQuery echoes the best available external-search query when the
+	// paused capability is search-oriented.
 	SearchQuery      string
 	CurrentStepID    string
 	CurrentStepTitle string
-	CandidateURLs    []string
-	CanApprove       bool
-	CanReject        bool
-	RejectOutcome    string
+	// CandidateURLs is optional context for approval review and may be empty
+	// when the paused capability did not yet materialize URL candidates.
+	CandidateURLs []string
+	CanApprove    bool
+	CanReject     bool
+	// RejectOutcome declares the terminal run status expected after a rejection.
+	RejectOutcome string
 }
 
 // RunOutcome is the public terminal-or-paused status projection of a run.
 //
 // Contract:
-// - completed: CheckpointID empty, Approval nil
-// - degraded: CheckpointID empty, Approval nil
-// - awaiting_approval: CheckpointID non-empty, Approval non-nil
+// - completed: CheckpointID empty, Approval nil, InterruptReason empty
+// - degraded: CheckpointID empty, Approval nil, InterruptReason empty
+// - awaiting_approval: CheckpointID non-empty, Approval non-nil, Interrupted true
 type RunOutcome struct {
+	// Status is one of completed, degraded, or awaiting_approval.
 	Status string
 	// Interrupted mirrors runtime interruption state. It may be true only when
 	// execution paused before completion, most notably while awaiting approval.
-	Interrupted     bool
+	Interrupted bool
+	// InterruptReason is only meaningful when the run is currently paused.
 	InterruptReason string
-	CheckpointID    string
-	Approval        *ApprovalPending
+	// CheckpointID is populated only for resumable awaiting_approval outcomes.
+	CheckpointID string
+	// Approval is populated only for awaiting_approval outcomes.
+	Approval *ApprovalPending
 }
 
 // RunResponse is the detailed final-answer service response.
@@ -162,12 +182,19 @@ type HandoffRunResponse struct {
 
 // ResumeApprovalRequest is the public resume contract for an approval-pending run.
 //
-// Decision is the canonical outward field. Approved is a compatibility fallback
-// accepted only when Decision is empty.
+// Contract:
+// - CheckpointID is the canonical outward lookup key
+// - Decision is the canonical outward decision field
+// - Approved is a compatibility fallback accepted only when Decision is empty
 type ResumeApprovalRequest struct {
+	// CheckpointID identifies the paused run to resume.
 	CheckpointID string
-	Decision     string
-	Approved     bool
+	// Decision must be approved or rejected when set.
+	Decision string
+	// Approved is a compatibility fallback for older callers and is ignored when
+	// Decision is present.
+	Approved bool
+	// DecisionNote records optional reviewer context for audit trails.
 	DecisionNote string
 }
 

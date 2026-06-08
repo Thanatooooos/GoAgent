@@ -125,11 +125,19 @@ type PlanState struct {
 type PlanStep struct {
 	StepID           string         `json:"step_id,omitempty"`
 	Title            string         `json:"title,omitempty"`
+	Goal             string         `json:"goal,omitempty"`
 	CapabilityName   string         `json:"capability_name,omitempty"`
 	CapabilityKind   string         `json:"capability_kind,omitempty"`
 	CapabilityFamily string         `json:"capability_family,omitempty"`
 	CapabilityRole   string         `json:"capability_role,omitempty"`
 	CapabilityInput  map[string]any `json:"capability_input,omitempty"`
+	Consumes         []string       `json:"consumes,omitempty"`
+	Produces         []string       `json:"produces,omitempty"`
+	CompletionPolicy string         `json:"completion_policy,omitempty"`
+	FailurePolicy    string         `json:"failure_policy,omitempty"`
+	Optional         bool           `json:"optional,omitempty"`
+	MaxAttempts      int            `json:"max_attempts,omitempty"`
+	AttemptCount     int            `json:"attempt_count,omitempty"`
 	Query            string         `json:"query,omitempty"`
 	URLs             []string       `json:"urls,omitempty"`
 	DependsOn        []string       `json:"depends_on,omitempty"`
@@ -144,14 +152,32 @@ type PlanStep struct {
 // PlanStepResult records the most recent step execution in a replay-friendly
 // shape that later nodes can assess deterministically.
 type PlanStepResult struct {
-	StepID             string   `json:"step_id,omitempty"`
-	CapabilityName     string   `json:"capability_name,omitempty"`
-	Status             string   `json:"status,omitempty"`
-	ErrorClass         string   `json:"error_class,omitempty"`
-	Summary            string   `json:"summary,omitempty"`
-	URLs               []string `json:"urls,omitempty"`
-	ProducedEvidence   bool     `json:"produced_evidence,omitempty"`
-	RequiresReapproval bool     `json:"requires_reapproval,omitempty"`
+	StepID             string             `json:"step_id,omitempty"`
+	CapabilityName     string             `json:"capability_name,omitempty"`
+	Status             string             `json:"status,omitempty"`
+	ErrorClass         string             `json:"error_class,omitempty"`
+	Summary            string             `json:"summary,omitempty"`
+	Observation        string             `json:"observation,omitempty"`
+	Artifacts          []PlanStepArtifact `json:"artifacts,omitempty"`
+	URLs               []string           `json:"urls,omitempty"`
+	ProducedEvidence   bool               `json:"produced_evidence,omitempty"`
+	RequiresReapproval bool               `json:"requires_reapproval,omitempty"`
+	Attempt            int                `json:"attempt,omitempty"`
+	StartedAt          time.Time          `json:"started_at"`
+	CompletedAt        time.Time          `json:"completed_at"`
+	DurationMs         int64              `json:"duration_ms,omitempty"`
+}
+
+// PlanStepArtifact is a checkpoint-safe, replay-friendly intermediate output
+// emitted by one plan step for later steps or assessment policies to consume.
+type PlanStepArtifact struct {
+	Name         string            `json:"name,omitempty"`
+	Kind         string            `json:"kind,omitempty"`
+	SourceStepID string            `json:"source_step_id,omitempty"`
+	Summary      string            `json:"summary,omitempty"`
+	StringValues []string          `json:"string_values,omitempty"`
+	Refs         []string          `json:"refs,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 // EvidenceState stores the currently accepted evidence set and sufficiency

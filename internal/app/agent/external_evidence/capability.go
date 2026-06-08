@@ -19,6 +19,7 @@ type CapabilityInput struct {
 // CapabilityOutput is the combined workflow output for external evidence collection.
 type CapabilityOutput struct {
 	Search agentsearch.SearchOutput `json:"search"`
+	Review ReviewResult             `json:"review"`
 	Fetch  agentfetch.Output        `json:"fetch"`
 }
 
@@ -103,7 +104,11 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		return agentcapability.InvocationResult{}, err
 	}
 
-	fetchURLs := collectFetchURLs(searchOutput)
+	review := reviewSearchResults(ReviewInput{
+		Query:   input.Query,
+		Results: append([]agentsearch.SearchResultItem(nil), searchOutput.Results...),
+	})
+	fetchURLs := selectedReviewURLs(review)
 	fetchResult, err := c.fetch.Invoke(ctx, agentcapability.InvocationRequest{
 		SessionID: req.SessionID,
 		Snapshot:  req.Snapshot,
@@ -117,6 +122,7 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 	if err != nil {
 		return agentcapability.InvocationResult{}, err
 	}
+	review = finalizeSourceReview(review, fetchOutput)
 
 	status := agentcapability.StatusSucceeded
 	if searchResult.Status == agentcapability.StatusDegraded || fetchResult.Status == agentcapability.StatusDegraded {
@@ -129,6 +135,7 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 	return agentcapability.InvocationResult{
 		Output: CapabilityOutput{
 			Search: searchOutput,
+			Review: review,
 			Fetch:  fetchOutput,
 		},
 		Action: agentcapability.ActionRecord{
@@ -136,11 +143,11 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 			Summary: fmt.Sprintf("collect external evidence for %q", strings.TrimSpace(input.Query)),
 		},
 		Observation: agentcapability.ObservationRecord{
-			Summary:    agentcapability.FirstNonEmpty(fetchResult.Observation.Summary, searchResult.Observation.Summary),
+			Summary:    reviewObservationSummary(searchResult.Observation.Summary, fetchResult.Observation.Summary, review),
 			Degraded:   status == agentcapability.StatusDegraded,
 			ErrorClass: agentcapability.FirstNonEmpty(fetchResult.ErrorClass, searchResult.ErrorClass),
 		},
-		Delta:        agentstate.MergeStateDeltas(searchResult.Delta, fetchResult.Delta),
+		Delta:        agentstate.MergeStateDeltas(searchResult.Delta, reviewStateDelta(review), fetchResult.Delta),
 		Status:       status,
 		ErrorClass:   agentcapability.FirstNonEmpty(fetchResult.ErrorClass, searchResult.ErrorClass),
 		EvidenceRefs: append(append([]agentstate.EvidenceRef(nil), searchResult.EvidenceRefs...), fetchResult.EvidenceRefs...),
@@ -175,6 +182,3 @@ func decodeFetchOutput(raw any) (agentfetch.Output, error) {
 	}
 }
 
-func collectFetchURLs(output agentsearch.SearchOutput) []string {
-	return append([]string(nil), output.URLs...)
-}

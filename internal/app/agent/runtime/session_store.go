@@ -16,6 +16,10 @@ import (
 // under more than one lookup key, such as checkpoint ID and session ID. A
 // SessionStore implementation must therefore tolerate alias-style Put/Get/Delete
 // access patterns without assuming a one-key-per-session model.
+//
+// Public resume requests still use checkpoint ID as the canonical lookup key.
+// Session-ID aliases exist for internal lifecycle management, cleanup, and
+// audit projections; they are not part of the outward resume contract.
 type SessionStore interface {
 	Put(ctx context.Context, checkpointID string, session *RuntimeSession) error
 	Get(ctx context.Context, checkpointID string) (*RuntimeSession, bool, error)
