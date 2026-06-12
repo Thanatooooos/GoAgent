@@ -11,6 +11,7 @@ import (
 type AgentRuntimeService interface {
 	RunDetailed(ctx context.Context, req agentapp.Request) (agentapp.RunResponse, error)
 	ResumeAfterApproval(ctx context.Context, req agentapp.ResumeApprovalRequest) (agentapp.RunResponse, error)
+	GetPendingApproval(ctx context.Context, req agentapp.PendingApprovalLookupRequest) (*agentapp.ApprovalPending, bool, error)
 }
 
 type RagChatApprovalResumeInput struct {
@@ -20,6 +21,11 @@ type RagChatApprovalResumeInput struct {
 	CheckpointID   string
 	Decision       string
 	DecisionNote   string
+}
+
+type RagChatApprovalPendingQueryInput struct {
+	ConversationID string
+	UserID         string
 }
 
 type RagChatAgentOutcomePayload struct {

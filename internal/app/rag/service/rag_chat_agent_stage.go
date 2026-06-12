@@ -12,13 +12,6 @@ import (
 	"local/rag-project/internal/framework/exception"
 )
 
-func (s *RagChatService) SetAgentRuntimeService(service AgentRuntimeService) {
-	if s == nil {
-		return
-	}
-	s.agentRuntime = service
-}
-
 func (s *RagChatService) ResumeAfterApproval(ctx context.Context, input RagChatApprovalResumeInput, sink RagChatEventSink) error {
 	if sink == nil {
 		return exception.NewServiceException("rag chat event sink is required", nil)
@@ -86,6 +79,14 @@ func (s *RagChatService) runAgentChat(ctx context.Context, input RagChatInput, s
 	if err := sink.SendMeta(runtimeStage.state.meta); err != nil {
 		return err
 	}
+	ctx = enrichRagChatLogContext(
+		ctx,
+		runtimeStage.state.traceID,
+		runtimeStage.state.meta.ConversationID,
+		input.UserID,
+		runtimeStage.state.meta.TaskID,
+	)
+	s.tracer.appendTraceRunExtra(ctx, runtimeStage.state.traceID, buildRuntimePathTraceExtra(chatPathAgentRuntimeTopLevel, toolBackendAgentRuntime, input, s.agentRuntimeMode))
 	if strings.TrimSpace(runtimeStage.state.title) != "" {
 		_ = sink.SendTitle(runtimeStage.state.title)
 	}
@@ -106,9 +107,10 @@ func (s *RagChatService) runAgentRuntimeStage(ctx context.Context, input RagChat
 		},
 		run: func(ctx context.Context) (agentapp.RunResponse, error) {
 			return s.agentRuntime.RunDetailed(ctx, agentapp.Request{
-				Question: strings.TrimSpace(input.Question),
-				UserID:   strings.TrimSpace(input.UserID),
-				TraceID:  strings.TrimSpace(state.traceID),
+				Question:  strings.TrimSpace(input.Question),
+				UserID:    strings.TrimSpace(input.UserID),
+				TraceID:   strings.TrimSpace(state.traceID),
+				ToolStage: topLevelAgentToolStageContext(input),
 				Options: agentapp.RequestOptions{
 					RequireApproval: input.RequireApproval,
 					OutputMode:      agentstate.OutputModeFinalAnswer,
@@ -150,7 +152,7 @@ func (s *RagChatService) handleAgentRuntimeResult(
 	result agentapp.RunResponse,
 	sink RagChatEventSink,
 ) error {
-	logRagChatAgentRuntimeResult(state.traceID, state.meta.ConversationID, result)
+	logRagChatAgentRuntimeResult(ctx, result)
 	outcomePayload := newRagChatAgentOutcomePayload(result.Outcome)
 	_ = sink.SendAgentOutcome(outcomePayload)
 
@@ -201,7 +203,8 @@ func (s *RagChatService) handleAgentRuntimeError(
 	sink RagChatEventSink,
 	err error,
 ) error {
-	logRagChatTerminalError(state.traceID, "agent_runtime", err)
+	ctx = enrichRagChatLogContext(ctx, state.traceID, state.meta.ConversationID, "", state.meta.TaskID)
+	logRagChatTerminalError(ctx, "agent_runtime", err)
 	if s.tracer != nil {
 		s.tracer.appendTraceRunExtra(ctx, state.traceID, map[string]any{
 			"agentRuntime": buildAgentRuntimeServiceErrorTraceExtra(err),

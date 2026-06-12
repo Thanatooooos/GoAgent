@@ -100,7 +100,9 @@ func TestBuildCapabilityProfilesMapsFamiliesToWorkflowCapabilities(t *testing.T)
 		{name: "document investigation", family: agentcapability.FamilyDocumentInvestigation, expected: "diagnosis"},
 		{name: "trace investigation", family: agentcapability.FamilyTraceInvestigation, expected: "diagnosis"},
 		{name: "discovery", family: agentcapability.FamilyDiscovery, expected: "knowledge"},
-		{name: "meta fallback", family: agentcapability.FamilyMeta, expected: "general"},
+		{name: "meta", family: agentcapability.FamilyMeta, expected: "reasoning"},
+		{name: "memory", family: agentcapability.FamilyMemory, expected: "memory"},
+		{name: "generation", family: agentcapability.FamilyGeneration, expected: "generation"},
 		{name: "unknown fallback", family: "custom", expected: "general"},
 	}
 

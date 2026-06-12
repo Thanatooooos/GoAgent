@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
 	agentcatalog "local/rag-project/internal/app/agent/capability/catalog"
@@ -13,6 +14,8 @@ import (
 	agentfetch "local/rag-project/internal/app/agent/fetch"
 	agenthandoff "local/rag-project/internal/app/agent/handoff"
 	agentkernel "local/rag-project/internal/app/agent/kernel"
+	agentknowledgediscovery "local/rag-project/internal/app/agent/knowledge_discovery"
+	agentmemoryrecall "local/rag-project/internal/app/agent/memory_recall"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
 	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	agentstate "local/rag-project/internal/app/agent/state"
@@ -31,6 +34,7 @@ type ServiceOptions struct {
 	LLMService               aichat.LLMService
 	CheckpointStore          agentkernel.CheckpointStore
 	SessionStore             agentruntime.SessionStore
+	PendingApprovalStore     agentruntime.PendingApprovalStore
 	OutputMode               string
 	MaxIterations            int
 	Pattern                  string
@@ -38,6 +42,8 @@ type ServiceOptions struct {
 	CapabilitySelector       selectcapability.Selector
 	CapabilityResolver       agentresolve.Resolver
 	DocumentInvestigator     agentdocumentinvestigation.Investigator
+	KnowledgeDiscoverer      agentknowledgediscovery.KnowledgeDiscoverer
+	MemoryRecaller           agentmemoryrecall.MemoryRecaller
 }
 
 type Service struct {
@@ -46,6 +52,7 @@ type Service struct {
 	registry      *agentcapability.Registry
 	bindings      agentcapability.RoleBindings
 	sessionStore  agentruntime.SessionStore
+	pendingStore  agentruntime.PendingApprovalStore
 	reducer       agentstate.Reducer
 	maxIterations int
 	outputMode    string
@@ -100,7 +107,7 @@ func newRuntimeSession(req Request, maxIterations int, outputMode string, runtim
 		Metadata: agentruntime.SessionMetadata{
 			CreatedAt:   now,
 			UpdatedAt:   now,
-			RuntimeName: firstNonEmpty(runtimeName, runtimeNameForPattern(PatternReactive)),
+			RuntimeName: firstNonEmpty(runtimeName, runtimeNameForPattern(defaultPattern())),
 		},
 	}
 	seedRuntimeSessionFromToolStage(session, req.ToolStage)
@@ -193,8 +200,8 @@ func summarizeToolStageText(label string, value string, limit int) string {
 	if trimmed == "" {
 		return ""
 	}
-	if limit > 0 && len(trimmed) > limit {
-		trimmed = strings.TrimSpace(trimmed[:limit-3]) + "..."
+	if limit > 0 && utf8.RuneCountInString(trimmed) > limit {
+		trimmed = strings.TrimSpace(string([]rune(trimmed)[:limit-3])) + "..."
 	}
 	return label + ": " + trimmed
 }

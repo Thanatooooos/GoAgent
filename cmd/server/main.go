@@ -121,6 +121,7 @@ func main() {
 
 	r := gin.New()
 	r.Use(umw.RequestIDMiddleware())
+	r.Use(umw.LogContextMiddleware())
 	r.Use(umw.ErrorHandlerMiddleware())
 	loginIDExtractor := umw.DefaultLoginIDExtractor
 	if cfg != nil && cfg.App.DemoMode {

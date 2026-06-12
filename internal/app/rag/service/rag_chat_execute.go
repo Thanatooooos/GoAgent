@@ -11,6 +11,7 @@ import (
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
+	aichat "local/rag-project/internal/infra-ai/chat"
 )
 
 type ragChatWorkflowEventSink struct {
@@ -42,15 +43,28 @@ type ragChatStreamCallback struct {
 	task *ragChatTask
 	sink RagChatEventSink
 
+	estimator            TokenEstimator
+	promptTokensEstimate int
+
 	mu       sync.Mutex
 	content  strings.Builder
 	thinking strings.Builder
 }
 
-func newRagChatStreamCallback(task *ragChatTask, sink RagChatEventSink) *ragChatStreamCallback {
+func newRagChatStreamCallback(
+	task *ragChatTask,
+	sink RagChatEventSink,
+	estimator TokenEstimator,
+	promptTokensEstimate int,
+) *ragChatStreamCallback {
+	if estimator == nil {
+		estimator = RoughTokenEstimator{}
+	}
 	callback := &ragChatStreamCallback{
-		task: task,
-		sink: sink,
+		task:                 task,
+		sink:                 sink,
+		estimator:            estimator,
+		promptTokensEstimate: promptTokensEstimate,
 	}
 	go callback.watchCancel()
 	return callback
@@ -71,27 +85,31 @@ func (c *ragChatStreamCallback) OnThinking(content string) {
 }
 
 func (c *ragChatStreamCallback) OnComplete() {
-	c.task.doneCh <- ragChatTaskResult{
-		content:  c.currentContent(),
-		thinking: c.currentThinking(),
-	}
+	c.task.doneCh <- c.buildTaskResult(nil)
 }
 
 func (c *ragChatStreamCallback) OnError(err error) {
-	c.task.doneCh <- ragChatTaskResult{
-		content:  c.currentContent(),
-		thinking: c.currentThinking(),
-		err:      err,
+	c.task.doneCh <- c.buildTaskResult(err)
+}
+
+func (c *ragChatStreamCallback) buildTaskResult(err error) ragChatTaskResult {
+	content := c.currentContent()
+	thinking := c.currentThinking()
+	completionTokens := c.estimator.EstimateTokens(content) + c.estimator.EstimateTokens(thinking)
+	return ragChatTaskResult{
+		content:     content,
+		thinking:    thinking,
+		err:         err,
+		tokenUsage:  aichat.EstimatedTokenUsage(c.promptTokensEstimate, completionTokens),
+		usageSource: "estimated",
 	}
 }
 
 func (c *ragChatStreamCallback) watchCancel() {
 	<-c.task.cancelCh
-	c.task.doneCh <- ragChatTaskResult{
-		cancelled: true,
-		content:   c.currentContent(),
-		thinking:  c.currentThinking(),
-	}
+	result := c.buildTaskResult(nil)
+	result.cancelled = true
+	c.task.doneCh <- result
 }
 
 func (c *ragChatStreamCallback) currentContent() string {
@@ -143,6 +161,7 @@ func (s *RagChatService) runStreamingAnswer(
 	ctx context.Context,
 	state ragChatRuntimeState,
 	messages []convention.ChatMessage,
+	promptTokensEstimate int,
 	deepThinking bool,
 	sink RagChatEventSink,
 ) (ragChatTaskResult, error) {
@@ -157,7 +176,12 @@ func (s *RagChatService) runStreamingAnswer(
 		request.Thinking = boolPointer(true)
 	}
 
-	callback := newRagChatStreamCallback(task, sink)
+	callback := newRagChatStreamCallback(
+		task,
+		sink,
+		s.chatContextBudget.normalized().Estimator,
+		promptTokensEstimate,
+	)
 	handle, err := s.chatService.StreamChatWithRequest(request, callback)
 	if err != nil {
 		return ragChatTaskResult{}, err
@@ -225,11 +249,12 @@ func (s *RagChatService) handleCancelledResult(
 	sink RagChatEventSink,
 ) error {
 	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusCancelled, result)
-	logRagChatCompletion(state.traceID, state.meta.ConversationID, result)
+	ctx = enrichRagChatLogContext(ctx, state.traceID, state.meta.ConversationID, input.UserID, state.meta.TaskID)
+	logRagChatCompletion(ctx, result)
 
 	payload, err := s.persistAssistantMessage(ctx, state, input, result.content, result.thinking)
 	if err != nil {
-		logRagChatTerminalError(state.traceID, "persist_cancelled_result", err)
+		logRagChatTerminalError(ctx, "persist_cancelled_result", err)
 		s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
@@ -249,8 +274,9 @@ func (s *RagChatService) handleFailedResult(
 	sink RagChatEventSink,
 ) error {
 	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusFailed, result)
-	logRagChatCompletion(state.traceID, state.meta.ConversationID, result)
-	logRagChatTerminalError(state.traceID, "stream_result", result.err)
+	ctx = enrichRagChatLogContext(ctx, state.traceID, state.meta.ConversationID, "", state.meta.TaskID)
+	logRagChatCompletion(ctx, result)
+	logRagChatTerminalError(ctx, "stream_result", result.err)
 	s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, result.err)
 	_ = sink.SendError(result.err)
 	_ = sink.SendDone()
@@ -265,11 +291,12 @@ func (s *RagChatService) handleSucceededResult(
 	sink RagChatEventSink,
 ) error {
 	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusSuccess, result)
-	logRagChatCompletion(state.traceID, state.meta.ConversationID, result)
+	ctx = enrichRagChatLogContext(ctx, state.traceID, state.meta.ConversationID, input.UserID, state.meta.TaskID)
+	logRagChatCompletion(ctx, result)
 
 	payload, err := s.persistAssistantMessage(ctx, state, input, result.content, result.thinking)
 	if err != nil {
-		logRagChatTerminalError(state.traceID, "persist_succeeded_result", err)
+		logRagChatTerminalError(ctx, "persist_succeeded_result", err)
 		s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
@@ -361,7 +388,11 @@ func (s *RagChatService) runLegacyToolWorkflowStage(
 			if err != nil {
 				return ragChatToolStageResult{}, err
 			}
-			return ragChatToolStageResult{result: result, backend: "tool_workflow"}, nil
+			backend := toolBackendToolWorkflow
+			if fallback {
+				backend = toolBackendToolWorkflowFallback
+			}
+			return ragChatToolStageResult{result: result, backend: backend}, nil
 		},
 		buildExtra: func(result ragChatToolStageResult) map[string]any {
 			return buildToolWorkflowStageTraceExtra(result)
@@ -459,7 +490,7 @@ func (s *RagChatService) runPromptStage(
 			NodeName: "build_messages",
 		},
 		run: func(context.Context) (ragChatPromptStageResult, error) {
-			messages, err := s.promptService.BuildMessages(ragprompt.Context{
+			promptContext := ragprompt.Context{
 				Question:         question,
 				MemoryContext:    memoryContext,
 				SessionContext:   sessionContext,
@@ -469,16 +500,31 @@ func (s *RagChatService) runPromptStage(
 				AnswerGuidance:   answerGuidance,
 				History:          history,
 				SystemPrompt:     systemPromptOverride,
-			})
+			}
+			budgetResult, err := applyChatContextBudget(s.chatContextBudget, s.promptService, promptContext)
 			if err != nil {
 				return ragChatPromptStageResult{}, err
 			}
-			return ragChatPromptStageResult{messages: messages}, nil
+			promptContext.History = budgetResult.History
+			promptContext.MemoryContext = budgetResult.MemoryContext
+			promptContext.SessionContext = budgetResult.SessionContext
+			promptContext.KnowledgeContext = budgetResult.KnowledgeContext
+			promptContext.ToolContext = budgetResult.ToolContext
+			messages, err := s.promptService.BuildMessages(promptContext)
+			if err != nil {
+				return ragChatPromptStageResult{}, err
+			}
+			budgetResult.EstimatedPromptTokens = estimateChatMessagesTokens(messages, s.chatContextBudget.normalized().Estimator)
+			return ragChatPromptStageResult{messages: messages, budget: budgetResult}, nil
 		},
 		buildExtra: func(result ragChatPromptStageResult) map[string]any {
-			return map[string]any{
+			extra := map[string]any{
 				"messageCount": len(result.messages),
 			}
+			for key, value := range chatContextBudgetTraceExtra(result.budget) {
+				extra[key] = value
+			}
+			return extra
 		},
 	})
 }

@@ -124,6 +124,61 @@ func TestCompressIfNeededTriggersCompression(t *testing.T) {
 	if summaryRepo.lastContent != "用户询问了关于 Go 语言特性的问题，助手给出了详细解答。" {
 		t.Fatalf("unexpected summary content: %q", summaryRepo.lastContent)
 	}
+	if summaryRepo.lastSummary.SummaryVersion != domain.SummaryVersionV1 {
+		t.Fatalf("unexpected summary version: %d", summaryRepo.lastSummary.SummaryVersion)
+	}
+	if summaryRepo.lastSummary.CoveredToMessageID != "4" || summaryRepo.lastSummary.CoveredFromMessageID != "1" {
+		t.Fatalf("unexpected covered message range: from=%q to=%q", summaryRepo.lastSummary.CoveredFromMessageID, summaryRepo.lastSummary.CoveredToMessageID)
+	}
+	if summaryRepo.lastSummary.SourceMessageCount != 4 {
+		t.Fatalf("unexpected source message count: %d", summaryRepo.lastSummary.SourceMessageCount)
+	}
+	if summaryRepo.lastSummary.QualityStatus != domain.SummaryQualityUnchecked {
+		t.Fatalf("unexpected quality status: %q", summaryRepo.lastSummary.QualityStatus)
+	}
+	if summaryRepo.lastSummary.LastRebuildReason != "threshold_reached" {
+		t.Fatalf("unexpected rebuild reason: %q", summaryRepo.lastSummary.LastRebuildReason)
+	}
+}
+
+func TestCompressIfNeededAsyncEnqueuesJob(t *testing.T) {
+	done := make(chan struct{})
+	runner := &mockSummaryCompressionRunner{done: done}
+	svc := NewCompressibleSummaryService(&mockSummaryRepoForCompress{}, SummaryCompressionOptions{
+		MessageRepo: &conversationMessageRepoStubForMemory{},
+		ChatService: &mockChatServiceForCompress{},
+		StartTurns:  10,
+		MaxChars:    200,
+	})
+	worker := NewInMemorySummaryJobWorker(runner, 8)
+	worker.Start()
+	defer worker.Stop()
+	svc.jobEnqueuer = worker
+	svc.asyncEnabled = true
+
+	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("msg"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected async compression runner to be invoked")
+	}
+}
+
+type mockSummaryCompressionRunner struct {
+	done chan struct{}
+}
+
+func (m *mockSummaryCompressionRunner) runConversationSummaryCompression(_ context.Context, input SummaryJobInput) error {
+	if input.ConversationID != "c1" || input.UserID != "u1" {
+		return nil
+	}
+	if m.done != nil {
+		close(m.done)
+	}
+	return nil
 }
 
 // TestCompressIfNeededAtBoundary 验证消息数恰为阈值整数倍时触发压缩。
@@ -296,14 +351,16 @@ var _ aichat.LLMService = (*mockChatServiceForCompress)(nil)
 
 // mockSummaryRepoForCompress 用于压缩测试的摘要仓储桩。
 type mockSummaryRepoForCompress struct {
-	created       bool
-	lastContent   string
+	created      bool
+	lastContent  string
+	lastSummary  domain.ConversationSummary
 	latestSummary domain.ConversationSummary
 }
 
 func (m *mockSummaryRepoForCompress) Create(_ context.Context, summary domain.ConversationSummary) (domain.ConversationSummary, error) {
 	m.created = true
 	m.lastContent = summary.Content
+	m.lastSummary = summary
 	summary.ID = "summary-1"
 	return summary, nil
 }

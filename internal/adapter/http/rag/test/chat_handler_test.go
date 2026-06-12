@@ -17,8 +17,9 @@ import (
 )
 
 type chatServiceStub struct {
-	chatFn   func(context.Context, ragservice.RagChatInput, ragservice.RagChatEventSink) error
-	resumeFn func(context.Context, ragservice.RagChatApprovalResumeInput, ragservice.RagChatEventSink) error
+	chatFn    func(context.Context, ragservice.RagChatInput, ragservice.RagChatEventSink) error
+	resumeFn  func(context.Context, ragservice.RagChatApprovalResumeInput, ragservice.RagChatEventSink) error
+	pendingFn func(context.Context, ragservice.RagChatApprovalPendingQueryInput) (*ragservice.RagChatApprovalPendingPayload, error)
 }
 
 func (s chatServiceStub) Chat(ctx context.Context, input ragservice.RagChatInput, sink ragservice.RagChatEventSink) error {
@@ -33,6 +34,13 @@ func (s chatServiceStub) ResumeAfterApproval(ctx context.Context, input ragservi
 		return s.resumeFn(ctx, input, sink)
 	}
 	return nil
+}
+
+func (s chatServiceStub) GetPendingApproval(ctx context.Context, input ragservice.RagChatApprovalPendingQueryInput) (*ragservice.RagChatApprovalPendingPayload, error) {
+	if s.pendingFn != nil {
+		return s.pendingFn(ctx, input)
+	}
+	return nil, nil
 }
 
 func (s chatServiceStub) CancelTask(string) bool {
@@ -107,6 +115,36 @@ func TestChatHandlerResumeAfterApprovalBindsRequestAndStreamsApprovalPayload(t *
 		!strings.Contains(rec.Body.String(), "\"type\":\"approval_pending\"") ||
 		!strings.Contains(rec.Body.String(), "event: done") {
 		t.Fatalf("expected approval_pending and done SSE events, got %s", rec.Body.String())
+	}
+}
+
+func TestChatHandlerGetPendingApprovalWritesJSONPayload(t *testing.T) {
+	var captured ragservice.RagChatApprovalPendingQueryInput
+	router := newChatRouter(chatServiceStub{
+		pendingFn: func(_ context.Context, input ragservice.RagChatApprovalPendingQueryInput) (*ragservice.RagChatApprovalPendingPayload, error) {
+			captured = input
+			return &ragservice.RagChatApprovalPendingPayload{
+				Required:     true,
+				Status:       "pending",
+				CheckpointID: "cp-12",
+				Question:     "why did it pause",
+			}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/rag/v3/chat/approval/pending?conversationId=conv-1", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if captured.ConversationID != "conv-1" || captured.UserID != "user-1" {
+		t.Fatalf("unexpected pending lookup input: %+v", captured)
+	}
+	if !strings.Contains(rec.Body.String(), "\"pending\":true") ||
+		!strings.Contains(rec.Body.String(), "\"checkpointId\":\"cp-12\"") {
+		t.Fatalf("expected pending approval JSON payload, got %s", rec.Body.String())
 	}
 }
 

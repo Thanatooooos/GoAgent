@@ -27,6 +27,7 @@ func newExecuteStepNode(registry *agentcapability.Registry, resolver agentresolv
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
+		logStepExecutionStart(session, step, spec, input)
 		startedAt := time.Now()
 		result, err := handle.Invoke(ctx, agentcapability.InvocationRequest{
 			SessionID: session.SessionID,
@@ -51,6 +52,7 @@ func newExecuteStepNode(registry *agentcapability.Registry, resolver agentresolv
 		resultState.StartedAt = startedAt
 		resultState.CompletedAt = time.Now()
 		resultState.DurationMs = resultState.CompletedAt.Sub(resultState.StartedAt).Milliseconds()
+		logStepExecutionResult(session, step, result, resultState)
 		plan.Steps[plan.CurrentStepIndex] = step
 		plan.LastStepResult = resultState
 

@@ -16,10 +16,12 @@ type ragChatTask struct {
 }
 
 type ragChatTaskResult struct {
-	cancelled bool
-	content   string
-	thinking  string
-	err       error
+	cancelled    bool
+	content      string
+	thinking     string
+	err          error
+	tokenUsage   aichat.TokenUsage
+	usageSource  string
 }
 
 type TaskRegistry struct {

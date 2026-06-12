@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
@@ -107,19 +108,24 @@ func (s *MessageServiceStore) RefreshCache(context.Context, string, string) erro
 
 // SummaryServiceAdapter 基于摘要 repository 提供摘要读取能力。
 type SummaryServiceAdapter struct {
-	summaryRepo port.ConversationSummaryRepository
-	messageRepo port.ConversationMessageRepository
-	chatService aichat.LLMService
-	startTurns  int
-	maxChars    int
+	summaryRepo  port.ConversationSummaryRepository
+	messageRepo  port.ConversationMessageRepository
+	chatService  aichat.LLMService
+	startTurns   int
+	maxChars     int
+	jobEnqueuer  SummaryJobEnqueuer
+	asyncEnabled bool
+	engine       summaryCompressionEngine
 }
 
 // SummaryCompressionOptions 描述摘要压缩的配置参数。
 type SummaryCompressionOptions struct {
-	MessageRepo port.ConversationMessageRepository
-	ChatService aichat.LLMService
-	StartTurns  int
-	MaxChars    int
+	MessageRepo  port.ConversationMessageRepository
+	ChatService  aichat.LLMService
+	StartTurns   int
+	MaxChars     int
+	JobEnqueuer  SummaryJobEnqueuer
+	AsyncEnabled bool
 }
 
 // NewSummaryServiceAdapter 创建基于摘要 repository 的适配器（不支持压缩）。
@@ -138,13 +144,39 @@ func NewCompressibleSummaryService(
 	if options.MaxChars <= 0 {
 		options.MaxChars = 200
 	}
-	return &SummaryServiceAdapter{
+	engine := summaryCompressionEngine{
 		summaryRepo: summaryRepo,
 		messageRepo: options.MessageRepo,
 		chatService: options.ChatService,
 		startTurns:  options.StartTurns,
 		maxChars:    options.MaxChars,
+		now:         time.Now,
 	}
+	adapter := &SummaryServiceAdapter{
+		summaryRepo: summaryRepo,
+		messageRepo: options.MessageRepo,
+		chatService: options.ChatService,
+		startTurns:  options.StartTurns,
+		maxChars:    options.MaxChars,
+		jobEnqueuer: options.JobEnqueuer,
+		engine:      engine,
+	}
+	if options.AsyncEnabled {
+		adapter.asyncEnabled = true
+	}
+	return adapter
+}
+
+// EnableAsyncSummaryJobs starts an in-memory worker and routes compression through it.
+func (s *SummaryServiceAdapter) EnableAsyncSummaryJobs(queueSize int) *InMemorySummaryJobWorker {
+	if s == nil {
+		return nil
+	}
+	worker := NewInMemorySummaryJobWorker(s.engine, queueSize)
+	worker.Start()
+	s.jobEnqueuer = worker
+	s.asyncEnabled = true
+	return worker
 }
 
 // LoadLatestSummary 读取最近摘要。
@@ -190,72 +222,16 @@ func (s *SummaryServiceAdapter) CompressIfNeeded(ctx context.Context, conversati
 		return nil
 	}
 
-	// 统计总消息数，判断是否达到压缩阈值。
-	userCount, _ := s.messageRepo.CountByConversationIDAndUserIDAndRole(ctx, conversationID, userID, string(convention.UserRole))
-	assistantCount, _ := s.messageRepo.CountByConversationIDAndUserIDAndRole(ctx, conversationID, userID, string(convention.AssistantRole))
-	totalMessages := int(userCount + assistantCount)
-	threshold := s.startTurns * 2
-	if totalMessages < threshold {
-		return nil
-	}
-
-	// 仅在刚达到阈值时触发一次，避免每条消息都重复压缩。
-	latestSummary, _ := s.summaryRepo.FindLatestByConversationIDAndUserID(ctx, conversationID, userID)
-	lastCompressedID := strings.TrimSpace(latestSummary.LastMessageID)
-
-	// 取最近消息用于生成摘要，确认有新消息需要压缩。
-	historyMessages, err := s.messageRepo.List(ctx, port.ConversationMessageListFilter{
+	_ = message
+	input := SummaryJobInput{
 		ConversationID: conversationID,
 		UserID:         userID,
-		Order:          port.ConversationMessageOrderDesc,
-		Limit:          threshold,
-	})
-	if err != nil {
-		return fmt.Errorf("load messages for compression: %w", err)
+		RebuildReason:  "threshold_reached",
 	}
-	if len(historyMessages) < threshold {
-		return nil
+	if s.asyncEnabled && s.jobEnqueuer != nil {
+		return s.jobEnqueuer.EnqueueConversationSummary(ctx, input)
 	}
-	// 如果最近一条消息仍是上次压缩覆盖过的，说明没有新消息需要压缩。
-	if lastCompressedID != "" && len(historyMessages) > 0 && historyMessages[0].ID == lastCompressedID {
-		return nil
-	}
-
-	// 构建压缩 prompt。
-	compressPrompt := buildCompressPrompt(s.maxChars, latestSummary.Content, historyMessages)
-	request := convention.ChatRequest{
-		Messages: []convention.ChatMessage{
-			convention.SystemMessage(compressPrompt),
-			convention.UserMessage("请根据上述对话生成摘要。"),
-		},
-	}
-
-	response, err := s.chatService.ChatWithRequest(request)
-	if err != nil {
-		return fmt.Errorf("compress summary llm call: %w", err)
-	}
-
-	summaryContent := strings.TrimSpace(response)
-	if summaryContent == "" {
-		return nil
-	}
-
-	// 写入摘要记录。
-	lastMessageID := ""
-	if len(historyMessages) > 0 {
-		lastMessageID = historyMessages[0].ID
-	}
-	_, err = s.summaryRepo.Create(ctx, domain.ConversationSummary{
-		ID:             "",
-		ConversationID: conversationID,
-		UserID:         userID,
-		Content:        summaryContent,
-		LastMessageID:  lastMessageID,
-	})
-	if err != nil {
-		return fmt.Errorf("save compressed summary: %w", err)
-	}
-	return nil
+	return s.engine.runConversationSummaryCompression(ctx, input)
 }
 
 const (
@@ -296,8 +272,8 @@ func buildCompressPrompt(maxChars int, previousSummary string, historyMessages [
 		if content == "" {
 			continue
 		}
-		if len(content) > 500 {
-			content = content[:500]
+		if utf8.RuneCountInString(content) > 500 {
+			content = string([]rune(content)[:500])
 		}
 		builder.WriteString(role)
 		builder.WriteString("：")

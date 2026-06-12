@@ -19,6 +19,7 @@ func newFinalizeNode(configuredOutputMode string) (agentkernel.Node, error) {
 				degradeReason = firstNonEmpty(session.Snapshot.Plan.LastAssessment, reasonPlanFailed)
 			}
 			final := "I couldn't gather enough reliable fetched evidence to answer confidently."
+			logFinalizedOutput(session, mode, final, degradeReason)
 			return agentruntime.NodeResult{
 				Events: []agentstate.RuntimeEvent{
 					agentstate.NewRuntimeEventAt(time.Now(), session.SessionID, "finalize", agentstate.EventTypeDegraded, degradeReason),
@@ -35,6 +36,7 @@ func newFinalizeNode(configuredOutputMode string) (agentkernel.Node, error) {
 
 		if mode == agentstate.OutputModeHandoff {
 			note := "handoff ready: explicit plan completed with grounded evidence"
+			logFinalizedOutput(session, mode, note, "")
 			return agentruntime.NodeResult{
 				Events: []agentstate.RuntimeEvent{
 					agentstate.NewRuntimeEventAt(time.Now(), session.SessionID, "finalize", agentstate.EventTypeHandoffFinalized, note),
@@ -49,6 +51,7 @@ func newFinalizeNode(configuredOutputMode string) (agentkernel.Node, error) {
 		}
 
 		final := buildFinalAnswer(session)
+		logFinalizedOutput(session, mode, final, "")
 		return agentruntime.NodeResult{
 			Events: []agentstate.RuntimeEvent{
 				agentstate.NewRuntimeEventAt(time.Now(), session.SessionID, "finalize", agentstate.EventTypeAnswerFinalized, final),

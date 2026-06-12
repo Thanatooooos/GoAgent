@@ -15,6 +15,10 @@ When adding a capability, prefer following the existing non-diagnostic samples:
 - `search`
 - `fetch`
 - `external_evidence`
+- `think`
+- `knowledge_discovery`
+- `memory_recall`
+- `content_summarize`
 
 Do not treat `document_investigation` as the default template for new
 capabilities unless the new work is explicitly diagnosis-oriented.
@@ -108,6 +112,16 @@ Capabilities remain responsible for:
 - domain-specific deltas
 - domain-specific evidence projection
 
+## Invoke Error Semantics
+
+New capabilities should follow this `(result, err)` contract:
+
+- `StatusSucceeded` or `StatusSkipped` -> `err == nil`
+- `StatusDegraded` with usable output -> `err == nil`
+- validation / dependency / external hard failures -> use the shared failure builders and return `err != nil`
+
+Use `ValidationFailureResult` for invalid input, `DependencyFailureResult` for upstream service failures, and `ExternalFailureResult` for third-party or LLM failures.
+
 ## Registration
 
 Add the capability to the matching registration group inside agent assembly.
@@ -116,6 +130,11 @@ Current groups:
 
 - `external evidence`
 - `optional workflow`
+- `meta` (`think`, `content_summarize` when LLM is available)
+- `discovery` (`knowledge_discovery`, optional dependency)
+- `memory` (`memory_recall`, optional dependency)
+
+Family to workflow projection is centralized in `capability.WorkflowCapabilityForFamily`.
 
 Rules:
 
@@ -146,3 +165,14 @@ Use `search`, `fetch`, and `external_evidence` as the preferred references for:
 - shared input decoding
 - shared degraded result construction
 - capability registration in assembly
+
+## Architecture Improvement Backlog
+
+The following items are intentionally deferred and should not block new capability delivery:
+
+1. `TypedHandle[I, O]` at the invoke boundary to remove node-level type assertions.
+2. Runtime taxonomy registration for families/roles instead of static maps in `spec.go`.
+3. Unified evidence ownership: capabilities with `ProducesEvidence: true` should populate `EvidenceDelta` directly.
+4. Journal-driven handoff profiles for plan-execute and non-reactive patterns.
+5. Generic capability node/slot config to reduce reactive hardcoded node names.
+6. LLM selector nil-service behavior and expanded contract coverage for skipped/degraded paths.

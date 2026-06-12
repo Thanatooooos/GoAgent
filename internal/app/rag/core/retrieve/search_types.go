@@ -138,6 +138,66 @@ func collectSearchChannels(results []SearchChannelResult) []string {
 	return names
 }
 
+func collectChannelRetrieved(results []SearchChannelResult) map[string][]convention.RetrievedChunk {
+	retrieved := make(map[string][]convention.RetrievedChunk)
+	for _, result := range results {
+		name := strings.TrimSpace(result.ChannelName)
+		if name == "" || strings.TrimSpace(result.Error) != "" || len(result.Chunks) == 0 {
+			continue
+		}
+		retrieved[name] = cloneChunks(result.Chunks)
+	}
+	if len(retrieved) == 0 {
+		return nil
+	}
+	return retrieved
+}
+
+func mergeChannelRetrieved(results []Result) map[string][]convention.RetrievedChunk {
+	if len(results) == 0 {
+		return nil
+	}
+	merged := map[string]map[string]convention.RetrievedChunk{}
+	for _, result := range results {
+		for channel, chunks := range result.ChannelRetrieved {
+			channel = strings.TrimSpace(channel)
+			if channel == "" {
+				continue
+			}
+			bucket := merged[channel]
+			if bucket == nil {
+				bucket = map[string]convention.RetrievedChunk{}
+				merged[channel] = bucket
+			}
+			for _, chunk := range chunks {
+				if existing, ok := bucket[chunk.ID]; ok {
+					if chunk.Score > existing.Score {
+						bucket[chunk.ID] = chunk
+					}
+					continue
+				}
+				bucket[chunk.ID] = chunk
+			}
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+
+	output := make(map[string][]convention.RetrievedChunk, len(merged))
+	for channel, bucket := range merged {
+		chunks := make([]convention.RetrievedChunk, 0, len(bucket))
+		for _, chunk := range bucket {
+			chunks = append(chunks, chunk)
+		}
+		sort.Slice(chunks, func(i, j int) bool {
+			return chunks[i].Score > chunks[j].Score
+		})
+		output[channel] = chunks
+	}
+	return output
+}
+
 func collectChannelStats(results []SearchChannelResult) []ChannelStat {
 	stats := make([]ChannelStat, 0, len(results))
 	for _, result := range results {
@@ -235,6 +295,7 @@ func MergeResults(results []Result, topK int) Result {
 		KnowledgeContext: BuildKnowledgeContext(chunks),
 		SearchChannels:   searchChannels,
 		ChannelStats:     channelStats,
+		ChannelRetrieved: mergeChannelRetrieved(results),
 	}
 }
 

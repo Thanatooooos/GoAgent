@@ -127,9 +127,10 @@ type RagDefaultConfig struct {
 }
 
 type RagAgentConfig struct {
-	MaxIterations     int                            `mapstructure:"max-iterations"`
-	ParallelToolCalls RagAgentParallelToolCallConfig `mapstructure:"parallel-tool-calls"`
-	Chat              RagAgentChatConfig             `mapstructure:"chat"`
+	MaxIterations      int                              `mapstructure:"max-iterations"`
+	ParallelToolCalls  RagAgentParallelToolCallConfig   `mapstructure:"parallel-tool-calls"`
+	Chat               RagAgentChatConfig               `mapstructure:"chat"`
+	RuntimePersistence RagAgentRuntimePersistenceConfig `mapstructure:"runtime-persistence"`
 }
 
 type RagAgentParallelToolCallConfig struct {
@@ -139,6 +140,11 @@ type RagAgentParallelToolCallConfig struct {
 
 type RagAgentChatConfig struct {
 	Mode string `mapstructure:"mode"`
+}
+
+type RagAgentRuntimePersistenceConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Dir     string `mapstructure:"dir"`
 }
 
 type RagRetrieveConfig struct {
@@ -151,9 +157,23 @@ type RagRetrieveParallelSubquestionConfig struct {
 }
 
 type RagQueryRewriteConfig struct {
-	Enabled            bool `mapstructure:"enabled"`
-	MaxHistoryMessages int  `mapstructure:"max-history-messages"`
-	MaxHistoryChars    int  `mapstructure:"max-history-chars"`
+	Enabled            bool                       `mapstructure:"enabled"`
+	MaxHistoryMessages int                        `mapstructure:"max-history-messages"`
+	MaxHistoryChars    int                        `mapstructure:"max-history-chars"`
+	TermNormalization  RagTermNormalizationConfig `mapstructure:"term-normalization"`
+}
+
+type RagTermNormalizationConfig struct {
+	Enabled bool                       `mapstructure:"enabled"`
+	Rules   []RagTermNormalizationRule `mapstructure:"rules"`
+}
+
+type RagTermNormalizationRule struct {
+	Canonical string   `mapstructure:"canonical"`
+	Aliases   []string `mapstructure:"aliases"`
+	Category  string   `mapstructure:"category"`
+	Version   int      `mapstructure:"version"`
+	Enabled   *bool    `mapstructure:"enabled"`
 }
 
 type RagRateLimitConfig struct {
@@ -172,6 +192,7 @@ type RagMemoryConfig struct {
 	HistoryKeepTurns  int                        `mapstructure:"history-keep-turns"`
 	SummaryStartTurns int                        `mapstructure:"summary-start-turns"`
 	SummaryEnabled    bool                       `mapstructure:"summary-enabled"`
+	SummaryAsync      RagSummaryAsyncConfig      `mapstructure:"summary-async"`
 	SummaryMaxChars   int                        `mapstructure:"summary-max-chars"`
 	TitleMaxLength    int                        `mapstructure:"title-max-length"`
 	LongMessage       RagLongMessageConfig       `mapstructure:"long-message"`
@@ -179,6 +200,16 @@ type RagMemoryConfig struct {
 	ExplicitRecall    RagExplicitRecallConfig    `mapstructure:"explicit-recall"`
 	Cache             RagMemoryCacheConfig       `mapstructure:"cache"`
 	Maintenance       RagMemoryMaintenanceConfig `mapstructure:"maintenance"`
+	ChatContext       RagChatContextConfig       `mapstructure:"chat-context"`
+}
+
+type RagChatContextConfig struct {
+	Enabled         bool `mapstructure:"enabled"`
+	MaxPromptTokens int  `mapstructure:"max-prompt-tokens"`
+}
+
+type RagSummaryAsyncConfig struct {
+	Enabled bool `mapstructure:"enabled"`
 }
 
 type RagMemoryCacheConfig struct {
@@ -305,8 +336,12 @@ type RagSearchChannel struct {
 }
 
 type RagKeywordSearchChannelConfig struct {
-	EnabledFallbackTrgm *bool `mapstructure:"enabled-fallback-trgm"`
+	EnabledFallbackTrgm *bool  `mapstructure:"enabled-fallback-trgm"`
+	Backend             string `mapstructure:"backend"`
 }
+
+const KeywordBackendBM25 = "bm25"
+const KeywordBackendTsvector = "tsvector"
 
 type RagMetadataTitleSearchChannelConfig struct {
 	EnabledFallbackTrgm  *bool   `mapstructure:"enabled-fallback-trgm"`

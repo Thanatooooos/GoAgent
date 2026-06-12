@@ -27,6 +27,7 @@ func newBuildPlanNode(
 		if session != nil && session.Snapshot.Plan.ReplanCount > 0 {
 			plan.ReplanCount = session.Snapshot.Plan.ReplanCount
 		}
+		logPlanBuilt(session, plan, reasoning)
 		contextDelta := &agentstate.ContextDelta{
 			Notes: notes,
 		}

@@ -9,10 +9,16 @@ import (
 	agentcatalog "local/rag-project/internal/app/agent/capability/catalog"
 	agentresolve "local/rag-project/internal/app/agent/capability/resolve"
 	selectcapability "local/rag-project/internal/app/agent/capability/select"
+	agentcontentsummarize "local/rag-project/internal/app/agent/content_summarize"
 	agentdocumentinvestigation "local/rag-project/internal/app/agent/document_investigation"
 	agentexternal "local/rag-project/internal/app/agent/external_evidence"
 	agentfetch "local/rag-project/internal/app/agent/fetch"
+	agentknowledgediscovery "local/rag-project/internal/app/agent/knowledge_discovery"
+	agentmemoryrecall "local/rag-project/internal/app/agent/memory_recall"
 	agentsearch "local/rag-project/internal/app/agent/search"
+	agentthink "local/rag-project/internal/app/agent/think"
+	longtermmemory "local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/framework/convention"
 	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
 	knowledgedomain "local/rag-project/internal/app/knowledge/domain"
 	knowledgeservice "local/rag-project/internal/app/knowledge/service"
@@ -196,6 +202,74 @@ func TestExistingCapabilitiesSatisfySharedContract(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:         "think",
+			handle:       mustThinkCapabilityHandle(t),
+			validInput:   map[string]any{"thought": "plan next step"},
+			invalidInput: map[string]any{"thought": 1},
+			assertResolvedInput: func(t *testing.T, input any) {
+				typed, ok := input.(agentthink.CapabilityInput)
+				if !ok || typed.Thought != "plan next step" {
+					t.Fatalf("expected think input, got %#v", input)
+				}
+			},
+			assertResult: func(t *testing.T, result agentcapability.InvocationResult) {
+				if result.Status != agentcapability.StatusSucceeded || result.Action.Name != agentcapability.NameThink {
+					t.Fatalf("unexpected think result: %+v", result)
+				}
+			},
+		},
+		{
+			name:         "knowledge discovery",
+			handle:       mustKnowledgeDiscoveryCapabilityHandle(t),
+			validInput:   map[string]any{"action": agentknowledgediscovery.ActionListBases},
+			invalidInput: map[string]any{"action": 1},
+			assertResolvedInput: func(t *testing.T, input any) {
+				typed, ok := input.(agentknowledgediscovery.CapabilityInput)
+				if !ok || typed.Action != agentknowledgediscovery.ActionListBases {
+					t.Fatalf("expected knowledge discovery input, got %#v", input)
+				}
+			},
+			assertResult: func(t *testing.T, result agentcapability.InvocationResult) {
+				if result.Status != agentcapability.StatusSucceeded || result.Action.Name != agentcapability.NameKnowledgeDiscovery {
+					t.Fatalf("unexpected knowledge discovery result: %+v", result)
+				}
+			},
+		},
+		{
+			name:         "memory recall",
+			handle:       mustMemoryRecallCapabilityHandle(t),
+			validInput:   map[string]any{"query": "preference", "user_id": "u1"},
+			invalidInput: map[string]any{"query": 1},
+			assertResolvedInput: func(t *testing.T, input any) {
+				typed, ok := input.(agentmemoryrecall.CapabilityInput)
+				if !ok || typed.Query != "preference" || typed.UserID != "u1" {
+					t.Fatalf("expected memory recall input, got %#v", input)
+				}
+			},
+			assertResult: func(t *testing.T, result agentcapability.InvocationResult) {
+				if result.Status != agentcapability.StatusSucceeded || result.Action.Name != agentcapability.NameMemoryRecall {
+					t.Fatalf("unexpected memory recall result: %+v", result)
+				}
+			},
+		},
+		{
+			name:         "content summarize",
+			handle:       mustContentSummarizeCapabilityHandle(t),
+			validInput:   map[string]any{"content": "long content"},
+			invalidInput: map[string]any{"content": 1},
+			assertResolvedInput: func(t *testing.T, input any) {
+				typed, ok := input.(agentcontentsummarize.CapabilityInput)
+				if !ok || typed.Content != "long content" {
+					t.Fatalf("expected content summarize input, got %#v", input)
+				}
+			},
+			assertResult: func(t *testing.T, result agentcapability.InvocationResult) {
+				if result.Status != agentcapability.StatusSucceeded || result.Action.Name != agentcapability.NameContentSummarize {
+					t.Fatalf("unexpected content summarize result: %+v", result)
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -299,6 +373,30 @@ func mustDocumentInvestigationCapabilityHandle(t *testing.T) agentcapability.Han
 	return mustCapabilityHandle(t, handle, err)
 }
 
+func mustThinkCapabilityHandle(t *testing.T) agentcapability.Handle {
+	t.Helper()
+	handle, err := agentthink.NewCapability()
+	return mustCapabilityHandle(t, handle, err)
+}
+
+func mustKnowledgeDiscoveryCapabilityHandle(t *testing.T) agentcapability.Handle {
+	t.Helper()
+	handle, err := agentknowledgediscovery.NewCapability(contractDiscoverer{})
+	return mustCapabilityHandle(t, handle, err)
+}
+
+func mustMemoryRecallCapabilityHandle(t *testing.T) agentcapability.Handle {
+	t.Helper()
+	handle, err := agentmemoryrecall.NewCapability(contractRecaller{})
+	return mustCapabilityHandle(t, handle, err)
+}
+
+func mustContentSummarizeCapabilityHandle(t *testing.T) agentcapability.Handle {
+	t.Helper()
+	handle, err := agentcontentsummarize.NewCapability(contractCompleter{})
+	return mustCapabilityHandle(t, handle, err)
+}
+
 func mustExternalEvidenceContractSetup(t *testing.T) (agentcapability.Handle, []agentcapability.Handle) {
 	t.Helper()
 	searchHandle := mustSearchCapabilityHandle(t, contractSearchInvoker{
@@ -393,6 +491,56 @@ func (contractInvestigator) Get(context.Context, knowledgeservice.GetKnowledgeDo
 		PipelineID:  "pipe-1",
 		ChunkCount:  0,
 	}, nil
+}
+
+type contractDiscoverer struct{}
+
+func (contractDiscoverer) PageBases(context.Context, knowledgeservice.PageKnowledgeBaseInput) (knowledgeservice.KnowledgeBasePageResult, error) {
+	return knowledgeservice.KnowledgeBasePageResult{
+		Items: []knowledgedomain.KnowledgeBase{{ID: "kb-1", Name: "Eval KB"}},
+		DocumentCounts: map[string]int{
+			"kb-1": 1,
+		},
+		Total: 1,
+		Page:  1,
+	}, nil
+}
+
+func (contractDiscoverer) PageDocuments(context.Context, knowledgeservice.PageKnowledgeDocumentInput) (knowledgeservice.KnowledgeDocumentPageResult, error) {
+	return knowledgeservice.KnowledgeDocumentPageResult{
+		Items: []knowledgedomain.KnowledgeDocument{{ID: "doc-1", Name: "Doc 1", KnowledgeBaseID: "kb-1"}},
+		Total: 1,
+		Page:  1,
+	}, nil
+}
+
+func (contractDiscoverer) SearchDocuments(context.Context, knowledgeservice.SearchKnowledgeDocumentsInput) ([]knowledgeservice.KnowledgeDocumentSearchItem, error) {
+	return []knowledgeservice.KnowledgeDocumentSearchItem{
+		{ID: "doc-1", Name: "Doc 1", KnowledgeBaseID: "kb-1"},
+	}, nil
+}
+
+type contractRecaller struct{}
+
+func (contractRecaller) RecallMemories(context.Context, longtermmemory.RecallMemoriesInput) (longtermmemory.RecallMemoriesResult, error) {
+	return longtermmemory.RecallMemoriesResult{
+		Used:           true,
+		Context:        "memory context",
+		SelectedCount:  1,
+		CandidateCount: 1,
+		SelectedMemoryIDs: []string{
+			"mem-1",
+		},
+		SelectedEntries: []longtermmemory.RecallMemoryEntry{
+			{ID: "mem-1", MemoryType: "knowledge", Summary: "user prefers zh", FinalScore: 8},
+		},
+	}, nil
+}
+
+type contractCompleter struct{}
+
+func (contractCompleter) ChatWithRequest(convention.ChatRequest) (string, error) {
+	return "summary text", nil
 }
 
 func (contractInvestigator) PageChunkLogs(context.Context, knowledgeservice.KnowledgeDocumentChunkLogPageInput) (knowledgeservice.KnowledgeDocumentChunkLogPageResult, error) {

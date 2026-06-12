@@ -15,6 +15,7 @@ import (
 	rageval "local/rag-project/internal/app/rag/evaluation"
 	ragbootstrap "local/rag-project/internal/bootstrap/rag"
 	"local/rag-project/internal/framework/config"
+	"local/rag-project/internal/framework/convention"
 )
 
 type sampleFile struct {
@@ -107,18 +108,34 @@ func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples 
 			return fmt.Errorf("execute sample %q: %w", samples[i].Name, err)
 		}
 
-		retrieved := make([]rageval.RetrievedItem, 0, len(result.Chunks))
-		for _, chunk := range result.Chunks {
-			retrieved = append(retrieved, rageval.RetrievedItem{
-				ChunkID:    chunk.ID,
-				DocumentID: chunk.DocumentID,
-				Metadata:   chunk.Metadata,
-				Score:      float64(chunk.Score),
-			})
-		}
-		samples[i].Retrieved = retrieved
+		samples[i].Retrieved = retrievedItemsFromChunks(result.Chunks)
+		samples[i].ChannelRetrieved = channelRetrievedFromResult(result)
 	}
 	return nil
+}
+
+func retrievedItemsFromChunks(chunks []convention.RetrievedChunk) []rageval.RetrievedItem {
+	retrieved := make([]rageval.RetrievedItem, 0, len(chunks))
+	for _, chunk := range chunks {
+		retrieved = append(retrieved, rageval.RetrievedItem{
+			ChunkID:    chunk.ID,
+			DocumentID: chunk.DocumentID,
+			Metadata:   chunk.Metadata,
+			Score:      float64(chunk.Score),
+		})
+	}
+	return retrieved
+}
+
+func channelRetrievedFromResult(result ragretrieve.Result) map[string][]rageval.RetrievedItem {
+	if len(result.ChannelRetrieved) == 0 {
+		return nil
+	}
+	channelRetrieved := make(map[string][]rageval.RetrievedItem, len(result.ChannelRetrieved))
+	for channel, chunks := range result.ChannelRetrieved {
+		channelRetrieved[channel] = retrievedItemsFromChunks(chunks)
+	}
+	return channelRetrieved
 }
 
 func loadSamples(path string) ([]rageval.Sample, error) {
@@ -230,6 +247,23 @@ func renderSummaryText(summary rageval.Summary) string {
 		fmt.Fprintln(&buf)
 	}
 
+	if len(summary.Channels) > 0 {
+		fmt.Fprintln(&buf, "channels:")
+		for _, channel := range summary.Channels {
+			fmt.Fprintf(&buf, "- %s samples=%d unique_hits=%d overlap_hits=%d avg_first_relevant_rank=%.2f\n",
+				channel.ChannelName,
+				channel.SampleCount,
+				channel.UniqueHitCount,
+				channel.OverlapHitCount,
+				channel.AverageFirstRelevantRank,
+			)
+			for _, k := range summary.Ks {
+				fmt.Fprintf(&buf, "  channel_hit@%d=%.4f\n", k, channel.HitRateAtK[k])
+			}
+		}
+		fmt.Fprintln(&buf)
+	}
+
 	fmt.Fprintln(&buf, "samples_detail:")
 	for _, sample := range summary.Samples {
 		fmt.Fprintf(&buf, "- %s target=%s rr=%.4f firstRelevantRank=%d\n", sample.Name, sample.Target, sample.ReciprocalRank, sample.FirstRelevantRank)
@@ -238,6 +272,17 @@ func renderSummaryText(summary rageval.Summary) string {
 				k, sample.HitAtK[k],
 				k, sample.RecallAtK[k],
 				k, sample.NDCGAtK[k])
+		}
+		for _, channel := range sample.Channels {
+			fmt.Fprintf(&buf, "  channel=%s firstRelevantRank=%d uniqueHits=%d overlapHits=%d\n",
+				channel.ChannelName,
+				channel.FirstRelevantRank,
+				channel.UniqueHitCount,
+				channel.OverlapHitCount,
+			)
+			for _, k := range summary.Ks {
+				fmt.Fprintf(&buf, "    channel_hit@%d=%t\n", k, channel.HitAtK[k])
+			}
 		}
 	}
 	return buf.String()

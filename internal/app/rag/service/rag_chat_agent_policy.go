@@ -13,13 +13,6 @@ const (
 	ragChatAgentModeAlways     = "always"
 )
 
-func (s *RagChatService) SetAgentRuntimeMode(mode string) {
-	if s == nil {
-		return
-	}
-	s.agentRuntimeMode = normalizeAgentRuntimeMode(mode)
-}
-
 func (s *RagChatService) shouldUseAgentRuntimeForToolStage(input RagChatInput, rewriteResult ragrewrite.Result, retrievalUsed bool) bool {
 	if s == nil || s.agentRuntime == nil {
 		return false

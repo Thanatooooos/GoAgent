@@ -2,7 +2,7 @@ export type Role = "user" | "assistant";
 
 export type FeedbackValue = "like" | "dislike" | null;
 
-export type MessageStatus = "streaming" | "done" | "cancelled" | "error";
+export type MessageStatus = "streaming" | "awaiting_approval" | "done" | "cancelled" | "error";
 
 export interface User {
   userId: string;
@@ -36,6 +36,9 @@ export interface Message {
   memoryEvents?: MemoryStoredPayload[];
   sessionRecallEvents?: SessionRecallPayload[];
   fallbackReason?: string;
+  agentOutcome?: AgentOutcomePayload;
+  approvalPending?: ApprovalPendingPayload;
+  agentServiceError?: AgentServiceErrorPayload;
 }
 
 export interface StreamMetaPayload {
@@ -69,8 +72,58 @@ export interface CompletionPayload {
   title?: string | null;
 }
 
+export interface AgentOutcomePayload {
+  status: string;
+  interrupted: boolean;
+  interruptReason?: string;
+  checkpointId?: string;
+}
+
 export interface AgentThinkPayload {
   message: string;
+}
+
+export interface ApprovalPendingPayload {
+  required: boolean;
+  status?: string;
+  reason?: string;
+  reasonCode?: string;
+  reasonMessage?: string;
+  trigger?: string;
+  node?: string;
+  rerunNode?: string;
+  capability?: string;
+  capabilityName?: string;
+  capabilityKind?: string;
+  capabilityFamily?: string;
+  capabilityDescription?: string;
+  riskLevel?: string;
+  supportsResume: boolean;
+  idempotency?: string;
+  checkpointId?: string;
+  sessionId?: string;
+  requestedAt?: string;
+  resumeCount?: number;
+  question?: string;
+  searchQuery?: string;
+  currentStepId?: string;
+  currentStepTitle?: string;
+  candidateUrls?: string[];
+  canApprove: boolean;
+  canReject: boolean;
+  rejectOutcome?: string;
+}
+
+export interface ApprovalPendingLookupPayload {
+  pending: boolean;
+  approval?: ApprovalPendingPayload;
+}
+
+export interface AgentServiceErrorPayload {
+  code?: string;
+  message?: string;
+  kind?: string;
+  retryable: boolean;
 }
 
 export interface MemoryStoredPayload {

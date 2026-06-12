@@ -14,6 +14,24 @@ import (
 	"local/rag-project/internal/framework/exception"
 )
 
+func TestLogContextMiddlewareBindsRequestID(t *testing.T) {
+	router := newTestRouter()
+	router.GET("/ping", func(c *gin.Context) {
+		requestID := RequestID(c)
+		c.JSON(http.StatusOK, gin.H{"requestId": requestID})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.Header.Set(requestIDHeader, "rid-log-ctx")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+}
+
 func TestRequestIDMiddlewareUsesIncomingID(t *testing.T) {
 	router := newTestRouter()
 	router.GET("/ping", func(c *gin.Context) {
@@ -140,6 +158,7 @@ func newTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(RequestIDMiddleware())
+	router.Use(LogContextMiddleware())
 	router.Use(ErrorHandlerMiddleware())
 	return router
 }

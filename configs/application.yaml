@@ -52,6 +52,9 @@ rag:
     parallel-tool-calls:
       enabled: true
       max-concurrency: 3
+    runtime-persistence:
+      enabled: false
+      dir: .agent-runtime
 
   retrieve:
     parallel-subquestions:
@@ -62,6 +65,25 @@ rag:
     enabled: true
     max-history-messages: 4
     max-history-chars: 500
+    term-normalization:
+      enabled: true
+      rules:
+        - canonical: PostgreSQL
+          category: component
+          version: 1
+          enabled: true
+          aliases:
+            - postgres
+            - pg
+        - canonical: Elasticsearch
+          aliases:
+            - elasticsearch
+            - elastic
+            - es
+        - canonical: 向量数据库
+          aliases:
+            - 向量库
+            - vector db
 
   rate-limit:
     global:
@@ -75,6 +97,8 @@ rag:
     history-keep-turns: 4
     summary-start-turns: 5
     summary-enabled: true
+    summary-async:
+      enabled: false
     ttl-minutes: 60
     summary-max-chars: 200
     title-max-length: 30
@@ -87,6 +111,9 @@ rag:
       medium-summary-max-chars: 600
       chunk-summary-max-chars: 240
       large-summary-max-chars: 900
+    chat-context:
+      enabled: true
+      max-prompt-tokens: 8000
     session-recall:
       enabled: true
       max-excerpts: 3
@@ -133,15 +160,15 @@ rag:
       max-retries: 2
       retry-backoff-ms: 1000
 
-    mcp:
-      servers:
-        tavily:
-          enabled: true
-          transport: stdio
-          command: npx
-          args:
-          - -y
-          - tavily-mcp
+  mcp:
+    servers:
+      tavily:
+        enabled: true
+        transport: stdio
+        command: npx
+        args:
+        - -y
+        - tavily-mcp
         env: {}
         startup-timeout-ms: 10000
         call-timeout-ms: 15000
@@ -175,7 +202,7 @@ rag:
         min-intent-score: 0.4
         top-k-multiplier: 2
       keyword:
-        enabled-fallback-trgm: true
+        backend: "bm25"
       metadata-title:
         enabled-fallback-trgm: true
         section-weight: 3.0

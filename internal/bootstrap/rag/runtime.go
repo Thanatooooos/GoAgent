@@ -13,19 +13,14 @@ import (
 
 	rediscache "local/rag-project/internal/adapter/cache/redis"
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
-	postgresrag "local/rag-project/internal/adapter/repository/postgres/rag"
-	postgresuser "local/rag-project/internal/adapter/repository/postgres/user"
-	pgvectorstore "local/rag-project/internal/adapter/vectorstore/pgvector"
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	raghistory "local/rag-project/internal/app/rag/core/history"
-	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	corevector "local/rag-project/internal/app/rag/core/vector"
 	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
-	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/log"
 	infraai "local/rag-project/internal/infra-ai"
@@ -49,6 +44,7 @@ type Runtime struct {
 	memoryMaintenanceLoopCancel context.CancelFunc
 	memoryMaintenanceLoopWG     sync.WaitGroup
 	memoryMaintenanceRunner     func(context.Context, longtermmemory.MaintenanceInput) (longtermmemory.MaintenanceResult, error)
+	summaryJobWorker            *raghistory.InMemorySummaryJobWorker
 	CacheMetrics                *ragcachemetrics.Service
 	Retrieve                    ragretrieve.Service
 	Conversation                *ragservice.ConversationService
@@ -63,203 +59,39 @@ type Runtime struct {
 func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	_ = ctx
 
-	cfg := options.Config
-	if cfg == nil {
-		cfg = config.Get()
-	}
-	if cfg == nil {
-		return nil, fmt.Errorf("rag config is required")
-	}
-
-	db := options.DB
-	ownsDB := false
-	if db == nil {
-		createdDB, err := postgresrepo.NewGormDB(cfg.Spring.Datasource)
-		if err != nil {
-			return nil, fmt.Errorf("create rag gorm db: %w", err)
-		}
-		db = createdDB
-		ownsDB = true
-	}
-	if err := ensureRagSchema(db); err != nil {
-		if ownsDB {
-			_ = closeRuntimeDB(db)
-		}
-		return nil, fmt.Errorf("ensure rag schema: %w", err)
-	}
-
-	aiRuntime := options.AIRuntime
-	if aiRuntime == nil {
-		aiRuntime = infraai.NewRuntime()
-	}
-
-	searcher := options.Searcher
-	if searcher == nil {
-		searcher = pgvectorstore.NewVectorStore(db)
-	}
-
-	conversationRepo := postgresrag.NewConversationRepository(db)
-	messageRepo := postgresrag.NewConversationMessageRepository(db)
-	summaryRepo := postgresrag.NewConversationSummaryRepository(db)
-	feedbackRepo := postgresrag.NewMessageFeedbackRepository(db)
-	memoryItemRepo := postgresrag.NewMemoryItemRepository(db)
-	memoryItemEmbeddingRepo := postgresrag.NewMemoryItemEmbeddingRepository(db)
-	sessionChunkRepo := postgresrag.NewSessionChunkRepository(db)
-	traceRunRepo := postgresrag.NewRagTraceRunRepository(db)
-	traceNodeRepo := postgresrag.NewRagTraceNodeRepository(db)
-	userRepo := postgresuser.NewUserRepository(db)
-
-	conversationService := ragservice.NewConversationService(
-		conversationRepo,
-		messageRepo,
-		summaryRepo,
-		nil,
-		nil,
-		0,
-		postgresrag.NewConversationDeleteTransaction(db),
-	)
-	messageService := ragservice.NewConversationMessageService(
-		conversationRepo,
-		messageRepo,
-		summaryRepo,
-		feedbackRepo,
-	)
-	messageService.SetContentProcessor(ragservice.NewLongMessageContentProcessor(ragservice.LongMessageProcessorOptions{
-		Enabled:                     cfg.Rag.Memory.LongMessage.Enabled,
-		DirectContextMaxTokens:      cfg.Rag.Memory.LongMessage.DirectContextMaxTokens,
-		ChunkSummaryThresholdTokens: cfg.Rag.Memory.LongMessage.ChunkSummaryThresholdTokens,
-		LargeChunkTargetTokens:      cfg.Rag.Memory.LongMessage.LargeChunkTargetTokens,
-		LargeChunkOverlapTokens:     cfg.Rag.Memory.LongMessage.LargeChunkOverlapTokens,
-		MediumSummaryMaxChars:       cfg.Rag.Memory.LongMessage.MediumSummaryMaxChars,
-		ChunkSummaryMaxChars:        cfg.Rag.Memory.LongMessage.ChunkSummaryMaxChars,
-		LargeSummaryMaxChars:        cfg.Rag.Memory.LongMessage.LargeSummaryMaxChars,
-		Estimator:                   ragservice.RoughTokenEstimator{},
-		ChatService:                 aiRuntime.Chat,
-	}))
-	messageService.SetChunkSink(postgresrag.NewConversationMessageChunkSink(db, aiRuntime.Embedding))
-	messageService.SetCreateTransaction(postgresrag.NewConversationMessageCreateTransaction(db, aiRuntime.Embedding))
-
-	memoryStore := raghistory.NewMessageServiceStore(conversationRepo, messageRepo)
-	var summaryAdapter raghistory.SummaryService
-	if cfg.Rag.Memory.SummaryEnabled {
-		summaryAdapter = raghistory.NewCompressibleSummaryService(summaryRepo, raghistory.SummaryCompressionOptions{
-			MessageRepo: messageRepo,
-			ChatService: aiRuntime.Chat,
-			StartTurns:  cfg.Rag.Memory.SummaryStartTurns,
-			MaxChars:    cfg.Rag.Memory.SummaryMaxChars,
-		})
-	} else {
-		summaryAdapter = raghistory.NewSummaryServiceAdapter(summaryRepo)
-	}
-	historyService := raghistory.NewDefaultService(memoryStore, summaryAdapter, cfg.Rag.Memory.HistoryKeepTurns)
-	explicitMemoryService := longtermmemory.NewMemoryService(memoryItemRepo, longtermmemory.MemoryServiceOptions{
-		MaxRecallItems:        cfg.Rag.Memory.ExplicitRecall.MaxItems,
-		MaxRecallChars:        cfg.Rag.Memory.ExplicitRecall.MaxContextChars,
-		MaxCandidatesPerScope: cfg.Rag.Memory.ExplicitRecall.MaxCandidatesPerScope,
-	})
-	explicitMemoryService.SetMutationTransaction(postgresrag.NewMemoryItemTransaction(db))
-	explicitMemoryService.SetEmbeddingSupport(aiRuntime.Embedding, memoryItemEmbeddingRepo)
-	memoryCacheMetrics := buildMemoryCacheMetrics(cfg)
-	explicitMemoryService.SetCacheMetrics(memoryCacheMetrics)
-	memoryCacheClient, recallCache := buildMemoryRecallCache(cfg)
-	explicitMemoryService.SetRecallCache(recallCache, longtermmemory.RecallCacheOptions{
-		Enabled:             cfg.Rag.Memory.Cache.Enabled,
-		RequestScopeEnabled: readRequestScopeCacheEnabled(cfg),
-		EmbeddingTTL:        time.Duration(cfg.Rag.Memory.Cache.EmbeddingTTLSeconds) * time.Second,
-		RuleTTL:             time.Duration(cfg.Rag.Memory.Cache.RuleTTLSeconds) * time.Second,
-		FactTTL:             time.Duration(cfg.Rag.Memory.Cache.FactTTLSeconds) * time.Second,
-		EmptyFactTTL:        time.Duration(cfg.Rag.Memory.Cache.EmptyFactTTLSeconds) * time.Second,
-		EmbeddingModel:      strings.TrimSpace(cfg.AI.Embedding.DefaultModel),
-		RankVersion:         defaultMemoryFactRankVersion,
-	})
-
-	// 根据配置决定是否启用 LLM 查询改写；未启用时 retieve 阶段直接使用原始问题。
-	var rewriteService ragrewrite.Service
-	if cfg.Rag.QueryRewrite.Enabled {
-		rewriteService = ragrewrite.NewLLMService(aiRuntime.Chat)
-	}
-	promptService := ragprompt.NewService(nil)
-	retrieveService := ragretrieve.NewEngine(searcher, aiRuntime.Embedding, aiRuntime.Rerank)
-	retrieveService.SetFactMemoryRetriever(explicitMemoryService.FactRetriever())
-	feedbackService := ragservice.NewMessageFeedbackService(messageRepo, feedbackRepo)
-	traceService := ragservice.NewTraceService(traceRunRepo, traceNodeRepo, userRepo)
-	tracer := ragservice.NewChatTracer(traceRunRepo, traceNodeRepo)
-	mcpManager := buildMCPManager(cfg)
-	chatService := ragservice.NewRagChatService(
-		conversationService,
-		messageService,
-		historyService,
-		rewriteService,
-		retrieveService,
-		promptService,
-		aiRuntime.Chat,
-		tracer,
-	)
-	// 检索置信度阈值：低于此值时回退到通用 LLM 模式并提醒用户。
-	if cfg != nil {
-		chatService.SetConfidenceThreshold(cfg.Rag.Search.Channels.VectorGlobal.ConfidenceThreshold)
-	}
-	chatService.SetParallelSubquestionRetrieval(
-		cfg.Rag.Retrieve.ParallelSubquestions.Enabled,
-		cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
-	)
-	chatService.SetAgentRuntimeMode(cfg.Rag.Agent.Chat.Mode)
-	chatService.SetLongTermMemoryRecallService(explicitMemoryService.RecallService())
-	sessionRecallService := ragservice.NewSessionRecallService(sessionChunkRepo, aiRuntime.Embedding, ragservice.SessionRecallOptions{
-		Enabled:              cfg.Rag.Memory.SessionRecall.Enabled,
-		MaxExcerpts:          cfg.Rag.Memory.SessionRecall.MaxExcerpts,
-		MaxChunksPerMessage:  cfg.Rag.Memory.SessionRecall.MaxChunksPerMessage,
-		ExcerptTargetTokens:  cfg.Rag.Memory.SessionRecall.ExcerptTargetTokens,
-		ExcerptOverlapTokens: cfg.Rag.Memory.SessionRecall.ExcerptOverlapTokens,
-		MaxPromptTokens:      cfg.Rag.Memory.SessionRecall.MaxPromptTokens,
-		Estimator:            ragservice.RoughTokenEstimator{},
-	})
-	if cacheAware, ok := sessionRecallService.(interface {
-		SetCacheSupport(cache port.MemoryRecallCache, options ragservice.SessionRecallCacheOptions)
-	}); ok {
-		cacheAware.SetCacheSupport(recallCache, ragservice.SessionRecallCacheOptions{
-			Enabled:                  cfg.Rag.Memory.Cache.Enabled && readSessionRecallCacheEnabled(cfg),
-			RequestScopeEnabled:      readRequestScopeCacheEnabled(cfg),
-			ConversationScopeEnabled: readConversationScopeCacheEnabled(cfg),
-			ConversationMaxEntries:   cfg.Rag.Memory.Cache.ConversationMaxEntries,
-			ConversationTTL:          time.Duration(cfg.Rag.Memory.Cache.ConversationTTLSeconds) * time.Second,
-			EmptyResultTTL:           time.Duration(cfg.Rag.Memory.Cache.EmptySessionTTLSeconds) * time.Second,
-			EmbeddingTTL:             time.Duration(cfg.Rag.Memory.Cache.EmbeddingTTLSeconds) * time.Second,
-			EmbeddingModel:           strings.TrimSpace(cfg.AI.Embedding.DefaultModel),
-		})
-	}
-	if metricAware, ok := sessionRecallService.(interface {
-		SetCacheMetrics(metrics *ragcachemetrics.Service)
-	}); ok {
-		metricAware.SetCacheMetrics(memoryCacheMetrics)
-	}
-	chatService.SetSessionRecallService(sessionRecallService)
-	chatService.SetRequestCacheMaxEntries(readRequestCacheMaxEntries(cfg))
-	chatService.SetToolWorkflow(ragassembly.BuildLocalWorkflow(db, traceRunRepo, traceNodeRepo, cfg, mcpManager, aiRuntime.Chat))
-	agentRuntimeService, err := buildAgentRuntimeService(cfg, mcpManager, aiRuntime.Chat)
+	buildCtx, err := newBuildContext(options)
 	if err != nil {
-		if ownsDB {
-			_ = closeRuntimeDB(db)
-		}
-		return nil, fmt.Errorf("build agent runtime service: %w", err)
+		return nil, err
 	}
-	chatService.SetAgentRuntimeService(agentRuntimeService)
+
+	repos := buildRepositories(buildCtx.db)
+	conversation := buildConversationServices(buildCtx, repos)
+	memory := buildMemoryServices(buildCtx, repos)
+	retrieve := buildRetrieveServices(buildCtx, repos, memory)
+	chat, err := buildChatService(buildCtx, repos, conversation, memory, retrieve)
+	if err != nil {
+		if buildCtx.ownsDB {
+			_ = closeRuntimeDB(buildCtx.db)
+		}
+		return nil, err
+	}
 
 	runtime := &Runtime{
-		DB:           db,
-		ownsDB:       ownsDB,
-		mcpManager:   mcpManager,
-		memoryCache:  memoryCacheClient,
-		CacheMetrics: memoryCacheMetrics,
-		Retrieve:     retrieveService,
-		Conversation: conversationService,
-		Message:      messageService,
-		Memory:       explicitMemoryService,
-		Feedback:     feedbackService,
-		Trace:        traceService,
-		Chat:         chatService,
+		DB:               buildCtx.db,
+		ownsDB:           buildCtx.ownsDB,
+		mcpManager:       chat.mcpManager,
+		memoryCache:      memory.memoryCacheClient,
+		summaryJobWorker: conversation.summaryJobWorker,
+		CacheMetrics:     memory.memoryCacheMetrics,
+		Retrieve:         retrieve.retrieveService,
+		Conversation:     conversation.conversationService,
+		Message:          conversation.messageService,
+		Memory:           memory.explicitMemoryService,
+		Feedback:         conversation.feedbackService,
+		Trace:            retrieve.traceService,
+		Chat:             chat.chatService,
 	}
-	runtime.startMemoryMaintenanceLoop(cfg)
+	runtime.startMemoryMaintenanceLoop(buildCtx.cfg)
 	return runtime, nil
 }
 
@@ -274,6 +106,9 @@ func (r *Runtime) Close() error {
 	}
 	if r.memoryCache != nil {
 		err = errors.Join(err, r.memoryCache.Close())
+	}
+	if r.summaryJobWorker != nil {
+		r.summaryJobWorker.Stop()
 	}
 	r.stopMemoryMaintenanceLoop()
 	if r.DB == nil || !r.ownsDB {
@@ -530,4 +365,21 @@ func cloneMCPEnv(values map[string]string) map[string]string {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func buildTermNormalizationRules(rules []config.RagTermNormalizationRule) []ragrewrite.TermNormalizationRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	result := make([]ragrewrite.TermNormalizationRule, 0, len(rules))
+	for _, rule := range rules {
+		result = append(result, ragrewrite.TermNormalizationRule{
+			Canonical: strings.TrimSpace(rule.Canonical),
+			Aliases:   append([]string(nil), rule.Aliases...),
+			Category:  strings.TrimSpace(rule.Category),
+			Version:   rule.Version,
+			Enabled:   rule.Enabled,
+		})
+	}
+	return result
 }

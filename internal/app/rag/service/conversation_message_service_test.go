@@ -541,6 +541,15 @@ func TestConversationMessageServiceAddMessageSummaryCreatesRecord(t *testing.T) 
 	if created.Content != "摘要内容" || created.LastMessageID != "m2" {
 		t.Fatalf("unexpected summary: %#v", created)
 	}
+	if created.SummaryVersion != domain.SummaryVersionV1 {
+		t.Fatalf("unexpected summary version: %d", created.SummaryVersion)
+	}
+	if created.CoveredToMessageID != "m2" || created.QualityStatus != domain.SummaryQualityUnchecked {
+		t.Fatalf("unexpected lifecycle fields: %#v", created)
+	}
+	if created.LastRebuildReason != "manual" {
+		t.Fatalf("unexpected rebuild reason: %q", created.LastRebuildReason)
+	}
 }
 
 func TestConversationMessageServiceGetLatestSummary(t *testing.T) {

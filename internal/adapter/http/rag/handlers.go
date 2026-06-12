@@ -10,6 +10,7 @@ import (
 type chatService interface {
 	Chat(ctx context.Context, input ragservice.RagChatInput, sink ragservice.RagChatEventSink) error
 	ResumeAfterApproval(ctx context.Context, input ragservice.RagChatApprovalResumeInput, sink ragservice.RagChatEventSink) error
+	GetPendingApproval(ctx context.Context, input ragservice.RagChatApprovalPendingQueryInput) (*ragservice.RagChatApprovalPendingPayload, error)
 	CancelTask(taskID string) bool
 }
 

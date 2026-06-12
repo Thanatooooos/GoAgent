@@ -409,14 +409,19 @@ func (s *ConversationMessageService) AddMessageSummary(ctx context.Context, inpu
 		return domain.ConversationSummary{}, err
 	}
 	now := s.now()
+	lastMessageID := strings.TrimSpace(input.LastMessageID)
 	summary := domain.ConversationSummary{
-		ID:             id,
-		ConversationID: conversationID,
-		UserID:         userID,
-		Content:        content,
-		LastMessageID:  strings.TrimSpace(input.LastMessageID),
-		CreateTime:     now,
-		UpdateTime:     now,
+		ID:                   id,
+		ConversationID:       conversationID,
+		UserID:               userID,
+		Content:              content,
+		LastMessageID:        lastMessageID,
+		SummaryVersion:       domain.SummaryVersionV1,
+		CoveredToMessageID:   lastMessageID,
+		QualityStatus:        domain.SummaryQualityUnchecked,
+		LastRebuildReason:    "manual",
+		CreateTime:           now,
+		UpdateTime:           now,
 	}
 	created, err := s.summaryRepo.Create(ctx, summary)
 	if err != nil {

@@ -14,12 +14,18 @@ const (
 	NameWebFetch                = "web_fetch"
 	NameExternalEvidenceCollect = "external_evidence_collect"
 	NameDocumentInvestigation   = "document_investigation_collect"
+	NameThink                   = "think"
+	NameKnowledgeDiscovery      = "knowledge_discovery"
+	NameMemoryRecall            = "memory_recall"
+	NameContentSummarize        = "content_summarize"
 
 	FamilyExternalEvidence      = "external_evidence"
 	FamilyDocumentInvestigation = "document_investigation"
 	FamilyTraceInvestigation    = "trace_investigation"
 	FamilyDiscovery             = "discovery"
 	FamilyMeta                  = "meta"
+	FamilyMemory                = "memory"
+	FamilyGeneration            = "generation"
 
 	RoleSearch                  = "search"
 	RoleFetch                   = "fetch"
@@ -27,6 +33,9 @@ const (
 	RoleInvestigateTrace        = "investigate_trace"
 	RoleDiscover                = "discover"
 	RoleCollectExternalEvidence = "collect_external_evidence"
+	RoleThink                   = "think"
+	RoleRecall                  = "recall"
+	RoleSummarize               = "summarize"
 
 	RiskLevelLow    = "low"
 	RiskLevelMedium = "medium"
@@ -94,22 +103,43 @@ func normalizeTypeName(sample any) string {
 	return typ.PkgPath() + "." + typ.Name()
 }
 
+var knownFamilies = map[string]string{
+	FamilyExternalEvidence:      "search",
+	FamilyDocumentInvestigation: "diagnosis",
+	FamilyTraceInvestigation:    "diagnosis",
+	FamilyDiscovery:             "knowledge",
+	FamilyMeta:                  "reasoning",
+	FamilyMemory:                "memory",
+	FamilyGeneration:            "generation",
+}
+
+var knownRoles = map[string]struct{}{
+	RoleSearch:                  {},
+	RoleFetch:                   {},
+	RoleInvestigateDocument:     {},
+	RoleInvestigateTrace:        {},
+	RoleDiscover:                {},
+	RoleCollectExternalEvidence: {},
+	RoleThink:                   {},
+	RoleRecall:                  {},
+	RoleSummarize:               {},
+}
+
 func isKnownFamily(family string) bool {
-	switch strings.TrimSpace(family) {
-	case FamilyExternalEvidence, FamilyDocumentInvestigation, FamilyTraceInvestigation, FamilyDiscovery, FamilyMeta:
-		return true
-	default:
-		return false
+	_, ok := knownFamilies[strings.TrimSpace(family)]
+	return ok
+}
+
+func WorkflowCapabilityForFamily(family string) string {
+	if workflow, ok := knownFamilies[strings.TrimSpace(family)]; ok {
+		return workflow
 	}
+	return "general"
 }
 
 func isKnownRole(role string) bool {
-	switch strings.TrimSpace(role) {
-	case RoleSearch, RoleFetch, RoleInvestigateDocument, RoleInvestigateTrace, RoleDiscover, RoleCollectExternalEvidence:
-		return true
-	default:
-		return false
-	}
+	_, ok := knownRoles[strings.TrimSpace(role)]
+	return ok
 }
 
 func isSupportedPreconditionRequirement(requirement string) bool {

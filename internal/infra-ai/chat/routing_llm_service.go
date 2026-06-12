@@ -52,19 +52,38 @@ func (r *RoutingLLmService) Chat(prompt string) (string, error) {
 }
 
 func (r *RoutingLLmService) ChatWithRequest(request convention.ChatRequest) (string, error) {
+	content, _, err := r.ChatWithRequestUsage(request)
+	return content, err
+}
+
+func (r *RoutingLLmService) ChatWithRequestUsage(request convention.ChatRequest) (string, TokenUsage, error) {
 	if r == nil || r.selector == nil {
-		return "", fmt.Errorf(errRoutingServiceNil)
+		return "", TokenUsage{}, fmt.Errorf(errRoutingServiceNil)
 	}
 
-	return model.ExecuteWithFallback(
+	type chatResult struct {
+		content string
+		usage   TokenUsage
+	}
+
+	result, err := model.ExecuteWithFallback(
 		r.executor,
 		enum.ModelCapabilityChat,
 		r.selector.SelectChatCandidates(request.ThinkingEnabled()),
 		r.resolveClient,
-		func(client ChatClient, target model.ModelTarget) (string, error) {
-			return client.Chat(request, target)
+		func(client ChatClient, target model.ModelTarget) (chatResult, error) {
+			if usageClient, ok := client.(UsageAwareChatClient); ok {
+				content, usage, err := usageClient.ChatWithUsage(request, target)
+				return chatResult{content: content, usage: usage}, err
+			}
+			content, err := client.Chat(request, target)
+			return chatResult{content: content}, err
 		},
 	)
+	if err != nil {
+		return "", TokenUsage{}, err
+	}
+	return result.content, result.usage, nil
 }
 
 func (r *RoutingLLmService) ChatWithModel(request convention.ChatRequest, modelID string) (string, error) {

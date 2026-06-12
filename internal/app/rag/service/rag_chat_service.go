@@ -13,6 +13,7 @@ import (
 	"local/rag-project/internal/app/rag/service/longtermmemory"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/exception"
+	"local/rag-project/internal/framework/log"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
 
@@ -110,9 +111,94 @@ type RagChatService struct {
 	taskRegistry           *TaskRegistry
 	agentRuntime           AgentRuntimeService
 	agentRuntimeMode       string
+	chatContextBudget      ChatContextBudgetOptions
 }
 
-func NewRagChatService(
+// RagChatDeps bundles required RagChatService dependencies for construction-time injection.
+type RagChatDeps struct {
+	ConversationService *ConversationService
+	MessageService      *ConversationMessageService
+	HistoryService      raghistory.Service
+	RewriteService      ragrewrite.Service
+	RetrieveService     ragretrieve.Service
+	PromptService       *ragprompt.Service
+	ChatService         aichat.LLMService
+	Tracer              *ChatTracer
+	AgentRuntime        AgentRuntimeService
+}
+
+// RagChatOptions configures optional RagChatService behavior at construction time.
+type RagChatOptions struct {
+	ConfidenceThreshold    float64
+	ParallelSubquestions   bool
+	SubquestionConcurrency int
+	RequestCacheMaxEntries int
+	AgentRuntimeMode       string
+	SessionRecall          SessionRecallService
+	LongTermMemoryRecall   longtermmemory.RecallService
+	ToolWorkflow           ragtool.Workflow
+	ChatContextBudget      ChatContextBudgetOptions
+}
+
+func NewRagChatServiceWithDeps(deps RagChatDeps, opts RagChatOptions) (*RagChatService, error) {
+	if deps.ConversationService == nil {
+		return nil, exception.NewServiceException("conversation service is required", nil)
+	}
+	if deps.MessageService == nil {
+		return nil, exception.NewServiceException("conversation message service is required", nil)
+	}
+	if deps.HistoryService == nil {
+		return nil, exception.NewServiceException("rag history service is required", nil)
+	}
+	if deps.RetrieveService == nil {
+		return nil, exception.NewServiceException("rag retrieve service is required", nil)
+	}
+	if deps.PromptService == nil {
+		return nil, exception.NewServiceException("rag prompt service is required", nil)
+	}
+	if deps.ChatService == nil {
+		return nil, exception.NewServiceException("chat model service is required", nil)
+	}
+	if deps.Tracer == nil {
+		return nil, exception.NewServiceException("rag chat tracer is required", nil)
+	}
+
+	opts = normalizeRagChatOptions(opts)
+	service := newRagChatService(
+		deps.ConversationService,
+		deps.MessageService,
+		deps.HistoryService,
+		deps.RewriteService,
+		deps.RetrieveService,
+		deps.PromptService,
+		deps.ChatService,
+		deps.Tracer,
+	)
+	service.confidenceThreshold = opts.ConfidenceThreshold
+	service.parallelSubquestions = opts.ParallelSubquestions
+	service.subquestionConcurrency = opts.SubquestionConcurrency
+	service.requestCacheMaxEntries = opts.RequestCacheMaxEntries
+	service.agentRuntimeMode = opts.AgentRuntimeMode
+	service.sessionRecall = opts.SessionRecall
+	service.longTermMemory = opts.LongTermMemoryRecall
+	service.toolWorkflow = opts.ToolWorkflow
+	service.agentRuntime = deps.AgentRuntime
+	service.chatContextBudget = opts.ChatContextBudget.normalized()
+	return service, nil
+}
+
+func normalizeRagChatOptions(opts RagChatOptions) RagChatOptions {
+	if opts.SubquestionConcurrency <= 0 {
+		opts.SubquestionConcurrency = 2
+	}
+	if opts.RequestCacheMaxEntries <= 0 {
+		opts.RequestCacheMaxEntries = 128
+	}
+	opts.AgentRuntimeMode = normalizeAgentRuntimeMode(opts.AgentRuntimeMode)
+	return opts
+}
+
+func newRagChatService(
 	conversationService *ConversationService,
 	messageService *ConversationMessageService,
 	historyService raghistory.Service,
@@ -139,55 +225,6 @@ func NewRagChatService(
 	}
 }
 
-func (s *RagChatService) SetConfidenceThreshold(threshold float64) {
-	if s == nil {
-		return
-	}
-	s.confidenceThreshold = threshold
-}
-
-func (s *RagChatService) SetToolWorkflow(workflow ragtool.Workflow) {
-	if s == nil {
-		return
-	}
-	s.toolWorkflow = workflow
-}
-
-func (s *RagChatService) SetSessionRecallService(service SessionRecallService) {
-	if s == nil {
-		return
-	}
-	s.sessionRecall = service
-}
-
-func (s *RagChatService) SetRequestCacheMaxEntries(maxEntries int) {
-	if s == nil {
-		return
-	}
-	if maxEntries <= 0 {
-		maxEntries = 128
-	}
-	s.requestCacheMaxEntries = maxEntries
-}
-
-func (s *RagChatService) SetParallelSubquestionRetrieval(enabled bool, maxConcurrency int) {
-	if s == nil {
-		return
-	}
-	s.parallelSubquestions = enabled
-	if maxConcurrency <= 0 {
-		maxConcurrency = 2
-	}
-	s.subquestionConcurrency = maxConcurrency
-}
-
-func (s *RagChatService) SetLongTermMemoryRecallService(service longtermmemory.RecallService) {
-	if s == nil {
-		return
-	}
-	s.longTermMemory = service
-}
-
 func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagChatEventSink) error {
 	if sink == nil {
 		return exception.NewServiceException("rag chat event sink is required", nil)
@@ -201,7 +238,12 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	if userID == "" {
 		return exception.NewClientException("user id is required", nil)
 	}
-	logRagChatStart(input, s.agentRuntimeMode)
+	chatPath := resolveChatPath(input)
+	ctx = log.NewContext(ctx,
+		"conversation_id", strings.TrimSpace(input.ConversationID),
+		"user_id", userID,
+	)
+	logRagChatStart(ctx, input, s.agentRuntimeMode, chatPath)
 	if input.UseAgentRuntime {
 		return s.runAgentChat(ctx, input, sink)
 	}
@@ -212,7 +254,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	ctx = ragcache.WithRequestCache(ctx, ragcache.NewRequestCache(s.requestCacheMaxEntries))
 	prepared, err := s.prepareChat(ctx, input)
 	if err != nil {
-		logRagChatTerminalError("", "prepare_chat", err)
+		logRagChatTerminalError(ctx, "prepare_chat", err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
@@ -221,6 +263,14 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	if err := sink.SendMeta(prepared.state.meta); err != nil {
 		return err
 	}
+	ctx = enrichRagChatLogContext(
+		ctx,
+		prepared.state.traceID,
+		prepared.state.meta.ConversationID,
+		input.UserID,
+		prepared.state.meta.TaskID,
+	)
+	s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, buildRuntimePathTraceExtra(chatPath, "", input, s.agentRuntimeMode))
 	if strings.TrimSpace(prepared.state.title) != "" {
 		_ = sink.SendTitle(prepared.state.title)
 	}
@@ -241,7 +291,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		sink,
 	)
 	if err != nil {
-		logRagChatTerminalError(prepared.state.traceID, "tool_stage", err)
+		logRagChatTerminalError(ctx, "tool_stage", err)
 		toolStage = ragChatToolStageResult{
 			result: ragtool.WorkflowResult{
 				Degraded:      true,
@@ -249,7 +299,8 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 			},
 		}
 	}
-	logRagChatToolStageResult(prepared.state.traceID, prepared.state.meta.ConversationID, toolStage)
+	logRagChatToolStageResult(ctx, toolStage)
+	s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, buildRuntimePathTraceExtra(chatPath, resolveToolBackend(toolStage), input, s.agentRuntimeMode))
 	if toolStage.result.Degraded {
 		_ = sink.SendTool("tool_workflow", ragtool.CallStatusFailed, toolStage.result.DegradeReason)
 	}
@@ -293,16 +344,23 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		prepared.state.traceID,
 	)
 	if err != nil {
-		logRagChatTerminalError(prepared.state.traceID, "prompt_stage", err)
+		logRagChatTerminalError(ctx, "prompt_stage", err)
 		s.tracer.finishTraceRun(ctx, prepared.state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
 	}
 
-	result, err := s.runStreamingAnswer(ctx, prepared.state, promptStage.messages, input.DeepThinking, sink)
+	result, err := s.runStreamingAnswer(
+		ctx,
+		prepared.state,
+		promptStage.messages,
+		promptStage.budget.EstimatedPromptTokens,
+		input.DeepThinking,
+		sink,
+	)
 	if err != nil {
-		logRagChatTerminalError(prepared.state.traceID, "streaming_answer", err)
+		logRagChatTerminalError(ctx, "streaming_answer", err)
 		s.tracer.finishTraceRun(ctx, prepared.state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()

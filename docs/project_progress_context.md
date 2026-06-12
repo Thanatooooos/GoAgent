@@ -4131,3 +4131,214 @@ is now:
    - broader mixed-capability templates
    - higher-level chat/service integration
    - continued runtime/capability naming and contract tightening
+
+## Additional Update: 2026-06-11 Approval Pending Recovery Bridged into Chat UI
+
+### Status Update
+
+As of `2026-06-11`, the current approval/runtime line should no longer be
+described as only:
+
+- runtime can pause with a richer outward `ApprovalPending` payload
+- service can resume from explicit approval decisions
+- backend chat/service layers can emit approval-related SSE events
+
+Those are still true, but they are now incomplete.
+
+The current implementation line has now completed another meaningful closure
+around:
+
+- durable conversation-to-pending-approval lookup on the runtime/service side
+- chat HTTP lookup for the latest approval-pending state
+- frontend session re-entry recovery for pending approval
+- frontend SSE handling for approval/runtime status events
+- user-visible approval-pending rendering that does not expose internal tool
+  implementation details
+- store-level structure cleanup to keep the frontend state layer within the
+  current file-boundary discipline
+
+This matters because approval is no longer only a backend/runtime capability.
+It now has a real path back into the user-facing chat experience after refresh
+or session switching.
+
+### What Changed
+
+#### 1. Pending approval can now be looked up by conversation rather than only by live runtime state
+
+The current runtime/service line now keeps an explicit lookup from
+conversation/user identity to the latest approval-pending session state.
+
+This closure added:
+
+- `internal/app/agent/runtime/pending_approval_store.go`
+- `internal/app/agent/runtime/pending_approval_store_memory.go`
+- `internal/app/agent/runtime/pending_approval_store_file.go`
+- `internal/app/agent/service_pending_approval.go`
+
+and wired the lookup lifecycle through:
+
+- `storePendingSession(...)`
+- `deletePendingSession(...)`
+- `GetPendingApproval(...)`
+
+This is important because approval-pending state is no longer discoverable only
+if the caller still holds the in-flight runtime/session context.
+
+#### 2. The rag chat service and HTTP layer now expose a read path for pending approval recovery
+
+The backend chat bridge now has a dedicated read contract for "what approval is
+currently blocking this conversation?"
+
+That closure added:
+
+- `internal/app/rag/service/rag_chat_agent_pending.go`
+- `internal/adapter/http/rag/chat_approval_pending_handler.go`
+- `GET /rag/v3/chat/approval/pending`
+
+At the same time, the top-level runtime chat path now passes the right tool
+stage context into agent execution so that approval lookup is anchored to the
+outer conversation identity.
+
+This means the backend approval lifecycle should now be read not only as:
+
+- pause
+- resume
+
+but also as:
+
+- pause
+- recover latest pending state by conversation
+- resume later from the recovered state
+
+#### 3. Frontend session switching can now recover approval-pending state
+
+The current chat frontend no longer restores a session only from persisted
+message history.
+
+`frontend/src/stores/chatStore.ts` now loads:
+
+- historical messages
+- latest pending approval state
+
+in the same session selection flow, and merges the recovered approval into the
+message list when the conversation is still blocked.
+
+The frontend API layer for that lookup now exists in:
+
+- `frontend/src/services/chatService.ts`
+
+This is a meaningful user-facing closure because a refresh or conversation
+switch no longer silently hides the fact that execution is paused pending
+approval.
+
+#### 4. Frontend SSE handling now understands approval/runtime status events
+
+The frontend SSE parser in:
+
+- `frontend/src/hooks/useStreamResponse.ts`
+
+now handles:
+
+- `agent_outcome`
+- `approval_pending`
+- `agent_service_error`
+
+instead of treating approval as something only the backend knows how to
+describe.
+
+This means the active streaming path and the recovered-history path are now
+closer to the same approval state model.
+
+#### 5. Pending approval is now rendered as a user-facing chat card rather than only hidden state
+
+The frontend message model now carries approval/runtime-facing metadata in:
+
+- `frontend/src/types/index.ts`
+
+and the assistant message UI now renders a dedicated approval card through:
+
+- `frontend/src/components/chat/ApprovalPendingCard.tsx`
+- `frontend/src/components/chat/MessageItem.tsx`
+
+The currently exposed approval-facing fields are intentionally limited to
+externally useful context such as:
+
+- human-readable reason / reason message
+- original question
+- current step title
+- search query
+- candidate URLs
+- risk level
+
+rather than surfacing lower-level internal tool mechanics directly in the
+chat transcript.
+
+#### 6. The frontend store was partially decomposed to respect current file-boundary discipline
+
+Because `frontend/src/stores/chatStore.ts` was already oversized, this closure
+did not keep adding ad hoc approval helpers inline.
+
+Instead, part of the state/model logic was extracted into:
+
+- `frontend/src/stores/chatStateModel.ts`
+
+including:
+
+- persisted message mapping
+- tool payload normalization
+- session upsert helpers
+- approval-pending message merge/application helpers
+
+After this extraction, `chatStore.ts` was reduced back under the immediate
+split threshold and now sits at `792` lines rather than continuing to grow
+further past the previous overloaded size.
+
+### Validation
+
+Validated on `2026-06-11` for the backend bridge:
+
+```powershell
+go test ./internal/app/agent ./internal/app/rag/service ./internal/adapter/http/rag/test -run "TestServiceGetPendingApproval|TestRagChatServiceGetPendingApproval|TestChatHandlerGetPendingApproval" -count=1
+go test ./internal/app/agent/... ./internal/app/rag/service ./internal/adapter/http/rag/test ./internal/bootstrap/rag -count=1
+```
+
+Current backend result:
+
+- focused pending-approval lookup tests PASS
+- broader `internal/app/agent/...` and rag/http/bootstrap coverage PASS
+
+Frontend validation status for this `2026-06-11` closure is currently:
+
+- pending-approval recovery and rendering code implemented
+- frontend tests not run
+- frontend typecheck not run
+
+because the immediate task scope explicitly excluded frontend test execution.
+
+### Updated Conclusion
+
+As of `2026-06-11`, the most accurate current approval/runtime recovery status
+is now:
+
+1. approval-pending state is no longer only resumable if the original runtime
+   process context is still directly available; it now has a conversation-level
+   recovery path
+2. the rag chat backend now exposes both:
+   - approval resume
+   - approval pending lookup
+3. the frontend chat experience can now:
+   - restore a pending approval after session reload/re-entry
+   - understand approval/runtime SSE events during active streaming
+   - render a user-facing approval card without exposing internal tool details
+4. approval is therefore closer to a real end-to-end lifecycle across:
+   - runtime
+   - service
+   - transport
+   - chat UI
+5. the next best steps after this closure are now:
+   - wire explicit approve / reject actions from the approval card into
+     `/rag/v3/chat/approval/resume`
+   - add focused frontend tests or typecheck coverage for approval recovery and
+     rendering
+   - continue reducing the remaining mixed-responsibility surface in the chat
+     frontend store as future work touches it

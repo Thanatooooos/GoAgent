@@ -26,32 +26,34 @@ type RetrievedItem struct {
 }
 
 type Sample struct {
-	Name              string          `json:"name"`
-	Query             string          `json:"query"`
-	UserID            string          `json:"userId,omitempty"`
-	Tags              []string        `json:"tags,omitempty"`
-	Target            Target          `json:"target"`
-	ExpectedIDs       []string        `json:"expectedIds"`
-	Retrieved         []RetrievedItem `json:"retrieved"`
-	KnowledgeBaseIDs  []string        `json:"knowledgeBaseIds,omitempty"`
-	SearchMode        string          `json:"searchMode,omitempty"`
-	TopK              int             `json:"topK,omitempty"`
-	ChunkStrategy     string          `json:"chunkStrategy,omitempty"`
-	ExpectedRelevance map[string]int  `json:"expectedRelevance,omitempty"`
+	Name              string                       `json:"name"`
+	Query             string                       `json:"query"`
+	UserID            string                       `json:"userId,omitempty"`
+	Tags              []string                     `json:"tags,omitempty"`
+	Target            Target                       `json:"target"`
+	ExpectedIDs       []string                     `json:"expectedIds"`
+	Retrieved         []RetrievedItem              `json:"retrieved"`
+	ChannelRetrieved  map[string][]RetrievedItem   `json:"channelRetrieved,omitempty"`
+	KnowledgeBaseIDs  []string                     `json:"knowledgeBaseIds,omitempty"`
+	SearchMode        string                       `json:"searchMode,omitempty"`
+	TopK              int                          `json:"topK,omitempty"`
+	ChunkStrategy     string                       `json:"chunkStrategy,omitempty"`
+	ExpectedRelevance map[string]int               `json:"expectedRelevance,omitempty"`
 }
 
 type SampleResult struct {
-	Name              string          `json:"name"`
-	Query             string          `json:"query"`
-	Tags              []string        `json:"tags,omitempty"`
-	Target            Target          `json:"target"`
-	ExpectedIDs       []string        `json:"expectedIds"`
-	RetrievedCount    int             `json:"retrievedCount"`
-	FirstRelevantRank int             `json:"firstRelevantRank,omitempty"`
-	ReciprocalRank    float64         `json:"reciprocalRank"`
-	HitAtK            map[int]bool    `json:"hitAtK"`
-	RecallAtK         map[int]float64 `json:"recallAtK"`
-	NDCGAtK           map[int]float64 `json:"ndcgAtK"`
+	Name              string                `json:"name"`
+	Query             string                `json:"query"`
+	Tags              []string              `json:"tags,omitempty"`
+	Target            Target                `json:"target"`
+	ExpectedIDs       []string              `json:"expectedIds"`
+	RetrievedCount    int                   `json:"retrievedCount"`
+	FirstRelevantRank int                   `json:"firstRelevantRank,omitempty"`
+	ReciprocalRank    float64               `json:"reciprocalRank"`
+	HitAtK            map[int]bool          `json:"hitAtK"`
+	RecallAtK         map[int]float64       `json:"recallAtK"`
+	NDCGAtK           map[int]float64       `json:"ndcgAtK"`
+	Channels          []ChannelSampleResult `json:"channels,omitempty"`
 }
 
 type AggregateMetrics struct {
@@ -68,10 +70,11 @@ type TagSummary struct {
 }
 
 type Summary struct {
-	Ks      []int            `json:"ks"`
-	Overall AggregateMetrics `json:"overall"`
-	ByTag   []TagSummary     `json:"byTag"`
-	Samples []SampleResult   `json:"samples"`
+	Ks       []int                     `json:"ks"`
+	Overall  AggregateMetrics          `json:"overall"`
+	Channels []ChannelAggregateMetrics `json:"channels,omitempty"`
+	ByTag    []TagSummary              `json:"byTag"`
+	Samples  []SampleResult            `json:"samples"`
 }
 
 func Evaluate(samples []Sample, ks []int) (Summary, error) {
@@ -86,15 +89,21 @@ func Evaluate(samples []Sample, ks []int) (Summary, error) {
 		if err != nil {
 			return Summary{}, err
 		}
+		channelResults, err := evaluateChannelSample(sample, normalizedKs)
+		if err != nil {
+			return Summary{}, err
+		}
+		result.Channels = channelResults
 		results = append(results, result)
 	}
 
 	byTag := buildTagSummaries(results, normalizedKs)
 	return Summary{
-		Ks:      normalizedKs,
-		Overall: aggregate(results, normalizedKs),
-		ByTag:   byTag,
-		Samples: results,
+		Ks:       normalizedKs,
+		Overall:  aggregate(results, normalizedKs),
+		Channels: aggregateChannelMetrics(results, normalizedKs),
+		ByTag:    byTag,
+		Samples:  results,
 	}, nil
 }
 

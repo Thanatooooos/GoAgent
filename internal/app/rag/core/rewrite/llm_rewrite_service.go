@@ -61,7 +61,8 @@ func (s *LLMService) RewriteWithSplit(question string) Result {
 	if err != nil {
 		return fallbackResult(question)
 	}
-	return parsed
+	guarded, _ := GuardRewriteResult(question, parsed)
+	return guarded
 }
 
 func (s *LLMService) RewriteWithHistory(question string, history []convention.ChatMessage) Result {
@@ -78,7 +79,8 @@ func (s *LLMService) RewriteWithHistory(question string, history []convention.Ch
 	if err != nil {
 		return fallbackResult(question)
 	}
-	return parsed
+	guarded, _ := GuardRewriteResult(question, parsed)
+	return guarded
 }
 
 func (s *LLMService) callRewriteLLM(systemPrompt string, question string) (Result, error) {

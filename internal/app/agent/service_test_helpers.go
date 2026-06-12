@@ -10,6 +10,8 @@ import (
 	agentdocumentinvestigation "local/rag-project/internal/app/agent/document_investigation"
 	agentfetch "local/rag-project/internal/app/agent/fetch"
 	agentkernel "local/rag-project/internal/app/agent/kernel"
+	agentknowledgediscovery "local/rag-project/internal/app/agent/knowledge_discovery"
+	agentmemoryrecall "local/rag-project/internal/app/agent/memory_recall"
 	agentpattern "local/rag-project/internal/app/agent/pattern"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
 	agentsearch "local/rag-project/internal/app/agent/search"
@@ -17,6 +19,7 @@ import (
 	agentstate "local/rag-project/internal/app/agent/state"
 	knowledgedomain "local/rag-project/internal/app/knowledge/domain"
 	knowledgeservice "local/rag-project/internal/app/knowledge/service"
+	longtermmemory "local/rag-project/internal/app/rag/service/longtermmemory"
 )
 
 type stubSearchService struct{}
@@ -62,6 +65,30 @@ func (stubDocumentInvestigator) PageChunkLogs(context.Context, knowledgeservice.
 }
 
 var _ agentdocumentinvestigation.Investigator = stubDocumentInvestigator{}
+
+type stubKnowledgeDiscoverer struct{}
+
+func (stubKnowledgeDiscoverer) PageBases(context.Context, knowledgeservice.PageKnowledgeBaseInput) (knowledgeservice.KnowledgeBasePageResult, error) {
+	return knowledgeservice.KnowledgeBasePageResult{}, nil
+}
+
+func (stubKnowledgeDiscoverer) PageDocuments(context.Context, knowledgeservice.PageKnowledgeDocumentInput) (knowledgeservice.KnowledgeDocumentPageResult, error) {
+	return knowledgeservice.KnowledgeDocumentPageResult{}, nil
+}
+
+func (stubKnowledgeDiscoverer) SearchDocuments(context.Context, knowledgeservice.SearchKnowledgeDocumentsInput) ([]knowledgeservice.KnowledgeDocumentSearchItem, error) {
+	return nil, nil
+}
+
+var _ agentknowledgediscovery.KnowledgeDiscoverer = stubKnowledgeDiscoverer{}
+
+type stubMemoryRecaller struct{}
+
+func (stubMemoryRecaller) RecallMemories(context.Context, longtermmemory.RecallMemoriesInput) (longtermmemory.RecallMemoriesResult, error) {
+	return longtermmemory.RecallMemoriesResult{}, nil
+}
+
+var _ agentmemoryrecall.MemoryRecaller = stubMemoryRecaller{}
 
 func mustSearchHandle(t *testing.T) agentcapability.Handle {
 	t.Helper()
@@ -171,6 +198,7 @@ func newTestAgentServiceWithPatternAndStore(t *testing.T, patternName string, se
 	t.Helper()
 
 	checkpointStore := agentkernel.NewMemoryCheckpointStore()
+	pendingStore := agentruntime.NewMemoryPendingApprovalStore()
 	registry := agentcapability.NewRegistry()
 	if err := registry.Register(searchHandle); err != nil {
 		t.Fatalf("Register(search) error = %v", err)
@@ -201,6 +229,7 @@ func newTestAgentServiceWithPatternAndStore(t *testing.T, patternName string, se
 		registry:      registry,
 		bindings:      bindings,
 		sessionStore:  sessionStore,
+		pendingStore:  pendingStore,
 		reducer:       agentstate.DefaultReducer{},
 		maxIterations: 2,
 		outputMode:    agentstate.OutputModeFinalAnswer,

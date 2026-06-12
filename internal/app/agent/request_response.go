@@ -198,6 +198,11 @@ type ResumeApprovalRequest struct {
 	DecisionNote string
 }
 
+type PendingApprovalLookupRequest struct {
+	ConversationID string
+	UserID         string
+}
+
 type HandoffResult = agenthandoff.Result
 type HandoffEvidenceBundle = agenthandoff.EvidenceBundle
 type AcceptedEvidenceItem = agenthandoff.AcceptedEvidenceItem

@@ -9,11 +9,14 @@ import (
 	agentcatalog "local/rag-project/internal/app/agent/capability/catalog"
 	agentresolve "local/rag-project/internal/app/agent/capability/resolve"
 	selectcapability "local/rag-project/internal/app/agent/capability/select"
+	agentcontentsummarize "local/rag-project/internal/app/agent/content_summarize"
 	agentdocumentinvestigation "local/rag-project/internal/app/agent/document_investigation"
 	agentexternal "local/rag-project/internal/app/agent/external_evidence"
 	agentfetch "local/rag-project/internal/app/agent/fetch"
 	agenthandoff "local/rag-project/internal/app/agent/handoff"
 	agentkernel "local/rag-project/internal/app/agent/kernel"
+	agentknowledgediscovery "local/rag-project/internal/app/agent/knowledge_discovery"
+	agentmemoryrecall "local/rag-project/internal/app/agent/memory_recall"
 	agentpattern "local/rag-project/internal/app/agent/pattern"
 	agentplanexecute "local/rag-project/internal/app/agent/pattern/planexecute"
 	agentreactive "local/rag-project/internal/app/agent/pattern/reactive"
@@ -22,13 +25,19 @@ import (
 	agentsearch "local/rag-project/internal/app/agent/search"
 	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	agentstate "local/rag-project/internal/app/agent/state"
+	agentthink "local/rag-project/internal/app/agent/think"
 	"local/rag-project/internal/framework/config"
+	aichat "local/rag-project/internal/infra-ai/chat"
 )
 
 const (
 	PatternReactive    = "reactive"
 	PatternPlanExecute = "plan_execute"
 )
+
+func defaultPattern() string {
+	return PatternPlanExecute
+}
 
 func NewService(opts ServiceOptions) (*Service, error) {
 	cfg := opts.Config
@@ -59,13 +68,24 @@ func NewService(opts ServiceOptions) (*Service, error) {
 	if sessionStore == nil {
 		sessionStore = agentruntime.NewMemorySessionStore()
 	}
+	pendingStore := opts.PendingApprovalStore
+	if pendingStore == nil {
+		pendingStore = agentruntime.NewMemoryPendingApprovalStore()
+	}
 	outputMode := strings.TrimSpace(opts.OutputMode)
 	if outputMode == "" {
 		outputMode = agentstate.OutputModeHandoff
 	}
 	patternName := normalizePattern(opts.Pattern)
 	runtimeName := runtimeNameForPattern(patternName)
-	registry, bindings, err := assembleCapabilities(searchService, fetchService, opts.DocumentInvestigator)
+	registry, bindings, err := assembleCapabilities(
+		searchService,
+		fetchService,
+		opts.DocumentInvestigator,
+		opts.LLMService,
+		opts.KnowledgeDiscoverer,
+		opts.MemoryRecaller,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +126,7 @@ func NewService(opts ServiceOptions) (*Service, error) {
 		registry:      registry,
 		bindings:      bindings,
 		sessionStore:  sessionStore,
+		pendingStore:  pendingStore,
 		reducer:       agentstate.DefaultReducer{},
 		maxIterations: opts.MaxIterations,
 		outputMode:    outputMode,
@@ -144,12 +165,28 @@ func buildHandoffBuilder(registry *agentcapability.Registry, bindings agentcapab
 	}
 }
 
-func assembleCapabilities(searchService *agentsearch.Service, fetchService *agentfetch.Service, documentInvestigator agentdocumentinvestigation.Investigator) (*agentcapability.Registry, agentcapability.RoleBindings, error) {
+func assembleCapabilities(
+	searchService *agentsearch.Service,
+	fetchService *agentfetch.Service,
+	documentInvestigator agentdocumentinvestigation.Investigator,
+	llmService aichat.LLMService,
+	knowledgeDiscoverer agentknowledgediscovery.KnowledgeDiscoverer,
+	memoryRecaller agentmemoryrecall.MemoryRecaller,
+) (*agentcapability.Registry, agentcapability.RoleBindings, error) {
 	registry := agentcapability.NewRegistry()
 	if err := registerExternalEvidenceCapabilities(registry, searchService, fetchService); err != nil {
 		return nil, nil, err
 	}
 	if err := registerOptionalWorkflowCapabilities(registry, documentInvestigator); err != nil {
+		return nil, nil, err
+	}
+	if err := registerMetaCapabilities(registry, llmService); err != nil {
+		return nil, nil, err
+	}
+	if err := registerDiscoveryCapabilities(registry, knowledgeDiscoverer); err != nil {
+		return nil, nil, err
+	}
+	if err := registerMemoryCapabilities(registry, memoryRecaller); err != nil {
 		return nil, nil, err
 	}
 
@@ -158,6 +195,44 @@ func assembleCapabilities(searchService *agentsearch.Service, fetchService *agen
 		agentcapability.RoleFetch:  agentcapability.NameWebFetch,
 	}
 	return registry, bindings, nil
+}
+
+func registerMetaCapabilities(registry *agentcapability.Registry, llmService aichat.LLMService) error {
+	thinkCapability, err := agentthink.NewCapability()
+	if err != nil {
+		return fmt.Errorf("meta capability %q construction failed: %w", agentcapability.NameThink, err)
+	}
+	handles := []agentcapability.Handle{thinkCapability}
+	if llmService != nil {
+		summarizeCapability, err := agentcontentsummarize.NewCapability(llmService)
+		if err != nil {
+			return fmt.Errorf("meta capability %q construction failed: %w", agentcapability.NameContentSummarize, err)
+		}
+		handles = append(handles, summarizeCapability)
+	}
+	return registerCapabilityGroup(registry, "meta", handles...)
+}
+
+func registerDiscoveryCapabilities(registry *agentcapability.Registry, discoverer agentknowledgediscovery.KnowledgeDiscoverer) error {
+	if discoverer == nil {
+		return nil
+	}
+	discoveryCapability, err := agentknowledgediscovery.NewCapability(discoverer)
+	if err != nil {
+		return fmt.Errorf("discovery capability %q construction failed: %w", agentcapability.NameKnowledgeDiscovery, err)
+	}
+	return registerCapabilityGroup(registry, "discovery", discoveryCapability)
+}
+
+func registerMemoryCapabilities(registry *agentcapability.Registry, recaller agentmemoryrecall.MemoryRecaller) error {
+	if recaller == nil {
+		return nil
+	}
+	memoryCapability, err := agentmemoryrecall.NewCapability(recaller)
+	if err != nil {
+		return fmt.Errorf("memory capability %q construction failed: %w", agentcapability.NameMemoryRecall, err)
+	}
+	return registerCapabilityGroup(registry, "memory", memoryCapability)
 }
 
 func registerExternalEvidenceCapabilities(registry *agentcapability.Registry, searchService *agentsearch.Service, fetchService *agentfetch.Service) error {
@@ -202,12 +277,14 @@ func registerCapabilityGroup(registry *agentcapability.Registry, group string, h
 
 func normalizePattern(pattern string) string {
 	switch strings.TrimSpace(pattern) {
-	case "", PatternReactive:
-		return PatternReactive
 	case PatternPlanExecute:
 		return PatternPlanExecute
-	default:
+	case PatternReactive:
 		return PatternReactive
+	case "":
+		return defaultPattern()
+	default:
+		return defaultPattern()
 	}
 }
 

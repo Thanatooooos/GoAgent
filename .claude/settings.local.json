@@ -88,7 +88,24 @@
       "Bash(nslookup github.com)",
       "Bash(taskkill //F //IM git.exe)",
       "Bash(rm -rf D:/VictoriaMetrics)",
-      "Bash(go vet *)"
+      "Bash(go vet *)",
+      "Bash(xargs cat)",
+      "Bash(docker compose *)",
+      "Bash(docker pull *)",
+      "Bash(sed -i '309,374d' internal/adapter/vectorstore/pgvector/vector_store.go)",
+      "Bash(sed -n '305,315p' internal/adapter/vectorstore/pgvector/vector_store.go)",
+      "Bash(sed -i '66s/content_lexemes = EXCLUDED.content_lexemes,/content_lexemes = '\"'\"''\"'\"',/' internal/adapter/vectorstore/pgvector/vector_store.go)",
+      "Bash(sed -i '79s/payload.ContentLexemes,/\"\",/' internal/adapter/vectorstore/pgvector/vector_store.go)",
+      "Bash(sed -n '64,82p' internal/adapter/vectorstore/pgvector/vector_store.go)",
+      "Bash(sed -i '201s/len\\(trimmed\\)/utf8.RuneCountInString\\(trimmed\\)/' internal/app/agent/service.go)",
+      "Bash(sed -i '202s/trimmed\\\\[:limit-3\\\\]/string\\([]rune\\(trimmed\\)[:limit-3]\\)/' internal/app/agent/service.go)",
+      "Bash(sed -n '201,203p' internal/app/agent/service.go)",
+      "Bash(sed -i '274s/len\\(content\\) > 500/utf8.RuneCountInString\\(content\\) > 500/' internal/app/rag/core/history/service_store.go)",
+      "Bash(sed -i '275s/content\\\\[:500\\\\]/string\\([]rune\\(content\\)[:500]\\)/' internal/app/rag/core/history/service_store.go)",
+      "Bash(sed -n '273,277p' internal/app/rag/core/history/service_store.go)",
+      "Bash(sed -i '275s/len\\(content\\) > 500/utf8.RuneCountInString\\(content\\) > 500/' internal/app/rag/core/history/service_store.go)",
+      "Bash(sed -i '276s/content\\\\[:500\\\\]/string\\([]rune\\(content\\)[:500]\\)/' internal/app/rag/core/history/service_store.go)",
+      "Bash(sed -n '274,278p' internal/app/rag/core/history/service_store.go)"
     ]
   }
 }

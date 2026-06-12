@@ -18,12 +18,60 @@ type captureRetrieveService struct {
 
 func (s *captureRetrieveService) Retrieve(_ context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
 	s.requests = append(s.requests, request)
-	return s.result, nil
+	result := s.result
+	if len(result.ChannelRetrieved) == 0 && len(result.Chunks) > 0 {
+		result.ChannelRetrieved = map[string][]convention.RetrievedChunk{
+			ragretrieve.ChannelKeyword: append([]convention.RetrievedChunk(nil), result.Chunks...),
+		}
+	}
+	return result, nil
 }
 
 func (s *captureRetrieveService) RetrieveByVector(_ context.Context, _ []float32, request ragretrieve.Request) (ragretrieve.Result, error) {
 	s.requests = append(s.requests, request)
 	return s.result, nil
+}
+
+func TestLoadSamplesRetrieveEvalFixture(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "retrieve_eval_samples.json")
+	samples, err := loadSamples(path)
+	if err != nil {
+		t.Fatalf("loadSamples returned error: %v", err)
+	}
+	if len(samples) < 20 {
+		t.Fatalf("expected at least 20 retrieve eval samples, got %d", len(samples))
+	}
+
+	tagCounts := map[string]int{}
+	requiredTags := []string{"alias", "diagnosis", "metadata", "coreference", "multi_condition", "keyword", "semantic"}
+	for _, sample := range samples {
+		for _, tag := range sample.Tags {
+			tagCounts[tag]++
+		}
+		if len(sample.ExpectedIDs) == 0 {
+			t.Fatalf("sample %q missing expectedIds", sample.Name)
+		}
+	}
+	for _, tag := range requiredTags {
+		minCount := 2
+		if tag == "alias" || tag == "diagnosis" || tag == "metadata" {
+			minCount = 4
+		}
+		if tagCounts[tag] < minCount {
+			t.Fatalf("expected at least %d samples tagged %q, got %d", minCount, tag, tagCounts[tag])
+		}
+	}
+
+	summary, err := rageval.Evaluate(samples, []int{1, 3, 5})
+	if err != nil {
+		t.Fatalf("Evaluate returned error: %v", err)
+	}
+	if summary.Overall.SampleCount != len(samples) {
+		t.Fatalf("expected %d evaluated samples, got %d", len(samples), summary.Overall.SampleCount)
+	}
+	if summary.Overall.MRR <= 0 {
+		t.Fatalf("expected positive MRR for offline fixture, got %v", summary.Overall.MRR)
+	}
 }
 
 func TestLoadSamplesMemoryFactPhase3Fixture(t *testing.T) {
@@ -86,5 +134,11 @@ func TestExecuteSamplesForwardsUserID(t *testing.T) {
 	}
 	if len(samples[0].Retrieved) != 1 || samples[0].Retrieved[0].ChunkID != "memory_fact:mem-kb-1" {
 		t.Fatalf("expected executeSamples to backfill retrieved chunks, got %+v", samples[0].Retrieved)
+	}
+	if len(samples[0].ChannelRetrieved) != 1 {
+		t.Fatalf("expected executeSamples to backfill channel retrieved, got %+v", samples[0].ChannelRetrieved)
+	}
+	if len(samples[0].ChannelRetrieved[ragretrieve.ChannelKeyword]) != 1 {
+		t.Fatalf("expected keyword channel retrieved chunk, got %+v", samples[0].ChannelRetrieved)
 	}
 }

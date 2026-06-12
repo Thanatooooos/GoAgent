@@ -56,14 +56,5 @@ func capabilityProfileForNode(node string, spec agentcapability.Spec) Capability
 }
 
 func workflowCapabilityForSpec(spec agentcapability.Spec) string {
-	switch strings.TrimSpace(spec.Family) {
-	case agentcapability.FamilyExternalEvidence:
-		return "search"
-	case agentcapability.FamilyDocumentInvestigation, agentcapability.FamilyTraceInvestigation:
-		return "diagnosis"
-	case agentcapability.FamilyDiscovery:
-		return "knowledge"
-	default:
-		return "general"
-	}
+	return agentcapability.WorkflowCapabilityForFamily(spec.Family)
 }

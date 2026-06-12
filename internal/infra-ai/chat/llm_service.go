@@ -15,3 +15,10 @@ type LLMService interface {
 
 	StreamChatWithRequest(request convention.ChatRequest, callback StreamCallback) (StreamCancellationHandle, error)
 }
+
+// UsageAwareLLMService is an optional extension for non-streaming chat calls that
+// can return provider usage when available.
+type UsageAwareLLMService interface {
+	LLMService
+	ChatWithRequestUsage(request convention.ChatRequest) (string, TokenUsage, error)
+}

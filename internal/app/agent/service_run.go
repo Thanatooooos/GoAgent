@@ -202,8 +202,11 @@ func (s *Service) storePendingSession(ctx context.Context, checkpointID string, 
 		return err
 	}
 	if session != nil && strings.TrimSpace(session.SessionID) != "" && strings.TrimSpace(session.SessionID) != strings.TrimSpace(checkpointID) {
-		return s.sessionStore.Put(ctx, session.SessionID, session)
+		if err := s.sessionStore.Put(ctx, session.SessionID, session); err != nil {
+			return err
+		}
 	}
+	s.putPendingApprovalLookup(ctx, checkpointID, session)
 	return nil
 }
 
@@ -225,9 +228,14 @@ func (s *Service) deletePendingSession(ctx context.Context, checkpointID string)
 	}
 	sessionID := strings.TrimSpace(session.SessionID)
 	if sessionID == "" || sessionID == strings.TrimSpace(checkpointID) {
+		s.deletePendingApprovalLookup(ctx, session, "", "")
 		return nil
 	}
-	return s.sessionStore.Delete(ctx, sessionID)
+	if err := s.sessionStore.Delete(ctx, sessionID); err != nil {
+		return err
+	}
+	s.deletePendingApprovalLookup(ctx, session, "", "")
+	return nil
 }
 
 func checkpointIDFromSession(session *agentruntime.RuntimeSession) string {

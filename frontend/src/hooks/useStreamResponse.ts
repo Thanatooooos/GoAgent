@@ -1,5 +1,8 @@
 import type {
+  AgentOutcomePayload,
+  AgentServiceErrorPayload,
   AgentThinkPayload,
+  ApprovalPendingPayload,
   CompletionPayload,
   FallbackPayload,
   MemoryStoredPayload,
@@ -12,6 +15,9 @@ import type {
 export interface StreamHandlers {
   onMeta?: (payload: StreamMetaPayload) => void;
   onFallback?: (payload: FallbackPayload) => void;
+  onAgentOutcome?: (payload: AgentOutcomePayload) => void;
+  onApprovalPending?: (payload: ApprovalPendingPayload) => void;
+  onAgentServiceError?: (payload: AgentServiceErrorPayload) => void;
   onAgentThink?: (payload: AgentThinkPayload) => void;
   onMemoryStored?: (payload: MemoryStoredPayload) => void;
   onSessionRecall?: (payload: SessionRecallPayload) => void;
@@ -72,6 +78,15 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         break;
       case "fallback":
         handlers.onFallback?.(payload as FallbackPayload);
+        break;
+      case "agent_outcome":
+        handlers.onAgentOutcome?.(payload as AgentOutcomePayload);
+        break;
+      case "approval_pending":
+        handlers.onApprovalPending?.(payload as ApprovalPendingPayload);
+        break;
+      case "agent_service_error":
+        handlers.onAgentServiceError?.(payload as AgentServiceErrorPayload);
         break;
       case "agent_think":
         handlers.onAgentThink?.(payload as AgentThinkPayload);

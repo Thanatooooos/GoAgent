@@ -534,70 +534,115 @@ func TestBuildFallbackPrompt(t *testing.T) {
 	}
 }
 
+func TestNewRagChatServiceWithDepsRejectsMissingRequiredDeps(t *testing.T) {
+	tracer := NewChatTracer(nil, nil)
+	_, err := NewRagChatServiceWithDeps(RagChatDeps{}, RagChatOptions{})
+	if err == nil {
+		t.Fatal("expected error for missing required deps")
+	}
+
+	_, err = NewRagChatServiceWithDeps(RagChatDeps{
+		ConversationService: &ConversationService{},
+		MessageService:      &ConversationMessageService{},
+		HistoryService:      memoryServiceStub{},
+		RetrieveService:     &retrieveServiceStub{},
+		PromptService:       &ragprompt.Service{},
+		ChatService:         &llmServiceStub{},
+		Tracer:              tracer,
+	}, RagChatOptions{})
+	if err != nil {
+		t.Fatalf("expected valid deps to succeed, got %v", err)
+	}
+}
+
+func TestNewRagChatServiceWithDepsAppliesOptions(t *testing.T) {
+	tracer := NewChatTracer(nil, nil)
+	workflow := &toolWorkflowStub{}
+	recall := &sessionRecallServiceStub{}
+	service, err := NewRagChatServiceWithDeps(RagChatDeps{
+		ConversationService: &ConversationService{},
+		MessageService:      &ConversationMessageService{},
+		HistoryService:      memoryServiceStub{},
+		RetrieveService:     &retrieveServiceStub{},
+		PromptService:       &ragprompt.Service{},
+		ChatService:         &llmServiceStub{},
+		Tracer:              tracer,
+		AgentRuntime:        agentRuntimeServiceStub{},
+	}, RagChatOptions{
+		ConfidenceThreshold:    0.75,
+		ParallelSubquestions:   false,
+		SubquestionConcurrency: 4,
+		RequestCacheMaxEntries: 64,
+		AgentRuntimeMode:       ragChatAgentModeAlways,
+		SessionRecall:          recall,
+		ToolWorkflow:           workflow,
+	})
+	if err != nil {
+		t.Fatalf("NewRagChatServiceWithDeps returned error: %v", err)
+	}
+	if service.confidenceThreshold != 0.75 {
+		t.Fatalf("expected confidenceThreshold=0.75, got %v", service.confidenceThreshold)
+	}
+	if service.parallelSubquestions {
+		t.Fatal("expected parallel subquestions disabled")
+	}
+	if service.subquestionConcurrency != 4 {
+		t.Fatalf("expected subquestionConcurrency=4, got %d", service.subquestionConcurrency)
+	}
+	if service.requestCacheMaxEntries != 64 {
+		t.Fatalf("expected requestCacheMaxEntries=64, got %d", service.requestCacheMaxEntries)
+	}
+	if service.agentRuntimeMode != ragChatAgentModeAlways {
+		t.Fatalf("expected agent mode always, got %q", service.agentRuntimeMode)
+	}
+	if service.sessionRecall != recall {
+		t.Fatal("expected session recall to be assigned")
+	}
+	if service.toolWorkflow != workflow {
+		t.Fatal("expected tool workflow to be assigned")
+	}
+}
+
 func TestRagChatServiceConfidenceThresholdDefaultsOff(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := newRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	if svc.confidenceThreshold != 0 {
 		t.Fatalf("expected confidenceThreshold=0 by default, got %v", svc.confidenceThreshold)
 	}
 }
 
-func TestRagChatServiceSetConfidenceThreshold(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
-	svc.SetConfidenceThreshold(0.6)
-	if svc.confidenceThreshold != 0.6 {
-		t.Fatalf("expected 0.6, got %v", svc.confidenceThreshold)
-	}
-
-	svc.SetConfidenceThreshold(0)
-	if svc.confidenceThreshold != 0 {
-		t.Fatalf("expected 0 after disabling, got %v", svc.confidenceThreshold)
-	}
-}
-
-func TestRagChatServiceSetParallelSubquestionRetrieval(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
-	svc.SetParallelSubquestionRetrieval(false, 0)
-	if svc.parallelSubquestions {
+func TestNewRagChatServiceWithDepsNormalizesParallelDefaults(t *testing.T) {
+	service := mustNewTestRagChatService(t, minimalRagChatDeps(), RagChatOptions{
+		ParallelSubquestions:   false,
+		SubquestionConcurrency: 0,
+		RequestCacheMaxEntries: 0,
+	})
+	if service.parallelSubquestions {
 		t.Fatal("expected parallel subquestion retrieval to be disabled")
 	}
-	if svc.subquestionConcurrency != 2 {
-		t.Fatalf("expected default subquestion concurrency=2, got %d", svc.subquestionConcurrency)
+	if service.subquestionConcurrency != 2 {
+		t.Fatalf("expected default subquestion concurrency=2, got %d", service.subquestionConcurrency)
 	}
-
-	svc.SetParallelSubquestionRetrieval(true, 3)
-	if !svc.parallelSubquestions {
-		t.Fatal("expected parallel subquestion retrieval to be enabled")
-	}
-	if svc.subquestionConcurrency != 3 {
-		t.Fatalf("expected subquestion concurrency=3, got %d", svc.subquestionConcurrency)
-	}
-}
-
-func TestRagChatServiceSetToolWorkflow(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
-	workflow := &toolWorkflowStub{}
-	svc.SetToolWorkflow(workflow)
-	if svc.toolWorkflow != workflow {
-		t.Fatal("expected tool workflow to be assigned")
+	if service.requestCacheMaxEntries != 128 {
+		t.Fatalf("expected default request cache max entries=128, got %d", service.requestCacheMaxEntries)
 	}
 }
 
 func TestRagChatServiceValidateDependencies(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := newRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	if err := svc.validateDependencies(); err == nil {
 		t.Fatal("expected validation error for nil dependencies")
 	}
 }
 
 func TestRagChatServiceNilSink(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := newRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	if err := svc.Chat(nil, RagChatInput{Question: "doc_fail_01 why import failed", UserID: "u1"}, nil); err == nil {
 		t.Fatal("expected error for nil sink")
 	}
 }
 
 func TestRagChatServiceEmptyQuestion(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := newRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	sink := &fallbackSinkStub{}
 	if err := svc.Chat(nil, RagChatInput{Question: "doc_fail_01 why import failed", UserID: "u1"}, sink); err == nil {
 		t.Fatal("expected error for empty question or missing dependencies")
@@ -605,7 +650,7 @@ func TestRagChatServiceEmptyQuestion(t *testing.T) {
 }
 
 func TestRagChatServiceEmptyUserID(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := newRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	sink := &fallbackSinkStub{}
 	if err := svc.Chat(nil, RagChatInput{Question: "hello", UserID: ""}, sink); err == nil {
 		t.Fatal("expected error for empty user id")
@@ -647,8 +692,10 @@ func TestRunRetrieveStageParallelSuccessTrace(t *testing.T) {
 			}, nil
 		},
 	}
-	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, tracer)
-	service.SetParallelSubquestionRetrieval(true, 2)
+	service := newTestRagChatServiceWithRetrieve(t, retrieve, tracer, RagChatOptions{
+		ParallelSubquestions:   true,
+		SubquestionConcurrency: 2,
+	})
 
 	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
 		Question:         "original question",
@@ -702,8 +749,10 @@ func TestRunRetrieveStagePartialFailureStillReturnsMergedResult(t *testing.T) {
 			}, nil
 		},
 	}
-	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
-	service.SetParallelSubquestionRetrieval(true, 2)
+	service := newTestRagChatServiceWithRetrieve(t, retrieve, NewChatTracer(nil, nil), RagChatOptions{
+		ParallelSubquestions:   true,
+		SubquestionConcurrency: 2,
+	})
 
 	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
 		Question:         "original question",
@@ -738,8 +787,10 @@ func TestRunRetrieveStageFallsBackWhenAllSubQuestionsEmpty(t *testing.T) {
 			return ragretrieve.Result{}, nil
 		},
 	}
-	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
-	service.SetParallelSubquestionRetrieval(true, 2)
+	service := newTestRagChatServiceWithRetrieve(t, retrieve, NewChatTracer(nil, nil), RagChatOptions{
+		ParallelSubquestions:   true,
+		SubquestionConcurrency: 2,
+	})
 
 	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
 		Question:         "original question",
@@ -774,8 +825,10 @@ func TestRunRetrieveStageFallsBackWhenAllSubQuestionsFail(t *testing.T) {
 			return ragretrieve.Result{}, errors.New("backend unavailable")
 		},
 	}
-	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
-	service.SetParallelSubquestionRetrieval(true, 2)
+	service := newTestRagChatServiceWithRetrieve(t, retrieve, NewChatTracer(nil, nil), RagChatOptions{
+		ParallelSubquestions:   true,
+		SubquestionConcurrency: 2,
+	})
 
 	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
 		Question:         "original question",
@@ -804,8 +857,10 @@ func TestRunRetrieveStageSerializesDependencyRiskSubQuestions(t *testing.T) {
 			}, nil
 		},
 	}
-	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, tracer)
-	service.SetParallelSubquestionRetrieval(true, 2)
+	service := newTestRagChatServiceWithRetrieve(t, retrieve, tracer, RagChatOptions{
+		ParallelSubquestions:   true,
+		SubquestionConcurrency: 2,
+	})
 
 	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
 		Question:         "original question",
@@ -842,8 +897,10 @@ func TestRunRetrieveStageHonorsParallelDisable(t *testing.T) {
 			}, nil
 		},
 	}
-	service := NewRagChatService(nil, nil, nil, nil, retrieve, nil, nil, NewChatTracer(nil, nil))
-	service.SetParallelSubquestionRetrieval(false, 2)
+	service := newTestRagChatServiceWithRetrieve(t, retrieve, NewChatTracer(nil, nil), RagChatOptions{
+		ParallelSubquestions:   false,
+		SubquestionConcurrency: 2,
+	})
 
 	result, err := service.runRetrieveStage(context.Background(), RagChatInput{
 		Question:         "original question",
@@ -880,7 +937,7 @@ func TestShouldRunToolWorkflow(t *testing.T) {
 }
 
 func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := newRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	result, err := svc.runToolWorkflowStage(
 		context.Background(),
 		RagChatInput{Question: "q", UserID: "u"},
@@ -902,11 +959,12 @@ func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
 }
 
 func TestRunToolWorkflowStageRunsForStructuredIDWithoutRetrieve(t *testing.T) {
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	workflow := &toolWorkflowStub{
 		result: ragtool.WorkflowResult{Used: true},
 	}
-	svc.SetToolWorkflow(workflow)
+	svc := mustNewTestRagChatService(t, minimalRagChatDeps(), RagChatOptions{
+		ToolWorkflow: workflow,
+	})
 
 	result, err := svc.runToolWorkflowStage(
 		context.Background(),
@@ -941,8 +999,9 @@ func TestRunToolWorkflowStageReturnsWorkflowResult(t *testing.T) {
 			},
 		},
 	}
-	svc := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
-	svc.SetToolWorkflow(workflow)
+	svc := mustNewTestRagChatService(t, minimalRagChatDeps(), RagChatOptions{
+		ToolWorkflow: workflow,
+	})
 
 	history := []convention.ChatMessage{convention.UserMessage("previous")}
 	rewriteResult := ragrewrite.Result{RewrittenQuestion: "rewritten"}
@@ -994,7 +1053,7 @@ func TestRecordToolCallTraceNodes(t *testing.T) {
 	repo := &traceNodeRepoRecorder{}
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	tracer := NewChatTracer(nil, repo)
-	_ = NewRagChatService(nil, nil, nil, nil, nil, nil, nil, tracer)
+	_ = newRagChatService(nil, nil, nil, nil, nil, nil, nil, tracer)
 	tracer.now = func() time.Time { return now }
 
 	tracer.recordToolCallTraceNodes(context.Background(), "trace-1", []ragtool.CallSummary{
@@ -1117,6 +1176,7 @@ func newPrepareChatTestService(
 	rewriteResult ragrewrite.Result,
 	sessionRecall SessionRecallService,
 	retrieve ragretrieve.Service,
+	configure ...func(*RagChatDeps, *RagChatOptions),
 ) (*RagChatService, *domain.ConversationMessage) {
 	t.Helper()
 
@@ -1176,17 +1236,23 @@ func newPrepareChatTestService(
 		retrieve = &retrieveServiceStub{}
 	}
 
-	service := NewRagChatService(
-		conversationService,
-		messageService,
-		memoryServiceStub{},
-		rewriteServiceStub{result: rewriteResult},
-		retrieve,
-		ragprompt.NewService(nil),
-		nil,
-		NewChatTracer(nil, nil),
-	)
-	service.SetSessionRecallService(sessionRecall)
+	deps := RagChatDeps{
+		ConversationService: conversationService,
+		MessageService:      messageService,
+		HistoryService:      memoryServiceStub{},
+		RewriteService:      rewriteServiceStub{result: rewriteResult},
+		RetrieveService:     retrieve,
+		PromptService:       ragprompt.NewService(nil),
+		ChatService:         &llmServiceStub{},
+		Tracer:              NewChatTracer(nil, nil),
+	}
+	opts := RagChatOptions{SessionRecall: sessionRecall}
+	for _, apply := range configure {
+		if apply != nil {
+			apply(&deps, &opts)
+		}
+	}
+	service := mustNewTestRagChatService(t, deps, opts)
 	return service, &createdMessage
 }
 
@@ -1194,8 +1260,9 @@ func TestRunSessionRecallStageUsesRewrittenQuestion(t *testing.T) {
 	recall := &sessionRecallServiceStub{
 		result: SessionRecallResult{Used: true, Context: "ctx"},
 	}
-	service := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, NewChatTracer(nil, nil))
-	service.SetSessionRecallService(recall)
+	service := mustNewTestRagChatService(t, minimalRagChatDeps(), RagChatOptions{
+		SessionRecall: recall,
+	})
 
 	result, err := service.runSessionRecallStage(
 		context.Background(),
@@ -1225,20 +1292,29 @@ func TestRunSessionRecallStageUsesRewrittenQuestion(t *testing.T) {
 func TestRunSessionRecallStageTraceContainsSelectedHits(t *testing.T) {
 	repo := &traceNodeRepoRecorder{}
 	tracer := NewChatTracer(nil, repo)
-	service := NewRagChatService(nil, nil, nil, nil, nil, nil, nil, tracer)
-	service.SetSessionRecallService(&sessionRecallServiceStub{
-		result: SessionRecallResult{
-			Used:                   true,
-			TopScore:               0.91,
-			candidateCount:         4,
-			skippedPerMessageLimit: 1,
-			truncatedBy:            "max_prompt_tokens",
-			Hits: []SessionRecallHit{
-				{
-					MessageID:     "msg-previous",
-					ChunkIndex:    2,
-					Score:         0.91,
-					SourceChunkID: "chunk-2",
+	service := mustNewTestRagChatService(t, RagChatDeps{
+		ConversationService: &ConversationService{},
+		MessageService:      &ConversationMessageService{},
+		HistoryService:      memoryServiceStub{},
+		RetrieveService:     &retrieveServiceStub{},
+		PromptService:       ragprompt.NewService(nil),
+		ChatService:         &llmServiceStub{},
+		Tracer:              tracer,
+	}, RagChatOptions{
+		SessionRecall: &sessionRecallServiceStub{
+			result: SessionRecallResult{
+				Used:                   true,
+				TopScore:               0.91,
+				candidateCount:         4,
+				skippedPerMessageLimit: 1,
+				truncatedBy:            "max_prompt_tokens",
+				Hits: []SessionRecallHit{
+					{
+						MessageID:     "msg-previous",
+						ChunkIndex:    2,
+						Score:         0.91,
+						SourceChunkID: "chunk-2",
+					},
 				},
 			},
 		},
@@ -1302,8 +1378,10 @@ func TestPrepareChatLongTermMemoryFailsOpen(t *testing.T) {
 		ragrewrite.Result{RewrittenQuestion: "rewritten", NeedRetrieval: false},
 		nil,
 		&retrieveServiceStub{},
+		func(deps *RagChatDeps, opts *RagChatOptions) {
+			opts.LongTermMemoryRecall = explicitMemory.RecallService()
+		},
 	)
-	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
 
 	prepared, err := service.prepareChat(context.Background(), RagChatInput{
 		ConversationID: "conv-1",
@@ -1372,8 +1450,10 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 		},
 		nil,
 		&retrieveServiceStub{},
+		func(_ *RagChatDeps, opts *RagChatOptions) {
+			opts.LongTermMemoryRecall = explicitMemory.RecallService()
+		},
 	)
-	service.SetLongTermMemoryRecallService(explicitMemory.RecallService())
 
 	prepared, err := service.prepareChat(context.Background(), RagChatInput{
 		ConversationID:   "conv-1",
@@ -1521,27 +1601,28 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 		Estimator:            fixedTokenEstimator{factor: 4},
 	})
 
-	service := NewRagChatService(
-		conversationService,
-		messageService,
-		memoryServiceStub{
+	service := mustNewTestRagChatService(t, RagChatDeps{
+		ConversationService: conversationService,
+		MessageService:      messageService,
+		HistoryService: memoryServiceStub{
 			history: []convention.ChatMessage{
 				convention.UserMessage(previousMessage.Content),
 			},
 		},
-		rewriteServiceStub{
+		RewriteService: rewriteServiceStub{
 			result: ragrewrite.Result{
 				RewrittenQuestion: "What was the web-search provider in the earlier config?",
 				SubQuestions:      []string{"public website access policy", "network access constraint"},
 				NeedRetrieval:     false,
 			},
 		},
-		&retrieveServiceStub{},
-		ragprompt.NewService(nil),
-		nil,
-		NewChatTracer(nil, nil),
-	)
-	service.SetSessionRecallService(recallService)
+		RetrieveService: &retrieveServiceStub{},
+		PromptService:   ragprompt.NewService(nil),
+		ChatService:     &llmServiceStub{},
+		Tracer:          NewChatTracer(nil, nil),
+	}, RagChatOptions{
+		SessionRecall: recallService,
+	})
 
 	prepared, err := service.prepareChat(context.Background(), RagChatInput{
 		ConversationID: "conv-1",
@@ -1664,7 +1745,7 @@ func TestRagChatServiceChatTriggersFallbackGuard(t *testing.T) {
 			callback.OnComplete()
 		},
 	}
-	service.SetConfidenceThreshold(0.8)
+	service.confidenceThreshold = 0.8
 
 	sink := &fallbackSinkStub{}
 	err := service.Chat(context.Background(), RagChatInput{

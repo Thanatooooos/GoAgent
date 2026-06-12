@@ -1,11 +1,17 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: paradedb/paradedb:pg16
     container_name: goagent-postgres
     environment:
       POSTGRES_DB: ragent
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_search
+      - -c
+      - pg_search.maintenance_work_mem=64MB
     ports:
       - "5432:5432"
     volumes:

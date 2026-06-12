@@ -10,6 +10,7 @@ type Result struct {
 	RewrittenQuestion string
 	SubQuestions      []string
 	NeedRetrieval     bool
+	Metadata          map[string]any
 }
 
 type Service interface {

@@ -2,7 +2,10 @@ import { create } from "zustand";
 import { toast } from "sonner";
 
 import type {
+  AgentOutcomePayload,
+  AgentServiceErrorPayload,
   AgentThinkPayload,
+  ApprovalPendingPayload,
   CompletionPayload,
   FallbackPayload,
   FeedbackValue,
@@ -19,7 +22,19 @@ import {
   deleteSession as deleteSessionRequest,
   renameSession as renameSessionRequest
 } from "@/services/sessionService";
-import { stopTask, submitFeedback } from "@/services/chatService";
+import { getPendingApproval, stopTask, submitFeedback } from "@/services/chatService";
+import {
+  applyAgentServiceErrorToStreamingMessage,
+  applyPendingApprovalToStreamingMessage,
+  computeThinkingDuration,
+  logChatDebug,
+  mapPersistedChatMessage,
+  mergePendingApprovalMessage,
+  normalizeToolCallPayload,
+  readActiveSessionId,
+  upsertSession,
+  writeActiveSessionId,
+} from "@/stores/chatStateModel";
 import { buildQuery } from "@/utils/helpers";
 import { createStreamResponse } from "@/hooks/useStreamResponse";
 import { storage } from "@/utils/storage";
@@ -58,95 +73,8 @@ interface ChatState {
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
 }
 
-function readLooseToolCallField<T = unknown>(
-  payload: Record<string, unknown>,
-  camel: string,
-  pascal: string
-): T | undefined {
-  const camelValue = payload[camel];
-  if (camelValue !== undefined) {
-    return camelValue as T;
-  }
-  const pascalValue = payload[pascal];
-  if (pascalValue !== undefined) {
-    return pascalValue as T;
-  }
-  return undefined;
-}
-
-function normalizeToolCallPayload(call: ToolCallPayload | Record<string, unknown>): ToolCallPayload {
-  const payload = call as Record<string, unknown>;
-  return {
-    callId: (readLooseToolCallField<string>(payload, "callId", "CallID") || "").trim() || undefined,
-    round: readLooseToolCallField<number>(payload, "round", "Round"),
-    sequence: readLooseToolCallField<number>(payload, "sequence", "Sequence"),
-    name: (readLooseToolCallField<string>(payload, "name", "Name") || "").trim(),
-    status: (readLooseToolCallField<string>(payload, "status", "Status") || "").trim(),
-    summary: (readLooseToolCallField<string>(payload, "summary", "Summary") || "").trim() || undefined,
-    durationMs: readLooseToolCallField<number>(payload, "durationMs", "DurationMs"),
-    arguments: readLooseToolCallField<Record<string, unknown>>(payload, "arguments", "Arguments"),
-    data: readLooseToolCallField<Record<string, unknown>>(payload, "data", "Data")
-  };
-}
-
-const ACTIVE_SESSION_STORAGE_KEY = "chat.activeSessionId";
-
-function readActiveSessionId() {
-  if (typeof window === "undefined") return null;
-  const value = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
-  return value?.trim() || null;
-}
-
-function writeActiveSessionId(sessionId?: string | null) {
-  if (typeof window === "undefined") return;
-  const value = sessionId?.trim();
-  if (!value) {
-    window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, value);
-}
 
 // logChatDebug 输出会话续接排查日志。
-function logChatDebug(event: string, payload: Record<string, unknown>) {
-  console.info(`[chat-debug] ${event}`, payload);
-}
-
-function mapVoteToFeedback(vote?: number | null): FeedbackValue {
-  if (vote === 1) return "like";
-  if (vote === -1) return "dislike";
-  return null;
-}
-
-function upsertSession(sessions: Session[], next: Session) {
-  const index = sessions.findIndex((session) => session.id === next.id);
-  const updated = [...sessions];
-  if (index >= 0) {
-    updated[index] = { ...sessions[index], ...next };
-  } else {
-    updated.unshift(next);
-  }
-  return updated.sort((a, b) => {
-    const timeA = a.lastTime ? new Date(a.lastTime).getTime() : 0;
-    const timeB = b.lastTime ? new Date(b.lastTime).getTime() : 0;
-    return timeB - timeA;
-  });
-}
-
-function computeThinkingDuration(startAt?: number | null) {
-  if (!startAt) return undefined;
-  const seconds = Math.round((Date.now() - startAt) / 1000);
-  return Math.max(1, seconds);
-}
-
-function normalizeRetrievalMode(value?: string | null) {
-  const mode = value?.trim().toLowerCase();
-  if (mode === "semantic" || mode === "keyword" || mode === "hybrid" || mode === "auto") {
-    return mode;
-  }
-  return undefined;
-}
-
 function retrievalModeLabel(mode?: string) {
   switch (mode) {
     case "semantic":
@@ -326,22 +254,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
     writeActiveSessionId(sessionId);
     try {
-      const data = await listMessages(sessionId);
+      const [data, pendingState] = await Promise.all([
+        listMessages(sessionId),
+        getPendingApproval(sessionId).catch(() => null)
+      ]);
       if (get().currentSessionId !== sessionId) {
         return;
       }
-      const mapped: Message[] = data.map((item) => ({
-        id: String(item.id),
-        role: item.role === "assistant" ? "assistant" : "user",
-        content: item.content,
-        thinking: item.thinkingContent || undefined,
-        thinkingDuration: item.thinkingDuration || undefined,
-        isDeepThinking: Boolean(item.thinkingContent),
-        createdAt: item.createTime,
-        feedback: mapVoteToFeedback(item.vote),
-        status: "done"
-      }));
-      set({ messages: mapped });
+      const mapped: Message[] = data.map(mapPersistedChatMessage);
+      const messages = pendingState?.pending && pendingState.approval
+        ? mergePendingApprovalMessage(mapped, pendingState.approval)
+        : mapped;
+      set({ messages });
     } catch (error) {
       toast.error((error as Error).message || "加载消息失败");
     } finally {
@@ -485,6 +409,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 }
               : message
           )
+        }));
+      },
+      onAgentOutcome: (payload: AgentOutcomePayload) => {
+        if (get().streamingMessageId !== assistantId) return;
+        if (!payload || typeof payload !== "object") return;
+        set((state) => ({
+          messages: state.messages.map((message) => (
+            message.id === state.streamingMessageId ? { ...message, agentOutcome: payload } : message
+          ))
+        }));
+      },
+      onApprovalPending: (payload: ApprovalPendingPayload) => {
+        if (get().streamingMessageId !== assistantId) return;
+        if (!payload || typeof payload !== "object") return;
+        set((state) => ({
+          messages: applyPendingApprovalToStreamingMessage(state.messages, state.streamingMessageId, payload, state.thinkingStartAt)
+        }));
+      },
+      onAgentServiceError: (payload: AgentServiceErrorPayload) => {
+        if (get().streamingMessageId !== assistantId) return;
+        if (!payload || typeof payload !== "object") return;
+        set((state) => ({
+          messages: applyAgentServiceErrorToStreamingMessage(state.messages, state.streamingMessageId, payload, state.thinkingStartAt)
         }));
       },
       onMessage: (payload: MessageDeltaPayload) => {

@@ -1,6 +1,8 @@
 package rag
 
 import (
+	"strings"
+
 	"local/rag-project/internal/adapter/repository/postgres/rag/models"
 	"local/rag-project/internal/app/rag/domain"
 )
@@ -64,26 +66,46 @@ func toConversationMessageDomain(item models.ConversationMessageModel) domain.Co
 }
 
 func toConversationSummaryModel(item domain.ConversationSummary) models.ConversationSummaryModel {
+	summaryVersion := item.SummaryVersion
+	if summaryVersion <= 0 {
+		summaryVersion = domain.SummaryVersionV1
+	}
+	qualityStatus := strings.TrimSpace(item.QualityStatus)
+	if qualityStatus == "" {
+		qualityStatus = domain.SummaryQualityUnchecked
+	}
 	return models.ConversationSummaryModel{
-		ID:             item.ID,
-		ConversationID: item.ConversationID,
-		UserID:         item.UserID,
-		LastMessageID:  item.LastMessageID,
-		Content:        item.Content,
-		CreateTime:     item.CreateTime,
-		UpdateTime:     item.UpdateTime,
+		ID:                   item.ID,
+		ConversationID:       item.ConversationID,
+		UserID:               item.UserID,
+		LastMessageID:        item.LastMessageID,
+		Content:              item.Content,
+		SummaryVersion:       summaryVersion,
+		CoveredFromMessageID: item.CoveredFromMessageID,
+		CoveredToMessageID:   item.CoveredToMessageID,
+		SourceMessageCount:   item.SourceMessageCount,
+		QualityStatus:        qualityStatus,
+		LastRebuildReason:    item.LastRebuildReason,
+		CreateTime:           item.CreateTime,
+		UpdateTime:           item.UpdateTime,
 	}
 }
 
 func toConversationSummaryDomain(item models.ConversationSummaryModel) domain.ConversationSummary {
 	return domain.ConversationSummary{
-		ID:             item.ID,
-		ConversationID: item.ConversationID,
-		UserID:         item.UserID,
-		LastMessageID:  item.LastMessageID,
-		Content:        item.Content,
-		CreateTime:     item.CreateTime,
-		UpdateTime:     item.UpdateTime,
+		ID:                   item.ID,
+		ConversationID:       item.ConversationID,
+		UserID:               item.UserID,
+		LastMessageID:        item.LastMessageID,
+		Content:              item.Content,
+		SummaryVersion:       item.SummaryVersion,
+		CoveredFromMessageID: item.CoveredFromMessageID,
+		CoveredToMessageID:   item.CoveredToMessageID,
+		SourceMessageCount:   item.SourceMessageCount,
+		QualityStatus:        item.QualityStatus,
+		LastRebuildReason:    item.LastRebuildReason,
+		CreateTime:           item.CreateTime,
+		UpdateTime:           item.UpdateTime,
 	}
 }
 

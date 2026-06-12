@@ -1,6 +1,7 @@
 import * as React from "react";
 import { AlertCircle, Brain, CheckCircle2, ChevronDown, Database, History, Wrench, XCircle } from "lucide-react";
 
+import { ApprovalPendingCard } from "@/components/chat/ApprovalPendingCard";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
@@ -17,13 +18,16 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const showFeedback =
     message.role === "assistant" &&
     message.status !== "streaming" &&
+    message.status !== "awaiting_approval" &&
     message.id &&
-    !message.id.startsWith("assistant-");
+    !message.id.startsWith("assistant-") &&
+    !message.approvalPending;
   const isThinking = Boolean(message.isThinking);
   const [thinkingExpanded, setThinkingExpanded] = React.useState(false);
   const [toolsExpanded, setToolsExpanded] = React.useState(false);
   const hasThinking = Boolean(message.thinking && message.thinking.trim().length > 0);
   const hasContent = message.content.trim().length > 0;
+  const hasApprovalPending = Boolean(message.approvalPending?.required);
   const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
   const toolCalls = message.toolCalls ?? [];
   const memoryEvents = message.memoryEvents ?? [];
@@ -278,6 +282,8 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
         ) : null}
 
         <div className="space-y-2">
+          {hasApprovalPending ? <ApprovalPendingCard approval={message.approvalPending!} /> : null}
+
           {fallbackReason ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
               <span className="font-medium">已回退到通用模型：</span>

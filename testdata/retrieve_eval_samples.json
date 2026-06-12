@@ -1,60 +1,311 @@
 {
   "samples": [
     {
-      "name": "file name chunk lookup",
+      "name": "alias_pg_connection",
+      "query": "pg 连接超时怎么处理",
+      "tags": ["alias", "keyword", "rewrite"],
+      "target": "chunk",
+      "expectedIds": ["chunk-pg-conn-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-noise-1", "documentId": "doc-noise", "score": 0.55},
+        {"chunkId": "chunk-pg-conn-1", "documentId": "doc-pg", "score": 0.92}
+      ]
+    },
+    {
+      "name": "alias_es_health",
+      "query": "es 集群健康检查命令",
+      "tags": ["alias", "keyword"],
+      "target": "chunk",
+      "expectedIds": ["chunk-es-health-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-es-health-1", "documentId": "doc-es", "score": 0.94},
+        {"chunkId": "chunk-es-health-2", "documentId": "doc-es", "score": 0.71}
+      ]
+    },
+    {
+      "name": "alias_vector_db_chinese",
+      "query": "向量库如何扩容",
+      "tags": ["alias", "semantic", "rewrite"],
+      "target": "chunk",
+      "expectedIds": ["chunk-vector-scale-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-wrong-scale", "documentId": "doc-other", "score": 0.68},
+        {"chunkId": "chunk-vector-scale-1", "documentId": "doc-vector", "score": 0.89}
+      ]
+    },
+    {
+      "name": "alias_rag_abbreviation",
+      "query": "RAG 是啥",
+      "tags": ["alias", "colloquial", "semantic"],
+      "target": "document",
+      "expectedIds": ["doc-rag-intro"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-rag-1", "documentId": "doc-rag-intro", "score": 0.93},
+        {"chunkId": "chunk-history-1", "documentId": "doc-history", "score": 0.61}
+      ]
+    },
+    {
+      "name": "diagnosis_doc_failure",
+      "query": "doc_fail_01 为什么导入失败",
+      "tags": ["diagnosis", "keyword"],
+      "target": "chunk",
+      "expectedIds": ["chunk-doc-fail-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-doc-fail-1", "documentId": "doc_fail_01", "score": 0.96},
+        {"chunkId": "chunk-doc-fail-2", "documentId": "doc_fail_01", "score": 0.74}
+      ]
+    },
+    {
+      "name": "diagnosis_task_failure",
+      "query": "task_run_01 最近一次执行失败原因",
+      "tags": ["diagnosis", "multi_condition"],
+      "target": "chunk",
+      "expectedIds": ["chunk-task-fail-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-task-other", "documentId": "doc-task", "score": 0.70},
+        {"chunkId": "chunk-task-fail-1", "documentId": "task_run_01", "score": 0.91}
+      ]
+    },
+    {
+      "name": "diagnosis_trace_root_cause",
+      "query": "trace_bad_01 根因是什么",
+      "tags": ["diagnosis", "keyword"],
+      "target": "chunk",
+      "expectedIds": ["chunk-trace-root-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-trace-root-1", "documentId": "trace_bad_01", "score": 0.95},
+        {"chunkId": "chunk-trace-noise", "documentId": "doc-trace", "score": 0.58}
+      ]
+    },
+    {
+      "name": "diagnosis_latest_import_failure",
+      "query": "最近一次导入失败是什么原因",
+      "tags": ["diagnosis", "colloquial", "rewrite"],
+      "target": "chunk",
+      "expectedIds": ["chunk-import-fail-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-import-fail-1", "documentId": "doc-ingestion", "score": 0.88},
+        {"chunkId": "chunk-import-fail-2", "documentId": "doc-ingestion", "score": 0.76}
+      ]
+    },
+    {
+      "name": "metadata_file_name_lookup",
       "query": "查找文件名是 trace_handlers.go 的实现",
-      "tags": ["keyword", "file_name", "metadata_title"],
+      "tags": ["metadata", "keyword", "file_name"],
       "target": "chunk",
       "expectedIds": ["chunk-trace-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "keyword",
+      "topK": 5,
       "retrieved": [
-        {
-          "chunkId": "chunk-trace-1",
-          "documentId": "doc-trace",
-          "score": 0.98
-        },
-        {
-          "chunkId": "chunk-trace-2",
-          "documentId": "doc-trace",
-          "score": 0.72
-        }
+        {"chunkId": "chunk-trace-1", "documentId": "doc-trace", "score": 0.98},
+        {"chunkId": "chunk-trace-2", "documentId": "doc-trace", "score": 0.72}
       ]
     },
     {
-      "name": "chapter title document lookup",
+      "name": "metadata_section_title_lookup",
       "query": "搜索章节标题包含 概述 的文档",
-      "tags": ["keyword", "section", "metadata_title"],
+      "tags": ["metadata", "keyword", "section"],
       "target": "document",
       "expectedIds": ["doc-architecture"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "keyword",
+      "topK": 5,
       "retrieved": [
-        {
-          "chunkId": "chunk-overview-1",
-          "documentId": "doc-architecture",
-          "score": 0.91
-        },
-        {
-          "chunkId": "chunk-other-1",
-          "documentId": "doc-other",
-          "score": 0.65
-        }
+        {"chunkId": "chunk-overview-1", "documentId": "doc-architecture", "score": 0.91},
+        {"chunkId": "chunk-other-1", "documentId": "doc-other", "score": 0.65}
       ]
     },
     {
-      "name": "semantic concept question",
+      "name": "metadata_document_title",
+      "query": "标题为 部署指南 的文档在哪里",
+      "tags": ["metadata", "keyword"],
+      "target": "document",
+      "expectedIds": ["doc-deploy-guide"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-deploy-1", "documentId": "doc-deploy-guide", "score": 0.90},
+        {"chunkId": "chunk-deploy-2", "documentId": "doc-deploy-guide", "score": 0.82}
+      ]
+    },
+    {
+      "name": "metadata_source_file_config",
+      "query": "source file application.yaml 配置项说明",
+      "tags": ["metadata", "keyword"],
+      "target": "source_file_name",
+      "expectedIds": ["application.yaml"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-config-1", "documentId": "doc-config", "metadata": {"source_file_name": "other.yaml"}, "score": 0.60},
+        {"chunkId": "chunk-config-2", "documentId": "doc-config", "metadata": {"source_file_name": "application.yaml"}, "score": 0.93}
+      ]
+    },
+    {
+      "name": "coreference_rag_applications",
+      "query": "RAG 是什么，它有哪些应用场景",
+      "tags": ["coreference", "semantic", "multi_condition"],
+      "target": "document",
+      "expectedIds": ["doc-rag-intro"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-wrong-1", "documentId": "doc-history", "score": 0.82},
+        {"chunkId": "chunk-rag-1", "documentId": "doc-rag-intro", "score": 0.80}
+      ]
+    },
+    {
+      "name": "coreference_document_chunk_count",
+      "query": "这个文档有多少个 chunk",
+      "tags": ["coreference", "metadata"],
+      "target": "chunk",
+      "expectedIds": ["chunk-doc-stats-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-doc-stats-1", "documentId": "doc-stats", "score": 0.87},
+        {"chunkId": "chunk-doc-stats-2", "documentId": "doc-stats", "score": 0.71}
+      ]
+    },
+    {
+      "name": "multi_condition_doc_http_error",
+      "query": "doc_fail_01 最近三天返回 500 错误",
+      "tags": ["multi_condition", "diagnosis", "keyword"],
+      "target": "chunk",
+      "expectedIds": ["chunk-doc-http-500"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-doc-http-500", "documentId": "doc_fail_01", "score": 0.92},
+        {"chunkId": "chunk-doc-http-noise", "documentId": "doc_fail_01", "score": 0.64}
+      ]
+    },
+    {
+      "name": "multi_condition_pg_pool_timeout",
+      "query": "PostgreSQL 连接超时且连接池已满",
+      "tags": ["multi_condition", "alias", "semantic"],
+      "target": "chunk",
+      "expectedIds": ["chunk-pg-pool-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-pg-pool-noise", "documentId": "doc-pg", "score": 0.59},
+        {"chunkId": "chunk-pg-pool-1", "documentId": "doc-pg", "score": 0.90}
+      ]
+    },
+    {
+      "name": "keyword_bm25_exact_match",
+      "query": "HNSW index ef_construction 参数",
+      "tags": ["keyword", "semantic"],
+      "target": "chunk",
+      "expectedIds": ["chunk-hnsw-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-hnsw-1", "documentId": "doc-vector", "score": 0.97},
+        {"chunkId": "chunk-hnsw-2", "documentId": "doc-vector", "score": 0.73}
+      ]
+    },
+    {
+      "name": "keyword_error_code_lookup",
+      "query": "ERR_CONN_REFUSED 怎么处理",
+      "tags": ["keyword", "diagnosis"],
+      "target": "chunk",
+      "expectedIds": ["chunk-err-conn-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-err-conn-1", "documentId": "doc-errors", "score": 0.94},
+        {"chunkId": "chunk-err-other", "documentId": "doc-errors", "score": 0.62}
+      ]
+    },
+    {
+      "name": "semantic_rag_concept",
       "query": "什么是 RAG 检索增强生成",
       "tags": ["semantic", "concept"],
       "target": "document",
       "expectedIds": ["doc-rag-intro"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "semantic",
+      "topK": 5,
       "retrieved": [
-        {
-          "chunkId": "chunk-wrong-1",
-          "documentId": "doc-history",
-          "score": 0.82
-        },
-        {
-          "chunkId": "chunk-rag-1",
-          "documentId": "doc-rag-intro",
-          "score": 0.80
-        }
+        {"chunkId": "chunk-wrong-1", "documentId": "doc-history", "score": 0.82},
+        {"chunkId": "chunk-rag-1", "documentId": "doc-rag-intro", "score": 0.80}
+      ]
+    },
+    {
+      "name": "semantic_vector_search_principle",
+      "query": "向量检索的基本原理是什么",
+      "tags": ["semantic", "concept"],
+      "target": "chunk",
+      "expectedIds": ["chunk-vector-principle-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "semantic",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-vector-principle-1", "documentId": "doc-vector", "score": 0.91},
+        {"chunkId": "chunk-vector-principle-2", "documentId": "doc-vector", "score": 0.77}
+      ]
+    },
+    {
+      "name": "colloquial_doc_failure_why",
+      "query": "doc_fail_01 咋回事啊",
+      "tags": ["colloquial", "diagnosis", "rewrite"],
+      "target": "chunk",
+      "expectedIds": ["chunk-doc-fail-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-doc-fail-1", "documentId": "doc_fail_01", "score": 0.90},
+        {"chunkId": "chunk-doc-fail-3", "documentId": "doc_fail_01", "score": 0.68}
+      ]
+    },
+    {
+      "name": "rewrite_pg_cannot_connect",
+      "query": "pg 连不上怎么办",
+      "tags": ["alias", "colloquial", "rewrite"],
+      "target": "chunk",
+      "expectedIds": ["chunk-pg-conn-1"],
+      "knowledgeBaseIds": ["kb_eval"],
+      "searchMode": "hybrid",
+      "topK": 5,
+      "retrieved": [
+        {"chunkId": "chunk-pg-conn-1", "documentId": "doc-pg", "score": 0.93},
+        {"chunkId": "chunk-pg-conn-2", "documentId": "doc-pg", "score": 0.70}
       ]
     }
   ]

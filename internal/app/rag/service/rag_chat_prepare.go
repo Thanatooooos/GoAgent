@@ -61,6 +61,13 @@ func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (r
 	if err != nil {
 		return ragChatPreparedState{}, err
 	}
+	ctx = enrichRagChatLogContext(
+		ctx,
+		runtimeStage.state.traceID,
+		conversationStage.conversationID,
+		input.UserID,
+		runtimeStage.state.meta.TaskID,
+	)
 
 	rewriteStage, err := s.runRewriteStage(ctx, input.Question, memoryStage.history, runtimeStage.state.traceID)
 	if err != nil {
@@ -69,19 +76,13 @@ func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (r
 
 	longTermMemoryStage, err := s.runLongTermMemoryStage(ctx, input, rewriteStage.result, runtimeStage.state.traceID)
 	if err != nil {
-		log.Warnf("rag chat long-term memory stage failed open: userID=%s traceID=%s err=%v", strings.TrimSpace(input.UserID), runtimeStage.state.traceID, err)
+		log.FromContext(ctx).Warnw("rag chat long-term memory stage failed open", "error", err)
 		longTermMemoryStage = ragChatLongTermMemoryStageResult{}
 	}
 
 	sessionRecallStage, err := s.runSessionRecallStage(ctx, conversationStage.conversationID, input, userMessageStage.message.ID, rewriteStage.result, runtimeStage.state.traceID)
 	if err != nil {
-		log.Warnf(
-			"rag chat session recall stage failed open: conversationID=%s userID=%s traceID=%s err=%v",
-			conversationStage.conversationID,
-			strings.TrimSpace(input.UserID),
-			runtimeStage.state.traceID,
-			err,
-		)
+		log.FromContext(ctx).Warnw("rag chat session recall stage failed open", "error", err)
 		sessionRecallStage = ragChatSessionRecallStageResult{}
 	}
 

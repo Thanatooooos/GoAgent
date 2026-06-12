@@ -81,6 +81,7 @@ type ragChatToolStageResult struct {
 
 type ragChatPromptStageResult struct {
 	messages []convention.ChatMessage
+	budget   ChatContextBudgetResult
 }
 
 type ragChatPreparedState struct {

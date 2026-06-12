@@ -278,14 +278,6 @@ func lexicalSearchConfig() *config.RagMetadataTitleSearchChannelConfig {
 	return &cfg.Rag.Search.Channels.MetadataTitle
 }
 
-func lexicalKeywordFallbackEnabled() bool {
-	cfg := config.Get()
-	if cfg == nil || cfg.Rag.Search.Channels.Keyword.EnabledFallbackTrgm == nil {
-		return true
-	}
-	return *cfg.Rag.Search.Channels.Keyword.EnabledFallbackTrgm
-}
-
 func lexicalMetadataFallbackEnabled() bool {
 	cfg := config.Get()
 	if cfg == nil || cfg.Rag.Search.Channels.MetadataTitle.EnabledFallbackTrgm == nil {

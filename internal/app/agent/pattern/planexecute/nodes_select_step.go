@@ -44,6 +44,9 @@ func newSelectStepNode() (agentkernel.Node, error) {
 				RequestedAt: &requestedAt,
 			}
 		}
+		if index >= 0 {
+			logStepSelected(session, plan.Steps[index], branch, reason)
+		}
 		return agentruntime.NodeResult{
 			Delta: agentstate.StateDelta{
 				Plan: &agentstate.PlanDelta{

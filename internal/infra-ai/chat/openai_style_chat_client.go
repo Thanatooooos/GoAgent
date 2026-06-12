@@ -30,8 +30,15 @@ type OpenAIStyleChatClient struct {
 	parseStream   func(line string, reasoningEnabled bool) (ParsedEvent, error)
 }
 
+type openAIStyleUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 type openAIStyleChatResponse struct {
 	Choices []openAIStyleChatChoice `json:"choices"`
+	Usage   *openAIStyleUsage       `json:"usage"`
 }
 
 type openAIStyleChatChoice struct {
@@ -165,24 +172,29 @@ func (op *OpenAIStyleChatClient) extractContent(resp openAIStyleChatResponse) (s
 }
 
 func (op *OpenAIStyleChatClient) Chat(req convention.ChatRequest, target model.ModelTarget) (string, error) {
+	content, _, err := op.ChatWithUsage(req, target)
+	return content, err
+}
+
+func (op *OpenAIStyleChatClient) ChatWithUsage(req convention.ChatRequest, target model.ModelTarget) (string, TokenUsage, error) {
 	if err := op.validateRequest(req, target); err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
 	body, err := op.marshalRequestBody(req, target, false)
 	if err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
 	httpReq, err := op.newRequest(context.Background(), target, body, aihttp.MediaTypeJSON)
 	if err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
 	client := op.effectiveHTTPClient(false)
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return "", aihttp.NewModelClientException(
+		return "", TokenUsage{}, aihttp.NewModelClientException(
 			fmt.Sprintf("%s chat request failed", op.provider),
 			aihttp.ErrorTypeNetworkError,
 			0,
@@ -191,15 +203,30 @@ func (op *OpenAIStyleChatClient) Chat(req convention.ChatRequest, target model.M
 	}
 
 	if err := op.respHelper.CheckResponse(resp, op.provider); err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
 	var result openAIStyleChatResponse
 	if err := op.respHelper.ParseJSON(resp.Body, op.provider, &result); err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
-	return op.extractContent(result)
+	content, err := op.extractContent(result)
+	if err != nil {
+		return "", TokenUsage{}, err
+	}
+	return content, extractOpenAIStyleUsage(result.Usage), nil
+}
+
+func extractOpenAIStyleUsage(usage *openAIStyleUsage) TokenUsage {
+	if usage == nil {
+		return TokenUsage{}
+	}
+	return TokenUsage{
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+	}.Normalized()
 }
 
 func (op *OpenAIStyleChatClient) StreamChat(req convention.ChatRequest, callback StreamCallback, target model.ModelTarget) (StreamCancellationHandle, error) {

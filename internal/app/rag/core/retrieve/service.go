@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	corevector "local/rag-project/internal/app/rag/core/vector"
 	"local/rag-project/internal/framework/convention"
@@ -35,6 +36,7 @@ type Result struct {
 	KnowledgeContext string
 	SearchChannels   []string
 	ChannelStats     []ChannelStat
+	ChannelRetrieved map[string][]convention.RetrievedChunk
 }
 
 type Service interface {
@@ -114,6 +116,7 @@ func (e *Engine) Retrieve(ctx context.Context, request Request) (Result, error) 
 		KnowledgeContext: BuildKnowledgeContext(chunks),
 		SearchChannels:   collectSearchChannels(channelResults),
 		ChannelStats:     collectChannelStats(channelResults),
+		ChannelRetrieved: collectChannelRetrieved(channelResults),
 	}, nil
 }
 
@@ -162,36 +165,66 @@ func (e *Engine) RetrieveByVector(ctx context.Context, vector []float32, request
 				ChunkCount: len(chunks),
 			},
 		},
+		ChannelRetrieved: map[string][]convention.RetrievedChunk{
+			ChannelVectorGlobal: append([]convention.RetrievedChunk(nil), chunks...),
+		},
 	}, nil
 }
 
+type channelExecutionResult struct {
+	result SearchChannelResult
+	err    error
+	ok     bool
+}
+
 func (e *Engine) executeChannels(ctx context.Context, searchCtx SearchContext) ([]SearchChannelResult, error) {
-	results := make([]SearchChannelResult, 0, len(e.channels))
+	enabled := make([]SearchChannel, 0, len(e.channels))
+	for _, channel := range e.channels {
+		if channel != nil && channel.Enabled(searchCtx) {
+			enabled = append(enabled, channel)
+		}
+	}
+	if len(enabled) == 0 {
+		return nil, fmt.Errorf("no search channels enabled")
+	}
+
+	slots := make([]channelExecutionResult, len(enabled))
+	var wg sync.WaitGroup
+	for i, channel := range enabled {
+		i, channel := i, channel
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result, err := channel.Search(ctx, searchCtx)
+			if err != nil {
+				slots[i] = channelExecutionResult{
+					result: SearchChannelResult{
+						ChannelName: channel.Name(),
+						Error:       err.Error(),
+						Metadata: map[string]any{
+							"status": "failed",
+						},
+					},
+					err: err,
+				}
+				return
+			}
+			slots[i] = channelExecutionResult{result: result, ok: true}
+		}()
+	}
+	wg.Wait()
+
+	results := make([]SearchChannelResult, 0, len(slots))
 	successCount := 0
 	var firstErr error
-	for _, channel := range e.channels {
-		if channel == nil || !channel.Enabled(searchCtx) {
-			continue
+	for i, slot := range slots {
+		if slot.err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("search channel %s: %w", enabled[i].Name(), slot.err)
 		}
-		result, err := channel.Search(ctx, searchCtx)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("search channel %s: %w", channel.Name(), err)
-			}
-			results = append(results, SearchChannelResult{
-				ChannelName: channel.Name(),
-				Error:       err.Error(),
-				Metadata: map[string]any{
-					"status": "failed",
-				},
-			})
-			continue
+		if slot.ok {
+			successCount++
 		}
-		results = append(results, result)
-		successCount++
-	}
-	if len(results) == 0 {
-		return nil, fmt.Errorf("no search channels enabled")
+		results = append(results, slot.result)
 	}
 	if successCount == 0 && firstErr != nil {
 		return nil, firstErr

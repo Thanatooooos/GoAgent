@@ -42,6 +42,12 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Rag.Agent.Chat.Mode != "always" {
 		t.Fatalf("unexpected rag.agent.chat.mode: %q", cfg.Rag.Agent.Chat.Mode)
 	}
+	if cfg.Rag.Agent.RuntimePersistence.Enabled {
+		t.Fatal("expected rag.agent.runtime-persistence.enabled to default to false")
+	}
+	if cfg.Rag.Agent.RuntimePersistence.Dir != ".agent-runtime" {
+		t.Fatalf("unexpected rag.agent.runtime-persistence.dir: %q", cfg.Rag.Agent.RuntimePersistence.Dir)
+	}
 	if !cfg.Rag.Retrieve.ParallelSubquestions.Enabled {
 		t.Fatal("expected rag.retrieve.parallel-subquestions.enabled to default to true")
 	}

@@ -296,6 +296,11 @@ func (t *ChatTracer) recordChatTraceNode(ctx context.Context, traceID string, st
 		"contentLength":  len(strings.TrimSpace(result.content)),
 		"thinkingLength": len(strings.TrimSpace(result.thinking)),
 	}
+	if usageExtra := tokenUsageTraceExtra(result.tokenUsage, result.usageSource); usageExtra != nil {
+		for key, value := range usageExtra {
+			extra[key] = value
+		}
+	}
 	if result.err != nil {
 		extra["error"] = result.err.Error()
 	}

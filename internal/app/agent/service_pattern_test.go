@@ -30,7 +30,7 @@ func TestAssembleCapabilitiesRegistersWorkflowSample(t *testing.T) {
 		}
 	}
 
-	assembledRegistry, bindings, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil)
+	assembledRegistry, bindings, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
 	}
@@ -44,7 +44,7 @@ func TestAssembleCapabilitiesRegistersWorkflowSample(t *testing.T) {
 }
 
 func TestAssembleCapabilitiesRegistersDocumentInvestigationWhenProvided(t *testing.T) {
-	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, stubDocumentInvestigator{})
+	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, stubDocumentInvestigator{}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
 	}
@@ -57,8 +57,52 @@ func TestAssembleCapabilitiesRegistersDocumentInvestigationWhenProvided(t *testi
 	}
 }
 
+func TestAssembleCapabilitiesRegistersThinkByDefault(t *testing.T) {
+	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("assembleCapabilities() error = %v", err)
+	}
+	if _, ok := assembledRegistry.Spec(agentcapability.NameThink); !ok {
+		t.Fatalf("expected think capability to be registered, got %+v", assembledRegistry.Specs())
+	}
+}
+
+func TestAssembleCapabilitiesRegistersDiscoveryWhenProvided(t *testing.T) {
+	assembledRegistry, _, err := assembleCapabilities(
+		&agentsearch.Service{},
+		&agentfetch.Service{},
+		nil,
+		nil,
+		&stubKnowledgeDiscoverer{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("assembleCapabilities() error = %v", err)
+	}
+	if _, ok := assembledRegistry.Spec(agentcapability.NameKnowledgeDiscovery); !ok {
+		t.Fatalf("expected knowledge discovery capability to be registered, got %+v", assembledRegistry.Specs())
+	}
+}
+
+func TestAssembleCapabilitiesRegistersMemoryRecallWhenProvided(t *testing.T) {
+	assembledRegistry, _, err := assembleCapabilities(
+		&agentsearch.Service{},
+		&agentfetch.Service{},
+		nil,
+		nil,
+		nil,
+		&stubMemoryRecaller{},
+	)
+	if err != nil {
+		t.Fatalf("assembleCapabilities() error = %v", err)
+	}
+	if _, ok := assembledRegistry.Spec(agentcapability.NameMemoryRecall); !ok {
+		t.Fatalf("expected memory recall capability to be registered, got %+v", assembledRegistry.Specs())
+	}
+}
+
 func TestAssembleCapabilitiesSkipsOptionalWorkflowWithoutDependency(t *testing.T) {
-	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil)
+	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
 	}
@@ -120,6 +164,59 @@ func TestNewService_PlanExecutePatternRunDetailed(t *testing.T) {
 	}
 	if !strings.Contains(result.Response.Summary, "plan execute evidence from local test server") {
 		t.Fatalf("expected plan-execute response to use local fetched evidence, got %+v", result.Response)
+	}
+}
+
+func TestNewService_DefaultPatternUsesPlanExecute(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>default plan execute evidence</body></html>`))
+	}))
+	defer server.Close()
+
+	service, err := NewService(ServiceOptions{
+		Provider: stubRuntimeProvider{
+			search: func(query string) ([]searchprovider.SearchResult, error) {
+				if query != "default pattern flow" {
+					t.Fatalf("unexpected query: %q", query)
+				}
+				return []searchprovider.SearchResult{
+					{
+						Title:   "Default Plan Execute",
+						URL:     server.URL,
+						Snippet: "default plan execute evidence",
+						Domain:  "example.com",
+					},
+				}, nil
+			},
+		},
+		FetchService: agentfetch.NewService(server.Client()),
+		OutputMode:   agentstate.OutputModeFinalAnswer,
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if service.pattern != PatternPlanExecute {
+		t.Fatalf("expected empty pattern to default to plan-execute, got %q", service.pattern)
+	}
+	if service.runtimeName != runtimeNameForPattern(PatternPlanExecute) {
+		t.Fatalf("expected default runtime to be plan-execute, got %q", service.runtimeName)
+	}
+
+	result, err := service.RunDetailed(context.Background(), Request{
+		Question: "default pattern flow",
+		Options: RequestOptions{
+			OutputMode: agentstate.OutputModeFinalAnswer,
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunDetailed() error = %v", err)
+	}
+	if result.Outcome.Status != RunStatusCompleted {
+		t.Fatalf("expected completed outcome, got %+v", result.Outcome)
+	}
+	if !strings.Contains(result.Response.Summary, "default plan execute evidence") {
+		t.Fatalf("expected default plan-execute response to use fetched evidence, got %+v", result.Response)
 	}
 }
 

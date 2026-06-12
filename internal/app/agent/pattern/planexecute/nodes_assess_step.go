@@ -100,6 +100,7 @@ func newAssessStepNode() (agentkernel.Node, error) {
 		if branch == branchReplan {
 			delta.Context.SearchQuery = stringPtr(normalizeQuery(session))
 		}
+		logStepAssessment(session, currentStep, branch, reason, sufficient, evidenceItems)
 
 		return agentruntime.NodeResult{
 			Delta: delta,

@@ -31,6 +31,7 @@ func RegisterRoutes(
 	r.POST("/rag/v3/memories/:memoryId/expire", handler.ExpireMemory)
 	r.POST("/conversations/messages/:messageId/feedback", handler.SubmitFeedback)
 	r.GET("/rag/v3/chat", handler.Chat)
+	r.GET("/rag/v3/chat/approval/pending", handler.GetPendingApproval)
 	r.POST("/rag/v3/chat/approval/resume", handler.ResumeAfterApproval)
 	r.POST("/rag/v3/stop", handler.StopChat)
 
