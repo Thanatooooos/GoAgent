@@ -58,6 +58,7 @@ func buildConversationServices(buildCtx *buildContext, repos repositoriesBundle)
 			ChatService: aiRuntime.Chat,
 			StartTurns:  cfg.Rag.Memory.SummaryStartTurns,
 			MaxChars:    cfg.Rag.Memory.SummaryMaxChars,
+			Budget:      buildSummaryBudgetOptions(cfg),
 		})
 		if cfg.Rag.Memory.SummaryAsync.Enabled {
 			summaryJobWorker = compressible.EnableAsyncSummaryJobs(32)

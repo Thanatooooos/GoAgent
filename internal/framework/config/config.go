@@ -194,6 +194,7 @@ type RagMemoryConfig struct {
 	SummaryEnabled    bool                       `mapstructure:"summary-enabled"`
 	SummaryAsync      RagSummaryAsyncConfig      `mapstructure:"summary-async"`
 	SummaryMaxChars   int                        `mapstructure:"summary-max-chars"`
+	SummaryBudget     RagSummaryBudgetConfig     `mapstructure:"summary-budget"`
 	TitleMaxLength    int                        `mapstructure:"title-max-length"`
 	LongMessage       RagLongMessageConfig       `mapstructure:"long-message"`
 	SessionRecall     RagSessionRecallConfig     `mapstructure:"session-recall"`
@@ -210,6 +211,14 @@ type RagChatContextConfig struct {
 
 type RagSummaryAsyncConfig struct {
 	Enabled bool `mapstructure:"enabled"`
+}
+
+type RagSummaryBudgetConfig struct {
+	SmallMaxChars         int `mapstructure:"small-max-chars"`
+	MediumMaxChars        int `mapstructure:"medium-max-chars"`
+	LargeMaxChars         int `mapstructure:"large-max-chars"`
+	MediumMessageCountMin int `mapstructure:"medium-message-count-min"`
+	LargeMessageCountMin  int `mapstructure:"large-message-count-min"`
 }
 
 type RagMemoryCacheConfig struct {

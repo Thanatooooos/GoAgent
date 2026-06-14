@@ -124,8 +124,17 @@ type SummaryCompressionOptions struct {
 	ChatService  aichat.LLMService
 	StartTurns   int
 	MaxChars     int
+	Budget       SummaryBudgetOptions
 	JobEnqueuer  SummaryJobEnqueuer
 	AsyncEnabled bool
+}
+
+type SummaryBudgetOptions struct {
+	SmallMaxChars         int
+	MediumMaxChars        int
+	LargeMaxChars         int
+	MediumMessageCountMin int
+	LargeMessageCountMin  int
 }
 
 // NewSummaryServiceAdapter 创建基于摘要 repository 的适配器（不支持压缩）。

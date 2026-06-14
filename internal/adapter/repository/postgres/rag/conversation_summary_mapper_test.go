@@ -73,3 +73,29 @@ func TestConversationSummaryMapperDefaultsEmptyLifecycleFields(t *testing.T) {
 		t.Fatalf("expected lifecycle fields from model, got %#v", domainItem)
 	}
 }
+
+func TestConversationSummaryMapperRoundTripIncludesStructuredSummaryJSON(t *testing.T) {
+	now := time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC)
+	input := domain.ConversationSummary{
+		ID:                    "1",
+		ConversationID:        "c1",
+		UserID:                "u1",
+		Content:               "对话摘要：目标：实现结构化摘要",
+		StructuredSummaryJSON: `{"schema_version":1,"goal":"实现结构化摘要"}`,
+		LastMessageID:         "m9",
+		SummaryVersion:        domain.SummaryVersionV1,
+		QualityStatus:         domain.SummaryQualityAccepted,
+		CreateTime:            now,
+		UpdateTime:            now,
+	}
+
+	model := toConversationSummaryModel(input)
+	if model.StructuredSummaryJSON != input.StructuredSummaryJSON {
+		t.Fatalf("expected structured summary json to round-trip, got %q", model.StructuredSummaryJSON)
+	}
+
+	output := toConversationSummaryDomain(model)
+	if output.StructuredSummaryJSON != input.StructuredSummaryJSON {
+		t.Fatalf("expected structured summary json in domain output, got %q", output.StructuredSummaryJSON)
+	}
+}
