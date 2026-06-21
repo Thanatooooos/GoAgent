@@ -11,6 +11,11 @@ const (
 	summaryRepairSectionOpenQuestions
 )
 
+type summaryRepairItem struct {
+	text    string
+	section summaryRepairSection
+}
+
 var summaryRepairBoundaryMarkers = []string{
 	"\u5f53\u524d\u4e0d",
 	"\u5f53\u524d\u4ec5",
@@ -79,56 +84,81 @@ func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 		UserPreferences: dedupeSummaryItems(summary.UserPreferences),
 	}
 
-	seen := map[string]struct{}{}
-	appendItem := func(section summaryRepairSection, item string) {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			return
-		}
-		key := strings.ToLower(item)
-		if _, exists := seen[key]; exists {
-			return
-		}
-		seen[key] = struct{}{}
+	items := make([]summaryRepairItem, 0, len(summary.Constraints)+len(summary.EstablishedFacts)+len(summary.RecentProgress)+len(summary.OpenQuestions))
+	seen := map[string]int{}
 
-		switch section {
-		case summaryRepairSectionConstraints:
-			repaired.Constraints = append(repaired.Constraints, item)
-		case summaryRepairSectionEstablishedFacts:
-			repaired.EstablishedFacts = append(repaired.EstablishedFacts, item)
-		case summaryRepairSectionRecentProgress:
-			repaired.RecentProgress = append(repaired.RecentProgress, item)
-		case summaryRepairSectionOpenQuestions:
-			repaired.OpenQuestions = append(repaired.OpenQuestions, item)
+	appendItem := func(source summaryRepairSection, text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
 		}
+		section := repairSummarySectionForItem(source, text)
+		key := strings.ToLower(text)
+		if idx, exists := seen[key]; exists {
+			if summaryRepairSectionPriority(section) > summaryRepairSectionPriority(items[idx].section) {
+				items[idx].section = section
+			}
+			return
+		}
+		seen[key] = len(items)
+		items = append(items, summaryRepairItem{text: text, section: section})
 	}
 
 	for _, item := range summary.Constraints {
-		appendItem(repairSummarySectionForItem(summaryRepairSectionConstraints, item), item)
+		appendItem(summaryRepairSectionConstraints, item)
 	}
 	for _, item := range summary.EstablishedFacts {
-		appendItem(repairSummarySectionForItem(summaryRepairSectionEstablishedFacts, item), item)
+		appendItem(summaryRepairSectionEstablishedFacts, item)
 	}
 	for _, item := range summary.RecentProgress {
-		appendItem(repairSummarySectionForItem(summaryRepairSectionRecentProgress, item), item)
+		appendItem(summaryRepairSectionRecentProgress, item)
 	}
 	for _, item := range summary.OpenQuestions {
-		appendItem(repairSummarySectionForItem(summaryRepairSectionOpenQuestions, item), item)
+		appendItem(summaryRepairSectionOpenQuestions, item)
+	}
+
+	for _, item := range items {
+		switch item.section {
+		case summaryRepairSectionConstraints:
+			repaired.Constraints = append(repaired.Constraints, item.text)
+		case summaryRepairSectionEstablishedFacts:
+			repaired.EstablishedFacts = append(repaired.EstablishedFacts, item.text)
+		case summaryRepairSectionRecentProgress:
+			repaired.RecentProgress = append(repaired.RecentProgress, item.text)
+		case summaryRepairSectionOpenQuestions:
+			repaired.OpenQuestions = append(repaired.OpenQuestions, item.text)
+		}
 	}
 
 	repaired.Normalize()
 	return repaired
 }
 
-func repairSummarySectionForItem(source summaryRepairSection, item string) summaryRepairSection {
-	if isSummaryRepairBoundaryStatement(item) {
-		return summaryRepairSectionConstraints
+func summaryRepairSectionPriority(section summaryRepairSection) int {
+	switch section {
+	case summaryRepairSectionOpenQuestions:
+		return 3
+	case summaryRepairSectionRecentProgress:
+		return 2
+	case summaryRepairSectionConstraints:
+		return 1
+	case summaryRepairSectionEstablishedFacts:
+		return 0
+	default:
+		return -1
 	}
+}
+
+func repairSummarySectionForItem(source summaryRepairSection, item string) summaryRepairSection {
+	// Unresolved content is safer than boundary language, so it wins first.
 	if isSummaryRepairUnresolvedItem(item) {
 		return summaryRepairSectionOpenQuestions
 	}
 	if isSummaryRepairRecentProgressItem(item) {
 		return summaryRepairSectionRecentProgress
+	}
+	if isSummaryRepairBoundaryStatement(item) {
+		return summaryRepairSectionConstraints
 	}
 	return source
 }
@@ -161,6 +191,7 @@ func containsAnySummaryRepairMarker(item string, markers []string) bool {
 	}
 	return false
 }
+
 func dedupeSummaryItems(items []string) []string {
 	if len(items) == 0 {
 		return nil

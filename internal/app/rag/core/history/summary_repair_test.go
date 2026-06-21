@@ -67,6 +67,32 @@ func TestRepairStructuredSummaryBackfillsOpenQuestionsFromUnresolvedMarkers(t *t
 	assertSummaryField(t, "recent_progress", nil, got.RecentProgress)
 }
 
+func TestRepairStructuredSummaryPrefersOpenQuestionsOverEstablishedFactsForDuplicateContent(t *testing.T) {
+	input := StructuredSummary{
+		Goal:             "\u6574\u7406\u7ed3\u6784\u5316\u6458\u8981",
+		EstablishedFacts: []string{"\u63a5\u53e3\u65b9\u6848\u662f\u5426\u7a33\u5b9a"},
+		OpenQuestions:    []string{"\u63a5\u53e3\u65b9\u6848\u662f\u5426\u7a33\u5b9a"},
+	}
+
+	got := RepairStructuredSummary(input)
+
+	assertSummaryField(t, "established_facts", nil, got.EstablishedFacts)
+	assertSummaryField(t, "open_questions", []string{"\u63a5\u53e3\u65b9\u6848\u662f\u5426\u7a33\u5b9a"}, got.OpenQuestions)
+}
+
+func TestRepairStructuredSummaryPrefersUnresolvedMarkersOverBoundaryPrefixes(t *testing.T) {
+	input := StructuredSummary{
+		Goal:          "\u6574\u7406\u7ed3\u6784\u5316\u6458\u8981",
+		Constraints:   []string{"\u5f53\u524d\u4e0d\u786e\u5b9a\u65b9\u6848\u662f\u5426\u53ef\u884c"},
+		OpenQuestions: []string{"\u5f53\u524d\u4e0d\u786e\u5b9a\u65b9\u6848\u662f\u5426\u53ef\u884c"},
+	}
+
+	got := RepairStructuredSummary(input)
+
+	assertSummaryField(t, "constraints", nil, got.Constraints)
+	assertSummaryField(t, "open_questions", []string{"\u5f53\u524d\u4e0d\u786e\u5b9a\u65b9\u6848\u662f\u5426\u53ef\u884c"}, got.OpenQuestions)
+}
+
 func TestRepairStructuredSummaryIsConservativeAndDedupes(t *testing.T) {
 	input := StructuredSummary{
 		SchemaVersion: 0,
