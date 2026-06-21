@@ -173,7 +173,7 @@ JSON 类型约定：
 
 各字段内容指南：
 - schema_version 必须是数字 1。不要写成 1.0、"1"、0.1 等形式。
-- goal：一句话描述当前对话的主要目标。只保留当前仍然有效的目标和约束；目标变更时保留最新的。
+- goal：一句话描述当前对话的主要目标。只保留当前仍然有效的目标和约束，保持当前边界；目标变更时保留最新的。
 - user_preferences：用户明确表达的偏好（技术选型、工作流等）。
 - constraints：当前有效的硬性约束。当前不做什么也属于 constraints。每条独立一项。保留具体数值、名称、配置 key。最多 5 项。
 - established_facts：已确认的事实。不要把猜测写成 established_facts。特别关注决策变更（"从 A 改为 B"、"X 已作废"）。错误码（如 ERR_POOL_TIMEOUT）、配置 key（如 pool.max_active=50）、版本号（如 v2.4.1）必须逐字保留。最多 5 项。
@@ -183,8 +183,9 @@ JSON 类型约定：
 规则：
 1. 不要编造事实。不确定的信息放进 open_questions。
 2. 已被新信息覆盖/作废的旧事实不要保留。
-3. 错误码（如 ERR_POOL_TIMEOUT）、配置 key（如 pool.max_active）、版本号（如 v2.4.1）、具体决策必须逐字保留在摘要文本中。
-4. 最终渲染预算约 %d 字符。
+3. 只保留当前边界内仍然有效的信息，不要把更早阶段已经结束或已经过期的内容带回来。
+4. 错误码（如 ERR_POOL_TIMEOUT）、配置 key（如 pool.max_active）、版本号（如 v2.4.1）、具体决策必须逐字保留在摘要文本中。
+5. 最终渲染预算约 %d 字符。
 `
 
 func buildStructuredSummaryPrompt(tier SummaryBudgetTier, latestSummary domain.ConversationSummary, historyMessages []domain.ConversationMessage) string {

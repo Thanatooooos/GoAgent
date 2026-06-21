@@ -64,10 +64,11 @@ func TestBuildStructuredSummaryPromptIncludesRepairOrientedRules(t *testing.T) {
 	prompt := buildStructuredSummaryPrompt(tier, latest, historyMessages)
 
 	requiredPhrases := []string{
-		"只保留当前仍然有效的目标和约束",
+		"只保留当前仍然有效的目标和约束，保持当前边界",
 		"当前不做什么也属于 constraints",
 		"未确认、待验证、候选信息放进 open_questions",
 		"不要把猜测写成 established_facts",
+		"只保留当前边界内仍然有效的信息",
 		"最近刚确认或刚变化的状态优先写入 recent_progress",
 	}
 	for _, phrase := range requiredPhrases {
