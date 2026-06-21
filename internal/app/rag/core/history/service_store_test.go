@@ -1,7 +1,8 @@
-package history
+﻿package history
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,9 +15,9 @@ import (
 func TestSummaryServiceAdapterDecorateIfNeeded(t *testing.T) {
 	adapter := NewSummaryServiceAdapter(nil)
 
-	message := convention.SystemMessage("历史已经讨论了权限问题")
+	message := convention.SystemMessage("history already discussed permissions")
 	decorated := adapter.DecorateIfNeeded(&message)
-	if decorated == nil || decorated.Content != "对话摘要：历史已经讨论了权限问题" {
+	if decorated == nil || !strings.HasPrefix(decorated.Content, "\u5bf9\u8bdd\u6458\u8981\uff1a") {
 		t.Fatalf("unexpected decorated summary: %#v", decorated)
 	}
 }
@@ -28,9 +29,9 @@ func TestMessageServiceStoreLoadHistory(t *testing.T) {
 		},
 		conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
-				{ID: "3", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "第三条"},
-				{ID: "2", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "第二条"},
-				{ID: "1", ConversationID: "c1", UserID: "u1", Role: "user", Content: "第一条"},
+				{ID: "3", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "绗笁鏉?"},
+				{ID: "2", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "绗簩鏉?"},
+				{ID: "1", ConversationID: "c1", UserID: "u1", Role: "user", Content: "绗竴鏉?"},
 			},
 		},
 	)
@@ -42,7 +43,7 @@ func TestMessageServiceStoreLoadHistory(t *testing.T) {
 	if len(history) != 3 {
 		t.Fatalf("expected 3 history items, got %d", len(history))
 	}
-	if history[0].Content != "第一条" || history[2].Content != "第三条" {
+	if history[0].Content != "绗竴鏉?" || history[2].Content != "绗笁鏉?" {
 		t.Fatalf("unexpected history order: %#v", history)
 	}
 }
@@ -53,7 +54,7 @@ func TestMessageServiceStoreAppend(t *testing.T) {
 		conversationMessageRepoStubForMemory{},
 	)
 
-	messageID, err := store.Append(context.Background(), "c1", "u1", convention.UserMessage("你好"))
+	messageID, err := store.Append(context.Background(), "c1", "u1", convention.UserMessage("浣犲ソ"))
 	if err != nil {
 		t.Fatalf("Append returned error: %v", err)
 	}
@@ -62,28 +63,24 @@ func TestMessageServiceStoreAppend(t *testing.T) {
 	}
 }
 
-// TestCompressIfNeededBelowThreshold 验证消息数不足时不触发压缩。
 func TestCompressIfNeededBelowThreshold(t *testing.T) {
 	summaryRepo := &mockSummaryRepoForCompress{}
 	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{},
 		ChatService: &mockChatServiceForCompress{},
-		StartTurns:  10, // 阈值很高
+		StartTurns:  10,
 		MaxChars:    200,
 	})
 
-	// CountByConversationIDAndUserIDAndRole 返回 0，小于阈值 20。
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("msg"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// summaryRepo 不应被调用。
 	if summaryRepo.created {
 		t.Fatal("expected no summary created below threshold")
 	}
 }
 
-// TestCompressIfNeededNoChatService 验证无 chatService 时跳过压缩。
 func TestCompressIfNeededNoChatService(t *testing.T) {
 	svc := NewSummaryServiceAdapter(nil)
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("msg"))
@@ -92,52 +89,184 @@ func TestCompressIfNeededNoChatService(t *testing.T) {
 	}
 }
 
-// TestCompressIfNeededTriggersCompression 验证超过阈值且无重复摘要时触发 LLM 压缩。
+func TestLoadLatestSummaryStillUsesRenderedContent(t *testing.T) {
+	repo := &mockSummaryRepoForCompress{
+		latestSummary: domain.ConversationSummary{
+			ID:                    "s1",
+			Content:               "鐩爣锛氬疄鐜扮粨鏋勫寲鎽樿",
+			StructuredSummaryJSON: `{"schema_version":1,"goal":"涓嶈鐩存帴璇诲彇 JSON"}`,
+			QualityStatus:         domain.SummaryQualityAccepted,
+		},
+	}
+
+	adapter := NewSummaryServiceAdapter(repo)
+	msg, err := adapter.LoadLatestSummary(context.Background(), "c1", "u1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg == nil || msg.Content != "鐩爣锛氬疄鐜扮粨鏋勫寲鎽樿" {
+		t.Fatalf("expected rendered content path to remain unchanged, got %#v", msg)
+	}
+}
+
 func TestCompressIfNeededTriggersCompression(t *testing.T) {
 	summaryRepo := &mockSummaryRepoForCompress{}
-	chatSvc := &mockChatServiceForCompress{response: "用户询问了关于 Go 语言特性的问题，助手给出了详细解答。"}
+	chatSvc := &mockChatServiceForCompress{
+		response: `{"schema_version":1,"goal":"??? Go ???????","established_facts":["?????? Go ??????????"],"recent_progress":["??????????????"]}`,
+	}
 
 	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
-				{ID: "4", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复4"},
-				{ID: "3", ConversationID: "c1", UserID: "u1", Role: "user", Content: "问题3"},
-				{ID: "2", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复2"},
-				{ID: "1", ConversationID: "c1", UserID: "u1", Role: "user", Content: "问题1"},
+				{ID: "4", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "???4"},
+				{ID: "3", ConversationID: "c1", UserID: "u1", Role: "user", Content: "???3"},
+				{ID: "2", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "???2"},
+				{ID: "1", ConversationID: "c1", UserID: "u1", Role: "user", Content: "???1"},
 			},
 			userCount:      2,
 			assistantCount: 2,
 		},
 		ChatService: chatSvc,
-		StartTurns:  2, // 阈值为 4，totalMessages=4 正好达到阈值。
+		StartTurns:  2,
 		MaxChars:    200,
+		Budget:      defaultSummaryBudgetOptions(),
 	})
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// 没有已有摘要阻断 → 应触发 LLM 压缩并写入。
 	if !summaryRepo.created {
 		t.Fatal("expected summary to be created when threshold met")
 	}
-	if summaryRepo.lastContent != "用户询问了关于 Go 语言特性的问题，助手给出了详细解答。" {
-		t.Fatalf("unexpected summary content: %q", summaryRepo.lastContent)
+	if !strings.Contains(summaryRepo.lastContent, "\u76ee\u6807\uff1a") {
+		t.Fatalf("expected rendered content to contain goal section, got %q", summaryRepo.lastContent)
 	}
-	if summaryRepo.lastSummary.SummaryVersion != domain.SummaryVersionV1 {
-		t.Fatalf("unexpected summary version: %d", summaryRepo.lastSummary.SummaryVersion)
+	if !strings.Contains(summaryRepo.lastContent, "\u5df2\u786e\u8ba4\u4e8b\u5b9e\uff1a") {
+		t.Fatalf("expected rendered content to contain confirmed facts section, got %q", summaryRepo.lastContent)
 	}
-	if summaryRepo.lastSummary.CoveredToMessageID != "4" || summaryRepo.lastSummary.CoveredFromMessageID != "1" {
-		t.Fatalf("unexpected covered message range: from=%q to=%q", summaryRepo.lastSummary.CoveredFromMessageID, summaryRepo.lastSummary.CoveredToMessageID)
+	if !strings.Contains(summaryRepo.lastContent, "\u6700\u8fd1\u8fdb\u5c55\uff1a") {
+		t.Fatalf("expected rendered content to contain recent progress section, got %q", summaryRepo.lastContent)
 	}
-	if summaryRepo.lastSummary.SourceMessageCount != 4 {
-		t.Fatalf("unexpected source message count: %d", summaryRepo.lastSummary.SourceMessageCount)
+	if chatSvc.lastRequest.JSONMode == nil || !*chatSvc.lastRequest.JSONMode {
+		t.Fatalf("expected JSON mode request, got %+v", chatSvc.lastRequest)
 	}
-	if summaryRepo.lastSummary.QualityStatus != domain.SummaryQualityUnchecked {
-		t.Fatalf("unexpected quality status: %q", summaryRepo.lastSummary.QualityStatus)
+}
+
+func TestCompressIfNeededStoresStructuredSummaryAndAcceptedQuality(t *testing.T) {
+	summaryRepo := &mockSummaryRepoForCompress{}
+	chatSvc := &mockChatServiceForCompress{
+		response: `{"schema_version":1,"goal":"鎺掓煡瀵煎叆澶辫触","constraints":["淇濇寔鐜版湁璇婚摼璺吋瀹?"],"established_facts":["doc_fail_01 鍦?indexer 鑺傜偣澶辫触","閿欒鏄?vector store unavailable"],"recent_progress":["宸插喅瀹氱粨鏋勫寲鎽樿浣滀负鐪熸簮"],"open_questions":["鏄惁闇€瑕佹寜瀵嗗害鍒嗘。"]}`,
 	}
-	if summaryRepo.lastSummary.LastRebuildReason != "threshold_reached" {
-		t.Fatalf("unexpected rebuild reason: %q", summaryRepo.lastSummary.LastRebuildReason)
+
+	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+		MessageRepo: &conversationMessageRepoStubForMemory{
+			messages: []domain.ConversationMessage{
+				{ID: "4", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "indexer failed: vector store unavailable"},
+				{ID: "3", ConversationID: "c1", UserID: "u1", Role: "user", Content: "doc_fail_01 涓轰粈涔堝け璐?"},
+				{ID: "2", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "璁╂垜缁х画鎺掓煡"},
+				{ID: "1", ConversationID: "c1", UserID: "u1", Role: "user", Content: "璇峰府鎴戞帓鏌ュ鍏ュけ璐?"},
+			},
+			userCount:      2,
+			assistantCount: 2,
+		},
+		ChatService: chatSvc,
+		StartTurns:  2,
+		MaxChars:    200,
+		Budget:      defaultSummaryBudgetOptions(),
+	})
+
+	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summaryRepo.lastSummary.StructuredSummaryJSON == "" {
+		t.Fatal("expected structured summary json to be stored")
+	}
+	if summaryRepo.lastSummary.QualityStatus != domain.SummaryQualityAccepted {
+		t.Fatalf("expected accepted quality status, got %q", summaryRepo.lastSummary.QualityStatus)
+	}
+	if !strings.Contains(summaryRepo.lastContent, "\u76ee\u6807\uff1a") {
+		t.Fatalf("expected rendered content to contain goal section, got %q", summaryRepo.lastContent)
+	}
+	if chatSvc.lastRequest.JSONMode == nil || !*chatSvc.lastRequest.JSONMode {
+		t.Fatalf("expected JSON mode request, got %+v", chatSvc.lastRequest)
+	}
+}
+
+
+func TestCompressIfNeededRepairsBeforeValidationAndStoresRepairedSummary(t *testing.T) {
+	summaryRepo := &mockSummaryRepoForCompress{}
+	chatSvc := &mockChatServiceForCompress{
+		response: `{"schema_version":1,"goal":"排查导入失败","established_facts":["接口方案还没确认"],"recent_progress":["doc_fail_01 已确认 vector store unavailable"]}`,
+	}
+
+	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+		MessageRepo: &conversationMessageRepoStubForMemory{
+			messages: []domain.ConversationMessage{
+				{ID: "4", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "doc_fail_01 已确认 vector store unavailable"},
+				{ID: "3", ConversationID: "c1", UserID: "u1", Role: "user", Content: "请确认接口方案"},
+				{ID: "2", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "继续排查"},
+				{ID: "1", ConversationID: "c1", UserID: "u1", Role: "user", Content: "帮我分析导入失败"},
+			},
+			userCount:      2,
+			assistantCount: 2,
+		},
+		ChatService: chatSvc,
+		StartTurns:  2,
+		MaxChars:    200,
+		Budget:      defaultSummaryBudgetOptions(),
+	})
+
+	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !summaryRepo.created {
+		t.Fatal("expected summary to be created after repair")
+	}
+	if summaryRepo.lastSummary.QualityStatus != domain.SummaryQualityAccepted {
+		t.Fatalf("expected repaired summary to be accepted, got %q", summaryRepo.lastSummary.QualityStatus)
+	}
+	if !strings.Contains(summaryRepo.lastSummary.StructuredSummaryJSON, `"open_questions":["接口方案还没确认"]`) {
+		t.Fatalf("expected repaired structured summary JSON to store open questions, got %q", summaryRepo.lastSummary.StructuredSummaryJSON)
+	}
+	if !strings.Contains(summaryRepo.lastContent, "待确认问题") {
+		t.Fatalf("expected stored rendered content to include repaired open questions section, got %q", summaryRepo.lastContent)
+	}
+	if !strings.Contains(summaryRepo.lastContent, "接口方案还没确认") {
+		t.Fatalf("expected stored rendered content to keep the unresolved item, got %q", summaryRepo.lastContent)
+	}
+}
+func TestCompressIfNeededSkipsRejectedStructuredSummary(t *testing.T) {
+	summaryRepo := &mockSummaryRepoForCompress{}
+	chatSvc := &mockChatServiceForCompress{
+		response: `{"schema_version":1,"goal":"鎺掓煡瀵煎叆澶辫触","established_facts":["瀵煎叆澶辫触"],"recent_progress":["缁х画澶勭悊"]}`,
+	}
+
+	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+		MessageRepo: &conversationMessageRepoStubForMemory{
+			messages: []domain.ConversationMessage{
+				{ID: "4", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "indexer failed: vector store unavailable"},
+				{ID: "3", ConversationID: "c1", UserID: "u1", Role: "user", Content: "doc_fail_01 涓轰粈涔堝け璐?"},
+				{ID: "2", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "璁╂垜缁х画鎺掓煡"},
+				{ID: "1", ConversationID: "c1", UserID: "u1", Role: "user", Content: "璇峰府鎴戞帓鏌ュ鍏ュけ璐?"},
+			},
+			userCount:      2,
+			assistantCount: 2,
+		},
+		ChatService: chatSvc,
+		StartTurns:  2,
+		MaxChars:    200,
+		Budget:      defaultSummaryBudgetOptions(),
+	})
+
+	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summaryRepo.created {
+		t.Fatal("expected rejected structured summary to be skipped")
 	}
 }
 
@@ -181,25 +310,27 @@ func (m *mockSummaryCompressionRunner) runConversationSummaryCompression(_ conte
 	return nil
 }
 
-// TestCompressIfNeededAtBoundary 验证消息数恰为阈值整数倍时触发压缩。
 func TestCompressIfNeededAtBoundary(t *testing.T) {
 	summaryRepo := &mockSummaryRepoForCompress{}
-	chatSvc := &mockChatServiceForCompress{response: "压缩后的历史摘要"}
+	chatSvc := &mockChatServiceForCompress{
+		response: `{"schema_version":1,"goal":"?????????","recent_progress":["????????????????"]}`,
+	}
 
 	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
-				{ID: "8", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复8"},
-				{ID: "7", ConversationID: "c1", UserID: "u1", Role: "user", Content: "问题7"},
-				{ID: "6", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复6"},
-				{ID: "5", ConversationID: "c1", UserID: "u1", Role: "user", Content: "问题5"},
+				{ID: "8", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "???8"},
+				{ID: "7", ConversationID: "c1", UserID: "u1", Role: "user", Content: "???7"},
+				{ID: "6", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "???6"},
+				{ID: "5", ConversationID: "c1", UserID: "u1", Role: "user", Content: "???5"},
 			},
 			userCount:      4,
 			assistantCount: 4,
 		},
 		ChatService: chatSvc,
-		StartTurns:  2, // 阈值为 4，totalMessages=8, 8%4==0 触发。
+		StartTurns:  2,
 		MaxChars:    200,
+		Budget:      defaultSummaryBudgetOptions(),
 	})
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
@@ -209,33 +340,33 @@ func TestCompressIfNeededAtBoundary(t *testing.T) {
 	if !summaryRepo.created {
 		t.Fatal("expected summary to be created at boundary")
 	}
-	if summaryRepo.lastContent != "压缩后的历史摘要" {
+	if !strings.Contains(summaryRepo.lastContent, "\u76ee\u6807\uff1a") {
 		t.Fatalf("unexpected summary content: %q", summaryRepo.lastContent)
 	}
 }
 
-// TestCompressIfNeededAlreadyCompressed 验证最新消息已被覆盖时不重复压缩。
 func TestCompressIfNeededAlreadyCompressed(t *testing.T) {
 	summaryRepo := &mockSummaryRepoForCompress{
 		latestSummary: domain.ConversationSummary{
 			ID:            "s1",
-			LastMessageID: "8", // 最新消息 ID 已是 8，说明覆盖过。
+			LastMessageID: "8",
 		},
 	}
 	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
-				{ID: "8", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复8"},
-				{ID: "7", ConversationID: "c1", UserID: "u1", Role: "user", Content: "问题7"},
-				{ID: "6", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复6"},
-				{ID: "5", ConversationID: "c1", UserID: "u1", Role: "user", Content: "问题5"},
+				{ID: "8", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "鍥炲8"},
+				{ID: "7", ConversationID: "c1", UserID: "u1", Role: "user", Content: "闂7"},
+				{ID: "6", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "鍥炲6"},
+				{ID: "5", ConversationID: "c1", UserID: "u1", Role: "user", Content: "闂5"},
 			},
 			userCount:      4,
 			assistantCount: 4,
 		},
-		ChatService: &mockChatServiceForCompress{response: "should not be called"},
+		ChatService: &mockChatServiceForCompress{response: `{"schema_version":1,"goal":"should not be called","recent_progress":["x"]}`},
 		StartTurns:  2,
 		MaxChars:    200,
+		Budget:      defaultSummaryBudgetOptions(),
 	})
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
@@ -321,10 +452,10 @@ func (s conversationMessageRepoStubForMemory) DeleteByConversationIDAndUserID(co
 	return nil
 }
 
-// mockChatServiceForCompress 用于压缩测试的 LLM 服务桩。
 type mockChatServiceForCompress struct {
-	response string
-	err      error
+	response    string
+	err         error
+	lastRequest convention.ChatRequest
 }
 
 func (m *mockChatServiceForCompress) Chat(prompt string) (string, error) {
@@ -332,10 +463,12 @@ func (m *mockChatServiceForCompress) Chat(prompt string) (string, error) {
 }
 
 func (m *mockChatServiceForCompress) ChatWithRequest(request convention.ChatRequest) (string, error) {
+	m.lastRequest = request
 	return m.response, m.err
 }
 
 func (m *mockChatServiceForCompress) ChatWithModel(request convention.ChatRequest, modelID string) (string, error) {
+	m.lastRequest = request
 	return m.response, m.err
 }
 
@@ -344,16 +477,16 @@ func (m *mockChatServiceForCompress) StreamChat(prompt string, callback aichat.S
 }
 
 func (m *mockChatServiceForCompress) StreamChatWithRequest(request convention.ChatRequest, callback aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
+	m.lastRequest = request
 	return nil, nil
 }
 
 var _ aichat.LLMService = (*mockChatServiceForCompress)(nil)
 
-// mockSummaryRepoForCompress 用于压缩测试的摘要仓储桩。
 type mockSummaryRepoForCompress struct {
-	created      bool
-	lastContent  string
-	lastSummary  domain.ConversationSummary
+	created       bool
+	lastContent   string
+	lastSummary   domain.ConversationSummary
 	latestSummary domain.ConversationSummary
 }
 
@@ -375,5 +508,21 @@ func (m *mockSummaryRepoForCompress) DeleteByConversationIDAndUserID(context.Con
 
 var _ port.ConversationSummaryRepository = (*mockSummaryRepoForCompress)(nil)
 
-// Ensure SummaryServiceAdapter implements the SummaryService interface.
 var _ SummaryService = (*SummaryServiceAdapter)(nil)
+
+func defaultSummaryBudgetOptions() SummaryBudgetOptions {
+	return SummaryBudgetOptions{
+		SmallMaxChars:         400,
+		MediumMaxChars:        600,
+		LargeMaxChars:         800,
+		MediumMessageCountMin: 6,
+		LargeMessageCountMin:  10,
+	}
+}
+
+
+
+
+
+
+

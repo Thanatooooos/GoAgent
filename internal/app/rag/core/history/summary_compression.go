@@ -1,4 +1,4 @@
-package history
+﻿package history
 
 import (
 	"context"
@@ -84,12 +84,13 @@ func (e summaryCompressionEngine) runConversationSummaryCompression(ctx context.
 	if err != nil {
 		return fmt.Errorf("parse structured summary: %w", err)
 	}
-	validation := ValidateStructuredSummary(structured, historyMessages)
+	repaired := RepairStructuredSummary(structured)
+	validation := ValidateStructuredSummary(repaired, historyMessages)
 	if !validation.Accepted {
 		return nil
 	}
 
-	rendered := RenderStructuredSummary(structured, tier.MaxChars)
+	rendered := RenderStructuredSummary(repaired, tier.MaxChars)
 	if strings.TrimSpace(rendered) == "" {
 		return nil
 	}
@@ -102,7 +103,7 @@ func (e summaryCompressionEngine) runConversationSummaryCompression(ctx context.
 		conversationID,
 		userID,
 		rendered,
-		marshalStructuredSummary(structured),
+		marshalStructuredSummary(repaired),
 		historyMessages,
 		rebuildReason,
 		domain.SummaryQualityAccepted,
@@ -160,9 +161,7 @@ func buildConversationSummaryRecord(
 }
 
 const structuredSummarySystemPrompt = `你正在将一段对话压缩为结构化工作记忆。只返回 JSON。
-
-JSON 类型约定：
-允许字段：
+JSON 类型约定：允许字段：
 - schema_version: 整数 (number)，固定为 1
 - goal: 字符串
 - user_preferences: 字符串数组，无该项时返回 []
@@ -172,21 +171,20 @@ JSON 类型约定：
 - open_questions: 字符串数组，无该项时返回 []
 
 各字段内容指南：
-- schema_version 必须是数字 1。不要写成 1.0、"1"、0.1 等形式。
+- schema_version 必须是数字 1。不要写成 1.0、"1"、1.1 等形式。
 - goal：一句话描述当前对话的主要目标。只保留当前仍然有效的目标和约束，保持当前边界；目标变更时保留最新的。
 - user_preferences：用户明确表达的偏好（技术选型、工作流等）。
 - constraints：当前有效的硬性约束。当前不做什么也属于 constraints。每条独立一项。保留具体数值、名称、配置 key。最多 5 项。
 - established_facts：已确认的事实。不要把猜测写成 established_facts。特别关注决策变更（"从 A 改为 B"、"X 已作废"）。错误码（如 ERR_POOL_TIMEOUT）、配置 key（如 pool.max_active=50）、版本号（如 v2.4.1）必须逐字保留。最多 5 项。
-- recent_progress：最近取得的进展，最近刚确认或刚变化的状态优先写入 recent_progress，每条具体可验证。提及错误码、参数值、文件名。最多 5 项。
-- open_questions：仍未解决的问题。未确认、待验证、候选信息放进 open_questions。如果对话中存在不确定性或未解决的问题，此字段不能为空。保持问题原文的关键措辞。
+- recent_progress：最近取得的进展，最近刚确认或刚变化的状态优先写入 recent_progress。每条具体可验证。提及错误码、参数值、文件名。最多 5 项。
+- open_questions：仍未解决的问题。未确认、待验证、候选信息放进 open_questions。如果对话中存在不确定性或未解决的问题，此字段不能为空。保留问题原文的关键措辞。
 
 规则：
 1. 不要编造事实。不确定的信息放进 open_questions。
-2. 已被新信息覆盖/作废的旧事实不要保留。
+2. 已被新信息覆盖、作废的旧事实不要保留。
 3. 只保留当前边界内仍然有效的信息，不要把更早阶段已经结束或已经过期的内容带回来。
 4. 错误码（如 ERR_POOL_TIMEOUT）、配置 key（如 pool.max_active）、版本号（如 v2.4.1）、具体决策必须逐字保留在摘要文本中。
-5. 最终渲染预算约 %d 字符。
-`
+5. 最终渲染预算约 %d 字符。`
 
 func buildStructuredSummaryPrompt(tier SummaryBudgetTier, latestSummary domain.ConversationSummary, historyMessages []domain.ConversationMessage) string {
 	prompt := fmt.Sprintf(structuredSummarySystemPrompt, tier.MaxChars)
@@ -196,11 +194,11 @@ func buildStructuredSummaryPrompt(tier SummaryBudgetTier, latestSummary domain.C
 
 	previousStructured := strings.TrimSpace(latestSummary.StructuredSummaryJSON)
 	if previousStructured != "" {
-		builder.WriteString("\n上一次结构化摘要 JSON：\n")
+		builder.WriteString("\n\u4e0a\u4e00\u6b21\u7ed3\u6784\u5316\u6458\u8981 JSON\uff1a\n")
 		builder.WriteString(previousStructured)
 		builder.WriteString("\n")
 	} else if previousContent := strings.TrimSpace(latestSummary.Content); previousContent != "" {
-		builder.WriteString("\n上一次渲染摘要：\n")
+		builder.WriteString("\n上一轮压缩摘要：\n")
 		builder.WriteString(previousContent)
 		builder.WriteString("\n")
 	}
@@ -267,3 +265,7 @@ func marshalStructuredSummary(summary StructuredSummary) string {
 	}
 	return string(payload)
 }
+
+
+
+
