@@ -1,4 +1,4 @@
-﻿package history
+package history
 
 import "strings"
 
@@ -74,8 +74,9 @@ func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 	summary.Normalize()
 
 	repaired := StructuredSummary{
-		SchemaVersion: summary.SchemaVersion,
-		Goal:          summary.Goal,
+		SchemaVersion:   summary.SchemaVersion,
+		Goal:            summary.Goal,
+		UserPreferences:  summary.UserPreferences,
 	}
 
 	seen := map[string]struct{}{}

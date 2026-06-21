@@ -44,6 +44,17 @@ func TestRepairStructuredSummaryBackfillsRecentProgressFromConfirmedItems(t *tes
 	assertSummaryField(t, "established_facts", nil, got.EstablishedFacts)
 }
 
+func TestRepairStructuredSummaryPreservesUserPreferences(t *testing.T) {
+	input := StructuredSummary{
+		Goal:            "整理结构化摘要",
+		UserPreferences: []string{"  用户偏好 A  ", "用户偏好 B"},
+	}
+
+	got := RepairStructuredSummary(input)
+
+	assertSummaryField(t, "user_preferences", []string{"用户偏好 A", "用户偏好 B"}, got.UserPreferences)
+}
+
 func TestRepairStructuredSummaryBackfillsOpenQuestionsFromUnresolvedMarkers(t *testing.T) {
 	input := StructuredSummary{
 		Goal:           "整理结构化摘要",
