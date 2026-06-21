@@ -76,7 +76,7 @@ func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 	repaired := StructuredSummary{
 		SchemaVersion:   summary.SchemaVersion,
 		Goal:            summary.Goal,
-		UserPreferences:  summary.UserPreferences,
+		UserPreferences: dedupeSummaryItems(summary.UserPreferences),
 	}
 
 	seen := map[string]struct{}{}
@@ -160,4 +160,27 @@ func containsAnySummaryRepairMarker(item string, markers []string) bool {
 		}
 	}
 	return false
+}
+func dedupeSummaryItems(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(items))
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		key := strings.ToLower(item)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
