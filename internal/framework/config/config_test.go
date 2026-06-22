@@ -12,8 +12,11 @@ func TestLoadConfig_Defaults(t *testing.T) {
 		t.Fatal("expected non-nil config")
 	}
 	// assert a few known values from configs/application.yaml
-	if cfg.AI.Chat.DefaultModel != "qwen3-max" {
+	if cfg.AI.Chat.DefaultModel != "qwen-plus" {
 		t.Fatalf("unexpected chat.default-model: %s", cfg.AI.Chat.DefaultModel)
+	}
+	if cfg.AI.Chat.DeepThinkingModel != "qwen-plus" {
+		t.Fatalf("unexpected chat.deep-thinking-model: %s", cfg.AI.Chat.DeepThinkingModel)
 	}
 	if cfg.Server.Port != 9090 {
 		t.Fatalf("unexpected server.port: %d", cfg.Server.Port)

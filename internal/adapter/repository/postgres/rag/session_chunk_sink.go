@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"local/rag-project/internal/app/rag/domain"
-	ragservice "local/rag-project/internal/app/rag/service"
+	"local/rag-project/internal/app/rag/port"
 	"local/rag-project/internal/framework/distributedid"
 	infraembedding "local/rag-project/internal/infra-ai/embedding"
 )
@@ -29,7 +29,7 @@ func NewConversationMessageChunkSink(db *gorm.DB, embedding infraembedding.Embed
 	}
 }
 
-func (s *ConversationMessageChunkSink) PersistMessageChunks(ctx context.Context, message domain.ConversationMessage, chunks []ragservice.ProcessedConversationMessageChunk) error {
+func (s *ConversationMessageChunkSink) PersistMessageChunks(ctx context.Context, message domain.ConversationMessage, chunks []port.ProcessedConversationMessageChunk) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("gorm db is required")
 	}

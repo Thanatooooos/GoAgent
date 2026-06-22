@@ -81,7 +81,7 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 }
 
 func formatMemoryContext(context string) string {
-	return "## Long-Term Memory\nUse these persistent user- or knowledge-base-specific memories when they are relevant to the current question.\n" + strings.TrimSpace(context)
+	return "## Long-Term Memory\nUse these persistent user- or knowledge-base-specific memories when they are relevant to the current question. If the current user request explicitly conflicts with a recalled preference, follow the current user request.\n" + strings.TrimSpace(context)
 }
 
 func formatSessionContext(context string) string {

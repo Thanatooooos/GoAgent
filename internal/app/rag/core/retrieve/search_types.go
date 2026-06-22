@@ -2,6 +2,7 @@ package retrieve
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -76,6 +77,7 @@ type SearchProcessInput struct {
 	Context        SearchContext
 	ChannelResults []SearchChannelResult
 	Chunks         []convention.RetrievedChunk
+	Trace          *PipelineTrace
 }
 
 type SearchResultPostProcessor interface {
@@ -265,28 +267,37 @@ func MergeResults(results []Result, topK int) Result {
 	if len(results) == 0 {
 		return Result{}
 	}
-	chunkMap := map[string]convention.RetrievedChunk{}
-	for _, result := range results {
-		for _, chunk := range result.Chunks {
-			if existing, ok := chunkMap[chunk.ID]; ok {
-				if chunk.Score > existing.Score {
-					chunkMap[chunk.ID] = chunk
-				}
-				continue
+
+	var chunks []convention.RetrievedChunk
+	var trace *PipelineTrace
+	switch len(results) {
+	case 1:
+		chunks = append([]convention.RetrievedChunk(nil), results[0].Chunks...)
+		trace = clonePipelineTrace(results[0].PipelineTrace)
+	default:
+		channelResults := make([]SearchChannelResult, len(results))
+		for i, result := range results {
+			channelResults[i] = SearchChannelResult{
+				ChannelName: fmt.Sprintf("sub_%d", i),
+				Chunks:      result.Chunks,
+				Metadata: map[string]any{
+					"rrfWeight": subQuestionMergeWeight(i),
+				},
 			}
-			chunkMap[chunk.ID] = chunk
 		}
+		fused := rrfFuseChannelResults(channelResults)
+		trace = &PipelineTrace{
+			PreRerankChunkIDs: chunkIDs(fused),
+			SubQuestionMerge:  true,
+		}
+		chunks = fused
 	}
 
-	chunks := make([]convention.RetrievedChunk, 0, len(chunkMap))
-	for _, chunk := range chunkMap {
-		chunks = append(chunks, chunk)
-	}
-	sort.Slice(chunks, func(i, j int) bool {
-		return chunks[i].Score > chunks[j].Score
-	})
 	if topK > 0 && len(chunks) > topK {
 		chunks = chunks[:topK]
+	}
+	if trace != nil {
+		trace.FinalChunkIDs = chunkIDs(chunks)
 	}
 
 	searchChannels, channelStats := mergeResultMetadata(results)
@@ -296,6 +307,7 @@ func MergeResults(results []Result, topK int) Result {
 		SearchChannels:   searchChannels,
 		ChannelStats:     channelStats,
 		ChannelRetrieved: mergeChannelRetrieved(results),
+		PipelineTrace:    trace,
 	}
 }
 

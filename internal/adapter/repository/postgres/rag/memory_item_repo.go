@@ -51,48 +51,7 @@ func (r *MemoryItemRepository) GetByID(ctx context.Context, id string) (domain.M
 }
 
 func (r *MemoryItemRepository) List(ctx context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
-	query := r.db.WithContext(ctx).Model(&models.MemoryItemModel{})
-	if userID := strings.TrimSpace(filter.UserID); userID != "" {
-		query = query.Where("user_id = ?", userID)
-	}
-	if values := trimNonEmpty(filter.ScopeTypes); len(values) > 0 {
-		query = query.Where("scope_type IN ?", values)
-	}
-	if values := trimNonEmpty(filter.ScopeIDs); len(values) > 0 {
-		query = query.Where("scope_id IN ?", values)
-	}
-	if values := trimNonEmpty(filter.Namespaces); len(values) > 0 {
-		query = query.Where("namespace IN ?", values)
-	}
-	if values := trimNonEmpty(filter.MemoryTypes); len(values) > 0 {
-		query = query.Where("memory_type IN ?", values)
-	}
-	if values := trimNonEmpty(filter.Categories); len(values) > 0 {
-		query = query.Where("category IN ?", values)
-	}
-	if values := trimNonEmpty(filter.CanonicalKeys); len(values) > 0 {
-		query = query.Where("canonical_key IN ?", values)
-	}
-	if values := trimNonEmpty(filter.Statuses); len(values) > 0 {
-		query = query.Where("status IN ?", values)
-	}
-	searchText := strings.TrimSpace(filter.SearchText)
-	searchTokens := trimNonEmpty(filter.SearchTokens)
-	if searchClause, searchArgs := buildMemorySearchClause(searchText, searchTokens); searchClause != "" {
-		query = query.Where(searchClause, searchArgs...)
-	}
-	if sourceMessageID := strings.TrimSpace(filter.SourceMessageID); sourceMessageID != "" {
-		query = query.Where("source_message_id = ?", sourceMessageID)
-	}
-	if supersedesID := strings.TrimSpace(filter.SupersedesID); supersedesID != "" {
-		query = query.Where("supersedes_id = ?", supersedesID)
-	}
-	if filter.ExpiresBefore != nil && !filter.ExpiresBefore.IsZero() {
-		query = query.Where("expires_at IS NOT NULL AND expires_at <= ?", *filter.ExpiresBefore)
-	}
-	if filter.UpdatedBefore != nil && !filter.UpdatedBefore.IsZero() {
-		query = query.Where("update_time < ?", *filter.UpdatedBefore)
-	}
+	query := r.buildMemoryItemFilterQuery(ctx, filter)
 	query = query.Order("update_time desc")
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
@@ -110,6 +69,15 @@ func (r *MemoryItemRepository) List(ctx context.Context, filter port.MemoryItemL
 		result = append(result, toMemoryItemDomain(item))
 	}
 	return result, nil
+}
+
+func (r *MemoryItemRepository) Count(ctx context.Context, filter port.MemoryItemListFilter) (int64, error) {
+	query := r.buildMemoryItemFilterQuery(ctx, filter)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, fmt.Errorf("count memory items: %w", err)
+	}
+	return total, nil
 }
 
 func (r *MemoryItemRepository) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
@@ -246,6 +214,52 @@ func trimNonEmpty(values []string) []string {
 		}
 	}
 	return result
+}
+
+func (r *MemoryItemRepository) buildMemoryItemFilterQuery(ctx context.Context, filter port.MemoryItemListFilter) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&models.MemoryItemModel{})
+	if userID := strings.TrimSpace(filter.UserID); userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+	if values := trimNonEmpty(filter.ScopeTypes); len(values) > 0 {
+		query = query.Where("scope_type IN ?", values)
+	}
+	if values := trimNonEmpty(filter.ScopeIDs); len(values) > 0 {
+		query = query.Where("scope_id IN ?", values)
+	}
+	if values := trimNonEmpty(filter.Namespaces); len(values) > 0 {
+		query = query.Where("namespace IN ?", values)
+	}
+	if values := trimNonEmpty(filter.MemoryTypes); len(values) > 0 {
+		query = query.Where("memory_type IN ?", values)
+	}
+	if values := trimNonEmpty(filter.Categories); len(values) > 0 {
+		query = query.Where("category IN ?", values)
+	}
+	if values := trimNonEmpty(filter.CanonicalKeys); len(values) > 0 {
+		query = query.Where("canonical_key IN ?", values)
+	}
+	if values := trimNonEmpty(filter.Statuses); len(values) > 0 {
+		query = query.Where("status IN ?", values)
+	}
+	searchText := strings.TrimSpace(filter.SearchText)
+	searchTokens := trimNonEmpty(filter.SearchTokens)
+	if searchClause, searchArgs := buildMemorySearchClause(searchText, searchTokens); searchClause != "" {
+		query = query.Where(searchClause, searchArgs...)
+	}
+	if sourceMessageID := strings.TrimSpace(filter.SourceMessageID); sourceMessageID != "" {
+		query = query.Where("source_message_id = ?", sourceMessageID)
+	}
+	if supersedesID := strings.TrimSpace(filter.SupersedesID); supersedesID != "" {
+		query = query.Where("supersedes_id = ?", supersedesID)
+	}
+	if filter.ExpiresBefore != nil && !filter.ExpiresBefore.IsZero() {
+		query = query.Where("expires_at IS NOT NULL AND expires_at <= ?", *filter.ExpiresBefore)
+	}
+	if filter.UpdatedBefore != nil && !filter.UpdatedBefore.IsZero() {
+		query = query.Where("update_time < ?", *filter.UpdatedBefore)
+	}
+	return query
 }
 
 func buildMemorySearchClause(searchText string, searchTokens []string) (string, []any) {

@@ -10,6 +10,7 @@ import (
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
+	longtermmemoryobs "local/rag-project/internal/app/rag/service/longtermmemory/observability"
 )
 
 func TestMemoryServiceSaveExplicitMemoryEmbeddingFailuresRecordMetrics(t *testing.T) {
@@ -106,4 +107,5 @@ func TestMemoryServiceRecallMemoriesFailOpenMetricsAreRecorded(t *testing.T) {
 	if snapshot.ScopeVersionLookupFailures == 0 {
 		t.Fatalf("expected scope version lookup failure metrics, got %+v", snapshot)
 	}
+	assertLongTermMemoryEventCount(t, snapshot, longtermmemoryobs.LayerRecall, longtermmemoryobs.OutcomePreferenceRecalled, 1)
 }

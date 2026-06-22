@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	ragdomain "local/rag-project/internal/app/rag/domain"
 	longtermmemory "local/rag-project/internal/app/rag/service/longtermmemory"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
@@ -104,9 +105,12 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		UserID:           userID,
 		Query:            strings.TrimSpace(input.Query),
 		KnowledgeBaseIDs: input.KnowledgeBaseIDs,
+		ScopeTypes:       []string{ragdomain.MemoryScopeGlobal},
+		MemoryTypes:      []string{ragdomain.MemoryTypePreference},
+		Statuses:         []string{ragdomain.MemoryStatusActive},
 	})
 	if err != nil {
-		return agentcapability.DependencyFailureResult(c.spec, "memory recall failed", err), err
+		return agentcapability.DependencyFailureResult(c.spec, "memory recall failed", err), nil
 	}
 
 	output := buildOutput(recallResult)

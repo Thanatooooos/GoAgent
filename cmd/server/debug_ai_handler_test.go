@@ -93,9 +93,14 @@ ai:
     default-model: qwen-plus
     deep-thinking-model: qwen-plus
     candidates:
+      - id: deepseek-r1
+        provider: siliconflow
+        model: deepseek-ai/DeepSeek-R1
+        supports-thinking: true
       - id: qwen-plus
         provider: bailian
         model: qwen-plus-latest
+        supports-thinking: true
       - id: glm
         provider: siliconflow
         model: glm-4.7

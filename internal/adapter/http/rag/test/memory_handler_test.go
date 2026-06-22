@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +25,7 @@ type memoryRepoStub struct {
 	updateFn              func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
 	getByID               func(context.Context, string) (domain.MemoryItem, error)
 	listFn                func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error)
+	countFn               func(context.Context, port.MemoryItemListFilter) (int64, error)
 	listActiveByKeyFn     func(context.Context, string, string, string, string) ([]domain.MemoryItem, error)
 	listActiveConflictsFn func(context.Context, []string) ([]port.ActiveMemoryConflict, error)
 	touchFn               func(context.Context, string, []string, time.Time) error
@@ -58,6 +59,13 @@ func (s memoryRepoStub) List(ctx context.Context, filter port.MemoryItemListFilt
 		return s.listFn(ctx, filter)
 	}
 	return nil, nil
+}
+
+func (s memoryRepoStub) Count(ctx context.Context, filter port.MemoryItemListFilter) (int64, error) {
+	if s.countFn != nil {
+		return s.countFn(ctx, filter)
+	}
+	return 0, nil
 }
 
 func (s memoryRepoStub) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
@@ -247,7 +255,7 @@ func newMemoryRouter(memoryService *longtermmemory.MemoryService) *gin.Engine {
 		c.Next()
 	})
 
-	handler := raghttp.NewHandler(nil, nil, memoryService, nil, nil)
+	handler := raghttp.NewHandler(nil, nil, memoryService, nil, nil, nil)
 	group := router.Group("/api/ragent")
 	group.GET("/rag/v3/memories", handler.ListMemories)
 	group.POST("/rag/v3/remember", handler.Remember)

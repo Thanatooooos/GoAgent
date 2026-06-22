@@ -21,6 +21,7 @@ type Handler struct {
 	memoryService       *longtermmemory.MemoryService
 	feedbackService     *ragservice.MessageFeedbackService
 	chatService         chatService
+	preferenceCandidateService longtermmemory.PreferenceCandidateService
 }
 
 // NewHandler 创建 RAG HTTP 处理器。
@@ -30,6 +31,7 @@ func NewHandler(
 	memoryService *longtermmemory.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService chatService,
+	preferenceCandidateService longtermmemory.PreferenceCandidateService,
 ) *Handler {
 	return &Handler{
 		conversationService: conversationService,
@@ -37,5 +39,6 @@ func NewHandler(
 		memoryService:       memoryService,
 		feedbackService:     feedbackService,
 		chatService:         chatService,
+		preferenceCandidateService: preferenceCandidateService,
 	}
 }

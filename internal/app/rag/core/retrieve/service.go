@@ -37,6 +37,7 @@ type Result struct {
 	SearchChannels   []string
 	ChannelStats     []ChannelStat
 	ChannelRetrieved map[string][]convention.RetrievedChunk
+	PipelineTrace    *PipelineTrace
 }
 
 type Service interface {
@@ -106,7 +107,7 @@ func (e *Engine) Retrieve(ctx context.Context, request Request) (Result, error) 
 		return Result{}, err
 	}
 
-	chunks, err := e.executeProcessors(ctx, searchCtx, channelResults)
+	chunks, trace, err := e.executeProcessors(ctx, searchCtx, channelResults)
 	if err != nil {
 		return Result{}, err
 	}
@@ -117,6 +118,7 @@ func (e *Engine) Retrieve(ctx context.Context, request Request) (Result, error) 
 		SearchChannels:   collectSearchChannels(channelResults),
 		ChannelStats:     collectChannelStats(channelResults),
 		ChannelRetrieved: collectChannelRetrieved(channelResults),
+		PipelineTrace:    clonePipelineTrace(trace),
 	}, nil
 }
 
@@ -232,8 +234,9 @@ func (e *Engine) executeChannels(ctx context.Context, searchCtx SearchContext) (
 	return results, nil
 }
 
-func (e *Engine) executeProcessors(ctx context.Context, searchCtx SearchContext, channelResults []SearchChannelResult) ([]convention.RetrievedChunk, error) {
+func (e *Engine) executeProcessors(ctx context.Context, searchCtx SearchContext, channelResults []SearchChannelResult) ([]convention.RetrievedChunk, *PipelineTrace, error) {
 	current := []convention.RetrievedChunk{}
+	trace := &PipelineTrace{}
 	processors := e.processors
 	if len(processors) == 0 {
 		processors = []SearchResultPostProcessor{
@@ -250,13 +253,15 @@ func (e *Engine) executeProcessors(ctx context.Context, searchCtx SearchContext,
 			Context:        searchCtx,
 			ChannelResults: channelResults,
 			Chunks:         current,
+			Trace:          trace,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("post processor %s: %w", processor.Name(), err)
+			return nil, nil, fmt.Errorf("post processor %s: %w", processor.Name(), err)
 		}
 		current = next
 	}
-	return current, nil
+	trace.FinalChunkIDs = chunkIDs(current)
+	return current, trace, nil
 }
 
 func BuildKnowledgeContext(chunks []convention.RetrievedChunk) string {

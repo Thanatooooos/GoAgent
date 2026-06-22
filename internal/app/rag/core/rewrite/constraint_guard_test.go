@@ -64,6 +64,15 @@ func TestGuardRewriteResultRejectsWhenHTTPCodeDropped(t *testing.T) {
 	}
 }
 
+func TestExtractRewriteConstraintsIgnoresHTTPProtocolVersions(t *testing.T) {
+	constraints := ExtractRewriteConstraints("HTTP2 相比 HTTP1 有哪些改进")
+	for _, constraint := range constraints {
+		if constraint.Type == ConstraintErrorCode {
+			t.Fatalf("HTTP protocol versions should not be error_code constraints, got %+v", constraints)
+		}
+	}
+}
+
 func TestGuardRewriteResultKeepsSmallTalkWithoutConstraints(t *testing.T) {
 	original := "你好"
 	result := Result{

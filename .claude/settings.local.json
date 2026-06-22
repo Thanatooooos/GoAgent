@@ -105,7 +105,49 @@
       "Bash(sed -n '273,277p' internal/app/rag/core/history/service_store.go)",
       "Bash(sed -i '275s/len\\(content\\) > 500/utf8.RuneCountInString\\(content\\) > 500/' internal/app/rag/core/history/service_store.go)",
       "Bash(sed -i '276s/content\\\\[:500\\\\]/string\\([]rune\\(content\\)[:500]\\)/' internal/app/rag/core/history/service_store.go)",
-      "Bash(sed -n '274,278p' internal/app/rag/core/history/service_store.go)"
+      "Bash(sed -n '274,278p' internal/app/rag/core/history/service_store.go)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cd /tmp/superpowers && find . -type f | head -100)",
+      "Read(//tmp/**)",
+      "Bash(ls -la ~/.claude/ 2>/dev/null && echo \"---\" && ls -la .claude/ 2>/dev/null || echo \"No .claude dir in project\")",
+      "Read(//c/Users/1/.claude/**)",
+      "Bash(cp -r skills/brainstorming/scripts/* /d/goagent/.claude/skills/superpowers/brainstorming/scripts/)",
+      "Bash(cp skills/brainstorming/visual-companion.md /d/goagent/.claude/skills/superpowers/brainstorming/)",
+      "Bash(cp skills/brainstorming/spec-document-reviewer-prompt.md /d/goagent/.claude/skills/superpowers/brainstorming/)",
+      "Bash(cp skills/requesting-code-review/code-reviewer.md /d/goagent/.claude/skills/superpowers/requesting-code-review/)",
+      "Bash(cp skills/subagent-driven-development/implementer-prompt.md /d/goagent/.claude/skills/superpowers/subagent-driven-development/)",
+      "Bash(mkdir -p .claude/hooks)",
+      "Bash(python3 -c \"import json; f=open\\('d:/goagent/.claude/settings.local.json'\\); d=json.load\\(f\\); print\\('valid JSON'\\); print\\('hooks:', json.dumps\\(d.get\\('hooks', {}\\), indent=2\\)[:500]\\)\")",
+      "Bash(chmod +x .claude/hooks/session-start.sh)",
+      "Bash(python -c \"import json; f=open\\('d:/goagent/.claude/settings.local.json'\\); d=json.load\\(f\\); print\\('hooks:', 'hooks' in d\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const d=JSON.parse\\(fs.readFileSync\\('d:/goagent/.claude/settings.local.json','utf8'\\)\\); console.log\\('hooks:', 'hooks' in d\\)\")",
+      "Bash(bash .claude/hooks/session-start.sh)",
+      "Bash(rm -rf /tmp/superpowers && echo \"Cleaned up temp clone\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); agg=d['aggregate']; print\\('pass_rate:', agg['pass_rate']\\); print\\('critical_failure_rate:', agg['critical_failure_rate']\\); print\\('metrics:', json.dumps\\(agg.get\\('metrics',{}\\)\\)\\); samples=d['samples']; passed=[s['name'] for s in samples if s.get\\('passed'\\)]; failed=[s['name'] for s in samples if not s.get\\('passed'\\)]; print\\('passed:', len\\(passed\\), '/', len\\(samples\\)\\); print\\('failed:', [{'name':s['name'],'critical':s.get\\('critical_failures',[]\\),'reasons':s.get\\('failure_reasons',[]\\)} for s in samples if not s.get\\('passed'\\)]\\)\")",
+      "Bash(awk 'NR>1' testdata/evals/summary/latest_run_summary.json)",
+      "Bash(grep -oE '\"raw_summary\":\"[^\"]{0,200}\"')",
+      "Bash(xxd)",
+      "Bash(awk '{print}')",
+      "Bash(rm _summary.json)",
+      "Bash(rm _s.json)",
+      "Bash(awk '/^\\\\{\"suite\":/{found=1} found' testdata/evals/summary/latest_run_summary.json)"
+    ],
+    "additionalDirectories": [
+      "D:\\goagent\\.claude",
+      "\\tmp"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.sh\""
+          }
+        ]
+      }
     ]
   }
 }

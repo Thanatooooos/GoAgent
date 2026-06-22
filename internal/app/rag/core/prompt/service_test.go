@@ -30,7 +30,7 @@ func TestServiceBuildMessages(t *testing.T) {
 	if messages[0].Role != convention.SystemRole {
 		t.Fatalf("expected system prompt message, got %s", messages[0].Role)
 	}
-	if messages[1].Content != "## Long-Term Memory\nUse these persistent user- or knowledge-base-specific memories when they are relevant to the current question.\n[scope=global type=preference] answer in Chinese" {
+	if messages[1].Content != "## Long-Term Memory\nUse these persistent user- or knowledge-base-specific memories when they are relevant to the current question. If the current user request explicitly conflicts with a recalled preference, follow the current user request.\n[scope=global type=preference] answer in Chinese" {
 		t.Fatalf("unexpected memory context message: %q", messages[1].Content)
 	}
 	if messages[2].Content != "## 会话上下文片段\n[1] earlier log excerpt" {

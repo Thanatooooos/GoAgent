@@ -16,8 +16,10 @@ const (
 你必须遵守以下规则：
 1. 将指代词替换为具体实体，让问题可以独立理解。
 2. 去掉口语赘述，保留核心语义。
-3. 如果问题复杂，可以拆成 2-3 个检索子问题。
-4. 输出 need_retrieval：
+3. 如果问题复杂，可以拆成 1-2 个检索子问题；不要过度拆分。
+4. 多意图拆分时必须保留原文中的英文术语和关键标识（如 GMP、netpoller、AOF、RDB、SIGURG）。
+5. 保留原文中的技术术语、命令名、英文缩写和专有名词（如 SIGURG、unlink、bgsave、GTID、pprof），不要替换或省略。
+6. 输出 need_retrieval：
    - true：用户在询问知识、文档、配置、错误、规则、事实，需要知识库支持
    - false：用户只是寒暄、感谢、结束对话、自我介绍类闲聊，不需要检索知识库
 
@@ -33,6 +35,13 @@ const (
 
 你必须严格输出 JSON，不要输出其他内容：
 {"rewritten":"改写后的主问题","sub_questions":["子问题1","子问题2"],"need_retrieval":true|false}`
+	historyFollowUpPromptSuffix = `
+
+## 指代消解补充
+- 当前是带对话历史的 follow-up：只做指代消解，把最新问题改写成可独立检索的单句。
+- sub_questions 必须输出 []，不要拆成多个检索子问题。
+- 不要把同一 follow-up 改写成多个角度或步骤。
+- 若追问的是同一主题的子方面（如持久化、扩容规则），改写中必须保留可检索的主题词（如 Redis、AOF/RDB、slice、channel）。`
 )
 
 type LLMService struct {
@@ -62,7 +71,7 @@ func (s *LLMService) RewriteWithSplit(question string) Result {
 		return fallbackResult(question)
 	}
 	guarded, _ := GuardRewriteResult(question, parsed)
-	return guarded
+	return collapseSingleIntentSubQuestions(question, guarded)
 }
 
 func (s *LLMService) RewriteWithHistory(question string, history []convention.ChatMessage) Result {
@@ -80,7 +89,49 @@ func (s *LLMService) RewriteWithHistory(question string, history []convention.Ch
 		return fallbackResult(question)
 	}
 	guarded, _ := GuardRewriteResult(question, parsed)
-	return guarded
+	return finalizeHistoryFollowUpResult(question, guarded)
+}
+
+func finalizeHistoryFollowUpResult(question string, result Result) Result {
+	result = collapseHistoryFollowUpSubQuestions(result)
+	return enrichPersistenceFollowUpRewrite(question, result)
+}
+
+func enrichPersistenceFollowUpRewrite(question string, result Result) Result {
+	question = strings.TrimSpace(question)
+	rewritten := strings.TrimSpace(result.RewrittenQuestion)
+	if question == "" || rewritten == "" {
+		return result
+	}
+	if !strings.Contains(question, "持久化") {
+		return result
+	}
+	lower := strings.ToLower(rewritten)
+	if strings.Contains(rewritten, "AOF") || strings.Contains(rewritten, "RDB") ||
+		strings.Contains(lower, "aof") || strings.Contains(lower, "rdb") {
+		return result
+	}
+	if !strings.Contains(rewritten, "Redis") && !strings.Contains(lower, "redis") {
+		return result
+	}
+	rewritten = strings.TrimSpace(rewritten + " AOF RDB")
+	result.RewrittenQuestion = rewritten
+	if len(result.SubQuestions) > 0 {
+		result.SubQuestions = []string{rewritten}
+	}
+	return result
+}
+
+func collapseHistoryFollowUpSubQuestions(result Result) Result {
+	rewritten := strings.TrimSpace(result.RewrittenQuestion)
+	if rewritten == "" {
+		return result
+	}
+	if len(result.SubQuestions) <= 1 {
+		return result
+	}
+	result.SubQuestions = []string{rewritten}
+	return result
 }
 
 func (s *LLMService) callRewriteLLM(systemPrompt string, question string) (Result, error) {
@@ -152,6 +203,9 @@ func normalizeSubQuestions(raw []string, rewritten string) []string {
 		}
 		seen[q] = true
 		result = append(result, q)
+		if len(result) >= 4 {
+			break
+		}
 	}
 	if len(result) == 0 && rewritten != "" {
 		result = append(result, rewritten)
@@ -179,6 +233,7 @@ func buildRewriteHistoryPrompt(baseSystemPrompt string, history []convention.Cha
 		builder.WriteString("\n")
 	}
 	builder.WriteString("\n请根据以上对话历史，对用户的最新问题进行指代消解和改写。")
+	builder.WriteString(historyFollowUpPromptSuffix)
 	return builder.String()
 }
 

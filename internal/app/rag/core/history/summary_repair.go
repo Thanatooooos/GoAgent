@@ -1,13 +1,15 @@
-package history
+﻿package history
 
 import "strings"
 
 type summaryRepairSection int
 
 const (
-	summaryRepairSectionConstraints summaryRepairSection = iota
-	summaryRepairSectionEstablishedFacts
+	summaryRepairSectionEstablishedFacts summaryRepairSection = iota
+	summaryRepairSectionConstraints
 	summaryRepairSectionRecentProgress
+	summaryRepairSectionActivePriorities
+	summaryRepairSectionBackgroundIssues
 	summaryRepairSectionOpenQuestions
 )
 
@@ -17,61 +19,77 @@ type summaryRepairItem struct {
 }
 
 var summaryRepairBoundaryMarkers = []string{
-	"\u5f53\u524d\u4e0d",
-	"\u5f53\u524d\u4ec5",
-	"\u5f53\u524d\u5148",
-	"\u6682\u4e0d",
-	"\u5148\u4e0d",
-	"\u4e0d\u8981",
-	"\u4e0d\u80fd",
-	"\u4e0d\u8fdb\u5165",
-	"\u4e0d\u505a",
-	"\u4e0d\u6539",
-	"\u907f\u514d",
-	"\u53ea\u4fdd\u7559",
-	"\u4ec5\u4fdd\u7559",
-	"\u5f53\u524d\u8fb9\u754c",
+	"当前不",
+	"当前仅",
+	"当前先",
+	"暂不",
+	"先不",
+	"不要",
+	"不能",
+	"不进入",
+	"不做",
+	"不改",
+	"避免",
+	"只保留",
+	"仅保留",
+	"当前边界",
 }
 
 var summaryRepairUnresolvedMarkers = []string{
-	"\u5f85\u786e\u8ba4",
-	"\u5f85\u6838\u5b9e",
-	"\u5f85\u9a8c\u8bc1",
-	"\u672a\u786e\u8ba4",
-	"\u672a\u6838\u5b9e",
-	"\u672a\u9a8c\u8bc1",
-	"\u8fd8\u6ca1\u786e\u8ba4",
-	"\u8fd8\u672a\u786e\u8ba4",
-	"\u6ca1\u786e\u8ba4",
-	"\u9700\u8981\u786e\u8ba4",
-	"\u6709\u5f85\u786e\u8ba4",
-	"\u6682\u4e0d\u786e\u5b9a",
-	"\u4e0d\u786e\u5b9a",
-	"\u5019\u9009",
-	"\u7591\u4f3c",
+	"待确认",
+	"待核实",
+	"待验证",
+	"未确认",
+	"未核实",
+	"未验证",
+	"还没确认",
+	"还未确认",
+	"没确认",
+	"需要确认",
+	"有待确认",
+	"暂不确定",
+	"不确定",
+	"候选",
+	"疑似",
 }
 
 var summaryRepairProgressMarkers = []string{
-	"\u5df2\u786e\u8ba4",
-	"\u5df2\u7ecf\u786e\u8ba4",
-	"\u5df2\u5b8c\u6210",
-	"\u5df2\u7ecf\u5b8c\u6210",
-	"\u5df2\u4fee\u590d",
-	"\u5df2\u7ecf\u4fee\u590d",
-	"\u5df2\u66f4\u65b0",
-	"\u5df2\u7ecf\u66f4\u65b0",
-	"\u5df2\u5207\u6362",
-	"\u5df2\u7ecf\u5207\u6362",
-	"\u5df2\u6574\u7406",
-	"\u5df2\u6536\u655b",
-	"\u5df2\u843d\u5730",
-	"\u521a\u786e\u8ba4",
-	"\u521a\u5b8c\u6210",
-	"\u521a\u4fee\u590d",
-	"\u521a\u66f4\u65b0",
-	"\u786e\u8ba4\u5b8c\u6210",
-	"\u5b8c\u6210\u4e86",
-	"\u4fee\u590d\u5b8c\u6210",
+	"已确认",
+	"已经确认",
+	"已完成",
+	"已经完成",
+	"已修复",
+	"已经修复",
+	"已更新",
+	"已经更新",
+	"已切换",
+	"已经切换",
+	"已整理",
+	"已收敛",
+	"已落地",
+	"刚确认",
+	"刚完成",
+	"刚修复",
+	"刚更新",
+	"确认完成",
+	"完成了",
+	"修复完成",
+}
+
+var summaryRepairBackgroundMarkers = []string{
+	"不是当前重点",
+	"只是背景问题",
+	"背景问题",
+	"暂不处理",
+	"不是当前主线",
+}
+
+var summaryRepairActivePriorityMarkers = []string{
+	"当前真正活跃的目标",
+	"当前活跃目标",
+	"当前重点",
+	"本周重点",
+	"当前主线",
 }
 
 // RepairStructuredSummary conservatively reuses only already-present content.
@@ -84,7 +102,7 @@ func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 		UserPreferences: dedupeSummaryItems(summary.UserPreferences),
 	}
 
-	items := make([]summaryRepairItem, 0, len(summary.Constraints)+len(summary.EstablishedFacts)+len(summary.RecentProgress)+len(summary.OpenQuestions))
+	items := make([]summaryRepairItem, 0, len(summary.ActivePriorities)+len(summary.Constraints)+len(summary.EstablishedFacts)+len(summary.RecentProgress)+len(summary.OpenQuestions)+len(summary.BackgroundIssues))
 	seen := map[string]int{}
 
 	appendItem := func(source summaryRepairSection, text string) {
@@ -104,6 +122,9 @@ func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 		items = append(items, summaryRepairItem{text: text, section: section})
 	}
 
+	for _, item := range summary.ActivePriorities {
+		appendItem(summaryRepairSectionActivePriorities, item)
+	}
 	for _, item := range summary.Constraints {
 		appendItem(summaryRepairSectionConstraints, item)
 	}
@@ -116,9 +137,14 @@ func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 	for _, item := range summary.OpenQuestions {
 		appendItem(summaryRepairSectionOpenQuestions, item)
 	}
+	for _, item := range summary.BackgroundIssues {
+		appendItem(summaryRepairSectionBackgroundIssues, item)
+	}
 
 	for _, item := range items {
 		switch item.section {
+		case summaryRepairSectionActivePriorities:
+			repaired.ActivePriorities = append(repaired.ActivePriorities, item.text)
 		case summaryRepairSectionConstraints:
 			repaired.Constraints = append(repaired.Constraints, item.text)
 		case summaryRepairSectionEstablishedFacts:
@@ -127,16 +153,62 @@ func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 			repaired.RecentProgress = append(repaired.RecentProgress, item.text)
 		case summaryRepairSectionOpenQuestions:
 			repaired.OpenQuestions = append(repaired.OpenQuestions, item.text)
+		case summaryRepairSectionBackgroundIssues:
+			repaired.BackgroundIssues = append(repaired.BackgroundIssues, item.text)
 		}
 	}
 
+	repaired.ActivePriorities = backfillActivePriorities(summary, repaired.ActivePriorities)
 	repaired.Normalize()
 	return repaired
 }
 
+func backfillActivePriorities(original StructuredSummary, current []string) []string {
+	result := append([]string(nil), current...)
+	result = prependUniqueSummaryItem(result, original.Goal)
+	for _, item := range original.RecentProgress {
+		if containsAnySummaryRepairMarker(item, summaryRepairActivePriorityMarkers) {
+			result = appendUniqueSummaryItem(result, item)
+		}
+	}
+	result = dedupeSummaryItems(result)
+	return result
+}
+
+func prependUniqueSummaryItem(items []string, item string) []string {
+	item = strings.TrimSpace(item)
+	if item == "" {
+		return items
+	}
+	for _, existing := range items {
+		if strings.EqualFold(strings.TrimSpace(existing), item) {
+			return items
+		}
+	}
+	return append([]string{item}, items...)
+}
+
+func appendUniqueSummaryItem(items []string, item string) []string {
+	item = strings.TrimSpace(item)
+	if item == "" {
+		return items
+	}
+	for _, existing := range items {
+		if strings.EqualFold(strings.TrimSpace(existing), item) {
+			return items
+		}
+	}
+	return append(items, item)
+}
+
+
 func summaryRepairSectionPriority(section summaryRepairSection) int {
 	switch section {
 	case summaryRepairSectionOpenQuestions:
+		return 5
+	case summaryRepairSectionBackgroundIssues:
+		return 4
+	case summaryRepairSectionActivePriorities:
 		return 3
 	case summaryRepairSectionRecentProgress:
 		return 2
@@ -150,6 +222,9 @@ func summaryRepairSectionPriority(section summaryRepairSection) int {
 }
 
 func repairSummarySectionForItem(source summaryRepairSection, item string) summaryRepairSection {
+	if isSummaryRepairBackgroundOnlyItem(item) {
+		return summaryRepairSectionBackgroundIssues
+	}
 	// Unresolved content is safer than boundary language, so it wins first.
 	if isSummaryRepairUnresolvedItem(item) {
 		return summaryRepairSectionOpenQuestions
@@ -173,6 +248,10 @@ func isSummaryRepairUnresolvedItem(item string) bool {
 
 func isSummaryRepairRecentProgressItem(item string) bool {
 	return containsAnySummaryRepairMarker(item, summaryRepairProgressMarkers)
+}
+
+func isSummaryRepairBackgroundOnlyItem(item string) bool {
+	return containsAnySummaryRepairMarker(item, summaryRepairBackgroundMarkers)
 }
 
 func containsAnySummaryRepairMarker(item string, markers []string) bool {
@@ -215,3 +294,5 @@ func dedupeSummaryItems(items []string) []string {
 	}
 	return result
 }
+
+

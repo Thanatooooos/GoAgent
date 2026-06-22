@@ -7,7 +7,6 @@ import (
 	"gorm.io/gorm"
 
 	"local/rag-project/internal/app/rag/port"
-	"local/rag-project/internal/app/rag/service"
 	infraembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
@@ -16,13 +15,13 @@ import (
 func NewConversationMessageCreateTransaction(
 	db *gorm.DB,
 	embedding infraembedding.EmbeddingService,
-) service.ConversationMessageCreateTransaction {
+) port.ConversationMessageCreateTransaction {
 	return func(
 		ctx context.Context,
 		fn func(
 			ctx context.Context,
 			messageRepo port.ConversationMessageRepository,
-			chunkSink service.ConversationMessageChunkSink,
+			chunkSink port.ConversationMessageChunkSink,
 		) error,
 	) error {
 		if db == nil {

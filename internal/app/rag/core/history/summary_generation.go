@@ -1,4 +1,4 @@
-﻿package history
+package history
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func GenerateStructuredSummary(
 	request := convention.ChatRequest{
 		Messages: []convention.ChatMessage{
 			convention.SystemMessage(buildStructuredSummaryPrompt(tier, latestSummary, input.SourceMessages)),
-			convention.UserMessage("鐜板湪璇风洿鎺ヨ繑鍥炵粨鏋勫寲宸ヤ綔璁板繂 JSON銆?"),
+			convention.UserMessage("现在请直接返回结构化工作记忆 JSON。"),
 		},
 		JSONMode: &jsonMode,
 	}

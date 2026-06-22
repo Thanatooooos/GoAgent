@@ -1,4 +1,4 @@
-package history
+﻿package history
 
 import "strings"
 
@@ -8,6 +8,9 @@ func RenderStructuredSummary(summary StructuredSummary, maxChars int) string {
 	var sections []string
 	if summary.Goal != "" {
 		sections = append(sections, "目标："+summary.Goal)
+	}
+	if len(summary.ActivePriorities) > 0 {
+		sections = append(sections, "当前优先级：\n- "+strings.Join(summary.ActivePriorities, "\n- "))
 	}
 	if len(summary.Constraints) > 0 {
 		sections = append(sections, "约束：\n- "+strings.Join(summary.Constraints, "\n- "))
@@ -23,6 +26,9 @@ func RenderStructuredSummary(summary StructuredSummary, maxChars int) string {
 	}
 	if len(summary.OpenQuestions) > 0 {
 		sections = append(sections, "待确认问题：\n- "+strings.Join(summary.OpenQuestions, "\n- "))
+	}
+	if len(summary.BackgroundIssues) > 0 {
+		sections = append(sections, "背景问题：\n- "+strings.Join(summary.BackgroundIssues, "\n- "))
 	}
 
 	return trimRunes(strings.Join(sections, "\n"), maxChars)

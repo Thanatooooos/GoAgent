@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/convention"
 	airerank "local/rag-project/internal/infra-ai/rerank"
 )
@@ -58,6 +59,9 @@ func (p *dedupPostProcessor) Process(_ context.Context, input SearchProcessInput
 	if input.Context.TopK > 0 && len(chunks) > input.Context.TopK {
 		chunks = chunks[:input.Context.TopK]
 	}
+	if input.Trace != nil {
+		input.Trace.PreRerankChunkIDs = chunkIDs(chunks)
+	}
 	return chunks, nil
 }
 
@@ -74,8 +78,11 @@ func (p *rerankPostProcessor) Order() int                 { return 30 }
 func (p *rerankPostProcessor) Enabled(SearchContext) bool { return p != nil && p.reranker != nil }
 func (p *rerankPostProcessor) Process(_ context.Context, input SearchProcessInput) ([]convention.RetrievedChunk, error) {
 	chunks := cloneChunks(input.Chunks)
-	if p == nil || p.reranker == nil || len(chunks) <= 1 {
+	if p == nil || p.reranker == nil {
 		return chunks, nil
+	}
+	if input.Trace != nil {
+		input.Trace.RerankModel = resolveConfiguredRerankModel()
 	}
 	topN := input.Context.RerankTopN
 	if topN <= 0 || topN > len(chunks) {
@@ -83,9 +90,26 @@ func (p *rerankPostProcessor) Process(_ context.Context, input SearchProcessInpu
 	}
 	reranked, err := p.reranker.Rerank(strings.TrimSpace(input.Context.Query), chunks, topN)
 	if err != nil || len(reranked) == 0 {
+		if input.Trace != nil {
+			input.Trace.RerankApplied = false
+			if err != nil {
+				input.Trace.RerankError = err.Error()
+			}
+		}
 		return chunks, nil
 	}
+	if input.Trace != nil {
+		input.Trace.RerankApplied = true
+	}
 	return reranked, nil
+}
+
+func resolveConfiguredRerankModel() string {
+	cfg := config.Get()
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.AI.Rerank.DefaultModel)
 }
 
 func rrfFuseChannelResults(results []SearchChannelResult) []convention.RetrievedChunk {

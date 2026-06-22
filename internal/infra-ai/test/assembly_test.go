@@ -32,6 +32,26 @@ func TestNewRuntime(t *testing.T) {
 	if len(runtime.ChatClients) != 3 {
 		t.Fatalf("expected 3 chat clients, got %d", len(runtime.ChatClients))
 	}
+	targets := runtime.Selector.SelectChatCandidates(false)
+	if len(targets) == 0 {
+		t.Fatal("expected at least one chat target")
+	}
+	if targets[0].Id != "qwen-plus" {
+		t.Fatalf("expected first chat target qwen-plus, got %s", targets[0].Id)
+	}
+	if targets[0].Candidate.Provider != "bailian" {
+		t.Fatalf("expected first chat target provider bailian, got %s", targets[0].Candidate.Provider)
+	}
+	if targets[0].Candidate.Model != "qwen-plus-latest" {
+		t.Fatalf("expected first chat target model qwen-plus-latest, got %s", targets[0].Candidate.Model)
+	}
+	deepThinkingTargets := runtime.Selector.SelectChatCandidates(true)
+	if len(deepThinkingTargets) == 0 {
+		t.Fatal("expected at least one deep thinking chat target")
+	}
+	if deepThinkingTargets[0].Id != "qwen-plus" {
+		t.Fatalf("expected first deep thinking chat target qwen-plus, got %s", deepThinkingTargets[0].Id)
+	}
 	if len(runtime.EmbeddingClients) != 2 {
 		t.Fatalf("expected 2 embedding clients, got %d", len(runtime.EmbeddingClients))
 	}
@@ -80,9 +100,14 @@ ai:
     default-model: qwen-plus
     deep-thinking-model: qwen-plus
     candidates:
+      - id: deepseek-r1
+        provider: siliconflow
+        model: deepseek-ai/DeepSeek-R1
+        supports-thinking: true
       - id: qwen-plus
         provider: bailian
         model: qwen-plus-latest
+        supports-thinking: true
       - id: glm
         provider: siliconflow
         model: glm-4.7

@@ -17,8 +17,8 @@ var canonicalMemoryKeyRegistry = map[string]MemoryKeySpec{
 		DefaultImportance: 100,
 		AllowedScopeTypes: []string{domain.MemoryScopeGlobal, domain.MemoryScopeKB},
 	},
-	"workflow.first_step": {
-		CanonicalKey:      "workflow.first_step",
+	"workflow.troubleshooting.first_step": {
+		CanonicalKey:      "workflow.troubleshooting.first_step",
 		Category:          domain.MemoryCategoryWorkflow,
 		MemoryType:        domain.MemoryTypePreference,
 		ValueType:         domain.MemoryValueTypeText,

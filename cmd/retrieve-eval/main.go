@@ -15,7 +15,6 @@ import (
 	rageval "local/rag-project/internal/app/rag/evaluation"
 	ragbootstrap "local/rag-project/internal/bootstrap/rag"
 	"local/rag-project/internal/framework/config"
-	"local/rag-project/internal/framework/convention"
 )
 
 type sampleFile struct {
@@ -32,10 +31,11 @@ func main() {
 	rerankModel := flag.String("rerank-model", "", "optional rerank model override, e.g. qwen3-rerank or rerank-noop")
 	vectorTopKMultiplier := flag.Int("vector-topk-multiplier", 0, "optional override for rag.search.channels.vector-global.top-k-multiplier")
 	searchModeOverride := flag.String("search-mode", "", "optional retrieval mode override: semantic, keyword, hybrid, auto")
+	rewrite := flag.Bool("rewrite", false, "run query rewrite before retrieval (uses LLM API when enabled in config)")
 	flag.Parse()
 
 	if strings.TrimSpace(*inputPath) == "" {
-		fmt.Fprintln(os.Stderr, "usage: go run ./cmd/retrieve-eval -input <samples.json> [-k 1,3,5] [-json] [-output result.json]")
+		fmt.Fprintln(os.Stderr, "usage: go run ./cmd/retrieve-eval -input <samples.json> [-execute] [-rewrite] [-k 1,3,5] [-json] [-output result.json]")
 		os.Exit(1)
 	}
 
@@ -68,7 +68,10 @@ func main() {
 		}
 		defer func() { _ = runtime.Close() }()
 
-		if err := executeSamples(context.Background(), runtime, samples, strings.TrimSpace(*searchModeOverride)); err != nil {
+		if err := executeSamples(context.Background(), runtime, samples, executeOptions{
+			searchModeOverride: strings.TrimSpace(*searchModeOverride),
+			useRewrite:         *rewrite,
+		}); err != nil {
 			fmt.Fprintf(os.Stderr, "execute retrieval samples failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -86,56 +89,43 @@ func main() {
 	}
 }
 
-func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples []rageval.Sample, searchModeOverride string) error {
+type executeOptions struct {
+	searchModeOverride string
+	useRewrite         bool
+}
+
+func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples []rageval.Sample, opts executeOptions) error {
 	if runtime == nil || runtime.Retrieve == nil {
 		return fmt.Errorf("rag retrieve runtime is required")
 	}
+	if opts.useRewrite && runtime.Rewrite == nil {
+		return fmt.Errorf("rewrite is enabled but query rewrite service is unavailable (check rag.query-rewrite.enabled in config)")
+	}
+
+	cfg := config.Get()
+	subQuestionOptions := ragretrieve.SubQuestionOptions{
+		ParallelEnabled: true,
+		MaxConcurrency:  2,
+	}
+	if cfg != nil {
+		subQuestionOptions.ParallelEnabled = cfg.Rag.Retrieve.ParallelSubquestions.Enabled
+		subQuestionOptions.MaxConcurrency = cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency
+	}
+
+	execCfg := rageval.ExecuteConfig{
+		Retrieve:           runtime.Retrieve,
+		Rewrite:            runtime.Rewrite,
+		UseRewrite:         opts.useRewrite,
+		SearchModeOverride: opts.searchModeOverride,
+		SubQuestionOptions: subQuestionOptions,
+	}
 
 	for i := range samples {
-		searchMode := strings.TrimSpace(samples[i].SearchMode)
-		if searchModeOverride != "" {
-			searchMode = searchModeOverride
+		if err := rageval.ExecuteSample(ctx, &samples[i], execCfg); err != nil {
+			return err
 		}
-		request := ragretrieve.Request{
-			UserID:           strings.TrimSpace(samples[i].UserID),
-			Query:            strings.TrimSpace(samples[i].Query),
-			KnowledgeBaseIDs: append([]string(nil), samples[i].KnowledgeBaseIDs...),
-			SearchMode:       searchMode,
-			TopK:             samples[i].TopK,
-		}
-		result, err := runtime.Retrieve.Retrieve(ctx, request)
-		if err != nil {
-			return fmt.Errorf("execute sample %q: %w", samples[i].Name, err)
-		}
-
-		samples[i].Retrieved = retrievedItemsFromChunks(result.Chunks)
-		samples[i].ChannelRetrieved = channelRetrievedFromResult(result)
 	}
 	return nil
-}
-
-func retrievedItemsFromChunks(chunks []convention.RetrievedChunk) []rageval.RetrievedItem {
-	retrieved := make([]rageval.RetrievedItem, 0, len(chunks))
-	for _, chunk := range chunks {
-		retrieved = append(retrieved, rageval.RetrievedItem{
-			ChunkID:    chunk.ID,
-			DocumentID: chunk.DocumentID,
-			Metadata:   chunk.Metadata,
-			Score:      float64(chunk.Score),
-		})
-	}
-	return retrieved
-}
-
-func channelRetrievedFromResult(result ragretrieve.Result) map[string][]rageval.RetrievedItem {
-	if len(result.ChannelRetrieved) == 0 {
-		return nil
-	}
-	channelRetrieved := make(map[string][]rageval.RetrievedItem, len(result.ChannelRetrieved))
-	for channel, chunks := range result.ChannelRetrieved {
-		channelRetrieved[channel] = retrievedItemsFromChunks(chunks)
-	}
-	return channelRetrieved
 }
 
 func loadSamples(path string) ([]rageval.Sample, error) {

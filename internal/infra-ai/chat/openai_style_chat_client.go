@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"local/rag-project/internal/framework/convention"
@@ -162,6 +163,14 @@ func (op *OpenAIStyleChatClient) extractContent(resp openAIStyleChatResponse) (s
 	if choice.Message.Content == nil {
 		return "", aihttp.NewModelClientException(
 			fmt.Sprintf("%s response missing content", op.provider),
+			aihttp.ErrorTypeInvalidResponse,
+			0,
+			nil,
+		)
+	}
+	if strings.TrimSpace(*choice.Message.Content) == "" {
+		return "", aihttp.NewModelClientException(
+			fmt.Sprintf("%s response content is empty", op.provider),
 			aihttp.ErrorTypeInvalidResponse,
 			0,
 			nil,

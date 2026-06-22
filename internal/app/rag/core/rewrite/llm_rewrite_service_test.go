@@ -50,8 +50,11 @@ func TestLLMRewriteServiceParsesNeedRetrieval(t *testing.T) {
 	if !result.NeedRetrieval {
 		t.Fatal("expected retrieval to be required")
 	}
-	if len(result.SubQuestions) != 3 {
-		t.Fatalf("expected rewritten question plus 2 sub questions, got %v", result.SubQuestions)
+	if len(result.SubQuestions) != 1 {
+		t.Fatalf("expected single-intent collapse to one sub question, got %v", result.SubQuestions)
+	}
+	if result.SubQuestions[0] != "排查 nginx 404 配置错误" {
+		t.Fatalf("unexpected sub question: %q", result.SubQuestions[0])
 	}
 }
 
@@ -102,6 +105,25 @@ func TestLLMRewriteServiceIncludesHistoryInPrompt(t *testing.T) {
 	}
 	if llm.requests[0].Messages[0].Role != convention.SystemRole {
 		t.Fatalf("expected system prompt, got %q", llm.requests[0].Messages[0].Role)
+	}
+}
+
+func TestRewriteWithHistoryCollapsesOverSplitSubQuestions(t *testing.T) {
+	llm := &stubLLMService{
+		response: `{"rewritten":"Go 1.18 slice 扩容规则是什么","sub_questions":["Go slice 扩容算法","Go slice cap 扩容规则"],"need_retrieval":true}`,
+	}
+	service := NewLLMService(llm)
+	history := []convention.ChatMessage{
+		convention.UserMessage("Go 1.18 以后 slice 怎么扩容"),
+		convention.AssistantMessage("Go 1.18 之后 slice 扩容会同时考虑内存对齐和阈值策略。"),
+	}
+
+	result := service.RewriteWithHistory("那扩容规则呢", history)
+	if len(result.SubQuestions) != 1 {
+		t.Fatalf("expected collapsed sub questions, got %v", result.SubQuestions)
+	}
+	if result.SubQuestions[0] != "Go 1.18 slice 扩容规则是什么" {
+		t.Fatalf("unexpected collapsed sub question: %q", result.SubQuestions[0])
 	}
 }
 

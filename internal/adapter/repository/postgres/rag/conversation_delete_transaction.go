@@ -7,11 +7,10 @@ import (
 	"gorm.io/gorm"
 
 	"local/rag-project/internal/app/rag/port"
-	"local/rag-project/internal/app/rag/service"
 )
 
 // NewConversationDeleteTransaction 创建会话级联删除事务包装器。
-func NewConversationDeleteTransaction(db *gorm.DB) service.ConversationDeleteTransaction {
+func NewConversationDeleteTransaction(db *gorm.DB) port.ConversationDeleteTransaction {
 	return func(
 		ctx context.Context,
 		fn func(

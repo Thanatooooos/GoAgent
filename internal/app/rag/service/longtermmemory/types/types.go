@@ -56,6 +56,9 @@ type RecallMemoriesInput struct {
 	UserID           string
 	Query            string
 	KnowledgeBaseIDs []string
+	ScopeTypes       []string
+	MemoryTypes      []string
+	Statuses         []string
 }
 
 type RecallMemoriesResult struct {

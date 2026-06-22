@@ -159,6 +159,7 @@ func NewCompressibleSummaryService(
 		chatService: options.ChatService,
 		startTurns:  options.StartTurns,
 		maxChars:    options.MaxChars,
+		budget:      options.Budget,
 		now:         time.Now,
 	}
 	adapter := &SummaryServiceAdapter{

@@ -114,6 +114,9 @@ func (c *metadataTitleChannel) Enabled(ctx SearchContext) bool {
 	if c == nil || c.searcher == nil {
 		return false
 	}
+	if !metadataTitleChannelEnabled() {
+		return false
+	}
 	switch normalizeSearchMode(ctx.SearchMode) {
 	case SearchModeAuto, SearchModeKeyword, SearchModeHybrid:
 		return true
@@ -214,6 +217,14 @@ func vectorGlobalTopKMultiplier() int {
 		return defaultChannelTopKMultiplier
 	}
 	return value
+}
+
+func metadataTitleChannelEnabled() bool {
+	cfg := config.Get()
+	if cfg == nil || cfg.Rag.Search.Channels.MetadataTitle.Enabled == nil {
+		return true
+	}
+	return *cfg.Rag.Search.Channels.MetadataTitle.Enabled
 }
 
 func defaultChannelRRFWeight(channelName string) float32 {

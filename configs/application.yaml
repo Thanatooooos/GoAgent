@@ -204,6 +204,7 @@ rag:
       keyword:
         backend: "bm25"
       metadata-title:
+        enabled: false
         enabled-fallback-trgm: true
         section-weight: 3.0
         document-name-weight: 1.4
@@ -241,28 +242,38 @@ ai:
     message-chunk-size: 1
 
   chat:
-    default-model: qwen3-max
-    deep-thinking-model: qwen3-max
+    default-model: qwen-max-test
+    deep-thinking-model: qwen-max-test
     candidates:
-      - id: qwen-plus
-        provider: bailian
-        model: qwen-plus-latest
-        priority: 1
-      - id: qwen3-max
-        provider: bailian
-        model: qwen3-max
-        supports-thinking: true
-        priority: 3
       - id: glm-4.7
         provider: siliconflow
         model: Pro/zai-org/GLM-4.7
         supports-thinking: true
-        priority: 0
+        priority: 1
+      - id: glm-5
+        provider: bailian
+        model: glm-5
+        supports-thinking: true
+        priority: 2
+      - id: qwen-max-test
+        provider: bailian
+        model: qwen-max
+        supports-thinking: true
+        priority: 3
+      - id: deepseek-r1
+        provider: siliconflow
+        model: deepseek-ai/DeepSeek-R1
+        supports-thinking: true
+        priority: 4
+      - id: qwen-plus
+        provider: bailian
+        model: qwen-plus-latest
+        supports-thinking: true
+        priority: 5
       - id: qwen3-local
         provider: ollama
         model: qwen3:8b-fp16
-        priority: 2
-
+        priority: 6
   embedding:
     default-model: qwen-emb-8b
     candidates:

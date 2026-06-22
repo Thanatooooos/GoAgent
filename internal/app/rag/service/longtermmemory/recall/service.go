@@ -8,6 +8,7 @@ import (
 	"local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
+	longtermmemoryobs "local/rag-project/internal/app/rag/service/longtermmemory/observability"
 	memorytypes "local/rag-project/internal/app/rag/service/longtermmemory/types"
 	"local/rag-project/internal/framework/exception"
 	"local/rag-project/internal/framework/log"
@@ -76,14 +77,40 @@ func (r *recallService) RecallMemories(ctx context.Context, input memorytypes.Re
 
 	query := strings.TrimSpace(input.Query)
 	knowledgeBaseIDs := trimMemoryValues(input.KnowledgeBaseIDs)
-	ruleCandidates, scopeVersions, ruleCacheLayer, ruleReason, err := r.loadRuleMemoryProjections(ctx, userID, query, knowledgeBaseIDs)
-	if err != nil {
-		return memorytypes.RecallMemoriesResult{}, err
+	scopeTypes := trimMemoryValues(input.ScopeTypes)
+	memoryTypes := trimMemoryValues(input.MemoryTypes)
+	statuses := normalizeRecallStatuses(input.Statuses)
+	longtermmemoryobs.LogRecallStarted(ctx, userID, query, scopeTypes, memoryTypes, statuses, len(knowledgeBaseIDs))
+
+	includeRules := len(memoryTypes) == 0 || containsMemoryValue(memoryTypes, domain.MemoryTypePreference)
+	includeFacts := len(memoryTypes) == 0 || containsMemoryValue(memoryTypes, domain.MemoryTypeKnowledge)
+
+	var (
+		ruleCandidates      []memoryRecallProjection
+		scopeVersions       port.ScopeVersions
+		ruleCacheLayer      string
+		ruleReason          string
+		rankedFacts         []memoryRecallProjection
+		factScopeVersions   port.ScopeVersions
+		factCacheLayer      string
+		embeddingCacheLayer string
+		factReason          string
+		err                 error
+	)
+	if includeRules {
+		ruleCandidates, scopeVersions, ruleCacheLayer, ruleReason, err = r.loadRuleMemoryProjections(ctx, userID, query, knowledgeBaseIDs, scopeTypes, statuses)
+		if err != nil {
+			longtermmemoryobs.LogRecallFailed(ctx, userID, "load_rule_memory_projections", err)
+			return memorytypes.RecallMemoriesResult{}, err
+		}
 	}
 
-	rankedFacts, _, factScopeVersions, factCacheLayer, embeddingCacheLayer, factReason, err := r.loadFactRankingProjections(ctx, userID, query, knowledgeBaseIDs, r.options.MaxCandidatesPerScope)
-	if err != nil {
-		return memorytypes.RecallMemoriesResult{}, err
+	if includeFacts {
+		rankedFacts, _, factScopeVersions, factCacheLayer, embeddingCacheLayer, factReason, err = r.loadFactRankingProjections(ctx, userID, query, knowledgeBaseIDs, r.options.MaxCandidatesPerScope)
+		if err != nil {
+			longtermmemoryobs.LogRecallFailed(ctx, userID, "load_fact_ranking_projections", err)
+			return memorytypes.RecallMemoriesResult{}, err
+		}
 	}
 	if scopeVersions.GlobalVersion == 0 && len(scopeVersions.KBVersions) == 0 {
 		scopeVersions = factScopeVersions
@@ -91,9 +118,24 @@ func (r *recallService) RecallMemories(ctx context.Context, input memorytypes.Re
 
 	selectedRules, selectedFacts, contextText, truncated := buildMemoryRecallContext(ruleCandidates, rankedFacts, r.options.MaxRecallItems, r.options.MaxRecallChars)
 	selected := append(append([]memoryRecallProjection(nil), selectedRules...), selectedFacts...)
+	if len(selectedRules) > 0 {
+		longtermmemoryobs.Record(r.cacheMetrics, longtermmemoryobs.LayerRecall, longtermmemoryobs.OutcomePreferenceRecalled)
+	}
 	r.touchLastUsed(ctx, userID, selected)
 	recomputeReason := strings.TrimSpace(strings.Join([]string{ruleReason, factReason}, ";"))
 	recomputeReason = strings.Trim(recomputeReason, "; ")
+	longtermmemoryobs.LogRecallCompleted(
+		ctx,
+		userID,
+		len(ruleCandidates)+len(rankedFacts),
+		len(selected),
+		len(selectedRules),
+		len(selectedFacts),
+		ruleCacheLayer,
+		factCacheLayer,
+		embeddingCacheLayer,
+		truncated,
+	)
 
 	return memorytypes.RecallMemoriesResult{
 		Used:                len(selected) > 0,
@@ -122,16 +164,18 @@ func (r *recallService) RecallMemories(ctx context.Context, input memorytypes.Re
 	}, nil
 }
 
-func (r *recallService) loadRuleMemories(ctx context.Context, userID string, knowledgeBaseIDs []string) ([]domain.MemoryItem, error) {
+func (r *recallService) loadRuleMemories(ctx context.Context, userID string, knowledgeBaseIDs []string, scopeTypes []string, statuses []string) ([]domain.MemoryItem, error) {
+	scopeTypes = trimMemoryValues(scopeTypes)
+	statuses = normalizeRecallStatuses(statuses)
 	var kbItems []domain.MemoryItem
 	var err error
-	if len(knowledgeBaseIDs) > 0 {
+	if len(knowledgeBaseIDs) > 0 && (len(scopeTypes) == 0 || containsMemoryValue(scopeTypes, domain.MemoryScopeKB)) {
 		kbItems, err = r.repo.List(ctx, port.MemoryItemListFilter{
 			UserID:      userID,
 			ScopeTypes:  []string{domain.MemoryScopeKB},
 			ScopeIDs:    knowledgeBaseIDs,
 			MemoryTypes: []string{domain.MemoryTypePreference},
-			Statuses:    []string{domain.MemoryStatusActive},
+			Statuses:    statuses,
 			ListOptions: port.ListOptions{
 				Limit: r.options.MaxCandidatesPerScope,
 			},
@@ -140,17 +184,20 @@ func (r *recallService) loadRuleMemories(ctx context.Context, userID string, kno
 			return nil, exception.NewServiceException("failed to list kb rule memory items", err)
 		}
 	}
-	globalItems, err := r.repo.List(ctx, port.MemoryItemListFilter{
-		UserID:      userID,
-		ScopeTypes:  []string{domain.MemoryScopeGlobal},
-		MemoryTypes: []string{domain.MemoryTypePreference},
-		Statuses:    []string{domain.MemoryStatusActive},
-		ListOptions: port.ListOptions{
-			Limit: r.options.MaxCandidatesPerScope,
-		},
-	})
-	if err != nil {
-		return nil, exception.NewServiceException("failed to list global rule memory items", err)
+	var globalItems []domain.MemoryItem
+	if len(scopeTypes) == 0 || containsMemoryValue(scopeTypes, domain.MemoryScopeGlobal) {
+		globalItems, err = r.repo.List(ctx, port.MemoryItemListFilter{
+			UserID:      userID,
+			ScopeTypes:  []string{domain.MemoryScopeGlobal},
+			MemoryTypes: []string{domain.MemoryTypePreference},
+			Statuses:    statuses,
+			ListOptions: port.ListOptions{
+				Limit: r.options.MaxCandidatesPerScope,
+			},
+		})
+		if err != nil {
+			return nil, exception.NewServiceException("failed to list global rule memory items", err)
+		}
 	}
 	items := append(append([]domain.MemoryItem(nil), kbItems...), globalItems...)
 	sortRuleMemoryItems(items)

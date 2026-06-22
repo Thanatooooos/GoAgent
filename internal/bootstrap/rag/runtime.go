@@ -24,6 +24,8 @@ import (
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/log"
 	infraai "local/rag-project/internal/infra-ai"
+	aichat "local/rag-project/internal/infra-ai/chat"
+	"local/rag-project/internal/infra-ai/embedding"
 	inframcp "local/rag-project/internal/infra-mcp"
 )
 
@@ -46,10 +48,14 @@ type Runtime struct {
 	memoryMaintenanceRunner     func(context.Context, longtermmemory.MaintenanceInput) (longtermmemory.MaintenanceResult, error)
 	summaryJobWorker            *raghistory.InMemorySummaryJobWorker
 	CacheMetrics                *ragcachemetrics.Service
+	LLMChat                     aichat.LLMService
+	Embedding                   embedding.EmbeddingService
+	Rewrite                     ragrewrite.Service
 	Retrieve                    ragretrieve.Service
 	Conversation                *ragservice.ConversationService
 	Message                     *ragservice.ConversationMessageService
 	Memory                      *longtermmemory.MemoryService
+	PreferenceCandidates        longtermmemory.PreferenceCandidateService
 	Feedback                    *ragservice.MessageFeedbackService
 	Trace                       *ragservice.TraceService
 	Chat                        *ragservice.RagChatService
@@ -83,10 +89,14 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		memoryCache:      memory.memoryCacheClient,
 		summaryJobWorker: conversation.summaryJobWorker,
 		CacheMetrics:     memory.memoryCacheMetrics,
+		LLMChat:          buildCtx.aiRuntime.Chat,
+		Embedding:        buildCtx.aiRuntime.Embedding,
+		Rewrite:          retrieve.rewriteService,
 		Retrieve:         retrieve.retrieveService,
 		Conversation:     conversation.conversationService,
 		Message:          conversation.messageService,
 		Memory:           memory.explicitMemoryService,
+		PreferenceCandidates: memory.preferenceCandidateService,
 		Feedback:         conversation.feedbackService,
 		Trace:            retrieve.traceService,
 		Chat:             chat.chatService,

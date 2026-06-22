@@ -32,6 +32,10 @@ func (s memoryItemRepoStub) List(ctx context.Context, filter port.MemoryItemList
 	return s.listFn(ctx, filter)
 }
 
+func (s memoryItemRepoStub) Count(context.Context, port.MemoryItemListFilter) (int64, error) {
+	return 0, nil
+}
+
 func (s memoryItemRepoStub) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
 	if s.listFn == nil {
 		return nil, nil
@@ -54,6 +58,14 @@ func (s memoryItemRepoStub) ListActiveSingleValueConflicts(context.Context, []st
 
 func (s memoryItemRepoStub) TouchLastUsed(context.Context, string, []string, time.Time) error {
 	return nil
+}
+
+func (s memoryItemRepoStub) DeleteByStatusesUpdatedBefore(context.Context, []string, time.Time, int) (int64, error) {
+	return 0, nil
+}
+
+func (s memoryItemRepoStub) ExpireByIDs(context.Context, []string, string, time.Time) (int64, error) {
+	return 0, nil
 }
 
 func TestDetectMemoryConflictSingleValuedSupersedesPreviousValue(t *testing.T) {

@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	ragcache "local/rag-project/internal/app/rag/cache"
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/app/rag/port"
+	fwlog "local/rag-project/internal/framework/log"
 )
 
 type memoryItemRepoStub struct {
@@ -20,6 +23,7 @@ type memoryItemRepoStub struct {
 	updateFn              func(context.Context, domain.MemoryItem) (domain.MemoryItem, error)
 	getByID               func(context.Context, string) (domain.MemoryItem, error)
 	listFn                func(context.Context, port.MemoryItemListFilter) ([]domain.MemoryItem, error)
+	countFn               func(context.Context, port.MemoryItemListFilter) (int64, error)
 	listActiveByKeyFn     func(context.Context, string, string, string, string) ([]domain.MemoryItem, error)
 	listActiveConflictsFn func(context.Context, []string) ([]port.ActiveMemoryConflict, error)
 	touchFn               func(context.Context, string, []string, time.Time) error
@@ -41,6 +45,13 @@ func (s memoryItemRepoStub) GetByID(ctx context.Context, id string) (domain.Memo
 
 func (s memoryItemRepoStub) List(ctx context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
 	return s.listFn(ctx, filter)
+}
+
+func (s memoryItemRepoStub) Count(ctx context.Context, filter port.MemoryItemListFilter) (int64, error) {
+	if s.countFn == nil {
+		return 0, nil
+	}
+	return s.countFn(ctx, filter)
 }
 
 func (s memoryItemRepoStub) ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error) {
@@ -243,6 +254,60 @@ func TestMemoryServiceSaveExplicitMemoryDefaultsAndPersists(t *testing.T) {
 	}
 	if created.Summary == "" {
 		t.Fatalf("expected generated summary, got %+v", created)
+	}
+}
+
+func TestMemoryServiceRecallMemoriesLogsStartAndCompletion(t *testing.T) {
+	core, observed := observer.New(zap.InfoLevel)
+	ctx := fwlog.BindLogger(context.Background(), zap.New(core).Sugar())
+	service := NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			if len(filter.MemoryTypes) == 1 && filter.MemoryTypes[0] == domain.MemoryTypePreference {
+				return []domain.MemoryItem{{
+					ID:         "mem-1",
+					UserID:     "user-1",
+					ScopeType:  domain.MemoryScopeGlobal,
+					MemoryType: domain.MemoryTypePreference,
+					Summary:    "Prefer Chinese.",
+					Content:    "Prefer Chinese.",
+					Status:     domain.MemoryStatusActive,
+					UpdateTime: time.Date(2026, 5, 24, 8, 0, 0, 0, time.UTC),
+				}}, nil
+			}
+			return nil, nil
+		},
+	}, MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 1200})
+
+	result, err := service.RecallMemories(ctx, RecallMemoriesInput{
+		UserID:      "user-1",
+		Query:       "how should you answer?",
+		ScopeTypes:  []string{domain.MemoryScopeGlobal},
+		MemoryTypes: []string{domain.MemoryTypePreference},
+		Statuses:    []string{domain.MemoryStatusActive},
+	})
+	if err != nil {
+		t.Fatalf("RecallMemories returned error: %v", err)
+	}
+	if !result.Used {
+		t.Fatalf("expected recall result to be used, got %+v", result)
+	}
+
+	entries := observed.All()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 recall log entries, got %d", len(entries))
+	}
+	if entries[0].Message != "long-term memory recall started" {
+		t.Fatalf("unexpected start log: %+v", entries[0])
+	}
+	if entries[1].Message != "long-term memory recall completed" {
+		t.Fatalf("unexpected completion log: %+v", entries[1])
+	}
+	contextMap := entries[1].ContextMap()
+	if contextMap["selected_count"] != int64(1) && contextMap["selected_count"] != 1 {
+		t.Fatalf("unexpected recall completion context: %+v", contextMap)
 	}
 }
 
@@ -536,6 +601,57 @@ func TestMemoryServiceRecallMemoriesUsesCachedFactRankingWhenAvailable(t *testin
 	}
 	if len(result.Items) != 1 || result.Items[0].ID != "mem-kb-1" {
 		t.Fatalf("expected cached fact memory result, got %+v", result.Items)
+	}
+}
+
+func TestMemoryServiceRecallMemoriesAppliesExplicitPreferenceRecallFilters(t *testing.T) {
+	service := NewMemoryService(memoryItemRepoStub{
+		createFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		updateFn: func(context.Context, domain.MemoryItem) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		getByID:  func(context.Context, string) (domain.MemoryItem, error) { return domain.MemoryItem{}, nil },
+		listFn: func(_ context.Context, filter port.MemoryItemListFilter) ([]domain.MemoryItem, error) {
+			if len(filter.ScopeTypes) != 1 || filter.ScopeTypes[0] != domain.MemoryScopeGlobal {
+				t.Fatalf("expected global scope filter, got %+v", filter)
+			}
+			if len(filter.MemoryTypes) != 1 || filter.MemoryTypes[0] != domain.MemoryTypePreference {
+				t.Fatalf("expected preference filter, got %+v", filter)
+			}
+			if len(filter.Statuses) != 1 || filter.Statuses[0] != domain.MemoryStatusActive {
+				t.Fatalf("expected active status filter, got %+v", filter)
+			}
+			return []domain.MemoryItem{
+				{
+					ID:         "mem-active-global",
+					UserID:     "user-1",
+					ScopeType:  domain.MemoryScopeGlobal,
+					MemoryType: domain.MemoryTypePreference,
+					Summary:    "Always answer in Chinese.",
+					Content:    "以后默认用中文回答。",
+					Status:     domain.MemoryStatusActive,
+					UpdateTime: time.Date(2026, 5, 20, 8, 0, 0, 0, time.UTC),
+				},
+			}, nil
+		},
+	}, MemoryServiceOptions{MaxRecallItems: 5, MaxRecallChars: 400})
+
+	result, err := service.RecallMemories(context.Background(), RecallMemoriesInput{
+		UserID:      "user-1",
+		Query:       "How should you answer?",
+		ScopeTypes:  []string{domain.MemoryScopeGlobal},
+		MemoryTypes: []string{domain.MemoryTypePreference},
+		Statuses:    []string{domain.MemoryStatusActive},
+	})
+	if err != nil {
+		t.Fatalf("RecallMemories returned error: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].ID != "mem-active-global" {
+		t.Fatalf("expected only active global preference, got %+v", result.Items)
+	}
+	if result.FactCandidateCount != 0 || result.FactSelectedCount != 0 {
+		t.Fatalf("expected no fact recall on preference-only filter, got %+v", result)
+	}
+	if result.RuleCount != 1 || result.TypeCounts[domain.MemoryTypePreference] != 1 {
+		t.Fatalf("unexpected filtered recall result: %+v", result)
 	}
 }
 

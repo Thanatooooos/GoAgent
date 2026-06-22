@@ -376,7 +376,7 @@ func cleanKnowledgeBase(ctx context.Context, db *gorm.DB, kbName string) error {
 	}{
 		{"vectors", "DELETE FROM t_knowledge_chunk_vector WHERE kb_id = ?"},
 		{"chunks", "DELETE FROM t_knowledge_chunk WHERE kb_id = ?"},
-		{"chunk_logs", "DELETE FROM t_knowledge_document_chunk_log WHERE document_id IN (SELECT id FROM t_knowledge_document WHERE kb_id = ?)"},
+		{"chunk_logs", "DELETE FROM t_knowledge_document_chunk_log WHERE doc_id IN (SELECT id FROM t_knowledge_document WHERE kb_id = ?)"},
 		{"documents", "DELETE FROM t_knowledge_document WHERE kb_id = ?"},
 		{"base", "DELETE FROM t_knowledge_base WHERE id = ?"},
 	}

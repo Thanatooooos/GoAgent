@@ -26,7 +26,19 @@ func (r *recallService) SetCacheMetrics(metrics *cachemetrics.Service) {
 	r.cacheMetrics = metrics
 }
 
-func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID string, query string, knowledgeBaseIDs []string) ([]memoryRecallProjection, port.ScopeVersions, string, string, error) {
+func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID string, query string, knowledgeBaseIDs []string, scopeTypes []string, statuses []string) ([]memoryRecallProjection, port.ScopeVersions, string, string, error) {
+	scopeTypes = trimMemoryValues(scopeTypes)
+	statuses = normalizeRecallStatuses(statuses)
+	if len(scopeTypes) > 0 || !isDefaultRecallStatuses(statuses) {
+		items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs, scopeTypes, statuses)
+		if err != nil {
+			return nil, port.ScopeVersions{}, "disabled", "filtered", err
+		}
+		projections := projectOrderedMemoryItems(query, items)
+		sortRuleMemoryProjections(projections)
+		return projections, port.ScopeVersions{}, "disabled", "filtered", nil
+	}
+
 	versions := port.ScopeVersions{}
 	if r.canUseRedisRecallCache() {
 		if loaded, ok := r.readScopeVersions(ctx, userID, knowledgeBaseIDs); ok {
@@ -41,7 +53,7 @@ func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID st
 
 	if !r.canUseRedisRecallCache() {
 		r.recordCacheMetric("rule_memories", "redis", "disabled")
-		items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs)
+		items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs, nil, statuses)
 		if err != nil {
 			return nil, port.ScopeVersions{}, "disabled", "cache_disabled", err
 		}
@@ -72,7 +84,7 @@ func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID st
 		}
 		r.recordCacheMetric("rule_memories", "redis", "miss")
 
-		items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs)
+		items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs, nil, statuses)
 		if err != nil {
 			return nil, versions, "miss", "rule_cache_miss", err
 		}
@@ -91,7 +103,7 @@ func (r *recallService) loadRuleMemoryProjections(ctx context.Context, userID st
 	}
 
 	r.recordCacheMetric("rule_memories", "redis", "fallback")
-	items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs)
+	items, err := r.loadRuleMemories(ctx, userID, knowledgeBaseIDs, nil, statuses)
 	if err != nil {
 		return nil, port.ScopeVersions{}, "fallback", "scope_version_unavailable", err
 	}

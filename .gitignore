@@ -48,3 +48,19 @@ third_party
 buildcache
 
 buildcache2
+
+.gocache-summary-run
+
+.gocache-summary-test
+
+.gocache-review
+
+.gocache-summary-repair
+
+.gocache-task3-fix
+
+.gocache-task4
+
+.tmp-*
+
+tmp_*

@@ -30,6 +30,32 @@ func trimMemoryValues(values []string) []string {
 	return result
 }
 
+func containsMemoryValue(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeRecallStatuses(values []string) []string {
+	values = trimMemoryValues(values)
+	if len(values) == 0 {
+		return []string{domain.MemoryStatusActive}
+	}
+	return values
+}
+
+func isDefaultRecallStatuses(values []string) bool {
+	values = normalizeRecallStatuses(values)
+	return len(values) == 1 && values[0] == domain.MemoryStatusActive
+}
+
 func minInt(a int, b int) int {
 	if a < b {
 		return a

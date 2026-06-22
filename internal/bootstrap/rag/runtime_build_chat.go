@@ -4,6 +4,9 @@ import (
 	"fmt"
 
 	ragservice "local/rag-project/internal/app/rag/service"
+	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/app/rag/service/longtermmemory/extraction"
+	ltmwriteback "local/rag-project/internal/app/rag/service/longtermmemory/writeback"
 	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
 	"local/rag-project/internal/framework/config"
 	inframcp "local/rag-project/internal/infra-mcp"
@@ -48,15 +51,16 @@ func buildChatService(
 			AgentRuntime:        agentRuntimeService,
 		},
 		ragservice.RagChatOptions{
-			ConfidenceThreshold:    confidenceThreshold,
-			ParallelSubquestions:   cfg.Rag.Retrieve.ParallelSubquestions.Enabled,
-			SubquestionConcurrency: cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
-			RequestCacheMaxEntries: readRequestCacheMaxEntries(cfg),
-			AgentRuntimeMode:       cfg.Rag.Agent.Chat.Mode,
-			SessionRecall:          retrieve.sessionRecallService,
-			LongTermMemoryRecall:   memory.explicitMemoryService.RecallService(),
-			ToolWorkflow:           toolWorkflow,
-			ChatContextBudget:      buildChatContextBudgetOptions(cfg),
+			ConfidenceThreshold:     confidenceThreshold,
+			ParallelSubquestions:    cfg.Rag.Retrieve.ParallelSubquestions.Enabled,
+			SubquestionConcurrency:  cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
+			RequestCacheMaxEntries:  readRequestCacheMaxEntries(cfg),
+			AgentRuntimeMode:        cfg.Rag.Agent.Chat.Mode,
+			SessionRecall:           retrieve.sessionRecallService,
+			LongTermMemoryRecall:    memory.explicitMemoryService.RecallService(),
+			LongTermMemoryWriteback: adaptLongTermMemoryWriteback(buildLongTermMemoryWriteback(buildCtx, memory)),
+			ToolWorkflow:            toolWorkflow,
+			ChatContextBudget:       buildChatContextBudgetOptions(cfg),
 		},
 	)
 	if err != nil {
@@ -67,6 +71,21 @@ func buildChatService(
 		chatService: chatService,
 		mcpManager:  mcpManager,
 	}, nil
+}
+
+func buildLongTermMemoryWriteback(buildCtx *buildContext, memory memoryBundle) *ltmwriteback.Service {
+	if buildCtx == nil || buildCtx.aiRuntime == nil || buildCtx.aiRuntime.Chat == nil {
+		return nil
+	}
+	if memory.explicitMemoryService == nil {
+		return nil
+	}
+
+	return ltmwriteback.NewService(
+		extraction.NewObservedLLMPreferenceExtractor(buildCtx.aiRuntime.Chat, memory.memoryCacheMetrics),
+		longtermmemory.NewPreferenceCandidateLifecycleService(memory.explicitMemoryService),
+		memory.memoryCacheMetrics,
+	)
 }
 
 func buildChatContextBudgetOptions(cfg *config.Config) ragservice.ChatContextBudgetOptions {

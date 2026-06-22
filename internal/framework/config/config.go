@@ -353,6 +353,7 @@ const KeywordBackendBM25 = "bm25"
 const KeywordBackendTsvector = "tsvector"
 
 type RagMetadataTitleSearchChannelConfig struct {
+	Enabled              *bool   `mapstructure:"enabled"`
 	EnabledFallbackTrgm  *bool   `mapstructure:"enabled-fallback-trgm"`
 	SectionWeight        float64 `mapstructure:"section-weight"`
 	DocumentNameWeight   float64 `mapstructure:"document-name-weight"`

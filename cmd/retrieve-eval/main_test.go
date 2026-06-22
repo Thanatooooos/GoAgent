@@ -123,7 +123,7 @@ func TestExecuteSamplesForwardsUserID(t *testing.T) {
 		},
 	}
 
-	if err := executeSamples(context.Background(), runtime, samples, ""); err != nil {
+	if err := executeSamples(context.Background(), runtime, samples, executeOptions{}); err != nil {
 		t.Fatalf("executeSamples returned error: %v", err)
 	}
 	if len(retrieve.requests) != 1 {

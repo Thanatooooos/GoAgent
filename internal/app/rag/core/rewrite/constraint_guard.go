@@ -21,6 +21,7 @@ var (
 	idPattern             = regexp.MustCompile(`(?i)\b(?:doc|task|trace|kb)[-_][a-z0-9][a-z0-9_-]*\b`)
 	httpCodePattern       = regexp.MustCompile(`(?i)\b(?:http\s*)?[1-5][0-9]{2}\b`)
 	errorCodePattern      = regexp.MustCompile(`\b[A-Z][A-Z0-9_-]{1,20}[0-9][A-Z0-9_-]*\b`)
+	httpProtocolPattern   = regexp.MustCompile(`(?i)^HTTP\d+$`)
 )
 
 var timeRangeMarkers = []string{
@@ -71,6 +72,9 @@ func ExtractRewriteConstraints(question string) []RewriteConstraint {
 		addConstraint(&constraints, seen, RewriteConstraint{Type: ConstraintHTTPCode, Value: value})
 	}
 	for _, value := range errorCodePattern.FindAllString(question, -1) {
+		if httpProtocolPattern.MatchString(value) {
+			continue
+		}
 		addConstraint(&constraints, seen, RewriteConstraint{Type: ConstraintErrorCode, Value: value})
 	}
 

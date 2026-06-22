@@ -59,6 +59,26 @@ func TestNewContextMergesFields(t *testing.T) {
 	}
 }
 
+func TestBindLoggerUsesProvidedLogger(t *testing.T) {
+	t.Parallel()
+	core, observed := observer.New(zap.InfoLevel)
+	contextLogger := zap.New(core).Sugar()
+
+	ctx := BindLogger(context.Background(), contextLogger)
+	FromContext(ctx).Infow("bound logger works", "component", "test")
+
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+	if entries[0].Message != "bound logger works" {
+		t.Fatalf("unexpected message: %q", entries[0].Message)
+	}
+	if entries[0].ContextMap()["component"] != "test" {
+		t.Fatalf("unexpected context: %+v", entries[0].ContextMap())
+	}
+}
+
 func TestWithFieldsUsesGlobalLogger(t *testing.T) {
 	t.Parallel()
 	if err := Init(); err != nil {

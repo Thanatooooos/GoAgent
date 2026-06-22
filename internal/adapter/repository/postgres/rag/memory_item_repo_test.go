@@ -133,6 +133,46 @@ func TestMemoryItemRepositoryListIncludesSearchTokensFilter(t *testing.T) {
 	}
 }
 
+func TestMemoryItemRepositoryCountIncludesSameFiltersAsList(t *testing.T) {
+	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test password=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DryRun:                 true,
+		DisableAutomaticPing:   true,
+		SkipDefaultTransaction: true,
+		Logger:                 recorder,
+	})
+	if err != nil {
+		t.Fatalf("open gorm db: %v", err)
+	}
+
+	repo := NewMemoryItemRepository(db)
+	_, err = repo.Count(context.Background(), port.MemoryItemListFilter{
+		UserID:        "user-1",
+		ScopeTypes:    []string{domain.MemoryScopeGlobal},
+		MemoryTypes:   []string{domain.MemoryTypePreference},
+		CanonicalKeys: []string{"response.language"},
+		Statuses:      []string{domain.MemoryStatusPending},
+		SearchText:    "language",
+	})
+	if err != nil {
+		t.Fatalf("Count returned error: %v", err)
+	}
+	sql := strings.ToLower(recorder.lastSQL)
+	if !strings.Contains(sql, "count(") {
+		t.Fatalf("expected count sql, got %q", recorder.lastSQL)
+	}
+	for _, expected := range []string{"user_id", "scope_type", "memory_type", "canonical_key", "status", "summary ilike"} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected %q filter in count SQL, got %q", expected, recorder.lastSQL)
+		}
+	}
+	if strings.Contains(sql, "limit ") || strings.Contains(sql, "offset ") {
+		t.Fatalf("expected count SQL without paging, got %q", recorder.lastSQL)
+	}
+}
+
 func TestMemoryItemRepositoryTouchLastUsedScopesByUserAndIDs(t *testing.T) {
 	recorder := &gormTraceRecorder{Interface: logger.Default.LogMode(logger.Info)}
 	db, err := gorm.Open(postgres.New(postgres.Config{

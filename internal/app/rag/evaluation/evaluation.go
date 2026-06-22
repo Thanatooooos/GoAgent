@@ -39,6 +39,11 @@ type Sample struct {
 	TopK              int                          `json:"topK,omitempty"`
 	ChunkStrategy     string                       `json:"chunkStrategy,omitempty"`
 	ExpectedRelevance map[string]int               `json:"expectedRelevance,omitempty"`
+	RewrittenQuery    string                       `json:"rewrittenQuery,omitempty"`
+	SubQuestions      []string                     `json:"subQuestions,omitempty"`
+	NeedRetrieval     bool                         `json:"needRetrieval,omitempty"`
+	ExecutionMode     string                       `json:"executionMode,omitempty"`
+	PipelineTrace     map[string]any               `json:"pipelineTrace,omitempty"`
 }
 
 type SampleResult struct {
@@ -54,6 +59,10 @@ type SampleResult struct {
 	RecallAtK         map[int]float64       `json:"recallAtK"`
 	NDCGAtK           map[int]float64       `json:"ndcgAtK"`
 	Channels          []ChannelSampleResult `json:"channels,omitempty"`
+	RewrittenQuery    string                `json:"rewrittenQuery,omitempty"`
+	SubQuestions      []string              `json:"subQuestions,omitempty"`
+	NeedRetrieval     bool                  `json:"needRetrieval,omitempty"`
+	ExecutionMode     string                `json:"executionMode,omitempty"`
 }
 
 type AggregateMetrics struct {
@@ -187,6 +196,10 @@ func evaluateSample(sample Sample, ks []int) (SampleResult, error) {
 		HitAtK:            hitAtK,
 		RecallAtK:         recallAtK,
 		NDCGAtK:           ndcgAtK,
+		RewrittenQuery:    strings.TrimSpace(sample.RewrittenQuery),
+		SubQuestions:      append([]string(nil), sample.SubQuestions...),
+		NeedRetrieval:     sample.NeedRetrieval,
+		ExecutionMode:     strings.TrimSpace(sample.ExecutionMode),
 	}, nil
 }
 

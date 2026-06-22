@@ -89,6 +89,17 @@ func FromContext(ctx context.Context) *zap.SugaredLogger {
 	return fallbackSugar
 }
 
+// BindLogger stores the provided logger on ctx.
+func BindLogger(ctx context.Context, logger *zap.SugaredLogger) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if logger == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, contextKey{}, logger)
+}
+
 // NewContext stores a child logger with extra fields on ctx.
 func NewContext(ctx context.Context, fields ...interface{}) context.Context {
 	if ctx == nil {

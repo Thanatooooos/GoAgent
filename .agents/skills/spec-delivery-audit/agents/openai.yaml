@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spec Delivery Audit"
+  short_description: "Audit spec-vs-delivery alignment gaps"
+  default_prompt: "Use $spec-delivery-audit to verify whether this spec-driven work is truly delivered before I mark tasks complete."

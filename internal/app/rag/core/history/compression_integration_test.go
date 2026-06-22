@@ -53,6 +53,9 @@ func TestCompressSummaryIntegration(t *testing.T) {
 		if !summaryRepo.created {
 			t.Fatal("expected summary to be created")
 		}
+		if summaryRepo.lastStructuredJSON == "" {
+			t.Fatal("expected structured summary json to be stored")
+		}
 
 		t.Logf("generated summary: %q", summaryRepo.lastContent)
 
@@ -118,14 +121,16 @@ func TestCompressSummaryIntegration(t *testing.T) {
 
 // integrationSummaryRepo 真实 API 集成测试用摘要仓储桩。
 type integrationSummaryRepo struct {
-	created       bool
-	lastContent   string
-	latestSummary domain.ConversationSummary
+	created            bool
+	lastContent        string
+	lastStructuredJSON string
+	latestSummary      domain.ConversationSummary
 }
 
 func (r *integrationSummaryRepo) Create(_ context.Context, summary domain.ConversationSummary) (domain.ConversationSummary, error) {
 	r.created = true
 	r.lastContent = summary.Content
+	r.lastStructuredJSON = summary.StructuredSummaryJSON
 	summary.ID = "summary-integration"
 	return summary, nil
 }

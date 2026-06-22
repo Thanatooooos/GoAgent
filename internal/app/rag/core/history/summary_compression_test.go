@@ -22,7 +22,7 @@ func TestBuildStructuredSummaryPromptUsesChineseInstructions(t *testing.T) {
 	requiredPhrases := []string{
 		"你正在将一段对话压缩为结构化工作记忆。",
 		"只返回 JSON。",
-		"允许字段：",
+		"JSON 类型约定：允许字段：",
 		"schema_version 必须是数字 1",
 		"上一次结构化摘要 JSON：",
 		"最近消息：",
@@ -56,7 +56,7 @@ func TestBuildStructuredSummaryPromptIncludesRepairOrientedRules(t *testing.T) {
 		StructuredSummaryJSON: `{"schema_version":1,"goal":"先完成 spec"}`,
 	}
 	historyMessages := []domain.ConversationMessage{
-		{Role: "user", Content: "当前先不要进入实现。"},
+		{Role: "user", Content: "当前先不进入实现。"},
 		{Role: "assistant", Content: "先完成 spec、design、tasks。"},
 		{Role: "user", Content: "根因还没确认，先不要下结论。"},
 	}
@@ -70,6 +70,9 @@ func TestBuildStructuredSummaryPromptIncludesRepairOrientedRules(t *testing.T) {
 		"不要把猜测写成 established_facts",
 		"只保留当前边界内仍然有效的信息",
 		"最近刚确认或刚变化的状态优先写入 recent_progress",
+		"不要把较窄的未做事项扩写成更泛的阶段结论",
+		"范围变化、优先级变化、作废决定，除了 recent_progress，也要在 established_facts 中保留",
+		"不要把因果猜测改写成结论",
 	}
 	for _, phrase := range requiredPhrases {
 		if !strings.Contains(prompt, phrase) {

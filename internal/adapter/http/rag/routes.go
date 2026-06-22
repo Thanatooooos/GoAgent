@@ -17,14 +17,18 @@ func RegisterRoutes(
 	memoryService *longtermmemory.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService chatService,
+	preferenceCandidateService longtermmemory.PreferenceCandidateService,
 	traceService *ragservice.TraceService,
 	cacheMetrics *ragcachemetrics.Service,
 ) {
-	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, chatService)
+	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, chatService, preferenceCandidateService)
 	r.GET("/conversations", handler.ListConversations)
 	r.GET("/conversations/:conversationId/messages", handler.ListMessages)
 	r.PUT("/conversations/:conversationId", handler.RenameConversation)
 	r.DELETE("/conversations/:conversationId", handler.DeleteConversation)
+	r.GET("/rag/v3/preferences/candidates/pending", handler.ListPendingPreferenceCandidates)
+	r.POST("/rag/v3/preferences/candidates/:candidateId/confirm", handler.ConfirmPreferenceCandidate)
+	r.POST("/rag/v3/preferences/candidates/:candidateId/reject", handler.RejectPreferenceCandidate)
 	r.GET("/rag/v3/memories", handler.ListMemories)
 	r.POST("/rag/v3/memories", handler.Remember)
 	r.POST("/rag/v3/remember", handler.Remember)

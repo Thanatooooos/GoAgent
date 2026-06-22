@@ -13,12 +13,12 @@ import (
 func TestValidateStructuredSummaryRejectsMissingCriticalEntity(t *testing.T) {
 	summary := StructuredSummary{
 		SchemaVersion:    1,
-		Goal:             "鎺掓煡瀵煎叆澶辫触",
-		EstablishedFacts: []string{"瀵煎叆澶辫触"},
+		Goal:             "整理结构化摘要",
+		EstablishedFacts: []string{"缺失信息"},
 	}
 	source := []domain.ConversationMessage{
 		{Role: "assistant", Content: "indexer failed: vector store unavailable"},
-		{Role: "user", Content: "doc_fail_01 涓轰粈涔堝け璐?"},
+		{Role: "user", Content: "doc_fail_01 为什么失败了？"},
 	}
 
 	result := ValidateStructuredSummary(summary, source)
@@ -30,12 +30,12 @@ func TestValidateStructuredSummaryRejectsMissingCriticalEntity(t *testing.T) {
 func TestValidateStructuredSummaryAcceptsCriticalEntityCoverage(t *testing.T) {
 	summary := StructuredSummary{
 		SchemaVersion:    1,
-		Goal:             "鎺掓煡瀵煎叆澶辫触",
-		EstablishedFacts: []string{"doc_fail_01 鍦?indexer 闃舵鎶ラ敊", "閿欒涓?vector store unavailable"},
+		Goal:             "整理结构化摘要",
+		EstablishedFacts: []string{"doc_fail_01 在 indexer 阶段报错", "错误是 vector store unavailable"},
 	}
 	source := []domain.ConversationMessage{
 		{Role: "assistant", Content: "indexer failed: vector store unavailable"},
-		{Role: "user", Content: "doc_fail_01 涓轰粈涔堝け璐?"},
+		{Role: "user", Content: "doc_fail_01 为什么失败了？"},
 	}
 
 	result := ValidateStructuredSummary(summary, source)
@@ -65,11 +65,14 @@ func TestGenerateStructuredSummaryRepairsBeforeValidation(t *testing.T) {
 	if got := output.Structured.OpenQuestions; len(got) != 1 || got[0] != "接口方案还没确认" {
 		t.Fatalf("expected unresolved item to move to open questions, got %#v", got)
 	}
-	if output.Validation.Accepted {
-		t.Fatalf("expected validation to run on repaired summary and reject missing high-value sections, got %+v", output.Validation)
+	if !output.Validation.Accepted {
+		t.Fatalf("expected validation to accept repaired summary after active-priority backfill, got %+v", output.Validation)
 	}
-	if output.Validation.Reason != "missing high-value sections" {
-		t.Fatalf("expected repaired summary to fail for missing high-value sections, got %q", output.Validation.Reason)
+	if len(llm.lastRequest.Messages) != 2 {
+		t.Fatalf("expected two chat messages, got %#v", llm.lastRequest.Messages)
+	}
+	if llm.lastRequest.Messages[1].Content != "现在请直接返回结构化工作记忆 JSON。" {
+		t.Fatalf("unexpected user prompt: %q", llm.lastRequest.Messages[1].Content)
 	}
 	if !strings.Contains(output.Rendered, "待确认问题") {
 		t.Fatalf("expected rendered summary to use repaired open questions section, got %q", output.Rendered)
@@ -104,7 +107,4 @@ func (s *repairAwareLLMStub) StreamChatWithRequest(_ convention.ChatRequest, _ a
 }
 
 var _ aichat.LLMService = (*repairAwareLLMStub)(nil)
-
-
-
 

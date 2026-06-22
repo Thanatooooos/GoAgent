@@ -1,8 +1,10 @@
-// Package service contains the ingestion application services.
+// Package service is the stable application-facing entry for ingestion services.
 //
-// File groups:
-//   - service_*: pipeline/task facing application services
-//   - executor_* / workflow_*: workflow construction and execution
-//   - runner_*: concrete pipeline node runners and shared helpers
-//   - observer_*: task/node observation and metrics aggregation
+// Subpackages:
+//   - pipeline/: pipeline CRUD and validation
+//   - task/: task creation and query
+//   - executor/: workflow execution orchestration
+//   - workflow/: execution state, graph builder, node contracts
+//   - runner/: concrete pipeline node runners
+//   - observer/: task/node observation and metrics
 package service

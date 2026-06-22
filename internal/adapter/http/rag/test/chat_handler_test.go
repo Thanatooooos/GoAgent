@@ -186,6 +186,6 @@ func newChatRouter(chatService chatServiceStub) *gin.Engine {
 		c.Next()
 	})
 	group := router.Group("/api/ragent")
-	raghttp.RegisterRoutes(group, nil, nil, nil, nil, chatService, nil, nil)
+	raghttp.RegisterRoutes(group, nil, nil, nil, nil, chatService, nil, nil, nil)
 	return router
 }

@@ -14,6 +14,7 @@ import (
 
 type memoryBundle struct {
 	explicitMemoryService *longtermmemory.MemoryService
+	preferenceCandidateService longtermmemory.PreferenceCandidateService
 	memoryCacheMetrics    *ragcachemetrics.Service
 	memoryCacheClient     *goredis.Client
 	recallCache           port.MemoryRecallCache
@@ -47,6 +48,9 @@ func buildMemoryServices(buildCtx *buildContext, repos repositoriesBundle) memor
 
 	return memoryBundle{
 		explicitMemoryService: explicitMemoryService,
+		preferenceCandidateService: longtermmemory.NewPreferenceCandidateContractService(
+			longtermmemory.NewPreferenceCandidateLifecycleService(explicitMemoryService),
+		),
 		memoryCacheMetrics:    memoryCacheMetrics,
 		memoryCacheClient:     memoryCacheClient,
 		recallCache:           recallCache,

@@ -1374,7 +1374,7 @@ missing/partial 项有后续任务
 已落地部分：
 
 - `chat_path` / `tool_backend` 观测代码已存在
-- `UseAgentRuntime` 入口梳理文档已存在：`docs/agent_runtime_entry_inventory.md`
+- `UseAgentRuntime` 入口需要在执行前重新扫描确认：`rg -n "UseAgentRuntime" internal cmd -S`
 
 尚未完成部分：
 

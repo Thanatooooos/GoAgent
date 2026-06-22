@@ -170,3 +170,29 @@ func TestOpenAIStyleChatClientStreamChat(t *testing.T) {
 		t.Fatalf("unexpected content events: %+v", callback.content)
 	}
 }
+
+func TestOpenAIStyleChatClientChatRejectsEmptyContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":""}}]}`))
+	}))
+	defer srv.Close()
+
+	client := chat.NewOpenAIStyleChatClient("test-provider", srv.Client())
+	target := model.ModelTarget{
+		Candidate: config.ModelCandidate{Model: "demo-model"},
+		Provider: config.ProviderConfig{
+			Url:       srv.URL,
+			ApiKey:    "secret",
+			Endpoints: map[string]string{"chat": "/chat"},
+		},
+	}
+	req := convention.ChatRequest{
+		Messages: []convention.ChatMessage{convention.UserMessage("ping")},
+	}
+
+	content, err := client.Chat(req, target)
+	if err == nil {
+		t.Fatalf("expected error for empty content, got content %q", content)
+	}
+}

@@ -93,6 +93,7 @@ type MemoryItemRepository interface {
 	Update(ctx context.Context, item domain.MemoryItem) (domain.MemoryItem, error)
 	GetByID(ctx context.Context, id string) (domain.MemoryItem, error)
 	List(ctx context.Context, filter MemoryItemListFilter) ([]domain.MemoryItem, error)
+	Count(ctx context.Context, filter MemoryItemListFilter) (int64, error)
 	ListActiveByCanonicalKey(ctx context.Context, userID string, scopeType string, scopeID string, canonicalKey string) ([]domain.MemoryItem, error)
 	ListActiveSingleValueConflicts(ctx context.Context, canonicalKeys []string) ([]ActiveMemoryConflict, error)
 	TouchLastUsed(ctx context.Context, userID string, ids []string, at time.Time) error

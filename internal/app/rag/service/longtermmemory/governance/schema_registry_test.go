@@ -27,3 +27,28 @@ func TestLookupMemoryKeySpecReturnsExpectedProjectIntegrationSpec(t *testing.T) 
 		t.Fatalf("unexpected scope allowance: %+v", spec)
 	}
 }
+
+func TestLookupMemoryKeySpecUsesNarrowedTroubleshootingWorkflowKey(t *testing.T) {
+	spec, ok := lookupMemoryKeySpec("workflow.troubleshooting.first_step")
+	if !ok {
+		t.Fatal("expected workflow.troubleshooting.first_step spec to exist")
+	}
+	if spec.Category != domain.MemoryCategoryWorkflow {
+		t.Fatalf("unexpected category: %+v", spec)
+	}
+	if spec.MemoryType != domain.MemoryTypePreference {
+		t.Fatalf("unexpected memory type: %+v", spec)
+	}
+	if spec.Cardinality != MemoryCardinalitySingle {
+		t.Fatalf("unexpected cardinality: %+v", spec)
+	}
+	if !allowsMemoryScope(spec, domain.MemoryScopeGlobal) {
+		t.Fatalf("expected global scope to be allowed: %+v", spec)
+	}
+}
+
+func TestLookupMemoryKeySpecDoesNotExposeDeprecatedWorkflowFirstStep(t *testing.T) {
+	if _, ok := lookupMemoryKeySpec("workflow.first_step"); ok {
+		t.Fatal("expected deprecated workflow.first_step spec to be absent")
+	}
+}
