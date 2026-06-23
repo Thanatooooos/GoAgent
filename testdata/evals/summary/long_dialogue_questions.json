@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "scenario_id": "software_project_state_transitions_v1",
+  "system_prompt": "你是这个软件项目的技术协作伙伴。请基于完整对话连续回答，不要假装执行了尚未执行的工作。每次回答使用自然的中文，通常写 2 到 4 个紧凑段落，给出具体理由、影响和下一步；保留不确定性，不要把假设说成事实，也不要主动遗忘已经确认且仍有效的约束。",
+  "turns": [
+    {
+      "turn": 1,
+      "phase": "initial_scope",
+      "purpose": "establish the initial goal",
+      "user": "我们要建设一个离线评估框架。先帮我梳理它当前最核心的目标、为什么需要它，以及第一版应该证明什么。"
+    },
+    {
+      "turn": 2,
+      "phase": "initial_scope",
+      "purpose": "narrow phase one scope",
+      "user": "第一阶段先只覆盖 summary 和 rewrite，不做 tool 和最终回答评估。请分析这个范围的合理性，以及它会怎样影响样本和指标设计。"
+    },
+    {
+      "turn": 3,
+      "phase": "initial_scope",
+      "purpose": "define delivery criteria",
+      "user": "第一版交付要能重复运行、输出结构化结果，并且能定位失败原因。请把这些要求转成可验证的交付标准。"
+    },
+    {
+      "turn": 4,
+      "phase": "initial_scope",
+      "purpose": "establish no-implementation constraint",
+      "user": "现在仍处于 spec、design 和 tasks 收口阶段，暂时不能开始生产实现。请说明此刻应该做什么、不应该做什么。"
+    },
+    {
+      "turn": 5,
+      "phase": "constraints",
+      "purpose": "establish initial database decision",
+      "user": "评估结果存储先暂定 MySQL，并要求开发和生产使用同一种数据库。请评估这个决定会涉及哪些数据结构和查询能力。"
+    },
+    {
+      "turn": 6,
+      "phase": "constraints",
+      "purpose": "introduce compatibility constraint",
+      "user": "还要保留现有 turn 阈值脚本的兼容性，新方案不能让旧命令立刻失效。请给出兼容策略和迁移边界。"
+    },
+    {
+      "turn": 7,
+      "phase": "constraints",
+      "purpose": "introduce schedule and quality tension",
+      "user": "我们希望本周得到可运行基线，但不能为了赶进度跳过金标准样本和失败诊断。请分析怎样切分工作才能同时满足进度与质量。"
+    },
+    {
+      "turn": 8,
+      "phase": "constraints",
+      "purpose": "add reproducibility requirements",
+      "user": "每次评估还必须记录模型、样本集、估算器版本和运行时间，不能把 API key 或请求头写进产物。请设计最小的运行元数据。"
+    },
+    {
+      "turn": 9,
+      "phase": "investigation",
+      "purpose": "introduce an exact error entity",
+      "user": "第一次 summary 基线出现了 ERR_SUMMARY_DRIFT：摘要保留了过期决策，却漏掉当前约束。请分析可能原因，但不要直接断言根因已经确认。"
+    },
+    {
+      "turn": 10,
+      "phase": "investigation",
+      "purpose": "introduce exact configuration evidence",
+      "user": "当前配置线索是 summary.history-turn-threshold=6，并且长消息会让同样的 6 turn 大小差异很大。请解释这条证据支持什么、不支持什么。"
+    },
+    {
+      "turn": 11,
+      "phase": "investigation",
+      "purpose": "compare trigger hypotheses",
+      "user": "团队提出两个假设：按 turn 触发不稳定；按 token 触发可能更接近真实上下文压力。请给出验证这两个假设需要的实验，而不是直接选边。"
+    },
+    {
+      "turn": 12,
+      "phase": "investigation",
+      "purpose": "preserve an unresolved scoring question",
+      "user": "自动评分的危险漂移阈值现在还没有足够数据确定。请明确把它保留为开放问题，并说明在阈值未定时可以先做哪些工作。"
+    },
+    {
+      "turn": 13,
+      "phase": "decision_override",
+      "purpose": "introduce evidence against MySQL",
+      "user": "新证据显示评估查询需要 pgvector 和更方便的 JSON 字段分析，这与之前暂定的 MySQL 方案有冲突。请重新评估数据库选择。"
+    },
+    {
+      "turn": 14,
+      "phase": "decision_override",
+      "purpose": "replace database decision and invalidate stale state",
+      "user": "现在正式决定开发和生产统一改用 PostgreSQL，之前的 MySQL 方案作废。请说明当前有效决定，以及摘要和后续任务中必须怎样处理旧决定。"
+    },
+    {
+      "turn": 15,
+      "phase": "decision_override",
+      "purpose": "analyze consequences of the replacement",
+      "user": "基于 PostgreSQL 新决定，请重新梳理存储、JSON 查询、向量能力和迁移风险，但不要声称迁移已经执行。"
+    },
+    {
+      "turn": 16,
+      "phase": "decision_override",
+      "purpose": "carry forward an earlier constraint",
+      "user": "数据库决定虽然变了，但当前仍不能进入生产实现。请确认哪些状态发生了变化，哪些早期约束仍然有效。"
+    },
+    {
+      "turn": 17,
+      "phase": "goal_shift",
+      "purpose": "shift the active goal to compression timing",
+      "user": "主线现在切换到 summary 压缩触发时机：要从按 turn 改为按 token 评估。请更新当前目标，同时说明离线评估框架的大背景如何保留。"
+    },
+    {
+      "turn": 18,
+      "phase": "goal_shift",
+      "purpose": "establish candidate token thresholds",
+      "user": "候选 token 阈值先比较 800、1200、1600。请设计这三个候选应该比较的压缩次数、token 节省、摘要正确性和下游延续质量。"
+    },
+    {
+      "turn": 19,
+      "phase": "goal_shift",
+      "purpose": "preserve unresolved safety factor",
+      "user": "生产触发可能需要 safety factor，但现在没有真实 trace 分布。请判断离线 sweep 是否应直接加入 safety factor，并把尚未解决的部分说清楚。"
+    },
+    {
+      "turn": 20,
+      "phase": "goal_shift",
+      "purpose": "define retrieve and tool accounting",
+      "user": "后续 retrieve 和 tool 阶段还会注入内容。请说明 token 预算中怎样估算这些动态内容，以及估算误差应该如何被观测。"
+    },
+    {
+      "turn": 21,
+      "phase": "reconciliation",
+      "purpose": "separate completed progress from planned work",
+      "user": "请做一次进度盘点：区分已经确认的设计决定、已经完成的验证、尚未执行的实现，以及仍开放的问题。不要把计划写成已完成。"
+    },
+    {
+      "turn": 22,
+      "phase": "reconciliation",
+      "purpose": "test long-range state recall",
+      "user": "回看整个讨论，当前数据库到底是什么，MySQL 是否还有效，当前能否开始生产实现，旧的 turn 阈值兼容要求是否仍然存在？请逐项回答并给依据。"
+    },
+    {
+      "turn": 23,
+      "phase": "reconciliation",
+      "purpose": "reconcile all open questions",
+      "user": "现在还有哪些问题没有定论？请特别区分危险漂移评分阈值、production safety factor、真实 trace 校准和已经确定的 800/1200/1600 离线候选。"
+    },
+    {
+      "turn": 24,
+      "phase": "reconciliation",
+      "purpose": "test final next-action recommendation",
+      "user": "如果现在只能推进一件事，下一步应该是什么？请结合当前主目标、不能直接进入生产实现的约束、需要真实长对话样本以及后续阈值 sweep 给出明确建议。"
+    }
+  ]
+}
