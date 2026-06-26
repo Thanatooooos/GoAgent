@@ -14,7 +14,7 @@ func main() {
 	kb := []string{"23848386738319617"}
 	expected := "23848386822205697"
 
-	for _, model := range []string{"qwen3-rerank", "rerank-noop"} {
+	for _, model := range []string{"qwen3-reranker-8b", "qwen3-rerank", "rerank-noop"} {
 		_ = os.Setenv("AI_RERANK_DEFAULT_MODEL", model)
 		rt, err := ragbootstrap.NewRuntime(context.Background(), ragbootstrap.RuntimeOptions{})
 		if err != nil {

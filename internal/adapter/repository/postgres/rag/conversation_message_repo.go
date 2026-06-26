@@ -68,6 +68,9 @@ func (r *ConversationMessageRepository) List(ctx context.Context, filter port.Co
 	if filter.BeforeID != "" {
 		query = query.Where("id < ?", filter.BeforeID)
 	}
+	if filter.ThroughID != "" {
+		query = query.Where("id <= ?", filter.ThroughID)
+	}
 
 	switch filter.Order {
 	case port.ConversationMessageOrderDesc:

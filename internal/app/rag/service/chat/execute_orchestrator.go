@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/framework/convention"
+	"local/rag-project/internal/framework/log"
 )
 
 func (s *RagChatService) applyFallbackGuard(
@@ -118,6 +120,16 @@ func (s *RagChatService) persistAssistantMessage(
 		LastTime:       timePointerValue(s.tracer.now()),
 	}); err != nil && strings.TrimSpace(input.Question) != "" {
 		return RagChatFinishPayload{}, err
+	}
+	if s.summaryTrigger != nil {
+		if err := s.summaryTrigger.EnqueueSummaryCheck(context.WithoutCancel(ctx), raghistory.SummaryJobInput{
+			ConversationID:  state.meta.ConversationID,
+			UserID:          strings.TrimSpace(input.UserID),
+			TargetMessageID: created.ID,
+			RebuildReason:   "token_threshold_reached",
+		}); err != nil {
+			log.FromContext(ctx).Warnw("enqueue summary check failed", "error", err)
+		}
 	}
 
 	return RagChatFinishPayload{

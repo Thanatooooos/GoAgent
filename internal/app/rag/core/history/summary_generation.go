@@ -14,6 +14,7 @@ type GenerateStructuredSummaryInput struct {
 	PreviousSummary *StructuredSummary
 	SourceMessages  []domain.ConversationMessage
 	Budget          SummaryBudgetOptions
+	PromptVariant   StructuredSummaryPromptVariant
 }
 
 type GenerateStructuredSummaryOutput struct {
@@ -48,7 +49,12 @@ func GenerateStructuredSummary(
 	jsonMode := true
 	request := convention.ChatRequest{
 		Messages: []convention.ChatMessage{
-			convention.SystemMessage(buildStructuredSummaryPrompt(tier, latestSummary, input.SourceMessages)),
+			convention.SystemMessage(buildStructuredSummaryPromptWithVariant(
+				tier,
+				latestSummary,
+				input.SourceMessages,
+				NormalizeStructuredSummaryPromptVariant(input.PromptVariant),
+			)),
 			convention.UserMessage("现在请直接返回结构化工作记忆 JSON。"),
 		},
 		JSONMode: &jsonMode,

@@ -55,8 +55,8 @@ func TestNewRuntime(t *testing.T) {
 	if len(runtime.EmbeddingClients) != 2 {
 		t.Fatalf("expected 2 embedding clients, got %d", len(runtime.EmbeddingClients))
 	}
-	if len(runtime.RerankClients) != 2 {
-		t.Fatalf("expected 2 rerank clients, got %d", len(runtime.RerankClients))
+	if len(runtime.RerankClients) != 3 {
+		t.Fatalf("expected 3 rerank clients, got %d", len(runtime.RerankClients))
 	}
 	if runtime.HTTPClient == nil || runtime.StreamHTTPClient == nil {
 		t.Fatal("expected http clients to be initialized")
@@ -93,6 +93,7 @@ ai:
       endpoints:
         chat: /v1/chat/completions
         embedding: /v1/embeddings
+        rerank: /v1/rerank
   selection:
     failure-threshold: 1
     open-duration-ms: 10
@@ -130,6 +131,9 @@ ai:
     default-model: rr
     candidates:
       - id: rr
+        provider: siliconflow
+        model: Qwen/Qwen3-Reranker-8B
+      - id: rr-bailian
         provider: bailian
         model: qwen-rerank
       - id: rr-noop

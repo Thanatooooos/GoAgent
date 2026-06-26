@@ -46,19 +46,13 @@ func newAssessStepNode() (agentkernel.Node, error) {
 			branch = "approval"
 			reason = currentStep.CapabilityName + "_approval_required"
 			progress = progressPlanDegraded
-			status := agentstate.ApprovalStatusPending
-			node := "approval"
-			capability := currentStep.CapabilityName
-			rerunNode := "execute_step"
-			requestedAt := time.Now()
-			approvalDelta = &agentstate.ApprovalDelta{
-				Status:      &status,
-				Reason:      &reason,
-				Node:        &node,
-				Capability:  &capability,
-				RerunNode:   &rerunNode,
-				RequestedAt: &requestedAt,
-			}
+			approvalDelta = agentruntime.BuildPendingApprovalDelta(
+				reason,
+				currentStep.CapabilityName,
+				"execute_step",
+				"",
+				time.Now(),
+			)
 		default:
 			decision := decideStepExecutionOutcome(plan, currentStep, last, assessment)
 			plan.Steps[plan.CurrentStepIndex].Status = decision.currentStepStatus

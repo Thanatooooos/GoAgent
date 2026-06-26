@@ -4,43 +4,16 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	ragtoken "local/rag-project/internal/app/rag/core/tokenbudget"
 )
 
-// TokenEstimator estimates token counts for prompt budgeting.
-type TokenEstimator interface {
-	EstimateTokens(text string) int
-}
+type TokenEstimator = ragtoken.Estimator
 
-// RoughTokenEstimator provides a lightweight heuristic token estimate.
 type RoughTokenEstimator struct{}
 
 func (RoughTokenEstimator) EstimateTokens(text string) int {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return 0
-	}
-
-	cjkCount := 0
-	asciiCount := 0
-	otherCount := 0
-	for _, r := range text {
-		switch {
-		case unicode.IsSpace(r):
-			continue
-		case isCJKRune(r):
-			cjkCount++
-		case r <= unicode.MaxASCII:
-			asciiCount++
-		default:
-			otherCount++
-		}
-	}
-
-	estimate := cjkCount + asciiCount/4 + otherCount/2
-	if estimate <= 0 {
-		return 1
-	}
-	return estimate
+	return ragtoken.NewDefaultEstimator().EstimateTokens(text)
 }
 
 func splitTextByTokenBudget(text string, tokenBudget int, overlapTokens int, estimator TokenEstimator) []string {

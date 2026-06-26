@@ -31,7 +31,7 @@ func (s *Service) ResumeHandoffAfterApproval(ctx context.Context, req ResumeAppr
 }
 
 func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalRequest) (*agentruntime.RuntimeSession, RunOutcome, error) {
-	if s == nil || s.runner == nil {
+	if s == nil || s.runtimeEngine == nil {
 		return nil, RunOutcome{}, serviceError(ErrorCodeServiceNotInitialized, "agent service is not initialized")
 	}
 	if s.sessionStore == nil {
@@ -70,7 +70,7 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 		logAgentExecutionError("store_approval_decision", session.Request.TraceID, checkpointID, err)
 		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeApprovalSessionSaveFailed, "failed to persist approval decision", "store_approval_decision", err)
 	}
-	if strings.TrimSpace(session.Snapshot.Approval.Node) != "approval" && !decision.approved {
+	if !decision.approved && shouldFinalizeRejectedApprovalWithoutResume(session) {
 		final, finalizeErr := s.finalizeRejectedApproval(session)
 		if finalizeErr != nil {
 			logAgentExecutionError("finalize_rejected_approval", session.Request.TraceID, checkpointID, finalizeErr)
@@ -85,8 +85,13 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 		return final, outcome, nil
 	}
 
-	final, runErr := s.runner.Resume(ctx, session, checkpointID)
-	if runErr != nil {
+	runResult, runErr := s.runtimeEngine.Resume(ctx, session, checkpointID)
+	final := session
+	if runResult != nil && runResult.Session != nil {
+		final = runResult.Session
+	}
+	mergeApprovalResumeHistory(session, final)
+	if runResult != nil && runResult.Outcome.Decision == agentruntime.DecisionWaitApproval {
 		if s.normalizePendingApproval(final, checkpointID) {
 			if storeErr := s.storePendingSession(ctx, checkpointID, final); storeErr != nil {
 				logAgentExecutionError("store_pending_session_after_resume", session.Request.TraceID, checkpointID, storeErr)
@@ -96,6 +101,9 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 			logAgentRunCompleted(final, outcome)
 			return final, outcome, nil
 		}
+		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeRuntimeExecutionFailed, "agent runtime resume failed", "normalize_pending_approval_after_resume", runErr)
+	}
+	if runErr != nil {
 		logAgentExecutionError("resume_after_approval", session.Request.TraceID, checkpointID, runErr)
 		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeRuntimeExecutionFailed, "agent runtime resume failed", "resume_after_approval", runErr)
 	}

@@ -89,6 +89,11 @@ func TestServiceRunDetailed_RuntimeApprovalThenResume(t *testing.T) {
 		result.Outcome.Approval.RiskLevel != agentcapability.RiskLevelMedium {
 		t.Fatalf("expected capability metadata in approval outcome, got %+v", result.Outcome.Approval)
 	}
+	if !result.Outcome.Approval.SupportsParallel ||
+		result.Outcome.Approval.Idempotency != agentcapability.IdempotencyBestEffort ||
+		result.Outcome.Approval.SupportsResume {
+		t.Fatalf("expected scheduler policy metadata in approval outcome, got %+v", result.Outcome.Approval)
+	}
 	if result.Outcome.Approval.SearchQuery != "runtime approval flow" ||
 		len(result.Outcome.Approval.CandidateURLs) != 1 ||
 		result.Outcome.Approval.CandidateURLs[0] != "https://restricted.example/doc" {
@@ -158,7 +163,7 @@ func TestServiceRunDetailed_CapabilityApprovalGateThenResume(t *testing.T) {
 	if result.Outcome.Status != RunStatusAwaitingApproval || result.Outcome.Approval == nil {
 		t.Fatalf("expected awaiting approval outcome, got %+v", result.Outcome)
 	}
-	if result.Outcome.Approval.Node != "fetch" || result.Outcome.Approval.Capability != agentcapability.NameWebFetch {
+	if result.Outcome.Approval.Node != "approval" || result.Outcome.Approval.Capability != agentcapability.NameWebFetch {
 		t.Fatalf("expected capability approval to stop before fetch, got %+v", result.Outcome.Approval)
 	}
 	if result.Outcome.Approval.Trigger != "interrupt_before_node" ||
@@ -769,7 +774,7 @@ func TestServiceResumeAfterApproval_IncrementsResumeCountOnRunnerResume(t *testi
 		}
 	}
 
-	finalSession, err := service.runner.Resume(context.Background(), pendingSession, initial.Outcome.CheckpointID)
+	finalSession, err := service.kernelRunner.Resume(context.Background(), pendingSession, initial.Outcome.CheckpointID)
 	if err != nil {
 		t.Fatalf("runner.Resume() error = %v", err)
 	}

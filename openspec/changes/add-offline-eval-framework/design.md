@@ -741,3 +741,331 @@ This design is satisfied only when:
 6. the rewrite evaluator scores both rewrite quality and retrieval impact
 7. rewrite retrieval comparison uses the system's real rewritten execution shape
 8. Phase 1 scope remains limited to `summary + rewrite`
+
+
+## Summary Strategy Evaluation Mode
+
+### Why Add a Strategy Mode
+
+The current `summary` evaluator already checks:
+
+- structured summary fidelity
+- structured summary usefulness
+- downstream answer equivalence between full context and summary context
+
+However, it still evaluates one compression event at a time.
+
+It does not yet answer a runtime policy question:
+
+- when should summary compression trigger
+- how much token cost does a strategy save
+- how much summary quality or downstream answer quality is lost under repeated
+  compression
+
+A dedicated `strategy mode` should extend the existing `summary` evaluator so the
+framework can compare compression trigger policies through repeated multi-turn
+simulation instead of only single-shot summary generation.
+
+### Goal
+
+The strategy mode should help identify globally useful compression trigger
+thresholds by comparing trade-offs across three dimensions:
+
+1. token savings
+2. summary correctness
+3. downstream answer carry-over quality
+
+The intended outcome is not one opaque composite score. The intended outcome is
+an explicit trade-off surface that shows which thresholds are dominated and
+which thresholds remain viable Pareto candidates.
+
+### Non-Goals
+
+This mode does not yet implement:
+
+- per-sample trigger thresholds
+- threshold policies segmented by dialogue class
+- adaptive trigger policies driven by runtime heuristics
+- large-scale real-history replay as the first implementation
+- retrieval-, tool-, or external-compensation-aware downstream evaluation
+
+The first implementation should stay focused on fixed global threshold sweeps.
+
+### Runner Interface
+
+The existing runner should stay the entrypoint:
+
+```powershell
+go run ./cmd/eval-runner -suite summary -input testdata/evals/summary/strategy_samples.json
+```
+
+The runner should add summary-specific execution flags:
+
+- `-summary-mode standard|strategy`
+- `-summary-thresholds 4,6,8,10,12,15,20`
+
+`standard` keeps the current single-summary behavior.
+
+`strategy` activates repeated compression simulation and threshold comparison.
+
+Threshold lists belong to runner configuration rather than sample payloads. The
+objective is to compare a global trigger policy across the same sample set, not
+allow every sample to silently choose its own threshold.
+
+### Sample Contract Extension
+
+The current summary sample contract should remain valid. Strategy mode should
+extend it in a backward-compatible way with an optional `strategy_eval` block.
+
+```json
+{
+  "name": "summary_strategy_sample",
+  "input": {
+    "source_messages": []
+  },
+  "strategy_eval": {
+    "checkpoints": [
+      {
+        "after_turn": 6,
+        "expected_summary": {},
+        "critical_contract": {},
+        "next_turn_eval": {}
+      }
+    ],
+    "final_eval": {
+      "expected_summary": {},
+      "critical_contract": {},
+      "next_turn_eval": {}
+    }
+  }
+}
+```
+
+#### `input.source_messages`
+
+`source_messages` remain the full ordered dialogue. Strategy mode interprets the
+conversation as turn-sequenced source material and simulates repeated runtime
+compression over that timeline.
+
+A turn should be defined as one `user -> assistant` exchange. Samples may still
+contain system or metadata-like messages when needed, but authoring guidance
+should prefer clean paired turns.
+
+#### `strategy_eval.checkpoints`
+
+Each checkpoint defines one intermediate evaluation point.
+
+Required fields:
+
+- `after_turn`
+- `expected_summary`
+- `critical_contract`
+- `next_turn_eval`
+
+A checkpoint answers:
+
+- after the conversation reaches this turn count, has the accumulated summary
+  state stayed correct
+- after repeated compression up to this point, can the summary still support the
+  intended downstream questions
+
+#### `strategy_eval.final_eval`
+
+`final_eval` is optional but recommended for long samples. It evaluates the end
+state after the whole dialogue finishes.
+
+### Execution Model
+
+For each sample and each configured threshold, the evaluator should run one
+independent repeated-compression simulation.
+
+#### 1. Build turn timeline
+
+Convert ordered `source_messages` into a turn timeline. The timeline should
+preserve original message content exactly.
+
+#### 2. Sweep thresholds
+
+For each configured trigger threshold `T`:
+
+- reset simulation state
+- replay the conversation from turn 1 onward
+- trigger summary compression whenever the replayed turn count reaches the next
+  threshold boundary
+
+#### 3. Simulate repeated compression
+
+When a compression event fires:
+
+- call the real structured summary generation path
+- pass the current accumulated summary as `previous_summary`
+- pass only the newly accumulated post-summary messages as fresh source input
+- keep the generated structured summary as the new semantic state for the next
+  simulation step
+
+This must simulate incremental runtime behavior rather than re-summarizing the
+entire conversation from scratch on every event.
+
+#### 4. Evaluate checkpoints
+
+Whenever replay reaches a declared checkpoint:
+
+- evaluate the current summary state against that checkpoint's
+  `expected_summary`
+- run deterministic rule checks using that checkpoint's `critical_contract`
+- run field-level judging using that checkpoint's expected fields
+- run downstream equivalence using that checkpoint's `next_turn_eval`
+
+#### 5. Evaluate final state
+
+If `final_eval` exists, run the same evaluation pattern once replay finishes.
+
+### Token Accounting
+
+Strategy mode should add explicit token-cost accounting for each threshold.
+
+#### Baseline token cost
+
+Baseline assumes no summary compression. At each checkpoint and downstream
+follow-up query, the answering context is the full original conversation up to
+that point.
+
+#### Strategy token cost
+
+Strategy cost assumes the evaluated threshold policy is active. At each
+checkpoint and downstream follow-up query, the answering context is:
+
+- current rendered summary
+- plus the unsummarized recent dialogue tail
+
+#### Reported token metrics
+
+For every threshold, report at least:
+
+- `token_baseline`
+- `token_strategy`
+- `token_saved`
+- `token_saved_ratio`
+- `summary_call_count`
+
+The first implementation may use the existing tokenizer/accounting utilities or
+an equivalent deterministic token estimator already used elsewhere in the repo.
+The exact tokenizer choice must remain fixed across all compared thresholds
+inside one run.
+
+### Quality Metrics
+
+For each threshold, strategy mode should aggregate three families of quality
+signals.
+
+#### 1. Summary correctness
+
+Aggregate from checkpoint-level rule checks and field-level judge output:
+
+- structured fidelity
+- structured usefulness
+- critical failure count
+
+#### 2. Downstream carry-over quality
+
+Aggregate from checkpoint-level and final `next_turn_eval` results:
+
+- downstream equivalence score
+- dangerous drift count
+- downstream pass rate
+
+#### 3. Token efficiency
+
+Aggregate from the token accounting section:
+
+- token saved ratio
+- absolute token saved
+- summary generation call count
+
+### Result Shape
+
+Sample output in strategy mode should contain per-threshold results under the
+same sample entry rather than pretending that one sample produced only one
+verdict.
+
+Each threshold result should include:
+
+- `threshold`
+- `summary_call_count`
+- `token_baseline`
+- `token_strategy`
+- `token_saved`
+- `token_saved_ratio`
+- `checkpoint_results`
+- `final_result`
+- `summary_fidelity_score`
+- `summary_usefulness_score`
+- `downstream_equivalence_score`
+- `critical_failure_count`
+- `dangerous_drift_count`
+- `passed`
+
+Suite aggregate output should add threshold-level rollups, where each threshold
+gets one comparable aggregate row containing:
+
+- average token saved ratio
+- average structured fidelity
+- average structured usefulness
+- average downstream equivalence
+- pass rate
+- critical failure rate
+- dangerous drift rate
+
+### Pareto Reporting
+
+The framework should not immediately collapse strategy evaluation into one
+blended scalar winner.
+
+Instead it should report:
+
+1. dominated thresholds that are clearly worse on both quality and token cost
+2. viable thresholds that remain within acceptable quality bounds
+3. `pareto_candidates` that save more tokens without being clearly worse on the
+   protected quality dimensions
+
+A later phase may add a recommendation policy, but the first implementation
+should prioritize trustworthy diagnostics over premature auto-selection.
+
+### Pass Policy
+
+A threshold should fail a sample when any checkpoint or final evaluation trips a
+critical failure, including:
+
+- forbidden claims
+- loss of critical constraints, facts, entities, or open questions
+- stale state retained as current truth
+- dangerous downstream drift on declared follow-up queries
+
+Diagnostic averages must not override critical failures.
+
+### Authoring Guidance for Strategy Samples
+
+Strategy samples should be denser and longer than single-shot summary samples.
+They should be designed so that repeated compression can realistically distort:
+
+- active goals
+- overrides and decision flips
+- unresolved questions
+- critical entities
+- next-step recommendations
+
+Checkpoints should be sparse and meaningful. They should not be placed after
+nearly every turn.
+
+### Acceptance Criteria Extension
+
+This strategy mode is complete only when:
+
+1. `summary` evaluation can run in both `standard` and `strategy` mode
+2. strategy mode can sweep a caller-provided list of global thresholds
+3. strategy mode reuses the real incremental summary generation path
+4. strategy mode reports token savings, summary correctness, and downstream
+   equivalence together per threshold
+5. strategy mode emits threshold-level suite aggregates suitable for trade-off
+   review
+6. strategy mode surfaces Pareto candidates without hiding critical failures

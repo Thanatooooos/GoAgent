@@ -29,6 +29,17 @@ func buildSummarySampleArtifact(
 	return artifact
 }
 
+func buildSummaryStrategyArtifact(result SummaryStrategySampleResult) map[string]any {
+	artifact := map[string]any{
+		"mode":              "strategy",
+		"threshold_results": result.ThresholdResults,
+	}
+	if len(result.ParetoCandidates) > 0 {
+		artifact["pareto_candidates"] = append([]int(nil), result.ParetoCandidates...)
+	}
+	return artifact
+}
+
 func buildSummaryDiagnosticRuleReasons(rules SummaryRuleEvaluation) []string {
 	reasons := make([]string, 0, 4)
 	if !rules.RequiredFieldsOK {

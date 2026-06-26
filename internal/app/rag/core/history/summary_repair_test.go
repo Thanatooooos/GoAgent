@@ -67,6 +67,18 @@ func TestRepairStructuredSummaryBackfillsOpenQuestionsFromUnresolvedMarkers(t *t
 	assertSummaryField(t, "recent_progress", nil, got.RecentProgress)
 }
 
+func TestRepairStructuredSummaryDemotesProposalLanguageToOpenQuestions(t *testing.T) {
+	input := StructuredSummary{
+		Goal:             "\u6574\u7406\u7ed3\u6784\u5316\u6458\u8981",
+		EstablishedFacts: []string{"\u5efa\u8bae\u4f7f\u7528 RRF \u505a\u591a\u8def\u878d\u5408\u6392\u5e8f"},
+	}
+
+	got := RepairStructuredSummary(input)
+
+	assertSummaryField(t, "established_facts", nil, got.EstablishedFacts)
+	assertSummaryField(t, "open_questions", []string{"\u5efa\u8bae\u4f7f\u7528 RRF \u505a\u591a\u8def\u878d\u5408\u6392\u5e8f"}, got.OpenQuestions)
+}
+
 func TestRepairStructuredSummaryPrefersOpenQuestionsOverEstablishedFactsForDuplicateContent(t *testing.T) {
 	input := StructuredSummary{
 		Goal:             "\u6574\u7406\u7ed3\u6784\u5316\u6458\u8981",

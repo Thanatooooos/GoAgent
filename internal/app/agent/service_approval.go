@@ -17,7 +17,19 @@ func (s *Service) approvalPendingFromSession(session *agentruntime.RuntimeSessio
 
 	approval := session.Snapshot.Approval
 	node := firstNonEmpty(approval.Node, session.Snapshot.Execution.CurrentNode)
-	spec, capabilityName, ok := s.approvalSpecForSession(session, node)
+	sourceNode := approvalSourceNode(session)
+	spec, capabilityName, ok := s.approvalSpecForSession(session, firstNonEmpty(sourceNode, node))
+	schedule := agentruntime.CapabilityScheduleResult{}
+	if ok {
+		schedule = agentruntime.EvaluateCapabilitySchedule(agentruntime.CapabilityScheduleInput{
+			Session:             session,
+			RuntimeOptions:      sessionApprovalRuntimeOptions(session),
+			Snapshot:            session.Snapshot,
+			PatternAction:       "approval_projection",
+			Spec:                spec,
+			SkipInputValidation: true,
+		})
+	}
 	step, hasStep := approvalPlanStep(session, capabilityName)
 
 	searchQuery, err := approvalSearchQuery(session, step, hasStep)
@@ -37,7 +49,7 @@ func (s *Service) approvalPendingFromSession(session *agentruntime.RuntimeSessio
 		Reason:                approval.Reason,
 		ReasonCode:            approval.Reason,
 		ReasonMessage:         approvalReasonMessage(approval.Reason, capabilityName),
-		Trigger:               approvalTrigger(session, node, capabilityName),
+		Trigger:               approvalTrigger(session, sourceNode, node, capabilityName),
 		Node:                  node,
 		RerunNode:             approval.RerunNode,
 		Capability:            capabilityName,
@@ -45,9 +57,10 @@ func (s *Service) approvalPendingFromSession(session *agentruntime.RuntimeSessio
 		CapabilityKind:        approvalSpecField(ok, spec.Kind),
 		CapabilityFamily:      approvalSpecField(ok, spec.Family),
 		CapabilityDescription: approvalSpecField(ok, spec.Description),
-		RiskLevel:             approvalSpecField(ok, spec.RiskLevel),
-		SupportsResume:        ok && spec.SupportsResume,
-		Idempotency:           approvalSpecField(ok, spec.Idempotency),
+		RiskLevel:             strings.TrimSpace(schedule.RiskLevel),
+		SupportsParallel:      schedule.SupportsParallel,
+		SupportsResume:        schedule.SupportsResume,
+		Idempotency:           strings.TrimSpace(schedule.Idempotency),
 		CheckpointID:          firstNonEmpty(approval.CheckpointID, fallbackCheckpointID),
 		SessionID:             strings.TrimSpace(session.SessionID),
 		RequestedAt:           approval.RequestedAt,
@@ -61,6 +74,31 @@ func (s *Service) approvalPendingFromSession(session *agentruntime.RuntimeSessio
 		CanReject:             true,
 		RejectOutcome:         RunStatusDegraded,
 	}
+}
+
+func approvalSourceNode(session *agentruntime.RuntimeSession) string {
+	if session == nil {
+		return ""
+	}
+	if session.Checkpoint != nil {
+		if node := strings.TrimSpace(session.Checkpoint.Node); node != "" {
+			return node
+		}
+	}
+	if node := strings.TrimSpace(session.Snapshot.Execution.CurrentNode); node != "" {
+		return node
+	}
+	return strings.TrimSpace(session.Snapshot.Approval.RerunNode)
+}
+
+func sessionApprovalRuntimeOptions(session *agentruntime.RuntimeSession) agentstate.RuntimeOptions {
+	if session == nil {
+		return agentstate.RuntimeOptions{}
+	}
+	if session.Snapshot.Request.RuntimeOptions != (agentstate.RuntimeOptions{}) {
+		return session.Snapshot.Request.RuntimeOptions
+	}
+	return session.Request.Options
 }
 
 func (s *Service) approvalSpecForSession(session *agentruntime.RuntimeSession, node string) (agentcapability.Spec, string, bool) {
@@ -103,7 +141,7 @@ func approvalReasonMessage(reasonCode string, capabilityName string) string {
 	}
 }
 
-func approvalTrigger(session *agentruntime.RuntimeSession, node string, capabilityName string) string {
+func approvalTrigger(session *agentruntime.RuntimeSession, sourceNode string, node string, capabilityName string) string {
 	if session == nil {
 		return ""
 	}
@@ -119,10 +157,10 @@ func approvalTrigger(session *agentruntime.RuntimeSession, node string, capabili
 		}
 	}
 
-	if strings.TrimSpace(node) == "approval" {
+	if strings.TrimSpace(sourceNode) == "approval" || (strings.TrimSpace(sourceNode) == "" && strings.TrimSpace(node) == "approval") {
 		return "approval_gate"
 	}
-	if strings.TrimSpace(node) != "" {
+	if strings.TrimSpace(sourceNode) != "" {
 		return "interrupt_before_node"
 	}
 	return ""

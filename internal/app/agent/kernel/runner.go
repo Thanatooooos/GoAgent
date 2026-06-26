@@ -43,6 +43,15 @@ func (r *Runner) run(ctx context.Context, session *agentruntime.RuntimeSession, 
 	if !agentstate.HasContent(session.InitialSnapshot) {
 		session.InitialSnapshot = agentstate.CloneSnapshot(session.Snapshot)
 	}
+	if len(session.Journal) == 0 {
+		appendSessionEvent(session, agentstate.NewRuntimeEventAt(
+			time.Now(),
+			session.SessionID,
+			"",
+			agentstate.EventTypeSessionStarted,
+			"",
+		))
+	}
 
 	invokeOpts := append([]compose.Option(nil), opts...)
 	if trimmedCheckpointID := strings.TrimSpace(checkpointID); trimmedCheckpointID != "" {
@@ -98,6 +107,15 @@ func (r *Runner) updateRunMetadata(session *agentruntime.RuntimeSession, checkpo
 			EventOffset: len(session.Journal),
 			CreatedAt:   now,
 		}
+		checkpointEvent := agentstate.NewRuntimeEventAt(
+			now,
+			session.SessionID,
+			node,
+			agentstate.EventTypeCheckpointRecorded,
+			"checkpoint_id="+checkpointID,
+		)
+		checkpointEvent.Checkpoint = agentstate.NewCheckpointRef(checkpointID, node)
+		appendSessionEvent(session, checkpointEvent)
 		event := agentstate.NewRuntimeEventAt(
 			now,
 			session.SessionID,
@@ -145,12 +163,21 @@ func (r *Runner) updateRunMetadata(session *agentruntime.RuntimeSession, checkpo
 		appendSessionEvent(session, event)
 	}
 
-	if session.Checkpoint == nil {
+	if session.Checkpoint == nil && !resume {
 		session.Checkpoint = &agentruntime.CheckpointRef{
 			ID:          checkpointID,
 			EventOffset: len(session.Journal),
 			CreatedAt:   now,
 		}
+		checkpointEvent := agentstate.NewRuntimeEventAt(
+			now,
+			session.SessionID,
+			checkpointNodeFromSession(session),
+			agentstate.EventTypeCheckpointRecorded,
+			"checkpoint_id="+checkpointID,
+		)
+		checkpointEvent.Checkpoint = agentstate.NewCheckpointRef(checkpointID, checkpointNodeFromSession(session))
+		appendSessionEvent(session, checkpointEvent)
 	}
 }
 

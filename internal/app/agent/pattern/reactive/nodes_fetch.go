@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
 	agentfetch "local/rag-project/internal/app/agent/fetch"
@@ -19,32 +18,26 @@ func newFetchNode(fetchCapability agentcapability.Handle) (agentkernel.Node, err
 	}
 	return agentkernel.NewNodeFunc("fetch", func(ctx context.Context, session *agentruntime.RuntimeSession) (agentruntime.NodeResult, error) {
 		urls := fetchURLs(session)
-		startedAt := time.Now()
-		result, err := fetchCapability.Invoke(ctx, agentcapability.InvocationRequest{
-			SessionID: session.SessionID,
-			Snapshot:  session.Snapshot,
-			Input:     agentfetch.CapabilityInput{URLs: urls},
+		execution, err := agentruntime.ExecuteScheduledCapability(ctx, agentruntime.CapabilityExecutionRequest{
+			Session:         session,
+			Node:            "fetch",
+			PatternAction:   "reactive_fetch",
+			Handle:          fetchCapability,
+			Input:           agentfetch.CapabilityInput{URLs: urls},
+			StartSummary:    strings.Join(urls, ", "),
+			ResultSummary:   strings.Join(urls, ", "),
+			EmitStartOnSkip: false,
 		})
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
-		output, ok := result.Output.(agentfetch.Output)
-		if !ok && result.Status != agentcapability.StatusSkipped {
-			return agentruntime.NodeResult{}, fmt.Errorf("fetch capability returned unexpected output type %T", result.Output)
+		if _, ok := execution.Invocation.Output.(agentfetch.Output); !ok && execution.Invocation.Status != agentcapability.StatusSkipped {
+			return agentruntime.NodeResult{}, fmt.Errorf("fetch capability returned unexpected output type %T", execution.Invocation.Output)
 		}
-		events := make([]agentstate.RuntimeEvent, 0, 2)
-		if result.Status != agentcapability.StatusSkipped {
-			events = append(events, agentstate.NewRuntimeEventAt(startedAt, session.SessionID, "fetch", agentstate.EventTypeCapabilityStart, capabilityActionSummary(result.Action, strings.Join(urls, ", "))))
-		}
-		eventType := agentstate.EventTypeCapabilityResult
-		if result.Status == agentcapability.StatusSkipped {
-			eventType = agentstate.EventTypeCapabilitySkipped
-		}
-		events = append(events, agentstate.NewRuntimeEvent(session.SessionID, "fetch", eventType, capabilityObservationSummary(result.Observation, output.Summary)))
 
 		return agentruntime.NodeResult{
-			Events: events,
-			Delta:  withExecutionNodeDelta(result.Delta, "fetch"),
+			Events: execution.Events,
+			Delta:  withExecutionNodeDelta(execution.Invocation.Delta, "fetch"),
 		}, nil
 	})
 }

@@ -251,6 +251,12 @@ func TestKernelRunner_RunWithCheckpointResume(t *testing.T) {
 	if len(interrupted.Journal) == 0 || interrupted.Journal[len(interrupted.Journal)-1].EventType != agentstate.EventTypeInterrupt {
 		t.Fatalf("expected interrupt journal event, got %+v", interrupted.Journal)
 	}
+	if !journalHasEventType(interrupted.Journal, agentstate.EventTypeSessionStarted) {
+		t.Fatalf("expected session_started event in journal, got %+v", interrupted.Journal)
+	}
+	if !journalHasEventType(interrupted.Journal, agentstate.EventTypeCheckpointRecorded) {
+		t.Fatalf("expected checkpoint_recorded event in journal, got %+v", interrupted.Journal)
+	}
 	if !journalHasEventType(interrupted.Journal, agentstate.EventTypeStateApplied) {
 		t.Fatalf("expected interrupt path to apply execution delta through reducer, got %+v", interrupted.Journal)
 	}
@@ -347,6 +353,9 @@ func TestKernelRunner_RunNodeErrorAppliesExecutionDeltaThroughReducer(t *testing
 	}
 	if !journalHasEventType(result.Journal, agentstate.EventTypeStateApplied) {
 		t.Fatalf("expected state_applied event for error delta in journal, got %+v", result.Journal)
+	}
+	if !journalHasEventType(result.Journal, agentstate.EventTypeFailed) {
+		t.Fatalf("expected failed event in journal, got %+v", result.Journal)
 	}
 }
 

@@ -41,15 +41,17 @@ type ContextDelta struct {
 	Notes                []string          `json:"notes,omitempty"`
 }
 
-// PlanDelta carries explicit plan-state replacement updates. The first
-// plan-execute implementation updates plan state atomically to keep reducer
-// behavior deterministic and replay-friendly.
+// PlanDelta currently keeps plan mutation coarse-grained and replay-friendly:
+// the entire plan state is replaced atomically. Step patch and step-result
+// append semantics must still be expressed by building the next PlanState and
+// supplying it through Replace.
 type PlanDelta struct {
 	Replace *PlanState `json:"replace,omitempty"`
 }
 
-// EvidenceDelta carries additive evidence changes and the latest sufficiency
-// judgment.
+// EvidenceDelta carries additive evidence changes with shared reducer rules:
+// evidence items are appended by stable identity, sufficiency is last-writer
+// wins when explicitly set, and open questions are accumulated uniquely.
 type EvidenceDelta struct {
 	AddItems          []EvidenceItem `json:"add_items,omitempty"`
 	Sufficient        *bool          `json:"sufficient,omitempty"`
@@ -73,6 +75,7 @@ type ApprovalDelta struct {
 
 // ExecutionDelta carries control-flow progress updates.
 type ExecutionDelta struct {
+	Status                      *string `json:"status,omitempty"`
 	CurrentNode                 *string  `json:"current_node,omitempty"`
 	IterationIncrement          int      `json:"iteration_increment,omitempty"`
 	ContinueCountIncrement      int      `json:"continue_count_increment,omitempty"`

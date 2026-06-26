@@ -113,3 +113,24 @@ func TestBuildSummarySampleArtifactIncludesDiagnosticRuleReasons(t *testing.T) {
 		t.Fatalf("diagnostic_rule_reasons[1] = %q, want critical open questions missing", reasons[1])
 	}
 }
+
+func TestBuildSummaryStrategyArtifactIncludesThresholdResults(t *testing.T) {
+	artifact := buildSummaryStrategyArtifact(SummaryStrategySampleResult{
+		ThresholdResults: []SummaryStrategyThresholdResult{{
+			Threshold:       1200,
+			ThresholdUnit:   SummaryStrategyThresholdTokens,
+			TokenSavedRatio: 0.5,
+			Passed:          true,
+		}},
+	})
+	results, ok := artifact["threshold_results"].([]SummaryStrategyThresholdResult)
+	if !ok {
+		t.Fatalf("artifact = %#v, want threshold_results", artifact)
+	}
+	if len(results) != 1 || results[0].Threshold != 1200 {
+		t.Fatalf("threshold_results = %#v, want one threshold=1200 result", results)
+	}
+	if results[0].ThresholdUnit != SummaryStrategyThresholdTokens {
+		t.Fatalf("ThresholdUnit = %q, want tokens", results[0].ThresholdUnit)
+	}
+}

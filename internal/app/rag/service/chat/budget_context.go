@@ -19,9 +19,16 @@ const (
 
 // ChatContextBudgetOptions controls token-aware history trimming before prompt build.
 type ChatContextBudgetOptions struct {
-	Enabled         bool
-	MaxPromptTokens int
-	Estimator       TokenEstimator
+	Enabled               bool
+	MaxPromptTokens       int
+	FixedReserveTokens    int
+	SafetyReserveTokens   int
+	MemoryTokens          int
+	SessionRecallTokens   int
+	RetrieveTokens        int
+	ToolTokens            int
+	MessageOverheadTokens int
+	Estimator             TokenEstimator
 }
 
 // ChatContextBudgetResult captures trimming and estimation metadata for tracing.
@@ -38,6 +45,17 @@ type ChatContextBudgetResult struct {
 	Trimmed                   bool
 	Degraded                  bool
 	DegradationSteps          []string
+	StageTokens               ChatContextStageTokens
+}
+
+type ChatContextStageTokens struct {
+	Fixed    int `json:"fixed"`
+	History  int `json:"history"`
+	Memory   int `json:"memory"`
+	Session  int `json:"session"`
+	Retrieve int `json:"retrieve"`
+	Tool     int `json:"tool"`
+	Total    int `json:"total"`
 }
 
 func (o ChatContextBudgetOptions) normalized() ChatContextBudgetOptions {
@@ -46,6 +64,9 @@ func (o ChatContextBudgetOptions) normalized() ChatContextBudgetOptions {
 	}
 	if o.MaxPromptTokens <= 0 {
 		o.MaxPromptTokens = defaultChatContextMaxPromptTokens
+	}
+	if o.MessageOverheadTokens < 0 {
+		o.MessageOverheadTokens = 0
 	}
 	return o
 }
@@ -70,11 +91,12 @@ func applyChatContextBudget(
 	}
 
 	options = options.normalized()
-	estimated, err := estimatePromptContextTokens(promptService, working, options.Estimator)
+	estimated, err := estimatePromptContextTokens(promptService, working, options.Estimator, options.MessageOverheadTokens)
 	if err != nil {
 		return ChatContextBudgetResult{}, err
 	}
 	result.EstimatedPromptTokens = estimated
+	result.StageTokens = estimateChatContextStageTokens(promptService, working, options.Estimator, options.MessageOverheadTokens, estimated)
 	if !options.Enabled || estimated <= options.MaxPromptTokens {
 		return result, nil
 	}
@@ -102,7 +124,7 @@ func applyChatContextBudget(
 	for _, field := range degradableFields {
 		stepRecorded := false
 		for strings.TrimSpace(*field.value) != "" {
-			estimated, err = estimatePromptContextTokens(promptService, working, options.Estimator)
+			estimated, err = estimatePromptContextTokens(promptService, working, options.Estimator, options.MessageOverheadTokens)
 			if err != nil {
 				return ChatContextBudgetResult{}, err
 			}
@@ -122,7 +144,7 @@ func applyChatContextBudget(
 				stepRecorded = true
 			}
 		}
-		estimated, err = estimatePromptContextTokens(promptService, working, options.Estimator)
+		estimated, err = estimatePromptContextTokens(promptService, working, options.Estimator, options.MessageOverheadTokens)
 		if err != nil {
 			return ChatContextBudgetResult{}, err
 		}
@@ -136,12 +158,38 @@ func applyChatContextBudget(
 	result.KnowledgeContext = working.KnowledgeContext
 	result.ToolContext = working.ToolContext
 
-	finalEstimate, err := estimatePromptContextTokens(promptService, working, options.Estimator)
+	finalEstimate, err := estimatePromptContextTokens(promptService, working, options.Estimator, options.MessageOverheadTokens)
 	if err != nil {
 		return ChatContextBudgetResult{}, err
 	}
 	result.EstimatedPromptTokens = finalEstimate
+	result.StageTokens = estimateChatContextStageTokens(promptService, working, options.Estimator, options.MessageOverheadTokens, finalEstimate)
 	return result, nil
+}
+
+func estimateChatContextStageTokens(
+	_ *ragprompt.Service,
+	ctx ragprompt.Context,
+	estimator TokenEstimator,
+	messageOverheadTokens int,
+	total int,
+) ChatContextStageTokens {
+	if estimator == nil {
+		estimator = RoughTokenEstimator{}
+	}
+	stage := ChatContextStageTokens{
+		History:  estimateChatMessagesTokensWithOverhead(ctx.History, estimator, messageOverheadTokens),
+		Memory:   estimator.EstimateTokens(ctx.MemoryContext),
+		Session:  estimator.EstimateTokens(ctx.SessionContext),
+		Retrieve: estimator.EstimateTokens(ctx.KnowledgeContext),
+		Tool:     estimator.EstimateTokens(ctx.ToolContext),
+		Total:    total,
+	}
+	stage.Fixed = total - stage.History - stage.Memory - stage.Session - stage.Retrieve - stage.Tool
+	if stage.Fixed < 0 {
+		stage.Fixed = 0
+	}
+	return stage
 }
 
 func clonePromptContext(ctx ragprompt.Context) ragprompt.Context {
@@ -163,12 +211,13 @@ func estimatePromptContextTokens(
 	promptService *ragprompt.Service,
 	ctx ragprompt.Context,
 	estimator TokenEstimator,
+	messageOverheadTokens int,
 ) (int, error) {
 	messages, err := promptService.BuildMessages(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return estimateChatMessagesTokens(messages, estimator), nil
+	return estimateChatMessagesTokensWithOverhead(messages, estimator, messageOverheadTokens), nil
 }
 
 func trimHistoryToPromptBudget(
@@ -184,7 +233,7 @@ func trimHistoryToPromptBudget(
 	for len(current) > 0 {
 		probe := clonePromptContext(ctx)
 		probe.History = current
-		estimated, err := estimatePromptContextTokens(promptService, probe, options.Estimator)
+		estimated, err := estimatePromptContextTokens(promptService, probe, options.Estimator, options.MessageOverheadTokens)
 		if err != nil || estimated <= options.MaxPromptTokens {
 			return current, dropped
 		}
@@ -297,12 +346,23 @@ func estimateHistoryTokens(
 }
 
 func estimateChatMessagesTokens(messages []convention.ChatMessage, estimator TokenEstimator) int {
+	return estimateChatMessagesTokensWithOverhead(messages, estimator, 0)
+}
+
+func estimateChatMessagesTokensWithOverhead(
+	messages []convention.ChatMessage,
+	estimator TokenEstimator,
+	overhead int,
+) int {
 	if estimator == nil {
 		estimator = RoughTokenEstimator{}
 	}
+	if overhead < 0 {
+		overhead = 0
+	}
 	total := 0
 	for _, message := range messages {
-		total += estimator.EstimateTokens(message.Content)
+		total += estimator.EstimateTokens(message.Content) + overhead
 	}
 	return total
 }
@@ -314,6 +374,7 @@ func chatContextBudgetTraceExtra(result ChatContextBudgetResult) map[string]any 
 	extra := map[string]any{
 		"estimatedPromptTokens": result.EstimatedPromptTokens,
 		"historyMessageCount":   result.HistoryMessageCountAfter,
+		"stageTokens":           result.StageTokens,
 	}
 	if result.Trimmed {
 		extra["historyTrimmed"] = true

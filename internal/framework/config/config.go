@@ -189,24 +189,42 @@ type RagRateLimitGlobal struct {
 }
 
 type RagMemoryConfig struct {
-	HistoryKeepTurns  int                        `mapstructure:"history-keep-turns"`
-	SummaryStartTurns int                        `mapstructure:"summary-start-turns"`
-	SummaryEnabled    bool                       `mapstructure:"summary-enabled"`
-	SummaryAsync      RagSummaryAsyncConfig      `mapstructure:"summary-async"`
-	SummaryMaxChars   int                        `mapstructure:"summary-max-chars"`
-	SummaryBudget     RagSummaryBudgetConfig     `mapstructure:"summary-budget"`
-	TitleMaxLength    int                        `mapstructure:"title-max-length"`
-	LongMessage       RagLongMessageConfig       `mapstructure:"long-message"`
-	SessionRecall     RagSessionRecallConfig     `mapstructure:"session-recall"`
-	ExplicitRecall    RagExplicitRecallConfig    `mapstructure:"explicit-recall"`
-	Cache             RagMemoryCacheConfig       `mapstructure:"cache"`
-	Maintenance       RagMemoryMaintenanceConfig `mapstructure:"maintenance"`
-	ChatContext       RagChatContextConfig       `mapstructure:"chat-context"`
+	HistoryKeepTurns             int                        `mapstructure:"history-keep-turns"`
+	SummaryStartTurns            int                        `mapstructure:"summary-start-turns"`
+	SummaryTriggerTokens         int                        `mapstructure:"summary-trigger-tokens"`
+	SummaryOverheadReserveTokens int                        `mapstructure:"summary-overhead-reserve-tokens"`
+	SummaryEnabled               bool                       `mapstructure:"summary-enabled"`
+	SummaryToken                 RagSummaryTokenConfig      `mapstructure:"summary-token"`
+	SummaryAsync                 RagSummaryAsyncConfig      `mapstructure:"summary-async"`
+	SummaryMaxChars              int                        `mapstructure:"summary-max-chars"`
+	SummaryBudget                RagSummaryBudgetConfig     `mapstructure:"summary-budget"`
+	TitleMaxLength               int                        `mapstructure:"title-max-length"`
+	LongMessage                  RagLongMessageConfig       `mapstructure:"long-message"`
+	SessionRecall                RagSessionRecallConfig     `mapstructure:"session-recall"`
+	ExplicitRecall               RagExplicitRecallConfig    `mapstructure:"explicit-recall"`
+	Cache                        RagMemoryCacheConfig       `mapstructure:"cache"`
+	Maintenance                  RagMemoryMaintenanceConfig `mapstructure:"maintenance"`
+	ChatContext                  RagChatContextConfig       `mapstructure:"chat-context"`
 }
 
 type RagChatContextConfig struct {
-	Enabled         bool `mapstructure:"enabled"`
-	MaxPromptTokens int  `mapstructure:"max-prompt-tokens"`
+	Enabled             bool                     `mapstructure:"enabled"`
+	MaxPromptTokens     int                      `mapstructure:"max-prompt-tokens"`
+	FixedReserveTokens  int                      `mapstructure:"fixed-reserve-tokens"`
+	SafetyReserveTokens int                      `mapstructure:"safety-reserve-tokens"`
+	StageBudget         RagChatStageBudgetConfig `mapstructure:"stage-budget"`
+}
+
+type RagChatStageBudgetConfig struct {
+	MemoryTokens        int `mapstructure:"memory-tokens"`
+	SessionRecallTokens int `mapstructure:"session-recall-tokens"`
+	RetrieveTokens      int `mapstructure:"retrieve-tokens"`
+	ToolTokens          int `mapstructure:"tool-tokens"`
+}
+
+type RagSummaryTokenConfig struct {
+	SafetyFactor          float64 `mapstructure:"safety-factor"`
+	MessageOverheadTokens int     `mapstructure:"message-overhead-tokens"`
 }
 
 type RagSummaryAsyncConfig struct {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"local/rag-project/internal/app/rag/core/tokenbudget"
 	. "local/rag-project/internal/app/rag/tool/core"
 	webmod "local/rag-project/internal/app/rag/tool/modules/web"
 )
@@ -41,6 +42,49 @@ func RenderContext(results []Result) string {
 		}
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func RenderContextWithinBudget(
+	results []Result,
+	budget int,
+	estimator tokenbudget.Estimator,
+) (string, tokenbudget.TruncationStats) {
+	sections := make([]tokenbudget.Section, 0, len(results)*2)
+	for _, result := range results {
+		name := strings.TrimSpace(result.Name)
+		if name == "" {
+			continue
+		}
+		summary := strings.TrimSpace(result.Summary)
+		if summary == "" {
+			if result.Successful() {
+				summary = "tool executed successfully"
+			} else {
+				summary = strings.TrimSpace(result.ErrorMessage)
+			}
+		}
+		sections = append(sections, tokenbudget.Section{
+			Name:     name + ".summary",
+			Text:     "### " + name + "\n" + summary,
+			Priority: 100,
+			Required: true,
+		})
+		if detail := renderResultContextDetail(result); detail != "" {
+			priority := 30
+			required := false
+			if name == "web_search" || name == "external_evidence_workflow" {
+				priority = 90
+				required = true
+			}
+			sections = append(sections, tokenbudget.Section{
+				Name:     name + ".detail",
+				Text:     detail,
+				Priority: priority,
+				Required: required,
+			})
+		}
+	}
+	return tokenbudget.JoinSectionsWithinBudget(sections, budget, estimator, maxRenderedToolContextLen)
 }
 
 func renderResultContextDetail(result Result) string {

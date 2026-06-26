@@ -24,6 +24,10 @@ type SummaryService interface {
 	CompressIfNeeded(ctx context.Context, conversationID string, userID string, message convention.ChatMessage) error
 }
 
+type SummaryTrigger interface {
+	EnqueueSummaryCheck(ctx context.Context, input SummaryJobInput) error
+}
+
 type Service interface {
 	// Load 加载一段可直接喂给模型的会话上下文。
 	Load(ctx context.Context, conversationID string, userID string) ([]convention.ChatMessage, error)

@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
 	agentexternal "local/rag-project/internal/app/agent/external_evidence"
 	agentkernel "local/rag-project/internal/app/agent/kernel"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
-	agentstate "local/rag-project/internal/app/agent/state"
 )
 
 func newExternalEvidenceNode(workflowCapability agentcapability.Handle) (agentkernel.Node, error) {
@@ -19,28 +17,29 @@ func newExternalEvidenceNode(workflowCapability agentcapability.Handle) (agentke
 	}
 	return agentkernel.NewNodeFunc("external_evidence", func(ctx context.Context, session *agentruntime.RuntimeSession) (agentruntime.NodeResult, error) {
 		query := normalizeQuery(session)
-		startedAt := time.Now()
-		result, err := workflowCapability.Invoke(ctx, agentcapability.InvocationRequest{
-			SessionID: session.SessionID,
-			Snapshot:  session.Snapshot,
-			Input:     agentexternal.CapabilityInput{Query: query},
+		execution, err := agentruntime.ExecuteScheduledCapability(ctx, agentruntime.CapabilityExecutionRequest{
+			Session:         session,
+			Node:            "external_evidence",
+			PatternAction:   "reactive_external_evidence",
+			Handle:          workflowCapability,
+			Input:           agentexternal.CapabilityInput{Query: query},
+			StartSummary:    query,
+			ResultSummary:   query,
+			EmitStartOnSkip: true,
 		})
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
-
-		events := []agentstate.RuntimeEvent{
-			agentstate.NewRuntimeEventAt(startedAt, session.SessionID, "external_evidence", agentstate.EventTypeCapabilityStart, capabilityActionSummary(result.Action, query)),
+		if execution.Invocation.Status == agentcapability.StatusSkipped {
+			execution.Events[len(execution.Events)-1].PayloadText = firstNonEmpty(
+				execution.Invocation.Observation.Summary,
+				strings.TrimSpace(execution.Invocation.ErrorClass),
+			)
 		}
-		eventType := agentstate.EventTypeCapabilityResult
-		if result.Status == agentcapability.StatusSkipped {
-			eventType = agentstate.EventTypeCapabilitySkipped
-		}
-		events = append(events, agentstate.NewRuntimeEvent(session.SessionID, "external_evidence", eventType, capabilityObservationSummary(result.Observation, strings.TrimSpace(result.ErrorClass))))
 
 		return agentruntime.NodeResult{
-			Events: events,
-			Delta:  withExecutionNodeDelta(result.Delta, "external_evidence"),
+			Events: execution.Events,
+			Delta:  withExecutionNodeDelta(execution.Invocation.Delta, "external_evidence"),
 		}, nil
 	})
 }

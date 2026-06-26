@@ -28,16 +28,21 @@ func newExecuteStepNode(registry *agentcapability.Registry, resolver agentresolv
 			return agentruntime.NodeResult{}, err
 		}
 		logStepExecutionStart(session, step, spec, input)
-		startedAt := time.Now()
-		result, err := handle.Invoke(ctx, agentcapability.InvocationRequest{
-			SessionID: session.SessionID,
-			Snapshot:  session.Snapshot,
-			Input:     input,
+		execution, err := agentruntime.ExecuteScheduledCapability(ctx, agentruntime.CapabilityExecutionRequest{
+			Session:         session,
+			Node:            "execute_step",
+			PatternAction:   "plan_execute_step",
+			Handle:          handle,
+			Input:           input,
+			StartSummary:    firstNonEmpty(step.Title, step.CapabilityName),
+			ResultSummary:   step.Title,
+			EmitStartOnSkip: true,
 		})
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
 
+		result := execution.Invocation
 		step.Status = agentstate.PlanStepStatusRunning
 		step.AttemptCount++
 		step.LastSummary = firstNonEmpty(result.Observation.Summary, result.Action.Summary, step.Title)
@@ -49,21 +54,12 @@ func newExecuteStepNode(registry *agentcapability.Registry, resolver agentresolv
 		resultState := resultSummary(step, result.Status, result.ErrorClass, result.Output, result.Observation.Summary)
 		resultState.ProducedEvidence = stepHasEvidence(spec, step, result)
 		resultState.Attempt = step.AttemptCount
-		resultState.StartedAt = startedAt
+		resultState.StartedAt = execution.StartedAt
 		resultState.CompletedAt = time.Now()
 		resultState.DurationMs = resultState.CompletedAt.Sub(resultState.StartedAt).Milliseconds()
 		logStepExecutionResult(session, step, result, resultState)
 		plan.Steps[plan.CurrentStepIndex] = step
 		plan.LastStepResult = resultState
-
-		events := []agentstate.RuntimeEvent{
-			agentstate.NewRuntimeEventAt(startedAt, session.SessionID, "execute_step", agentstate.EventTypeCapabilityStart, firstNonEmpty(result.Action.Summary, step.Title)),
-		}
-		eventType := agentstate.EventTypeCapabilityResult
-		if result.Status == agentcapability.StatusSkipped {
-			eventType = agentstate.EventTypeCapabilitySkipped
-		}
-		events = append(events, agentstate.NewRuntimeEvent(session.SessionID, "execute_step", eventType, firstNonEmpty(result.Observation.Summary, step.LastSummary)))
 
 		delta := result.Delta
 		delta.Plan = &agentstate.PlanDelta{
@@ -72,7 +68,7 @@ func newExecuteStepNode(registry *agentcapability.Registry, resolver agentresolv
 		delta.Execution = executionNodeDelta("execute_step")
 
 		return agentruntime.NodeResult{
-			Events: events,
+			Events: execution.Events,
 			Delta:  delta,
 		}, nil
 	})

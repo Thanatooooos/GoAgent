@@ -111,7 +111,6 @@ type SummaryServiceAdapter struct {
 	summaryRepo  port.ConversationSummaryRepository
 	messageRepo  port.ConversationMessageRepository
 	chatService  aichat.LLMService
-	startTurns   int
 	maxChars     int
 	jobEnqueuer  SummaryJobEnqueuer
 	asyncEnabled bool
@@ -120,13 +119,17 @@ type SummaryServiceAdapter struct {
 
 // SummaryCompressionOptions 描述摘要压缩的配置参数。
 type SummaryCompressionOptions struct {
-	MessageRepo  port.ConversationMessageRepository
-	ChatService  aichat.LLMService
-	StartTurns   int
-	MaxChars     int
-	Budget       SummaryBudgetOptions
-	JobEnqueuer  SummaryJobEnqueuer
-	AsyncEnabled bool
+	MessageRepo           port.ConversationMessageRepository
+	ChatService           aichat.LLMService
+	StartTurns            int
+	TriggerTokens         int
+	Estimator             TokenEstimator
+	SafetyFactor          float64
+	MessageOverheadTokens int
+	MaxChars              int
+	Budget                SummaryBudgetOptions
+	JobEnqueuer           SummaryJobEnqueuer
+	AsyncEnabled          bool
 }
 
 type SummaryBudgetOptions struct {
@@ -147,26 +150,37 @@ func NewCompressibleSummaryService(
 	summaryRepo port.ConversationSummaryRepository,
 	options SummaryCompressionOptions,
 ) *SummaryServiceAdapter {
-	if options.StartTurns <= 0 {
-		options.StartTurns = 10
+	if options.TriggerTokens <= 0 {
+		options.TriggerTokens = 3500
+	}
+	if options.SafetyFactor < 1 {
+		options.SafetyFactor = 1.15
+	}
+	if options.MessageOverheadTokens < 0 {
+		options.MessageOverheadTokens = 0
 	}
 	if options.MaxChars <= 0 {
 		options.MaxChars = 200
 	}
+	if options.Estimator == nil {
+		options.Estimator = NewTokenEstimateAdapter()
+	}
 	engine := summaryCompressionEngine{
-		summaryRepo: summaryRepo,
-		messageRepo: options.MessageRepo,
-		chatService: options.ChatService,
-		startTurns:  options.StartTurns,
-		maxChars:    options.MaxChars,
-		budget:      options.Budget,
-		now:         time.Now,
+		summaryRepo:           summaryRepo,
+		messageRepo:           options.MessageRepo,
+		chatService:           options.ChatService,
+		triggerTokens:         options.TriggerTokens,
+		estimator:             options.Estimator,
+		safetyFactor:          options.SafetyFactor,
+		messageOverheadTokens: options.MessageOverheadTokens,
+		maxChars:              options.MaxChars,
+		budget:                options.Budget,
+		now:                   time.Now,
 	}
 	adapter := &SummaryServiceAdapter{
 		summaryRepo: summaryRepo,
 		messageRepo: options.MessageRepo,
 		chatService: options.ChatService,
-		startTurns:  options.StartTurns,
 		maxChars:    options.MaxChars,
 		jobEnqueuer: options.JobEnqueuer,
 		engine:      engine,
@@ -187,6 +201,13 @@ func (s *SummaryServiceAdapter) EnableAsyncSummaryJobs(queueSize int) *InMemoryS
 	s.jobEnqueuer = worker
 	s.asyncEnabled = true
 	return worker
+}
+
+func (s *SummaryServiceAdapter) EnqueueSummaryCheck(ctx context.Context, input SummaryJobInput) error {
+	if s == nil || s.jobEnqueuer == nil {
+		return nil
+	}
+	return s.jobEnqueuer.EnqueueConversationSummary(ctx, input)
 }
 
 // LoadLatestSummary 读取最近摘要。
@@ -221,9 +242,6 @@ func (s *SummaryServiceAdapter) DecorateIfNeeded(summary *convention.ChatMessage
 // CompressIfNeeded 在消息数超过阈值时触发 LLM 摘要压缩。
 func (s *SummaryServiceAdapter) CompressIfNeeded(ctx context.Context, conversationID string, userID string, message convention.ChatMessage) error {
 	if s == nil || s.messageRepo == nil || s.chatService == nil || s.summaryRepo == nil {
-		return nil
-	}
-	if s.startTurns <= 0 {
 		return nil
 	}
 	conversationID = strings.TrimSpace(conversationID)

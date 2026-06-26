@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	raghistory "local/rag-project/internal/app/rag/core/history"
@@ -14,6 +15,7 @@ import (
 	rageval "local/rag-project/internal/app/rag/evaluation"
 	ragbootstrap "local/rag-project/internal/bootstrap/rag"
 	"local/rag-project/internal/framework/config"
+	infraai "local/rag-project/internal/infra-ai"
 )
 
 func main() {
@@ -24,9 +26,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return runWithDeps(args, stdout, stderr, evalRunnerDeps{})
 }
 
+type summaryEvalOptions struct {
+	mode          rageval.SummaryEvalMode
+	thresholdUnit rageval.SummaryStrategyThresholdUnit
+	thresholds    []int
+	promptVariant raghistory.StructuredSummaryPromptVariant
+}
+
 type evalRunnerDeps struct {
 	buildRuntime  func(context.Context, string) (*ragbootstrap.Runtime, error)
-	buildRegistry func(*ragbootstrap.Runtime, rageval.SuiteName, []string) (*rageval.Registry, error)
+	buildRegistry func(*ragbootstrap.Runtime, rageval.SuiteName, []string, summaryEvalOptions) (*rageval.Registry, error)
 }
 
 func runWithDeps(args []string, stdout, stderr io.Writer, deps evalRunnerDeps) int {
@@ -40,7 +49,15 @@ func runWithDeps(args []string, stdout, stderr io.Writer, deps evalRunnerDeps) i
 	outputPath := fs.String("output", "", "write suite JSON to this file instead of stdout")
 	disableRewriteJudge := fs.Bool("no-rewrite-judge", false, "skip LLM judge for rewrite semantic quality scoring")
 	disableRewriteSemantic := fs.Bool("no-rewrite-semantic", false, "skip embedding similarity for rewrite evaluation")
-	rerankModel := fs.String("rerank-model", "", "override ai.rerank.default-model before loading config, e.g. qwen3-rerank or rerank-noop")
+	rerankModel := fs.String("rerank-model", "", "override ai.rerank.default-model before loading config, e.g. qwen3-reranker-8b or rerank-noop")
+	summaryMode := fs.String("summary-mode", "standard", "summary evaluation mode: standard or strategy")
+	summaryThresholds := fs.String("summary-thresholds", "", "comma-separated summary strategy thresholds, e.g. 4,6,8,10")
+	summaryTokenThresholds := fs.String(
+		"summary-token-thresholds",
+		"",
+		"comma-separated summary strategy token thresholds, e.g. 800,1200,1600",
+	)
+	summaryPromptVariant := fs.String("summary-prompt-variant", string(raghistory.StructuredSummaryPromptVariantStateAware), "summary prompt variant: state-aware or legacy")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -55,15 +72,42 @@ func runWithDeps(args []string, stdout, stderr io.Writer, deps evalRunnerDeps) i
 		fmt.Fprintf(stderr, "unsupported suite: %v\n", err)
 		return 2
 	}
+	summaryOpts := summaryEvalOptions{
+		mode: rageval.SummaryEvalMode(strings.TrimSpace(*summaryMode)),
+	}
+	promptVariant, err := raghistory.ParseStructuredSummaryPromptVariant(*summaryPromptVariant)
+	if err != nil {
+		fmt.Fprintln(stderr, err.Error())
+		return 2
+	}
+	summaryOpts.promptVariant = promptVariant
+	if summaryOpts.mode == rageval.SummaryEvalModeStrategy {
+		turnThresholds, parseErr := parsePositiveIntList(*summaryThresholds, "summary threshold")
+		if parseErr != nil {
+			fmt.Fprintln(stderr, parseErr.Error())
+			return 2
+		}
+		tokenThresholds, parseErr := parsePositiveIntList(*summaryTokenThresholds, "summary token threshold")
+		if parseErr != nil {
+			fmt.Fprintln(stderr, parseErr.Error())
+			return 2
+		}
+		summaryOpts, err = resolveSummaryEvalOptions(summaryOpts.mode, turnThresholds, tokenThresholds)
+		if err != nil {
+			fmt.Fprintln(stderr, err.Error())
+			return 2
+		}
+		summaryOpts.promptVariant = promptVariant
+	}
 
 	evalKnowledgeBaseIDs := resolveEvalKnowledgeBaseIDs(*evalKBScope)
 	if model := strings.TrimSpace(*rerankModel); model != "" {
 		_ = os.Setenv("AI_RERANK_DEFAULT_MODEL", model)
 	}
-	deps = deps.withDefaults(evalKnowledgeBaseIDs, rewriteEvalOptions{
-		disableJudge:   *disableRewriteJudge,
+	deps = deps.withDefaults(suite, evalKnowledgeBaseIDs, rewriteEvalOptions{
+		disableJudge:    *disableRewriteJudge,
 		disableSemantic: *disableRewriteSemantic,
-	})
+	}, summaryOpts)
 	runtime, err := deps.buildRuntime(context.Background(), strings.TrimSpace(*configDir))
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
@@ -73,7 +117,7 @@ func runWithDeps(args []string, stdout, stderr io.Writer, deps evalRunnerDeps) i
 		defer func() { _ = runtime.Close() }()
 	}
 
-	registry, err := deps.buildRegistry(runtime, suite, evalKnowledgeBaseIDs)
+	registry, err := deps.buildRegistry(runtime, suite, evalKnowledgeBaseIDs, summaryOpts)
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 1
@@ -137,16 +181,73 @@ func resolveEvalKnowledgeBaseIDs(raw string) []string {
 	return []string{raw}
 }
 
+func parsePositiveIntList(raw string, label string) ([]int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	thresholds := make([]int, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s %q", label, part)
+		}
+		if value <= 0 {
+			return nil, fmt.Errorf("%ss must be positive, got %d", label, value)
+		}
+		thresholds = append(thresholds, value)
+	}
+	return thresholds, nil
+}
+
+func resolveSummaryEvalOptions(
+	mode rageval.SummaryEvalMode,
+	turnThresholds []int,
+	tokenThresholds []int,
+) (summaryEvalOptions, error) {
+	if mode != rageval.SummaryEvalModeStrategy {
+		return summaryEvalOptions{mode: mode}, nil
+	}
+	if len(tokenThresholds) > 0 {
+		return summaryEvalOptions{
+			mode:          mode,
+			thresholdUnit: rageval.SummaryStrategyThresholdTokens,
+			thresholds:    tokenThresholds,
+		}, nil
+	}
+	if len(turnThresholds) > 0 {
+		return summaryEvalOptions{
+			mode:          mode,
+			thresholdUnit: rageval.SummaryStrategyThresholdTurns,
+			thresholds:    turnThresholds,
+		}, nil
+	}
+	return summaryEvalOptions{}, fmt.Errorf("summary strategy thresholds are required")
+}
+
 type rewriteEvalOptions struct {
 	disableJudge    bool
 	disableSemantic bool
 }
 
-func (d evalRunnerDeps) withDefaults(evalKnowledgeBaseIDs []string, rewriteOpts rewriteEvalOptions) evalRunnerDeps {
+func (d evalRunnerDeps) withDefaults(
+	suite rageval.SuiteName,
+	evalKnowledgeBaseIDs []string,
+	rewriteOpts rewriteEvalOptions,
+	summaryOpts summaryEvalOptions,
+) evalRunnerDeps {
 	if d.buildRuntime == nil {
 		d.buildRuntime = func(ctx context.Context, configDir string) (*ragbootstrap.Runtime, error) {
 			if err := config.LoadConfig(configDir); err != nil {
 				return nil, fmt.Errorf("load config failed: %w", err)
+			}
+			if suite == rageval.SuiteSummary {
+				return buildSummaryOnlyEvalRuntime(infraai.NewRuntime()), nil
 			}
 			runtime, err := ragbootstrap.NewRuntime(ctx, ragbootstrap.RuntimeOptions{})
 			if err != nil {
@@ -157,19 +258,34 @@ func (d evalRunnerDeps) withDefaults(evalKnowledgeBaseIDs []string, rewriteOpts 
 	}
 	if d.buildRegistry == nil {
 		kbIDs := append([]string(nil), evalKnowledgeBaseIDs...)
-		d.buildRegistry = func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, _ []string) (*rageval.Registry, error) {
-			return buildPhase1Registry(runtime, suite, kbIDs, rewriteOpts)
+		d.buildRegistry = func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, _ []string, summaryEvalOptions summaryEvalOptions) (*rageval.Registry, error) {
+			return buildPhase1Registry(runtime, suite, kbIDs, rewriteOpts, summaryEvalOptions)
 		}
 	}
 	return d
 }
 
-func buildPhase1Registry(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, evalKnowledgeBaseIDs []string, rewriteOpts rewriteEvalOptions) (*rageval.Registry, error) {
+func buildSummaryOnlyEvalRuntime(aiRuntime *infraai.Runtime) *ragbootstrap.Runtime {
+	if aiRuntime == nil {
+		return &ragbootstrap.Runtime{}
+	}
+	return &ragbootstrap.Runtime{
+		LLMChat:   aiRuntime.Chat,
+		Embedding: aiRuntime.Embedding,
+	}
+}
+
+func buildPhase1Registry(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, evalKnowledgeBaseIDs []string, rewriteOpts rewriteEvalOptions, summaryOpts summaryEvalOptions) (*rageval.Registry, error) {
 	if runtime == nil {
 		return nil, fmt.Errorf("rag runtime is required")
 	}
 
 	registryDeps := rageval.Phase1RegistryDependencies{
+		SummaryOptions: rageval.SummaryEvaluatorRuntimeOptions{
+			Mode:          summaryOpts.mode,
+			ThresholdUnit: summaryOpts.thresholdUnit,
+			Thresholds:    append([]int(nil), summaryOpts.thresholds...),
+		},
 		RetrieveService:                runtime.Retrieve,
 		RewriteRetrievalKs:             []int{1, 3, 5},
 		RewriteDefaultKnowledgeBaseIDs: append([]string(nil), evalKnowledgeBaseIDs...),
@@ -179,11 +295,15 @@ func buildPhase1Registry(runtime *ragbootstrap.Runtime, suite rageval.SuiteName,
 		},
 	}
 	if cfg := config.Get(); cfg != nil {
+		registryDeps.SummaryOptions.MessageOverheadTokens = cfg.Rag.Memory.SummaryToken.MessageOverheadTokens
 		registryDeps.RewriteSubQuestionOptions = ragretrieve.SubQuestionOptions{
 			ParallelEnabled: cfg.Rag.Retrieve.ParallelSubquestions.Enabled,
 			MaxConcurrency:  cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
 		}
 		registryDeps.RewriteEmbeddingModelID = strings.TrimSpace(cfg.AI.Embedding.DefaultModel)
+	}
+	if registryDeps.SummaryOptions.MessageOverheadTokens <= 0 {
+		registryDeps.SummaryOptions.MessageOverheadTokens = 4
 	}
 
 	switch suite {
@@ -191,7 +311,11 @@ func buildPhase1Registry(runtime *ragbootstrap.Runtime, suite rageval.SuiteName,
 		if runtime.LLMChat == nil {
 			return nil, fmt.Errorf("llm chat service is unavailable")
 		}
-		registryDeps.SummaryGenerator = rageval.NewHistorySummaryGenerator(runtime.LLMChat, raghistory.SummaryBudgetOptions{})
+		registryDeps.SummaryGenerator = rageval.NewHistorySummaryGenerator(
+			runtime.LLMChat,
+			raghistory.SummaryBudgetOptions{},
+			rageval.WithHistorySummaryPromptVariant(summaryOpts.promptVariant),
+		)
 		registryDeps.SummaryJudge = rageval.NewPromptFileJudge(runtime.LLMChat, "")
 		registryDeps.SummaryAnswerGenerator = rageval.NewPromptSummaryAnswerGenerator(nil, runtime.LLMChat, rageval.SummaryAnswerConfig{})
 	case rageval.SuiteRewrite:
@@ -218,7 +342,11 @@ func buildPhase1Registry(runtime *ragbootstrap.Runtime, suite rageval.SuiteName,
 		if runtime.Retrieve == nil {
 			return nil, fmt.Errorf("retrieve service is unavailable")
 		}
-		registryDeps.SummaryGenerator = rageval.NewHistorySummaryGenerator(runtime.LLMChat, raghistory.SummaryBudgetOptions{})
+		registryDeps.SummaryGenerator = rageval.NewHistorySummaryGenerator(
+			runtime.LLMChat,
+			raghistory.SummaryBudgetOptions{},
+			rageval.WithHistorySummaryPromptVariant(summaryOpts.promptVariant),
+		)
 		registryDeps.SummaryJudge = rageval.NewPromptFileJudge(runtime.LLMChat, "")
 		registryDeps.SummaryAnswerGenerator = rageval.NewPromptSummaryAnswerGenerator(nil, runtime.LLMChat, rageval.SummaryAnswerConfig{})
 		registryDeps.RewriteService = runtime.Rewrite

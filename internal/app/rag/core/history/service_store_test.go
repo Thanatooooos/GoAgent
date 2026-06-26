@@ -63,15 +63,26 @@ func TestMessageServiceStoreAppend(t *testing.T) {
 	}
 }
 
+// compressionTestOptions returns options that trigger compression for short test messages.
+func compressionTestOptions(base SummaryCompressionOptions) SummaryCompressionOptions {
+	if base.TriggerTokens <= 0 {
+		base.TriggerTokens = 1
+	}
+	if base.Estimator == nil {
+		base.Estimator = NewTokenEstimateAdapter()
+	}
+	return base
+}
+
 // TestCompressIfNeededBelowThreshold 验证消息数不足时不触发压缩。
 func TestCompressIfNeededBelowThreshold(t *testing.T) {
 	summaryRepo := &mockSummaryRepoForCompress{}
-	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+	svc := NewCompressibleSummaryService(summaryRepo, compressionTestOptions(SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{},
 		ChatService: &mockChatServiceForCompress{},
 		StartTurns:  10,
 		MaxChars:    200,
-	})
+	}))
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("msg"))
 	if err != nil {
@@ -98,7 +109,7 @@ func TestCompressIfNeededTriggersCompression(t *testing.T) {
 		response: `{"schema_version":1,"goal":"解答 Go 语言特性问题","established_facts":["用户询问了关于 Go 语言特性的问题"],"recent_progress":["助手给出了详细解答"]}`,
 	}
 
-	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+	svc := NewCompressibleSummaryService(summaryRepo, compressionTestOptions(SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
 				{ID: "4", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复4"},
@@ -112,7 +123,7 @@ func TestCompressIfNeededTriggersCompression(t *testing.T) {
 		ChatService: chatSvc,
 		StartTurns:  2,
 		MaxChars:    200,
-	})
+	}))
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
 	if err != nil {
@@ -153,7 +164,7 @@ func TestCompressIfNeededRepairsBeforeValidationAndStoresRepairedSummary(t *test
 		response: `{"schema_version":1,"goal":"排查导入失败","established_facts":["接口方案还没确认"],"recent_progress":["doc_fail_01 已确认 vector store unavailable"]}`,
 	}
 
-	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+	svc := NewCompressibleSummaryService(summaryRepo, compressionTestOptions(SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
 				{ID: "4", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "doc_fail_01 已确认 vector store unavailable"},
@@ -167,7 +178,7 @@ func TestCompressIfNeededRepairsBeforeValidationAndStoresRepairedSummary(t *test
 		ChatService: chatSvc,
 		StartTurns:  2,
 		MaxChars:    200,
-	})
+	}))
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
 	if err != nil {
@@ -237,7 +248,7 @@ func TestCompressIfNeededAtBoundary(t *testing.T) {
 		response: `{"schema_version":1,"goal":"整理最近对话","established_facts":["消息数达到压缩阈值"],"recent_progress":["已触发压缩"]}`,
 	}
 
-	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+	svc := NewCompressibleSummaryService(summaryRepo, compressionTestOptions(SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
 				{ID: "8", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复8"},
@@ -251,7 +262,7 @@ func TestCompressIfNeededAtBoundary(t *testing.T) {
 		ChatService: chatSvc,
 		StartTurns:  2,
 		MaxChars:    200,
-	})
+	}))
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
 	if err != nil {
@@ -276,7 +287,7 @@ func TestCompressIfNeededAlreadyCompressed(t *testing.T) {
 			LastMessageID: "8",
 		},
 	}
-	svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+	svc := NewCompressibleSummaryService(summaryRepo, compressionTestOptions(SummaryCompressionOptions{
 		MessageRepo: &conversationMessageRepoStubForMemory{
 			messages: []domain.ConversationMessage{
 				{ID: "8", ConversationID: "c1", UserID: "u1", Role: "assistant", Content: "回复8"},
@@ -290,7 +301,7 @@ func TestCompressIfNeededAlreadyCompressed(t *testing.T) {
 		ChatService: &mockChatServiceForCompress{response: "should not be called"},
 		StartTurns:  2,
 		MaxChars:    200,
-	})
+	}))
 
 	err := svc.CompressIfNeeded(context.Background(), "c1", "u1", convention.UserMessage("new msg"))
 	if err != nil {
@@ -354,10 +365,25 @@ func (s conversationMessageRepoStubForMemory) GetByID(context.Context, string) (
 }
 
 func (s conversationMessageRepoStubForMemory) List(_ context.Context, filter port.ConversationMessageListFilter) ([]domain.ConversationMessage, error) {
-	if filter.Limit > 0 && filter.Limit < len(s.messages) {
-		return s.messages[:filter.Limit], nil
+	items := make([]domain.ConversationMessage, 0, len(s.messages))
+	for _, message := range s.messages {
+		if filter.AfterID != "" && message.ID <= filter.AfterID {
+			continue
+		}
+		if filter.ThroughID != "" && message.ID > filter.ThroughID {
+			continue
+		}
+		items = append(items, message)
 	}
-	return s.messages, nil
+	if filter.Order == port.ConversationMessageOrderAsc {
+		for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
+			items[left], items[right] = items[right], items[left]
+		}
+	}
+	if filter.Limit > 0 && filter.Limit < len(items) {
+		return items[:filter.Limit], nil
+	}
+	return items, nil
 }
 
 func (s conversationMessageRepoStubForMemory) CountByConversationIDAndUserIDAndRole(_ context.Context, _ string, _ string, role string) (int64, error) {

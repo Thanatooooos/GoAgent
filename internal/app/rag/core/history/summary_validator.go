@@ -1,4 +1,4 @@
-﻿package history
+package history
 
 import (
 	"fmt"
@@ -14,8 +14,8 @@ type SummaryValidationResult struct {
 }
 
 var criticalEntityPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(?:doc|task|trace)_[a-z0-9_-]+\b`),
-	regexp.MustCompile(`(?i)\b[a-z0-9_.-]+=[^\s,;，。；、]+`),
+	regexp.MustCompile(`(?i)\b(?:doc|task|trace)_[a-z0-9_-]*\d[a-z0-9_-]*\b`),
+	regexp.MustCompile(`(?i)\b[a-z0-9]+(?:[.-][a-z0-9_]+)+=[a-z0-9._:/-]+\b`),
 	regexp.MustCompile(`(?i)\bv\d+(?:\.\d+){1,2}\b`),
 }
 
@@ -110,7 +110,7 @@ func sourceSetsCurrentFocus(source []domain.ConversationMessage) bool {
 		if content == "" {
 			continue
 		}
-		if containsAnySummaryRepairMarker(content, []string{"当前真正活跃的目标", "当前活跃目标", "当前重点", "当前主线", "下一周优先级"}) {
+		if containsAnySummaryRepairMarker(content, []string{"\u5f53\u524d\u771f\u6b63\u6d3b\u8dc3\u7684\u76ee\u6807", "\u5f53\u524d\u6d3b\u8dc3\u76ee\u6807", "\u5f53\u524d\u91cd\u70b9", "\u5f53\u524d\u4e3b\u7ebf", "\u4e0b\u4e00\u5468\u4f18\u5148\u7ea7"}) {
 			return true
 		}
 	}
@@ -138,5 +138,3 @@ func appendUniqueEntity(entities []string, seen map[string]struct{}, value strin
 	seen[key] = struct{}{}
 	return append(entities, trimmed)
 }
-
-

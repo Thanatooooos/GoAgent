@@ -421,13 +421,34 @@ func buildFetchArtifacts(stepID, fallbackSummary string, output agentfetch.Outpu
 }
 
 func requiresRuntimeApproval(session *agentruntime.RuntimeSession, step agentstate.PlanStep) bool {
-	if step.RequiresApproval {
-		return true
-	}
+	return agentruntime.EvaluateCapabilitySchedule(agentruntime.CapabilityScheduleInput{
+		Session:        session,
+		RuntimeOptions: scheduleRuntimeOptions(session),
+		Snapshot:       scheduleSnapshot(session),
+		PatternAction:  "plan_execute_gate",
+		Spec: agentcapability.Spec{
+			Name:             step.CapabilityName,
+			RequiresApproval: step.RequiresApproval,
+		},
+		SkipInputValidation: true,
+	}).Decision == agentruntime.ScheduleDecisionWaitApproval
+}
+
+func scheduleRuntimeOptions(session *agentruntime.RuntimeSession) agentstate.RuntimeOptions {
 	if session == nil {
-		return false
+		return agentstate.RuntimeOptions{}
 	}
-	return session.Snapshot.Request.RuntimeOptions.RequireApproval || session.Request.Options.RequireApproval
+	if session.Snapshot.Request.RuntimeOptions != (agentstate.RuntimeOptions{}) {
+		return session.Snapshot.Request.RuntimeOptions
+	}
+	return session.Request.Options
+}
+
+func scheduleSnapshot(session *agentruntime.RuntimeSession) agentstate.StateSnapshot {
+	if session == nil {
+		return agentstate.StateSnapshot{}
+	}
+	return session.Snapshot
 }
 
 func stepHasEvidence(spec agentcapability.Spec, step agentstate.PlanStep, result agentcapability.InvocationResult) bool {

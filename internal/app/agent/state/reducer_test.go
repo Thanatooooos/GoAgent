@@ -1,6 +1,31 @@
 package state
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestDefaultReducerApply_BackfillsSnapshotVersionAndPatternState(t *testing.T) {
+	reducer := DefaultReducer{}
+
+	next, err := reducer.Apply(StateSnapshot{}, StateDelta{})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	if next.SchemaVersion != CurrentSnapshotVersion {
+		t.Fatalf("expected schema version %d, got %d", CurrentSnapshotVersion, next.SchemaVersion)
+	}
+
+	next.Pattern.Name = "reactive"
+	next.Pattern.Data = map[string]any{"iteration_mode": "observe"}
+	cloned := CloneSnapshot(next)
+	cloned.Pattern.Data["iteration_mode"] = "answer"
+
+	if next.Pattern.Data["iteration_mode"] != "observe" {
+		t.Fatalf("expected pattern data clone to avoid mutation, got %+v", next.Pattern.Data)
+	}
+}
 
 func TestDefaultReducerApply_RequestConversationIDOnlyBackfills(t *testing.T) {
 	reducer := DefaultReducer{}
@@ -121,6 +146,39 @@ func TestDefaultReducerApply_EvidenceAppendsAndOverwritesSufficiency(t *testing.
 	}
 }
 
+func TestDefaultReducerApply_EvidenceDeduplicatesItemsAndOpenQuestions(t *testing.T) {
+	reducer := DefaultReducer{}
+
+	initial := StateSnapshot{
+		Evidence: EvidenceState{
+			Items: []EvidenceItem{
+				{ID: "e1", SourceRef: "url-1", Content: "same"},
+			},
+			OpenQuestions: []string{"what changed"},
+		},
+	}
+
+	next, err := reducer.Apply(initial, StateDelta{
+		Evidence: &EvidenceDelta{
+			AddItems: []EvidenceItem{
+				{ID: "e1", SourceRef: "url-1", Content: "same"},
+				{ID: "e2", SourceRef: "url-2", Content: "new"},
+			},
+			OpenQuestions: []string{"what changed", "what evidence is missing"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	if len(next.Evidence.Items) != 2 {
+		t.Fatalf("expected deduplicated evidence items, got %+v", next.Evidence.Items)
+	}
+	if len(next.Evidence.OpenQuestions) != 2 {
+		t.Fatalf("expected deduplicated open questions, got %+v", next.Evidence.OpenQuestions)
+	}
+}
+
 func TestDefaultReducerApply_ExecutionAccumulatesAndAnswerOverwrites(t *testing.T) {
 	reducer := DefaultReducer{}
 
@@ -195,14 +253,20 @@ func TestDefaultReducerApply_ExecutionAccumulatesAndAnswerOverwrites(t *testing.
 	if !next.Execution.Interrupted {
 		t.Fatal("expected interrupted to be true")
 	}
+	if next.Execution.Status != ExecutionStatusInterrupted {
+		t.Fatalf("expected interrupted execution status, got %q", next.Execution.Status)
+	}
 	if next.Execution.InterruptReason != "approval_required" {
 		t.Fatalf("expected interrupt reason update, got %q", next.Execution.InterruptReason)
 	}
 	if next.Answer.Final != "final-answer" {
 		t.Fatalf("expected final answer overwrite, got %q", next.Answer.Final)
 	}
-	if next.Answer.Draft != "draft-1" {
-		t.Fatalf("expected untouched answer draft to be preserved, got %q", next.Answer.Draft)
+	if next.Answer.Draft != "" {
+		t.Fatalf("expected final answer to clear draft, got %q", next.Answer.Draft)
+	}
+	if next.Execution.Status != ExecutionStatusInterrupted {
+		t.Fatalf("expected final answer to keep interrupted execution status until interruption clears, got %q", next.Execution.Status)
 	}
 }
 
@@ -237,4 +301,65 @@ func TestDefaultReducerApply_ExecutionActionListsRemainUnique(t *testing.T) {
 	if len(next.Execution.FailedActions) != 2 {
 		t.Fatalf("expected unique failed actions, got %+v", next.Execution.FailedActions)
 	}
+}
+
+func TestDefaultReducerApply_RejectsPendingApprovalThatAlreadyHasReviewTimestamp(t *testing.T) {
+	reducer := DefaultReducer{}
+	reviewedAt := testTime()
+	status := ApprovalStatusPending
+
+	_, err := reducer.Apply(StateSnapshot{}, StateDelta{
+		Approval: &ApprovalDelta{
+			Status:     &status,
+			ReviewedAt: &reviewedAt,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected pending approval with review timestamp to fail")
+	}
+}
+
+func TestDefaultReducerApply_RejectsClearedInterruptWithReasonStillSet(t *testing.T) {
+	reducer := DefaultReducer{}
+	interrupted := false
+	reason := "awaiting approval"
+
+	_, err := reducer.Apply(StateSnapshot{}, StateDelta{
+		Execution: &ExecutionDelta{
+			Interrupted:     &interrupted,
+			InterruptReason: &reason,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected cleared interrupt with reason to fail")
+	}
+}
+
+func TestDefaultReducerApply_RejectsFinalAnswerThatStillCarriesDraft(t *testing.T) {
+	reducer := DefaultReducer{}
+
+	_, err := reducer.Apply(StateSnapshot{
+		Answer: AnswerState{
+			Draft: "draft",
+			Final: "answer",
+		},
+	}, StateDelta{})
+	if err == nil {
+		t.Fatal("expected final answer with draft to fail")
+	}
+}
+
+func TestDefaultReducerApply_RejectsUnsupportedFutureSnapshotVersion(t *testing.T) {
+	reducer := DefaultReducer{}
+
+	_, err := reducer.Apply(StateSnapshot{
+		SchemaVersion: CurrentSnapshotVersion + 1,
+	}, StateDelta{})
+	if err == nil {
+		t.Fatal("expected unsupported future snapshot version to fail")
+	}
+}
+
+func testTime() time.Time {
+	return time.Unix(1700000000, 0).UTC()
 }

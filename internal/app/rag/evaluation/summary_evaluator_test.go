@@ -203,3 +203,105 @@ func TestSummaryEvaluatorRunsJudgeAndEquivalenceDespiteRuleFailure(t *testing.T)
 		t.Fatal("sample should remain failed because rule checks already failed")
 	}
 }
+
+
+func TestSummaryEvaluatorRunStrategyMode(t *testing.T) {
+	rawPayload := json.RawMessage(`[
+		{
+			"name":"strategy-sample",
+			"tags":["strategy"],
+			"input":{"source_messages":[
+				{"role":"user","content":"Q1"},
+				{"role":"assistant","content":"A1"},
+				{"role":"user","content":"Q2"},
+				{"role":"assistant","content":"A2"}
+			]},
+			"strategy_eval":{
+				"checkpoints":[{
+					"after_turn":1,
+					"expected_summary":{"goal":{"must_cover":["strategy"]}},
+					"critical_contract":{},
+					"next_turn_eval":{"queries":[{"id":"q1","query":"what is next?","equivalence_expectations":["must mention strategy"]}]}
+				}]
+			}
+		}
+	]`)
+	rawSamples, err := ExtractSampleArray(rawPayload)
+	if err != nil {
+		t.Fatalf("ExtractSampleArray() error = %v", err)
+	}
+	judge := &stubJudge{
+		results: []JudgeResult{
+			{Passed: true, Score: 1, Details: map[string]any{"fields": map[string]any{"goal": map[string]any{"fidelity": 1, "usefulness": 1}}}},
+			{Passed: true, Score: 1, Details: map[string]any{"dangerous_drift": false}},
+		},
+	}
+	answerGen := &stubSummaryAnswerGenerator{outputs: []SummaryAnswerOutput{{Answer: "strategy"}, {Answer: "strategy"}}}
+	evaluator := NewSummaryEvaluator(
+		&stubSummaryGenerator{output: SummaryGenerationOutput{Structured: raghistory.StructuredSummary{SchemaVersion: 1, Goal: "strategy"}, Rendered: "Goal: strategy"}},
+		WithSummaryJudge(judge),
+		WithSummaryAnswerGenerator(answerGen),
+		WithSummaryRuntimeOptions(SummaryEvaluatorRuntimeOptions{Mode: SummaryEvalModeStrategy, Thresholds: []int{1}}),
+	)
+
+	result, err := evaluator.Run(context.Background(), RunInput{
+		Suite:      SuiteSummary,
+		InputPath:  "strategy.json",
+		RawPayload: rawPayload,
+		RawSamples: rawSamples,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	executions, ok := result.Artifacts["executions"].(map[string]any)
+	if !ok {
+		t.Fatalf("Artifacts = %#v, want executions map", result.Artifacts)
+	}
+	artifact, ok := executions["strategy-sample"].(map[string]any)
+	if !ok {
+		t.Fatalf("executions = %#v, want strategy sample artifact map", executions)
+	}
+	if _, ok := artifact["threshold_results"]; !ok {
+		t.Fatalf("artifact = %#v, want threshold_results", artifact)
+	}
+}
+
+
+func TestSummaryEvaluatorRunStrategyModeEmitsThresholdAggregates(t *testing.T) {
+	rawPayload := json.RawMessage(`[
+		{
+			"name":"strategy-sample",
+			"tags":["strategy"],
+			"input":{"source_messages":[
+				{"role":"user","content":"Q1"},
+				{"role":"assistant","content":"A1"},
+				{"role":"user","content":"Q2"},
+				{"role":"assistant","content":"A2"}
+			]},
+			"strategy_eval":{
+				"checkpoints":[{
+					"after_turn":1,
+					"expected_summary":{"goal":{"must_cover":["strategy"]}},
+					"critical_contract":{},
+					"next_turn_eval":{}
+				}]
+			}
+		}
+	]`)
+	rawSamples, err := ExtractSampleArray(rawPayload)
+	if err != nil {
+		t.Fatalf("ExtractSampleArray() error = %v", err)
+	}
+	evaluator := NewSummaryEvaluator(
+		&stubSummaryGenerator{output: SummaryGenerationOutput{Structured: raghistory.StructuredSummary{SchemaVersion: 1, Goal: "strategy"}, Rendered: "Goal: strategy"}},
+		WithSummaryRuntimeOptions(SummaryEvaluatorRuntimeOptions{Mode: SummaryEvalModeStrategy, Thresholds: []int{1, 2}}),
+	)
+
+	result, err := evaluator.Run(context.Background(), RunInput{Suite: SuiteSummary, InputPath: "strategy.json", RawPayload: rawPayload, RawSamples: rawSamples})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if _, ok := result.Aggregate.Metrics["threshold_aggregates"]; !ok {
+		t.Fatalf("Aggregate.Metrics = %#v, want threshold_aggregates", result.Aggregate.Metrics)
+	}
+}

@@ -187,7 +187,7 @@ func mergeEvidenceDelta(left, right *EvidenceDelta) *EvidenceDelta {
 		OpenQuestions:     append([]string(nil), left.OpenQuestions...),
 	}
 	if len(right.AddItems) > 0 {
-		merged.AddItems = append(merged.AddItems, cloneEvidenceItems(right.AddItems)...)
+		merged.AddItems = appendUniqueEvidenceItems(merged.AddItems, cloneEvidenceItems(right.AddItems)...)
 	}
 	if right.Sufficient != nil {
 		merged.Sufficient = cloneBoolPtr(right.Sufficient)
@@ -199,7 +199,7 @@ func mergeEvidenceDelta(left, right *EvidenceDelta) *EvidenceDelta {
 		merged.NewItemsThisRound = cloneIntPtr(right.NewItemsThisRound)
 	}
 	if len(right.OpenQuestions) > 0 {
-		merged.OpenQuestions = append(merged.OpenQuestions, right.OpenQuestions...)
+		merged.OpenQuestions = appendUniqueStrings(merged.OpenQuestions, right.OpenQuestions...)
 	}
 	return merged
 }
@@ -270,6 +270,7 @@ func mergeExecutionDelta(left, right *ExecutionDelta) *ExecutionDelta {
 	}
 
 	merged := &ExecutionDelta{
+		Status:                      cloneStringPtr(left.Status),
 		CurrentNode:                 cloneStringPtr(left.CurrentNode),
 		IterationIncrement:          left.IterationIncrement,
 		ContinueCountIncrement:      left.ContinueCountIncrement,
@@ -288,6 +289,9 @@ func mergeExecutionDelta(left, right *ExecutionDelta) *ExecutionDelta {
 
 	merged.IterationIncrement += right.IterationIncrement
 	merged.ContinueCountIncrement += right.ContinueCountIncrement
+	if right.Status != nil {
+		merged.Status = cloneStringPtr(right.Status)
+	}
 	if right.CurrentNode != nil {
 		merged.CurrentNode = cloneStringPtr(right.CurrentNode)
 	}

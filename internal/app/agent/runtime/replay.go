@@ -29,6 +29,11 @@ type ReplayView struct {
 	Branches                    []ReplayBranchView     `json:"branches,omitempty"`
 	Decisions                   []ReplayDecisionView   `json:"decisions,omitempty"`
 	LastDecision                *ReplayDecisionView    `json:"last_decision,omitempty"`
+	ApprovalStatus              string                 `json:"approval_status,omitempty"`
+	ApprovalReason              string                 `json:"approval_reason,omitempty"`
+	ApprovalCapability          string                 `json:"approval_capability,omitempty"`
+	ApprovalCheckpointID        string                 `json:"approval_checkpoint_id,omitempty"`
+	ApprovalRerunNode           string                 `json:"approval_rerun_node,omitempty"`
 	FinalAnswer                 string                 `json:"final_answer,omitempty"`
 	DegradeReason               string                 `json:"degrade_reason,omitempty"`
 	EvidenceSufficient          bool                   `json:"evidence_sufficient,omitempty"`
@@ -109,10 +114,12 @@ func BuildReplayView(session *RuntimeSession) ReplayView {
 	if session == nil {
 		return ReplayView{}
 	}
+	snapshot := agentstate.NormalizeSnapshot(session.Snapshot)
+	approval := approvalViewFromSnapshotAndJournal(snapshot, session.Journal, session.Checkpoint)
 
 	view := ReplayView{
 		SessionID:                   session.SessionID,
-		Question:                    firstNonEmpty(session.Request.Question, session.Snapshot.Request.Question),
+		Question:                    firstNonEmpty(session.Request.Question, snapshot.Request.Question),
 		RuntimeName:                 session.Metadata.RuntimeName,
 		RuntimeVersion:              session.Metadata.RuntimeVersion,
 		ResumedFrom:                 session.Metadata.ResumedFrom,
@@ -122,17 +129,22 @@ func BuildReplayView(session *RuntimeSession) ReplayView {
 		Checkpoint:                  cloneCheckpointRef(session.Checkpoint),
 		CheckpointState:             buildCheckpointView(session),
 		EventTypeCounts:             make(map[string]int),
-		FinalAnswer:                 session.Snapshot.Answer.Final,
-		DegradeReason:               session.Snapshot.Answer.DegradeReason,
-		EvidenceSufficient:          session.Snapshot.Evidence.Sufficient,
-		EvidenceReason:              session.Snapshot.Evidence.SufficiencyReason,
-		ContinueCount:               session.Snapshot.Execution.ContinueCount,
-		LastBranchTarget:            session.Snapshot.Execution.LastBranchTarget,
-		LastBranchReason:            session.Snapshot.Execution.LastBranchReason,
-		LastProgressKind:            session.Snapshot.Execution.LastProgressKind,
-		LastNewURLCount:             session.Snapshot.Execution.LastNewURLCount,
-		LastNewEvidenceCount:        session.Snapshot.Execution.LastNewEvidenceCount,
-		ConsecutiveNoProgressRounds: session.Snapshot.Execution.ConsecutiveNoProgressRounds,
+		ApprovalStatus:              approval.Status,
+		ApprovalReason:              approval.Reason,
+		ApprovalCapability:          approval.Capability,
+		ApprovalCheckpointID:        approval.CheckpointID,
+		ApprovalRerunNode:           approval.RerunNode,
+		FinalAnswer:                 snapshot.Answer.Final,
+		DegradeReason:               snapshot.Answer.DegradeReason,
+		EvidenceSufficient:          snapshot.Evidence.Sufficient,
+		EvidenceReason:              snapshot.Evidence.SufficiencyReason,
+		ContinueCount:               snapshot.Execution.ContinueCount,
+		LastBranchTarget:            snapshot.Execution.LastBranchTarget,
+		LastBranchReason:            snapshot.Execution.LastBranchReason,
+		LastProgressKind:            snapshot.Execution.LastProgressKind,
+		LastNewURLCount:             snapshot.Execution.LastNewURLCount,
+		LastNewEvidenceCount:        snapshot.Execution.LastNewEvidenceCount,
+		ConsecutiveNoProgressRounds: snapshot.Execution.ConsecutiveNoProgressRounds,
 	}
 
 	for _, event := range session.Journal {
@@ -242,6 +254,54 @@ func BuildReplayView(session *RuntimeSession) ReplayView {
 	return view
 }
 
+type approvalReplayView struct {
+	Status       string
+	Reason       string
+	Capability   string
+	CheckpointID string
+	RerunNode    string
+}
+
+func approvalViewFromSnapshotAndJournal(snapshot agentstate.StateSnapshot, journal []agentstate.RuntimeEvent, checkpoint *CheckpointRef) approvalReplayView {
+	view := approvalReplayView{
+		Status:       snapshot.Approval.Status,
+		Reason:       snapshot.Approval.Reason,
+		Capability:   snapshot.Approval.Capability,
+		CheckpointID: firstNonEmpty(snapshot.Approval.CheckpointID, checkpointIDFromRuntimeCheckpoint(checkpoint)),
+		RerunNode:    snapshot.Approval.RerunNode,
+	}
+	if view.Status != "" && view.Reason != "" && view.CheckpointID != "" {
+		return view
+	}
+
+	for _, event := range journal {
+		switch event.EventType {
+		case agentstate.EventTypeApprovalPending:
+			if view.Status == "" {
+				view.Status = agentstate.ApprovalStatusPending
+			}
+			if view.Reason == "" {
+				view.Reason = strings.TrimSpace(event.PayloadText)
+			}
+			if view.CheckpointID == "" {
+				view.CheckpointID = checkpointIDFromEvent(event)
+			}
+		case agentstate.EventTypeApprovalResolved:
+			view.Status = firstNonEmpty(strings.TrimSpace(event.PayloadText), agentstate.ApprovalStatusApproved)
+			if view.CheckpointID == "" {
+				view.CheckpointID = checkpointIDFromEvent(event)
+			}
+		case agentstate.EventTypeApprovalRejected:
+			view.Status = agentstate.ApprovalStatusRejected
+			if view.CheckpointID == "" {
+				view.CheckpointID = checkpointIDFromEvent(event)
+			}
+		}
+	}
+
+	return view
+}
+
 func findLastRunningNode(nodes []ReplayNodeView, node string) int {
 	for i := len(nodes) - 1; i >= 0; i-- {
 		if nodes[i].Node == node && nodes[i].Status == "running" {
@@ -331,6 +391,13 @@ func checkpointIDFromEvent(event agentstate.RuntimeEvent) string {
 		return ""
 	}
 	return strings.TrimSpace(event.Checkpoint.ID)
+}
+
+func checkpointIDFromRuntimeCheckpoint(ref *CheckpointRef) string {
+	if ref == nil {
+		return ""
+	}
+	return strings.TrimSpace(ref.ID)
 }
 
 func cloneCheckpointRef(ref *CheckpointRef) *CheckpointRef {

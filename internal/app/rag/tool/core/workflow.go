@@ -8,6 +8,7 @@ import (
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
+	"local/rag-project/internal/app/rag/core/tokenbudget"
 	"local/rag-project/internal/framework/convention"
 )
 
@@ -126,16 +127,18 @@ func (r PlanResult) HasTools() bool {
 
 // WorkflowInput 描述 tool workflow 执行时可用的 RAG 上下文。
 type WorkflowInput struct {
-	Question         string
-	UserID           string
-	ConversationID   string
-	TraceID          string
-	Control          WorkflowControl
-	KnowledgeBaseIDs []string
-	History          []convention.ChatMessage
-	RewriteResult    ragrewrite.Result
-	RetrieveResult   ragretrieve.Result
-	EventSink        WorkflowEventSink
+	Question           string
+	UserID             string
+	ConversationID     string
+	TraceID            string
+	Control            WorkflowControl
+	KnowledgeBaseIDs   []string
+	History            []convention.ChatMessage
+	RewriteResult      ragrewrite.Result
+	RetrieveResult     ragretrieve.Result
+	ContextTokenBudget int
+	ContextEstimator   tokenbudget.Estimator
+	EventSink          WorkflowEventSink
 }
 
 // CallSummary 是一次工具调用的简要结果，可用于 trace / SSE / 前端展示。
@@ -179,6 +182,7 @@ type WorkflowResult struct {
 	TraceMeta      WorkflowTraceMeta
 	Calls          []CallSummary
 	Rounds         []RoundSummary
+	ContextBudget  tokenbudget.TruncationStats
 	Degraded       bool
 	DegradeReason  string
 }

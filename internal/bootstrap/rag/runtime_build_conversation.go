@@ -12,6 +12,7 @@ type conversationBundle struct {
 	historyService      raghistory.Service
 	feedbackService     *ragservice.MessageFeedbackService
 	summaryJobWorker    *raghistory.InMemorySummaryJobWorker
+	summaryTrigger      raghistory.SummaryTrigger
 }
 
 func buildConversationServices(buildCtx *buildContext, repos repositoriesBundle) conversationBundle {
@@ -51,19 +52,24 @@ func buildConversationServices(buildCtx *buildContext, repos repositoriesBundle)
 
 	memoryStore := raghistory.NewMessageServiceStore(repos.conversationRepo, repos.messageRepo)
 	var summaryAdapter raghistory.SummaryService
+	var summaryTrigger raghistory.SummaryTrigger
 	var summaryJobWorker *raghistory.InMemorySummaryJobWorker
 	if cfg.Rag.Memory.SummaryEnabled {
+		triggerTokens := computeSummaryTriggerTokens(cfg)
 		compressible := raghistory.NewCompressibleSummaryService(repos.summaryRepo, raghistory.SummaryCompressionOptions{
-			MessageRepo: repos.messageRepo,
-			ChatService: aiRuntime.Chat,
-			StartTurns:  cfg.Rag.Memory.SummaryStartTurns,
-			MaxChars:    cfg.Rag.Memory.SummaryMaxChars,
-			Budget:      buildSummaryBudgetOptions(cfg),
+			MessageRepo:           repos.messageRepo,
+			ChatService:           aiRuntime.Chat,
+			StartTurns:            cfg.Rag.Memory.SummaryStartTurns,
+			TriggerTokens:         triggerTokens,
+			Estimator:             raghistory.NewTokenEstimateAdapter(),
+			SafetyFactor:          cfg.Rag.Memory.SummaryToken.SafetyFactor,
+			MessageOverheadTokens: cfg.Rag.Memory.SummaryToken.MessageOverheadTokens,
+			MaxChars:              cfg.Rag.Memory.SummaryMaxChars,
+			Budget:                buildSummaryBudgetOptions(cfg),
 		})
-		if cfg.Rag.Memory.SummaryAsync.Enabled {
-			summaryJobWorker = compressible.EnableAsyncSummaryJobs(32)
-		}
+		summaryJobWorker = compressible.EnableAsyncSummaryJobs(32)
 		summaryAdapter = compressible
+		summaryTrigger = compressible
 	} else {
 		summaryAdapter = raghistory.NewSummaryServiceAdapter(repos.summaryRepo)
 	}
@@ -76,5 +82,6 @@ func buildConversationServices(buildCtx *buildContext, repos repositoriesBundle)
 		historyService:      historyService,
 		feedbackService:     feedbackService,
 		summaryJobWorker:    summaryJobWorker,
+		summaryTrigger:      summaryTrigger,
 	}
 }

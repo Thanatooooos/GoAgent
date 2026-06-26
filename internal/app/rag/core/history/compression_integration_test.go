@@ -39,12 +39,12 @@ func TestCompressSummaryIntegration(t *testing.T) {
 			},
 		}
 
-		svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+		svc := NewCompressibleSummaryService(summaryRepo, compressionTestOptions(SummaryCompressionOptions{
 			MessageRepo: messageRepo,
 			ChatService: aiRuntime.Chat,
 			StartTurns:  2, // 阈值为 4，现有 4 条正好触发。
 			MaxChars:    200,
-		})
+		}))
 
 		err := svc.CompressIfNeeded(context.Background(), "ci1", "u1", convention.UserMessage("谢谢"))
 		if err != nil {
@@ -92,12 +92,12 @@ func TestCompressSummaryIntegration(t *testing.T) {
 			},
 		}
 
-		svc := NewCompressibleSummaryService(summaryRepo, SummaryCompressionOptions{
+		svc := NewCompressibleSummaryService(summaryRepo, compressionTestOptions(SummaryCompressionOptions{
 			MessageRepo: messageRepo,
 			ChatService: aiRuntime.Chat,
 			StartTurns:  2,
 			MaxChars:    200,
-		})
+		}))
 
 		err := svc.CompressIfNeeded(context.Background(), "ci2", "u1", convention.UserMessage("再来一条"))
 		if err != nil {

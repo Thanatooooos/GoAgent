@@ -25,6 +25,7 @@ type ConversationMessageListFilter struct {
 	Roles          []string
 	AfterID        string
 	BeforeID       string
+	ThroughID      string
 	Order          ConversationMessageOrder
 	Limit          int
 }
@@ -86,6 +87,10 @@ type ConversationSummaryRepository interface {
 	Create(ctx context.Context, summary domain.ConversationSummary) (domain.ConversationSummary, error)
 	FindLatestByConversationIDAndUserID(ctx context.Context, conversationID string, userID string) (domain.ConversationSummary, error)
 	DeleteByConversationIDAndUserID(ctx context.Context, conversationID string, userID string) error
+}
+
+type ConversationSummaryCoverageRepository interface {
+	CreateIfCoverageAdvances(ctx context.Context, summary domain.ConversationSummary) (bool, error)
 }
 
 type MemoryItemRepository interface {

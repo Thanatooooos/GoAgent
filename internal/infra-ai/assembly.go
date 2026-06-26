@@ -1,6 +1,7 @@
 package infraai
 
 import (
+	"net"
 	"net/http"
 	"time"
 
@@ -87,7 +88,21 @@ func newDefaultHTTPClient(timeout time.Duration) *http.Client {
 	if timeout <= 0 {
 		timeout = defaultHTTPTimeout
 	}
-	return &http.Client{Timeout: timeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 100
+	transport.MaxIdleConnsPerHost = 20
+	transport.MaxConnsPerHost = 50
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ResponseHeaderTimeout = timeout
+	transport.DialContext = (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
 }
 
 func streamTimeout() time.Duration {

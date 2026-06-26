@@ -21,6 +21,7 @@
 - 主链路已经成型，重点不再是“功能有没有”，而是“边界是否稳定、结果是否一致、体验是否完整”。
 - 后端重点集中在 `agent / tool / rag` 的协作边界、可解释性和可恢复性。
 - `summary` 已进入专项质量收口阶段，当前已经具备结构化 schema、repair、validation、renderer 和离线评估样本体系，工作重点是继续提升评测通过率并压低 dangerous drift。
+- `summary` 压缩触发已改为 token-aware 策略：assistant 消息落库后异步检查，按最新 summary 覆盖边界之后的未压缩尾部增量处理；summary、chat、retrieve 和 tool 共用 token 估算合同，retrieve / tool 具备独立 token budget，最终 prompt 会输出阶段级 token 用量并保留总预算兜底。
 - 前端已经具备承接 Agent 运行态和审批态的基础能力，但仍以现有链路承接为主，而不是大规模扩展新交互。
 
 ## 2. 结构

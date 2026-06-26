@@ -1,17 +1,66 @@
 package state
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // StateSnapshot is the structured view of the current runtime state.
 // Nodes read from it; later M1 reducer logic will be the only writer.
 type StateSnapshot struct {
-	Request   RequestState   `json:"request"`
-	Context   ContextState   `json:"context"`
-	Plan      PlanState      `json:"plan"`
-	Evidence  EvidenceState  `json:"evidence"`
-	Approval  ApprovalState  `json:"approval"`
-	Execution ExecutionState `json:"execution"`
-	Answer    AnswerState    `json:"answer"`
+	SchemaVersion int            `json:"schema_version,omitempty"`
+	Request       RequestState   `json:"request"`
+	Context       ContextState   `json:"context"`
+	Plan          PlanState      `json:"plan"`
+	Evidence      EvidenceState  `json:"evidence"`
+	Approval      ApprovalState  `json:"approval"`
+	Execution     ExecutionState `json:"execution"`
+	Answer        AnswerState    `json:"answer"`
+	Pattern       PatternState   `json:"pattern,omitempty"`
+}
+
+const CurrentSnapshotVersion = 1
+const LegacySnapshotVersion = 0
+
+// PatternState reserves an explicit extension area for pattern-private state so
+// shared projections do not need to overload generic runtime domains.
+type PatternState struct {
+	Name string         `json:"name,omitempty"`
+	Data map[string]any `json:"data,omitempty"`
+}
+
+type StateOwner string
+
+const (
+	StateOwnerRuntime            StateOwner = "runtime"
+	StateOwnerPattern            StateOwner = "pattern"
+	StateOwnerCapability         StateOwner = "capability"
+	StateOwnerAnswerSynthesizer  StateOwner = "answer_synthesizer"
+)
+
+type StateDomainContract struct {
+	Domain string     `json:"domain"`
+	Owner  StateOwner `json:"owner"`
+	Shared bool       `json:"shared"`
+	Notes  string     `json:"notes,omitempty"`
+}
+
+var snapshotDomainContracts = []StateDomainContract{
+	{Domain: "request", Owner: StateOwnerRuntime, Shared: true, Notes: "request-scoped runtime input and envelope projection"},
+	{Domain: "context", Owner: StateOwnerPattern, Shared: true, Notes: "pattern-curated working context assembled from capability outputs"},
+	{Domain: "plan", Owner: StateOwnerPattern, Shared: true, Notes: "explicit multi-step strategy state owned by plan-capable patterns"},
+	{Domain: "evidence", Owner: StateOwnerCapability, Shared: true, Notes: "accepted evidence set normalized from capability outputs"},
+	{Domain: "approval", Owner: StateOwnerRuntime, Shared: true, Notes: "runtime-owned approval lifecycle and resume metadata"},
+	{Domain: "execution", Owner: StateOwnerRuntime, Shared: true, Notes: "runtime-owned lifecycle, progress, and interruption state"},
+	{Domain: "answer", Owner: StateOwnerAnswerSynthesizer, Shared: true, Notes: "answer synthesis output contract shared across patterns"},
+	{Domain: "pattern", Owner: StateOwnerPattern, Shared: false, Notes: "pattern-private extension area excluded from shared projections"},
+}
+
+func SnapshotDomainContracts() []StateDomainContract {
+	cloned := make([]StateDomainContract, len(snapshotDomainContracts))
+	copy(cloned, snapshotDomainContracts)
+	return cloned
 }
 
 // RequestState captures stable request-scoped inputs and runtime boundaries.
@@ -191,9 +240,12 @@ type EvidenceState struct {
 }
 
 const (
-	ApprovalStatusPending  = "pending"
-	ApprovalStatusApproved = "approved"
-	ApprovalStatusRejected = "rejected"
+	ApprovalStatusNone      = "none"
+	ApprovalStatusPending   = "pending"
+	ApprovalStatusApproved  = "approved"
+	ApprovalStatusRejected  = "rejected"
+	ApprovalStatusExpired   = "expired"
+	ApprovalStatusCancelled = "cancelled"
 )
 
 // ApprovalState captures whether execution is blocked on an approval gate.
@@ -220,6 +272,7 @@ type EvidenceItem struct {
 
 // ExecutionState captures progress through the runtime control flow.
 type ExecutionState struct {
+	Status                      string   `json:"status,omitempty"`
 	CurrentNode                 string   `json:"current_node,omitempty"`
 	Iteration                   int      `json:"iteration,omitempty"`
 	MaxIterations               int      `json:"max_iterations,omitempty"`
@@ -236,6 +289,15 @@ type ExecutionState struct {
 	Interrupted                 bool     `json:"interrupted,omitempty"`
 	InterruptReason             string   `json:"interrupt_reason,omitempty"`
 }
+
+const (
+	ExecutionStatusRunning     = "running"
+	ExecutionStatusInterrupted = "interrupted"
+	ExecutionStatusResuming    = "resuming"
+	ExecutionStatusCompleted   = "completed"
+	ExecutionStatusDegraded    = "degraded"
+	ExecutionStatusFailed      = "failed"
+)
 
 // AnswerState stores answer-generation results separately from evidence and
 // runtime control flow.
@@ -282,6 +344,7 @@ func HasContent(snapshot StateSnapshot) bool {
 		!snapshot.Approval.RequestedAt.IsZero() ||
 		!snapshot.Approval.ReviewedAt.IsZero() ||
 		snapshot.Approval.DecisionNote != "" ||
+		snapshot.Execution.Status != "" ||
 		snapshot.Execution.CurrentNode != "" ||
 		snapshot.Execution.Iteration != 0 ||
 		snapshot.Execution.MaxIterations != 0 ||
@@ -299,5 +362,49 @@ func HasContent(snapshot StateSnapshot) bool {
 		snapshot.Execution.InterruptReason != "" ||
 		snapshot.Answer.Draft != "" ||
 		snapshot.Answer.DegradeReason != "" ||
-		snapshot.Answer.Final != ""
+		snapshot.Answer.Final != "" ||
+		snapshot.Pattern.Name != "" ||
+		len(snapshot.Pattern.Data) > 0
+}
+
+// NormalizeSnapshot applies compatibility defaults so older persisted sessions
+// can still be projected and reduced under the current schema contract.
+func NormalizeSnapshot(snapshot StateSnapshot) StateSnapshot {
+	normalized := snapshot
+	if normalized.SchemaVersion == LegacySnapshotVersion {
+		normalized.SchemaVersion = CurrentSnapshotVersion
+	}
+	normalized.Execution.Status = deriveExecutionStatus(normalized)
+	return normalized
+}
+
+func ValidateSnapshotCompatibility(snapshot StateSnapshot) error {
+	switch {
+	case snapshot.SchemaVersion < LegacySnapshotVersion:
+		return fmt.Errorf("unsupported snapshot schema version %d", snapshot.SchemaVersion)
+	case snapshot.SchemaVersion > CurrentSnapshotVersion:
+		return fmt.Errorf("unsupported snapshot schema version %d", snapshot.SchemaVersion)
+	default:
+		return nil
+	}
+}
+
+func deriveExecutionStatus(snapshot StateSnapshot) string {
+	status := strings.TrimSpace(snapshot.Execution.Status)
+	if status == ExecutionStatusResuming {
+		return status
+	}
+	if snapshot.Execution.Interrupted || strings.TrimSpace(snapshot.Approval.Status) == ApprovalStatusPending {
+		return ExecutionStatusInterrupted
+	}
+	if strings.TrimSpace(snapshot.Answer.DegradeReason) != "" {
+		return ExecutionStatusDegraded
+	}
+	if strings.TrimSpace(snapshot.Answer.Final) != "" {
+		return ExecutionStatusCompleted
+	}
+	if status == ExecutionStatusFailed {
+		return status
+	}
+	return ExecutionStatusRunning
 }

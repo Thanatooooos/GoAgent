@@ -45,13 +45,25 @@ type SummaryCriticalContract struct {
 }
 
 type SummaryNextTurnQuery struct {
-	ID                     string   `json:"id"`
-	Query                  string   `json:"query"`
+	ID                      string   `json:"id"`
+	Query                   string   `json:"query"`
 	EquivalenceExpectations []string `json:"equivalence_expectations,omitempty"`
 }
 
 type SummaryNextTurnEval struct {
 	Queries []SummaryNextTurnQuery `json:"queries,omitempty"`
+}
+
+type SummaryStrategyCheckpoint struct {
+	AfterTurn        int                     `json:"after_turn"`
+	ExpectedSummary  SummaryExpectedSummary  `json:"expected_summary"`
+	CriticalContract SummaryCriticalContract `json:"critical_contract"`
+	NextTurnEval     SummaryNextTurnEval     `json:"next_turn_eval"`
+}
+
+type SummaryStrategyEval struct {
+	Checkpoints []SummaryStrategyCheckpoint `json:"checkpoints,omitempty"`
+	FinalEval   *SummaryStrategyCheckpoint  `json:"final_eval,omitempty"`
 }
 
 type SummarySample struct {
@@ -61,6 +73,7 @@ type SummarySample struct {
 	ExpectedSummary  SummaryExpectedSummary  `json:"expected_summary"`
 	CriticalContract SummaryCriticalContract `json:"critical_contract"`
 	NextTurnEval     SummaryNextTurnEval     `json:"next_turn_eval,omitempty"`
+	StrategyEval     *SummaryStrategyEval    `json:"strategy_eval,omitempty"`
 	Metadata         map[string]any          `json:"metadata,omitempty"`
 }
 
@@ -71,10 +84,10 @@ func ParseSummarySamples(rawSamples []json.RawMessage) ([]SummarySample, error) 
 		if err := json.Unmarshal(raw, &sample); err != nil {
 			return nil, fmt.Errorf("decode summary sample %d: %w", i, err)
 		}
+		sample.Normalize()
 		if err := sample.Validate(); err != nil {
 			return nil, fmt.Errorf("validate summary sample %d: %w", i, err)
 		}
-		sample.Normalize()
 		samples = append(samples, sample)
 	}
 	return samples, nil
@@ -108,6 +121,18 @@ func (s *SummarySample) Normalize() {
 		s.NextTurnEval.Queries[i].Query = strings.TrimSpace(s.NextTurnEval.Queries[i].Query)
 		s.NextTurnEval.Queries[i].EquivalenceExpectations = normalizeSummaryValues(s.NextTurnEval.Queries[i].EquivalenceExpectations)
 	}
+	if s.StrategyEval != nil {
+		turnCount := countSummaryTurns(s.Input.SourceMessages)
+		for i := range s.StrategyEval.Checkpoints {
+			normalizeSummaryStrategyCheckpoint(&s.StrategyEval.Checkpoints[i])
+		}
+		if s.StrategyEval.FinalEval != nil {
+			if s.StrategyEval.FinalEval.AfterTurn <= 0 {
+				s.StrategyEval.FinalEval.AfterTurn = turnCount
+			}
+			normalizeSummaryStrategyCheckpoint(s.StrategyEval.FinalEval)
+		}
+	}
 }
 
 func (s SummarySample) Validate() error {
@@ -120,6 +145,19 @@ func (s SummarySample) Validate() error {
 	for _, msg := range s.Input.SourceMessages {
 		if strings.TrimSpace(msg.Content) == "" {
 			return fmt.Errorf("sample %q source_messages content is required", s.Name)
+		}
+	}
+	if s.StrategyEval != nil {
+		turnCount := countSummaryTurns(s.Input.SourceMessages)
+		for i, checkpoint := range s.StrategyEval.Checkpoints {
+			if err := validateSummaryStrategyCheckpoint(turnCount, checkpoint); err != nil {
+				return fmt.Errorf("sample %q checkpoint %d: %w", s.Name, i, err)
+			}
+		}
+		if s.StrategyEval.FinalEval != nil {
+			if err := validateSummaryStrategyCheckpoint(turnCount, *s.StrategyEval.FinalEval); err != nil {
+				return fmt.Errorf("sample %q final_eval: %w", s.Name, err)
+			}
 		}
 	}
 	return nil
@@ -142,6 +180,50 @@ func (s SummarySample) ToDomainMessages() []domain.ConversationMessage {
 		})
 	}
 	return messages
+}
+
+func countSummaryTurns(messages []SummaryMessage) int {
+	turns := 0
+	for i := 0; i+1 < len(messages); i += 2 {
+		if strings.EqualFold(strings.TrimSpace(messages[i].Role), "user") && strings.EqualFold(strings.TrimSpace(messages[i+1].Role), "assistant") {
+			turns++
+		}
+	}
+	return turns
+}
+
+func validateSummaryStrategyCheckpoint(turnCount int, checkpoint SummaryStrategyCheckpoint) error {
+	if checkpoint.AfterTurn <= 0 {
+		return fmt.Errorf("after_turn must be positive")
+	}
+	if turnCount > 0 && checkpoint.AfterTurn > turnCount {
+		return fmt.Errorf("after_turn=%d exceeds conversation turn count %d", checkpoint.AfterTurn, turnCount)
+	}
+	return nil
+}
+
+func normalizeSummaryStrategyCheckpoint(checkpoint *SummaryStrategyCheckpoint) {
+	if checkpoint == nil {
+		return
+	}
+	normalizeSummaryExpectedField(&checkpoint.ExpectedSummary.Goal)
+	normalizeSummaryExpectedField(&checkpoint.ExpectedSummary.UserPreferences)
+	normalizeSummaryExpectedField(&checkpoint.ExpectedSummary.Constraints)
+	normalizeSummaryExpectedField(&checkpoint.ExpectedSummary.EstablishedFacts)
+	normalizeSummaryExpectedField(&checkpoint.ExpectedSummary.RecentProgress)
+	normalizeSummaryExpectedField(&checkpoint.ExpectedSummary.OpenQuestions)
+	checkpoint.CriticalContract.CriticalEntities = normalizeSummaryValues(checkpoint.CriticalContract.CriticalEntities)
+	checkpoint.CriticalContract.CriticalConstraints = normalizeSummaryValues(checkpoint.CriticalContract.CriticalConstraints)
+	checkpoint.CriticalContract.CriticalFacts = normalizeSummaryValues(checkpoint.CriticalContract.CriticalFacts)
+	checkpoint.CriticalContract.CriticalProgress = normalizeSummaryValues(checkpoint.CriticalContract.CriticalProgress)
+	checkpoint.CriticalContract.CriticalOpenQuestions = normalizeSummaryValues(checkpoint.CriticalContract.CriticalOpenQuestions)
+	checkpoint.CriticalContract.CriticalQueries = normalizeSummaryValues(checkpoint.CriticalContract.CriticalQueries)
+	checkpoint.CriticalContract.ForbiddenClaims = normalizeSummaryValues(checkpoint.CriticalContract.ForbiddenClaims)
+	for i := range checkpoint.NextTurnEval.Queries {
+		checkpoint.NextTurnEval.Queries[i].ID = strings.TrimSpace(checkpoint.NextTurnEval.Queries[i].ID)
+		checkpoint.NextTurnEval.Queries[i].Query = strings.TrimSpace(checkpoint.NextTurnEval.Queries[i].Query)
+		checkpoint.NextTurnEval.Queries[i].EquivalenceExpectations = normalizeSummaryValues(checkpoint.NextTurnEval.Queries[i].EquivalenceExpectations)
+	}
 }
 
 func normalizeSummaryExpectedField(field *SummaryExpectedField) {

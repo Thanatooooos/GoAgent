@@ -3,6 +3,7 @@ package runtime
 import (
 	"strings"
 
+	"local/rag-project/internal/app/rag/core/tokenbudget"
 	. "local/rag-project/internal/app/rag/tool/core"
 )
 
@@ -94,6 +95,60 @@ func RenderContextWithRegistry(registry *Registry, results []Result) string {
 		}
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func RenderContextWithRegistryWithinBudget(
+	registry *Registry,
+	results []Result,
+	budget int,
+	estimator tokenbudget.Estimator,
+) (string, tokenbudget.TruncationStats) {
+	sections := make([]tokenbudget.Section, 0, len(results)*2)
+	for _, result := range results {
+		name := strings.TrimSpace(result.Name)
+		if name == "" {
+			continue
+		}
+		summary := strings.TrimSpace(result.Summary)
+		if summary == "" {
+			if result.Successful() {
+				summary = "tool executed successfully"
+			} else {
+				summary = strings.TrimSpace(result.ErrorMessage)
+			}
+		}
+		sections = append(sections, tokenbudget.Section{
+			Name:     name + ".summary",
+			Text:     "### " + name + "\n" + summary,
+			Priority: 100,
+			Required: true,
+		})
+
+		detail := ""
+		if registry != nil {
+			if behavior, ok := registry.GetBehavior(result.Name); ok && behavior.RenderContext != nil {
+				detail = strings.TrimSpace(behavior.RenderContext(result))
+			}
+		}
+		if detail == "" {
+			detail = strings.TrimSpace(renderResultContextDetail(result))
+		}
+		if detail != "" {
+			priority := 30
+			required := false
+			if name == "web_search" || name == "external_evidence_workflow" {
+				priority = 90
+				required = true
+			}
+			sections = append(sections, tokenbudget.Section{
+				Name:     name + ".detail",
+				Text:     detail,
+				Priority: priority,
+				Required: required,
+			})
+		}
+	}
+	return tokenbudget.JoinSectionsWithinBudget(sections, budget, estimator, maxRenderedToolContextLen)
 }
 
 func BuildAnswerGuidanceWithRegistry(registry *Registry, results []Result) string {

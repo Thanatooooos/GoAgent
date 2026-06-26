@@ -49,6 +49,7 @@ func buildChatService(
 			ChatService:         aiRuntime.Chat,
 			Tracer:              retrieve.tracer,
 			AgentRuntime:        agentRuntimeService,
+			SummaryTrigger:      conversation.summaryTrigger,
 		},
 		ragservice.RagChatOptions{
 			ConfidenceThreshold:     confidenceThreshold,
@@ -93,8 +94,15 @@ func buildChatContextBudgetOptions(cfg *config.Config) ragservice.ChatContextBud
 		return ragservice.ChatContextBudgetOptions{}
 	}
 	return ragservice.ChatContextBudgetOptions{
-		Enabled:         cfg.Rag.Memory.ChatContext.Enabled,
-		MaxPromptTokens: cfg.Rag.Memory.ChatContext.MaxPromptTokens,
-		Estimator:       ragservice.RoughTokenEstimator{},
+		Enabled:               cfg.Rag.Memory.ChatContext.Enabled,
+		MaxPromptTokens:       cfg.Rag.Memory.ChatContext.MaxPromptTokens,
+		FixedReserveTokens:    cfg.Rag.Memory.ChatContext.FixedReserveTokens,
+		SafetyReserveTokens:   cfg.Rag.Memory.ChatContext.SafetyReserveTokens,
+		MemoryTokens:          cfg.Rag.Memory.ChatContext.StageBudget.MemoryTokens,
+		SessionRecallTokens:   cfg.Rag.Memory.ChatContext.StageBudget.SessionRecallTokens,
+		RetrieveTokens:        cfg.Rag.Memory.ChatContext.StageBudget.RetrieveTokens,
+		ToolTokens:            cfg.Rag.Memory.ChatContext.StageBudget.ToolTokens,
+		MessageOverheadTokens: cfg.Rag.Memory.SummaryToken.MessageOverheadTokens,
+		Estimator:             ragservice.RoughTokenEstimator{},
 	}
 }

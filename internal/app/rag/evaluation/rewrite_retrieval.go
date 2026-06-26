@@ -133,11 +133,18 @@ func executeRewriteRetrievalCandidate(
 	if topK <= 0 {
 		topK = ragretrieve.DefaultTopK
 	}
+	prerankTopK := topK
+	rerankTopN := 0
+	if prerankTopK < evalMinPreRerankCandidates {
+		prerankTopK = evalMinPreRerankCandidates
+		rerankTopN = topK
+	}
 	request := ragretrieve.Request{
 		Query:            strings.TrimSpace(sample.Query),
 		KnowledgeBaseIDs: append([]string(nil), knowledgeBaseIDs...),
 		SearchMode:       strings.TrimSpace(sample.RetrievalExpectation.SearchMode),
-		TopK:             topK,
+		TopK:             prerankTopK,
+		RerankTopN:       rerankTopN,
 	}
 
 	subQuestions := ragretrieve.BuildRetrieveSubQuestions(sample.Query, sample.SubQuestions)

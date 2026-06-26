@@ -120,6 +120,7 @@ type ApprovalPending struct {
 	CapabilityFamily      string
 	CapabilityDescription string
 	RiskLevel             string
+	SupportsParallel      bool
 	SupportsResume        bool
 	Idempotency           string
 	// CheckpointID is the canonical outward lookup key for resume requests.
@@ -171,7 +172,9 @@ type RunOutcome struct {
 type RunResponse struct {
 	Response Response
 	Outcome  RunOutcome
-	Journal  []agentstate.RuntimeEvent
+	// Journal mirrors the shared runtime event model so callers can inspect
+	// runtime-visible progress without pattern-private event contracts.
+	Journal []agentstate.RuntimeEvent
 }
 
 // HandoffRunResponse is the detailed handoff-mode service response.

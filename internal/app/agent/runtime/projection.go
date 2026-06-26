@@ -21,6 +21,9 @@ func ProjectSnapshotAt(session *RuntimeSession, sequence int, reducer agentstate
 	}
 
 	base := projectionBaseSnapshot(session)
+	if err := agentstate.ValidateSnapshotCompatibility(base); err != nil {
+		return agentstate.StateSnapshot{}, err
+	}
 	if sequence <= 0 {
 		return base, nil
 	}
@@ -51,6 +54,9 @@ func BuildProjectionTimeline(session *RuntimeSession, reducer agentstate.Reducer
 
 	r := projectionReducer(reducer)
 	current := projectionBaseSnapshot(session)
+	if err := agentstate.ValidateSnapshotCompatibility(current); err != nil {
+		return nil, err
+	}
 	points := make([]ProjectionPoint, 0, len(session.Journal))
 	for _, event := range session.Journal {
 		if event.EventType == agentstate.EventTypeStateApplied && event.Delta != nil {
@@ -72,12 +78,12 @@ func BuildProjectionTimeline(session *RuntimeSession, reducer agentstate.Reducer
 
 func projectionBaseSnapshot(session *RuntimeSession) agentstate.StateSnapshot {
 	if session == nil {
-		return agentstate.StateSnapshot{}
+		return agentstate.NormalizeSnapshot(agentstate.StateSnapshot{})
 	}
 	if agentstate.HasContent(session.InitialSnapshot) {
-		return agentstate.CloneSnapshot(session.InitialSnapshot)
+		return agentstate.NormalizeSnapshot(agentstate.CloneSnapshot(session.InitialSnapshot))
 	}
-	return agentstate.CloneSnapshot(session.Snapshot)
+	return agentstate.NormalizeSnapshot(agentstate.CloneSnapshot(session.Snapshot))
 }
 
 func projectionReducer(reducer agentstate.Reducer) agentstate.Reducer {

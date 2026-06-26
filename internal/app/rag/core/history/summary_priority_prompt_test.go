@@ -9,10 +9,10 @@ import (
 
 func TestBuildStructuredSummaryPromptIncludesPriorityHierarchyRules(t *testing.T) {
 	tier := SummaryBudgetTier{MaxChars: 400}
-	prompt := buildStructuredSummaryPrompt(tier, domain.ConversationSummary{}, []domain.ConversationMessage{
+	prompt := buildStructuredSummaryPromptWithVariant(tier, domain.ConversationSummary{}, []domain.ConversationMessage{
 		{Role: "user", Content: "CI flaky 不是当前重点。"},
 		{Role: "assistant", Content: "先完成 spec、design、tasks。"},
-	})
+	}, StructuredSummaryPromptVariantLegacy)
 
 	required := []string{
 		"active_priorities",

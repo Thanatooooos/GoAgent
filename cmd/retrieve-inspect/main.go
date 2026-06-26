@@ -31,7 +31,7 @@ func main() {
 	nameFilter := flag.String("name", "", "inspect a single sample by exact name")
 	namesFile := flag.String("names-file", "", "inspect samples listed in a text file, one name per line")
 	outputDir := flag.String("output-dir", "", "optional directory to write per-sample inspection reports")
-	rerankModel := flag.String("rerank-model", "", "optional rerank model override, e.g. qwen3-rerank or rerank-noop")
+	rerankModel := flag.String("rerank-model", "", "optional rerank model override, e.g. qwen3-reranker-8b or rerank-noop")
 	vectorTopKMultiplier := flag.Int("vector-topk-multiplier", 0, "optional override for rag.search.channels.vector-global.top-k-multiplier")
 	searchModeOverride := flag.String("search-mode", "", "optional retrieval mode override: semantic, keyword, hybrid, auto")
 	flag.Parse()

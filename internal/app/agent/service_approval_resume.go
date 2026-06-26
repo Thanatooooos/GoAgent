@@ -55,6 +55,11 @@ func (s *Service) applyApprovalDecision(session *agentruntime.RuntimeSession, ch
 	session.Metadata.ApprovalDecision = decision.value
 	session.Metadata.ApprovalNote = strings.TrimSpace(req.DecisionNote)
 	session.Metadata.UpdatedAt = now
+	eventType := agentstate.EventTypeApprovalResolved
+	if !decision.approved {
+		eventType = agentstate.EventTypeApprovalRejected
+	}
+	appendApprovalRuntimeEvent(session, "approval", eventType, decision.value, finalCheckpointID)
 	return nil
 }
 
@@ -99,6 +104,21 @@ func (s *Service) finalizeRejectedApproval(session *agentruntime.RuntimeSession)
 	return session, nil
 }
 
+func shouldFinalizeRejectedApprovalWithoutResume(session *agentruntime.RuntimeSession) bool {
+	if session == nil {
+		return false
+	}
+	if session.Checkpoint != nil {
+		if node := strings.TrimSpace(session.Checkpoint.Node); node != "" {
+			return node != "approval"
+		}
+	}
+	if node := strings.TrimSpace(session.Snapshot.Execution.CurrentNode); node != "" {
+		return node != "approval"
+	}
+	return strings.TrimSpace(session.Snapshot.Approval.Node) != "approval"
+}
+
 func appendRuntimeEvent(session *agentruntime.RuntimeSession, event agentstate.RuntimeEvent) {
 	if session == nil {
 		return
@@ -118,4 +138,58 @@ func approvalCheckpointMatchesRequest(session *agentruntime.RuntimeSession, chec
 		return false
 	}
 	return strings.TrimSpace(session.Snapshot.Approval.CheckpointID) == strings.TrimSpace(checkpointID)
+}
+
+func appendApprovalResolvedIfMissing(session *agentruntime.RuntimeSession, checkpointID string) {
+	if session == nil || hasRuntimeEventTypeInSession(session, agentstate.EventTypeApprovalResolved) {
+		return
+	}
+	appendApprovalRuntimeEvent(session, "approval", agentstate.EventTypeApprovalResolved, agentstate.ApprovalStatusApproved, checkpointID)
+}
+
+func mergeApprovalResumeHistory(previous *agentruntime.RuntimeSession, current *agentruntime.RuntimeSession) {
+	if previous == nil || current == nil || previous == current {
+		return
+	}
+	if len(previous.Journal) == 0 {
+		return
+	}
+	if len(current.Journal) == 0 {
+		current.Journal = cloneJournal(previous.Journal)
+		return
+	}
+	if current.Journal[0].Sequence != 1 {
+		return
+	}
+	if !hasRuntimeEventTypeInSession(previous, agentstate.EventTypeApprovalPending) ||
+		hasRuntimeEventTypeInSession(current, agentstate.EventTypeApprovalPending) {
+		return
+	}
+
+	merged := cloneJournal(previous.Journal)
+	start := 0
+	if current.Journal[0].EventType == agentstate.EventTypeSessionStarted {
+		start = 1
+	}
+	for i := start; i < len(current.Journal); i++ {
+		event := current.Journal[i]
+		event.Sequence = len(merged) + 1
+		if strings.TrimSpace(event.SessionID) == "" {
+			event.SessionID = current.SessionID
+		}
+		merged = append(merged, event)
+	}
+	current.Journal = merged
+}
+
+func hasRuntimeEventTypeInSession(session *agentruntime.RuntimeSession, eventType string) bool {
+	if session == nil {
+		return false
+	}
+	for _, event := range session.Journal {
+		if event.EventType == eventType {
+			return true
+		}
+	}
+	return false
 }

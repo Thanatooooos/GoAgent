@@ -9,17 +9,18 @@ import (
 )
 
 type Phase1RegistryDependencies struct {
-	SummaryGenerator                 SummaryGenerator
-	SummaryJudge                     Judge
-	SummaryAnswerGenerator           SummaryAnswerGenerator
-	RewriteService                   ragrewrite.Service
-	RewriteEmbedding                 embedding.EmbeddingService
-	RewriteEmbeddingModelID          string
-	RewriteJudge                     Judge
-	RetrieveService                  ragretrieve.Service
-	RewriteRetrievalKs               []int
-	RewriteSubQuestionOptions        ragretrieve.SubQuestionOptions
-	RewriteDefaultKnowledgeBaseIDs   []string
+	SummaryGenerator               SummaryGenerator
+	SummaryJudge                   Judge
+	SummaryAnswerGenerator         SummaryAnswerGenerator
+	SummaryOptions                 SummaryEvaluatorRuntimeOptions
+	RewriteService                 ragrewrite.Service
+	RewriteEmbedding               embedding.EmbeddingService
+	RewriteEmbeddingModelID        string
+	RewriteJudge                   Judge
+	RetrieveService                ragretrieve.Service
+	RewriteRetrievalKs             []int
+	RewriteSubQuestionOptions      ragretrieve.SubQuestionOptions
+	RewriteDefaultKnowledgeBaseIDs []string
 }
 
 func NewPhase1Registry(deps Phase1RegistryDependencies) (*Registry, error) {
@@ -60,7 +61,7 @@ func registerPhase1SummarySuite(registry *Registry, deps Phase1RegistryDependenc
 		return fmt.Errorf("registry is required")
 	}
 
-	summaryOptions := []SummaryEvaluatorOption{}
+	summaryOptions := []SummaryEvaluatorOption{WithSummaryRuntimeOptions(deps.SummaryOptions)}
 	if deps.SummaryJudge != nil {
 		summaryOptions = append(summaryOptions, WithSummaryJudge(deps.SummaryJudge))
 	}

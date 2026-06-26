@@ -3,12 +3,30 @@ package evaluation
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/framework/convention"
 )
+
+// evalMinPreRerankCandidates is the minimum number of candidates to feed into
+// the rerank step. When the caller's desired TopK is smaller than this value,
+// the evaluator expands TopK to this value for the pre-rerank pool and sets
+// RerankTopN to the original TopK so the final output size stays the same.
+// Set EVAL_PRERANK_CANDIDATES=0 to disable expansion and use the original TopK.
+var evalMinPreRerankCandidates = readEvalPreRerankCandidates()
+
+func readEvalPreRerankCandidates() int {
+	if v := os.Getenv("EVAL_PRERANK_CANDIDATES"); v != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 20
+}
 
 type ExecuteConfig struct {
 	Retrieve           ragretrieve.Service
@@ -32,12 +50,20 @@ func ExecuteSample(ctx context.Context, sample *Sample, cfg ExecuteConfig) error
 		topK = ragretrieve.DefaultTopK
 	}
 
+	prerankTopK := topK
+	rerankTopN := 0
+	if prerankTopK < evalMinPreRerankCandidates {
+		prerankTopK = evalMinPreRerankCandidates
+		rerankTopN = topK
+	}
+
 	request := ragretrieve.Request{
 		UserID:           strings.TrimSpace(sample.UserID),
 		Query:            strings.TrimSpace(sample.Query),
 		KnowledgeBaseIDs: append([]string(nil), sample.KnowledgeBaseIDs...),
 		SearchMode:       searchMode,
-		TopK:             topK,
+		TopK:             prerankTopK,
+		RerankTopN:       rerankTopN,
 	}
 
 	var (

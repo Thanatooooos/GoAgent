@@ -185,6 +185,13 @@ func (b *Builder) invokeNode(ctx context.Context, node Node, session *agentrunti
 				agentstate.EventTypeReducerError,
 				reduceErr.Error(),
 			))
+			appendSessionEvent(session, agentstate.NewRuntimeEventAt(
+				session.Metadata.UpdatedAt,
+				session.SessionID,
+				nodeName,
+				agentstate.EventTypeFailed,
+				reduceErr.Error(),
+			))
 			return session, fmt.Errorf("node run failed: %v; apply error delta: %w", err, reduceErr)
 		}
 		session.Snapshot = nextSnapshot
@@ -197,6 +204,13 @@ func (b *Builder) invokeNode(ctx context.Context, node Node, session *agentrunti
 		)
 		stateApplied.Delta = cloneDeltaPtr(errorDelta)
 		appendSessionEvent(session, stateApplied)
+		appendSessionEvent(session, agentstate.NewRuntimeEventAt(
+			session.Metadata.UpdatedAt,
+			session.SessionID,
+			nodeName,
+			agentstate.EventTypeFailed,
+			err.Error(),
+		))
 		return session, err
 	}
 
@@ -228,6 +242,13 @@ func (b *Builder) invokeNode(ctx context.Context, node Node, session *agentrunti
 			session.SessionID,
 			nodeName,
 			agentstate.EventTypeReducerError,
+			err.Error(),
+		))
+		appendSessionEvent(session, agentstate.NewRuntimeEventAt(
+			session.Metadata.UpdatedAt,
+			session.SessionID,
+			nodeName,
+			agentstate.EventTypeFailed,
 			err.Error(),
 		))
 		return session, err

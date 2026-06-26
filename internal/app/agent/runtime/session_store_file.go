@@ -30,7 +30,11 @@ func (s *FileSessionStore) Put(_ context.Context, checkpointID string, session *
 		return err
 	}
 
-	payload, err := json.Marshal(CloneSession(session))
+	canonical, err := cloneCompatibleSession(session)
+	if err != nil {
+		return fmt.Errorf("normalize runtime session: %w", err)
+	}
+	payload, err := json.Marshal(canonical)
 	if err != nil {
 		return fmt.Errorf("marshal runtime session: %w", err)
 	}
@@ -55,7 +59,11 @@ func (s *FileSessionStore) Get(_ context.Context, checkpointID string) (*Runtime
 	if err := json.Unmarshal(payload, &session); err != nil {
 		return nil, false, fmt.Errorf("unmarshal runtime session: %w", err)
 	}
-	return CloneSession(session), true, nil
+	canonical, err := cloneCompatibleSession(session)
+	if err != nil {
+		return nil, false, fmt.Errorf("normalize runtime session: %w", err)
+	}
+	return canonical, true, nil
 }
 
 func (s *FileSessionStore) Delete(_ context.Context, checkpointID string) error {

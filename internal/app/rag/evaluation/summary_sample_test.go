@@ -52,3 +52,110 @@ func TestParseSummarySamplesRejectsMissingName(t *testing.T) {
 		t.Fatal("ParseSummarySamples() expected error for missing name")
 	}
 }
+
+func TestParseSummarySamplesSupportsStrategyEval(t *testing.T) {
+	rawSamples, err := ExtractSampleArray(json.RawMessage(`[
+		{
+			"name":"strategy-sample",
+			"input":{"source_messages":[
+				{"role":"user","content":"Q1"},
+				{"role":"assistant","content":"A1"},
+				{"role":"user","content":"Q2"},
+				{"role":"assistant","content":"A2"}
+			]},
+			"strategy_eval":{
+				"checkpoints":[{
+					"after_turn":1,
+					"expected_summary":{"goal":{"must_cover":["current goal"]}},
+					"critical_contract":{},
+					"next_turn_eval":{"queries":[{"id":"q1","query":"what is next?","equivalence_expectations":["must mention current goal"]}]}
+				}]
+			}
+		}
+	]`))
+	if err != nil {
+		t.Fatalf("ExtractSampleArray() error = %v", err)
+	}
+
+	samples, err := ParseSummarySamples(rawSamples)
+	if err != nil {
+		t.Fatalf("ParseSummarySamples() error = %v", err)
+	}
+	if len(samples) != 1 {
+		t.Fatalf("samples len = %d, want 1", len(samples))
+	}
+	if samples[0].StrategyEval == nil || len(samples[0].StrategyEval.Checkpoints) != 1 {
+		t.Fatalf("unexpected strategy eval: %#v", samples[0].StrategyEval)
+	}
+	if samples[0].StrategyEval.Checkpoints[0].AfterTurn != 1 {
+		t.Fatalf("after_turn = %d, want 1", samples[0].StrategyEval.Checkpoints[0].AfterTurn)
+	}
+}
+
+func TestParseSummarySamplesNormalizesFinalEvalToConversationEnd(t *testing.T) {
+	rawSamples, err := ExtractSampleArray(json.RawMessage(`[
+		{
+			"name":"strategy-sample",
+			"input":{"source_messages":[
+				{"role":"user","content":"Q1"},
+				{"role":"assistant","content":"A1"},
+				{"role":"user","content":"Q2"},
+				{"role":"assistant","content":"A2"}
+			]},
+			"strategy_eval":{
+				"checkpoints":[{
+					"after_turn":1,
+					"expected_summary":{"goal":{"must_cover":["current goal"]}},
+					"critical_contract":{},
+					"next_turn_eval":{}
+				}],
+				"final_eval":{
+					"expected_summary":{"goal":{"must_cover":["final goal"]}},
+					"critical_contract":{},
+					"next_turn_eval":{}
+				}
+			}
+		}
+	]`))
+	if err != nil {
+		t.Fatalf("ExtractSampleArray() error = %v", err)
+	}
+
+	samples, err := ParseSummarySamples(rawSamples)
+	if err != nil {
+		t.Fatalf("ParseSummarySamples() error = %v", err)
+	}
+	if samples[0].StrategyEval == nil || samples[0].StrategyEval.FinalEval == nil {
+		t.Fatalf("unexpected strategy eval: %#v", samples[0].StrategyEval)
+	}
+	if samples[0].StrategyEval.FinalEval.AfterTurn != 2 {
+		t.Fatalf("final_eval.after_turn = %d, want 2", samples[0].StrategyEval.FinalEval.AfterTurn)
+	}
+}
+
+func TestParseSummarySamplesRejectsCheckpointPastConversationLength(t *testing.T) {
+	rawSamples, err := ExtractSampleArray(json.RawMessage(`[
+		{
+			"name":"strategy-sample",
+			"input":{"source_messages":[
+				{"role":"user","content":"Q1"},
+				{"role":"assistant","content":"A1"}
+			]},
+			"strategy_eval":{
+				"checkpoints":[{
+					"after_turn":2,
+					"expected_summary":{"goal":{"must_cover":["current goal"]}},
+					"critical_contract":{},
+					"next_turn_eval":{}
+				}]
+			}
+		}
+	]`))
+	if err != nil {
+		t.Fatalf("ExtractSampleArray() error = %v", err)
+	}
+
+	if _, err := ParseSummarySamples(rawSamples); err == nil {
+		t.Fatal("ParseSummarySamples() expected checkpoint validation error")
+	}
+}

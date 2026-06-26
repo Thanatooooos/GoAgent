@@ -37,13 +37,13 @@ milvus:
 
 rag:
   vector:
-    type: pg  # 可选 milvus / pg
+    type: pg  # optional: milvus / pg
 
   default:
     collection-name: rag_default_store
     dimension: 1536
     metric-type: COSINE
-    sse-timeout-ms: 300000  # SSE 全局超时（毫秒），默认 5 分钟
+    sse-timeout-ms: 300000  # SSE global timeout in milliseconds, default 5 minutes
 
   agent:
     max-iterations: 3
@@ -80,9 +80,9 @@ rag:
             - elasticsearch
             - elastic
             - es
-        - canonical: 向量数据库
+        - canonical: 鍚戦噺鏁版嵁搴?
           aliases:
-            - 向量库
+            - 鍚戦噺搴?
             - vector db
 
   rate-limit:
@@ -95,7 +95,11 @@ rag:
 
   memory:
     history-keep-turns: 4
-    summary-start-turns: 5
+    summary-start-turns: 3
+    summary-trigger-tokens: 0
+    summary-token:
+      safety-factor: 1.15
+      message-overhead-tokens: 4
     summary-enabled: true
     summary-async:
       enabled: false
@@ -114,6 +118,13 @@ rag:
     chat-context:
       enabled: true
       max-prompt-tokens: 8000
+      fixed-reserve-tokens: 800
+      safety-reserve-tokens: 500
+      stage-budget:
+        memory-tokens: 500
+        session-recall-tokens: 1500
+        retrieve-tokens: 2000
+        tool-tokens: 1500
     session-recall:
       enabled: true
       max-excerpts: 3
@@ -233,7 +244,7 @@ ai:
       endpoints:
         chat: /v1/chat/completions
         embedding: /v1/embeddings
-
+        rerank: /v1/rerank
   selection:
     failure-threshold: 2
     open-duration-ms: 30000
@@ -242,9 +253,14 @@ ai:
     message-chunk-size: 1
 
   chat:
-    default-model: qwen-max-test
-    deep-thinking-model: qwen-max-test
+    default-model: qwen3-32b
+    deep-thinking-model: qwen3-32b
     candidates:
+      - id: qwen3-32b
+        provider: siliconflow
+        model: Qwen/Qwen3-32B
+        supports-thinking: true
+        priority: 1
       - id: glm-4.7
         provider: siliconflow
         model: Pro/zai-org/GLM-4.7
@@ -289,17 +305,20 @@ ai:
         priority: 2
 
   rerank:
-    default-model: qwen3-rerank
+    default-model: qwen3-reranker-8b
     candidates:
+      - id: qwen3-reranker-8b
+        provider: siliconflow
+        model: Qwen/Qwen3-Reranker-8B
+        priority: 1
       - id: qwen3-rerank
         provider: bailian
         model: qwen3-rerank
-        priority: 1
+        priority: 2
       - id: rerank-noop
         provider: noop
         model: noop
         priority: 100
-
 parser:
   tika:
     url: http://localhost:9998/tika

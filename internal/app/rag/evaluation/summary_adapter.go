@@ -26,13 +26,29 @@ type SummaryGenerator interface {
 type HistorySummaryGenerator struct {
 	chatService aichat.LLMService
 	budget      raghistory.SummaryBudgetOptions
+	variant     raghistory.StructuredSummaryPromptVariant
 }
 
-func NewHistorySummaryGenerator(chatService aichat.LLMService, budget raghistory.SummaryBudgetOptions) *HistorySummaryGenerator {
-	return &HistorySummaryGenerator{
+type HistorySummaryGeneratorOption func(*HistorySummaryGenerator)
+
+func WithHistorySummaryPromptVariant(variant raghistory.StructuredSummaryPromptVariant) HistorySummaryGeneratorOption {
+	return func(generator *HistorySummaryGenerator) {
+		generator.variant = raghistory.NormalizeStructuredSummaryPromptVariant(variant)
+	}
+}
+
+func NewHistorySummaryGenerator(chatService aichat.LLMService, budget raghistory.SummaryBudgetOptions, opts ...HistorySummaryGeneratorOption) *HistorySummaryGenerator {
+	generator := &HistorySummaryGenerator{
 		chatService: chatService,
 		budget:      budget,
+		variant:     raghistory.StructuredSummaryPromptVariantStateAware,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(generator)
+		}
+	}
+	return generator
 }
 
 func (g *HistorySummaryGenerator) Generate(ctx context.Context, input SummaryGenerationInput) (SummaryGenerationOutput, error) {
@@ -40,6 +56,7 @@ func (g *HistorySummaryGenerator) Generate(ctx context.Context, input SummaryGen
 		PreviousSummary: input.PreviousSummary,
 		SourceMessages:  toSummaryDomainMessages(input.SourceMessages),
 		Budget:          g.budget,
+		PromptVariant:   g.variant,
 	})
 	if err != nil {
 		return SummaryGenerationOutput{}, err

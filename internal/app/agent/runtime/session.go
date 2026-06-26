@@ -6,7 +6,10 @@ import (
 	agentstate "local/rag-project/internal/app/agent/state"
 )
 
-// RuntimeSession is the top-level container for one runtime execution.
+// RuntimeSession is the runtime-owned state container for one agent execution.
+// Service maps external requests onto it, patterns read and propose state
+// changes, and kernel/runtime infrastructure persists its checkpoint and
+// journal lifecycle.
 type RuntimeSession struct {
 	SessionID       string                    `json:"session_id"`
 	Request         RequestEnvelope           `json:"request"`

@@ -22,9 +22,13 @@ func (s *MemorySessionStore) Put(_ context.Context, checkpointID string, session
 	if err != nil {
 		return err
 	}
+	canonical, err := cloneCompatibleSession(session)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.items[key] = CloneSession(session)
+	s.items[key] = canonical
 	return nil
 }
 
@@ -39,7 +43,11 @@ func (s *MemorySessionStore) Get(_ context.Context, checkpointID string) (*Runti
 	if !ok {
 		return nil, false, nil
 	}
-	return CloneSession(session), true, nil
+	canonical, err := cloneCompatibleSession(session)
+	if err != nil {
+		return nil, false, err
+	}
+	return canonical, true, nil
 }
 
 func (s *MemorySessionStore) Delete(_ context.Context, checkpointID string) error {

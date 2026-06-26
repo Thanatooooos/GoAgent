@@ -30,19 +30,13 @@ func newSelectStepNode() (agentkernel.Node, error) {
 		}
 		var approvalDelta *agentstate.ApprovalDelta
 		if branch == "approval" && index >= 0 {
-			status := agentstate.ApprovalStatusPending
-			node := "approval"
-			capability := plan.Steps[index].CapabilityName
-			rerunNode := "execute_step"
-			requestedAt := time.Now()
-			approvalDelta = &agentstate.ApprovalDelta{
-				Status:      &status,
-				Reason:      &reason,
-				Node:        &node,
-				Capability:  &capability,
-				RerunNode:   &rerunNode,
-				RequestedAt: &requestedAt,
-			}
+			approvalDelta = agentruntime.BuildPendingApprovalDelta(
+				reason,
+				plan.Steps[index].CapabilityName,
+				"execute_step",
+				"",
+				time.Now(),
+			)
 		}
 		if index >= 0 {
 			logStepSelected(session, plan.Steps[index], branch, reason)

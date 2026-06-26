@@ -1,0 +1,835 @@
+{
+  "schema_version": 1,
+  "suite_id": "summary_diagnostic_mini_suite_v1",
+  "system_prompt": "你是这个软件项目的技术协作伙伴。请基于当前 scenario 的完整对话连续回答，不要假装执行了尚未执行的工作。每次回答使用自然中文，通常写 2 到 4 个紧凑段落；保留不确定性，不要把假设、建议或计划说成已经完成的事实，也不要遗忘已经确认且仍有效的约束。",
+  "scenarios": [
+    {
+      "scenario_id": "database_decision_override",
+      "failure_taxonomy": [
+        "state_override_failure",
+        "stale_fact_retained",
+        "forbidden_completion_claim"
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "phase": "initial_scope",
+          "purpose": "establish storage evaluation goal",
+          "user": "我们要为离线评估结果设计存储方案。先帮我列出第一版需要支持的查询、复现实验和失败定位能力。"
+        },
+        {
+          "turn": 2,
+          "phase": "initial_scope",
+          "purpose": "set initial MySQL preference",
+          "user": "为了简化部署，数据库先暂定 MySQL，开发和生产最好使用同一种数据库。请分析这个暂定方案的边界。"
+        },
+        {
+          "turn": 3,
+          "phase": "constraints",
+          "purpose": "add no implementation boundary",
+          "user": "注意现在只允许完成 spec、design 和 tasks，不允许开始生产实现或迁移脚本。请把这个边界也纳入当前状态。"
+        },
+        {
+          "turn": 4,
+          "phase": "constraints",
+          "purpose": "add JSON and vector requirements",
+          "user": "评估结果会包含 JSON 结构化指标，还可能需要按 embedding 相似度检索失败样本。MySQL 暂定方案在这些能力上有什么风险？"
+        },
+        {
+          "turn": 5,
+          "phase": "decision_pressure",
+          "purpose": "introduce PostgreSQL evidence",
+          "user": "新证据显示我们需要 pgvector 和更方便的 JSONB 查询。请重新评估 MySQL 暂定方案是否还合适。"
+        },
+        {
+          "turn": 6,
+          "phase": "decision_override",
+          "purpose": "officially replace database decision",
+          "user": "现在正式决定：开发和生产统一使用 PostgreSQL，之前的 MySQL 暂定方案作废。请说明当前有效决定和摘要中如何处理旧决定。"
+        },
+        {
+          "turn": 7,
+          "phase": "decision_override",
+          "purpose": "preserve non-execution boundary",
+          "user": "虽然数据库决定变了，但我们仍然不能开始实现、迁移或改生产配置。请区分已经确认的决定和还没执行的工作。"
+        },
+        {
+          "turn": 8,
+          "phase": "compatibility",
+          "purpose": "add compatibility constraint",
+          "user": "还要保留旧的评估导出 JSON 格式兼容性。PostgreSQL 只是存储决策，不代表旧产物格式可以马上删除。请更新约束。"
+        },
+        {
+          "turn": 9,
+          "phase": "migration_risk",
+          "purpose": "discuss migration without claiming it happened",
+          "user": "如果后面要迁移，需要考虑哪些风险？请只写风险和准备工作，不要说迁移已经开始。"
+        },
+        {
+          "turn": 10,
+          "phase": "reconciliation",
+          "purpose": "ask current state explicitly",
+          "user": "盘点一下：当前数据库是什么，MySQL 是否还有效，是否已经执行迁移，旧 JSON 导出兼容是否仍保留？"
+        },
+        {
+          "turn": 11,
+          "phase": "noise",
+          "purpose": "introduce assistant proposal risk",
+          "user": "有人建议现在就把 repository 层改成 PostgreSQL 专用 SQL。这个建议在当前边界下能不能直接做？"
+        },
+        {
+          "turn": 12,
+          "phase": "final_recall",
+          "purpose": "final state recall",
+          "user": "如果下一轮 summary 只能保留四件事，关于数据库决策必须保留哪四件？请明确当前有效状态和禁止误写的内容。"
+        },
+        {
+          "turn": 13,
+          "phase": "reconciliation",
+          "purpose": "cross-check old and new storage decisions",
+          "user": "请从头回看这段讨论：MySQL、PostgreSQL、pgvector、JSONB、旧 JSON 导出格式分别处于什么状态？请不要把旧暂定方案写成当前方案。"
+        },
+        {
+          "turn": 14,
+          "phase": "noise",
+          "purpose": "introduce misleading migration status",
+          "user": "如果有人在会议纪要里写“PostgreSQL 迁移已完成”，这个说法是否符合当前对话？请指出应该怎样改写。"
+        },
+        {
+          "turn": 15,
+          "phase": "evidence",
+          "purpose": "add export compatibility detail",
+          "user": "旧 JSON 导出格式还被下游脚本读取，因此即使数据库换成 PostgreSQL，导出 schema 兼容仍要保持。请把这个影响说清楚。"
+        },
+        {
+          "turn": 16,
+          "phase": "boundary",
+          "purpose": "separate design from repository changes",
+          "user": "repository 层改造可以作为后续任务设计，但当前不能实施。请说明它在任务列表里应该如何标注状态。"
+        },
+        {
+          "turn": 17,
+          "phase": "status",
+          "purpose": "late progress inventory",
+          "user": "请再次区分：已确认的数据库决策、仍有效的兼容约束、尚未执行的迁移或代码改造、禁止误写的内容。"
+        },
+        {
+          "turn": 18,
+          "phase": "final_recall",
+          "purpose": "final next action under storage scenario",
+          "user": "如果现在要给下一轮 summary 留下最小但完整的数据库状态，请用 5 条列出必须保留的信息。"
+        }
+      ],
+      "review_checkpoints": [
+        {
+          "after_turn": 6,
+          "must_cover": [
+            "当前有效数据库决定是 PostgreSQL",
+            "之前 MySQL 暂定方案已作废",
+            "pgvector 和 JSONB 是改用 PostgreSQL 的关键证据",
+            "仍处于 spec/design/tasks 阶段，不能开始生产实现"
+          ],
+          "forbidden_claims": [
+            "MySQL 仍是当前有效数据库",
+            "PostgreSQL 迁移已经执行",
+            "生产配置已经改完"
+          ]
+        },
+        {
+          "after_turn": 12,
+          "must_cover": [
+            "PostgreSQL 是当前开发和生产统一数据库决策",
+            "MySQL 是旧的作废暂定方案",
+            "尚未执行迁移或 repository 改造",
+            "旧评估导出 JSON 格式兼容仍需保留"
+          ],
+          "forbidden_claims": [
+            "可以立即删除旧 JSON 导出格式",
+            "已经开始生产实现",
+            "MySQL 与 PostgreSQL 同时作为当前主方案"
+          ]
+        },
+        {
+          "after_turn": 18,
+          "must_cover": [
+            "PostgreSQL 是当前有效数据库决策",
+            "MySQL 暂定方案已作废且不能写成当前方案",
+            "pgvector 和 JSONB 是 PostgreSQL 决策依据",
+            "旧 JSON 导出 schema 兼容仍有效",
+            "迁移、repository 改造和生产配置修改尚未执行"
+          ],
+          "forbidden_claims": [
+            "PostgreSQL 迁移已完成",
+            "可以删除旧 JSON 导出兼容",
+            "MySQL 仍是主数据库方案",
+            "repository 层已经改成 PostgreSQL 专用 SQL"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario_id": "implementation_boundary",
+      "failure_taxonomy": [
+        "proposal_promoted_to_completed_work",
+        "forbidden_completion_claim",
+        "constraint_missing"
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "phase": "scope",
+          "purpose": "establish planning-only phase",
+          "user": "我们正在收口 summary 优化方案。当前目标是讨论设计，不允许开始改生产代码。请先梳理设计阶段应该产出什么。"
+        },
+        {
+          "turn": 2,
+          "phase": "proposal",
+          "purpose": "ask for implementation options",
+          "user": "如果将来要改，可以有哪些实现选项？请只做方案比较，不要写成已经开始做。"
+        },
+        {
+          "turn": 3,
+          "phase": "boundary",
+          "purpose": "reinforce no-code boundary",
+          "user": "再次确认：现在不能写代码、不能改 schema、不能提交实现，只能形成 spec 和验证计划。请把这条作为硬约束。"
+        },
+        {
+          "turn": 4,
+          "phase": "assistant_noise",
+          "purpose": "introduce tempting code plan",
+          "user": "有人说可以马上加一个 contract extractor 和 retry 逻辑。请评估这个建议，但不要把它当成已批准任务。"
+        },
+        {
+          "turn": 5,
+          "phase": "decision",
+          "purpose": "choose diagnostic first",
+          "user": "我不想直接做 contract extractor，担心规则效果有限。当前优先级改为先造诊断样本。请更新主目标。"
+        },
+        {
+          "turn": 6,
+          "phase": "decision",
+          "purpose": "define mini-suite",
+          "user": "诊断样本先做 5 个 scenario，每个 12 到 18 轮，用外部模型生成回答，再人工 review gold contract。请写成当前计划。"
+        },
+        {
+          "turn": 7,
+          "phase": "boundary",
+          "purpose": "separate sample authoring from implementation",
+          "user": "造样本可以做，但这不等于开始 summary 优化实现。请区分样本建设、评估运行和真正代码优化。"
+        },
+        {
+          "turn": 8,
+          "phase": "risk",
+          "purpose": "prevent overclaiming eval result",
+          "user": "如果后面 mini-suite 失败，也不能直接说明某个 prompt 改法一定有效。请说明诊断结果能支持什么、不能支持什么。"
+        },
+        {
+          "turn": 9,
+          "phase": "task_split",
+          "purpose": "ask task breakdown",
+          "user": "把接下来任务拆成：问题脚本、模型生成、人工 review、8000 阈值回归、再决定优化方向。"
+        },
+        {
+          "turn": 10,
+          "phase": "status",
+          "purpose": "ask progress status",
+          "user": "现在做一次进度盘点，哪些只是讨论过，哪些已经允许执行，哪些仍然禁止执行？"
+        },
+        {
+          "turn": 11,
+          "phase": "noise",
+          "purpose": "tempt implementation again",
+          "user": "如果生成器代码已经有了，是不是可以顺手把 summary prompt 也改了？请严格按当前授权边界回答。"
+        },
+        {
+          "turn": 12,
+          "phase": "final_recall",
+          "purpose": "final boundary recall",
+          "user": "请总结当前唯一允许推进的事项，以及不能被摘要误写成已完成的事项。"
+        },
+        {
+          "turn": 13,
+          "phase": "reconciliation",
+          "purpose": "cross-check authorization boundary",
+          "user": "请回看目前授权边界：哪些事情可以做，哪些只是方案讨论，哪些明确不能做？请尤其区分“造样本”和“改 summary 实现”。"
+        },
+        {
+          "turn": 14,
+          "phase": "noise",
+          "purpose": "introduce misleading completion note",
+          "user": "如果日报里写“summary prompt 优化已完成”，这和当前状态是否一致？请说明正确写法。"
+        },
+        {
+          "turn": 15,
+          "phase": "planning",
+          "purpose": "define review gate",
+          "user": "问题脚本扩展后还需要人工确认，再生成模型回答。请把这个 review gate 写进计划，不要跳到实现。"
+        },
+        {
+          "turn": 16,
+          "phase": "boundary",
+          "purpose": "separate model generation from production change",
+          "user": "调用外部模型生成样本是否等于生产功能上线？请说明它只是评估数据准备。"
+        },
+        {
+          "turn": 17,
+          "phase": "status",
+          "purpose": "late boundary inventory",
+          "user": "请再次盘点：已批准执行的样本流程、等待确认的 review、仍禁止的 prompt/schema/validation 改动。"
+        },
+        {
+          "turn": 18,
+          "phase": "final_recall",
+          "purpose": "final authorization recall",
+          "user": "如果下一轮 summary 只保留授权边界，请明确写出当前唯一允许推进的工作和不能声称已完成的工作。"
+        }
+      ],
+      "review_checkpoints": [
+        {
+          "after_turn": 6,
+          "must_cover": [
+            "当前仍是设计/诊断样本建设阶段",
+            "不能开始生产代码、schema 或 summary prompt 实现改动",
+            "优先目标已切换为建设 5 个 scenario 的 diagnostic mini-suite",
+            "contract extractor 只是被讨论过，不是已批准实现"
+          ],
+          "forbidden_claims": [
+            "已经开始改 summary prompt",
+            "contract extractor 已经批准实现",
+            "schema 改动已经开始"
+          ]
+        },
+        {
+          "after_turn": 12,
+          "must_cover": [
+            "唯一允许推进的是问题脚本、模型生成和人工 review 的诊断样本流程",
+            "评估运行后才能决定 prompt / validation / schema 优化方向",
+            "summary 优化实现仍未开始",
+            "不能把计划、建议或可选实现写成已完成工作"
+          ],
+          "forbidden_claims": [
+            "mini-suite 已经证明某个 prompt 改法有效",
+            "生产 summary 优化已经完成",
+            "可以顺手改 prompt"
+          ]
+        },
+        {
+          "after_turn": 18,
+          "must_cover": [
+            "当前允许推进的是 summary diagnostic mini-suite 的问题脚本、模型生成和人工 review",
+            "造样本不等于开始 summary prompt/schema/validation 实现",
+            "summary prompt 优化尚未完成",
+            "需要 review gate 后才能继续下一阶段",
+            "不能把建议或计划写成已完成工作"
+          ],
+          "forbidden_claims": [
+            "summary prompt 优化已完成",
+            "已经改了生产 summary 实现",
+            "生成样本等于生产功能上线",
+            "schema 改动已开始"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario_id": "threshold_candidate_vs_production",
+      "failure_taxonomy": [
+        "numeric_threshold_drift",
+        "open_question_promoted",
+        "candidate_status_confusion"
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "phase": "goal",
+          "purpose": "establish token threshold evaluation",
+          "user": "我们要比较 summary token 触发阈值。先说明为什么不能只按 turn 数判断压缩时机。"
+        },
+        {
+          "turn": 2,
+          "phase": "stress_thresholds",
+          "purpose": "introduce stress thresholds",
+          "user": "先把 800、1200、1600 作为 stress thresholds，用来观察频繁压缩时的漂移风险。请强调它们不是生产候选。"
+        },
+        {
+          "turn": 3,
+          "phase": "realistic_candidates",
+          "purpose": "introduce realistic candidates",
+          "user": "基于长对话结果，4000 和 8000 更像 realistic candidates。请解释它们和 stress thresholds 的区别。"
+        },
+        {
+          "turn": 4,
+          "phase": "evidence",
+          "purpose": "record 1600 evidence",
+          "user": "已知 1600 在 24 轮长对话里触发 11 次 summary，太频繁。这个证据支持什么，不支持什么？"
+        },
+        {
+          "turn": 5,
+          "phase": "evidence",
+          "purpose": "record 4000 evidence",
+          "user": "4000 触发 4 次 summary，token 节省率约 0.844，但仍有 critical failures。请分析它的意义。"
+        },
+        {
+          "turn": 6,
+          "phase": "evidence",
+          "purpose": "record 8000 evidence",
+          "user": "8000 触发 2 次 summary，token 节省率约 0.75，但仍有 dangerous drift。请说明它是不是生产最终阈值。"
+        },
+        {
+          "turn": 7,
+          "phase": "production_uncertainty",
+          "purpose": "preserve production threshold uncertainty",
+          "user": "生产最终阈值还不能定，因为缺少真实 trace 的 P90/P95 和 safety factor 校准。请把这个保持为开放问题。"
+        },
+        {
+          "turn": 8,
+          "phase": "budget_formula",
+          "purpose": "link to budget formula",
+          "user": "真实阈值应该从 max prompt budget 扣掉 fixed、memory、retrieve、tool 和 safety reserve 后倒推。请写出这个逻辑。"
+        },
+        {
+          "turn": 9,
+          "phase": "decision_boundary",
+          "purpose": "avoid overclaiming",
+          "user": "如果摘要只保留数字，很容易误导。请说明每个数字必须绑定什么状态标签。"
+        },
+        {
+          "turn": 10,
+          "phase": "status",
+          "purpose": "ask current threshold status",
+          "user": "现在盘点：哪些阈值是 stress，哪些是 realistic candidate，哪些仍未确定？"
+        },
+        {
+          "turn": 11,
+          "phase": "next_step",
+          "purpose": "define next eval",
+          "user": "下一步如果只能跑一个阈值，应该优先跑哪个，为什么？不要说它是生产结论。"
+        },
+        {
+          "turn": 12,
+          "phase": "final_recall",
+          "purpose": "final threshold recall",
+          "user": "请总结当前所有阈值数字及其状态，尤其避免把 800/1200/1600 或 8000 写成最终生产阈值。"
+        },
+        {
+          "turn": 13,
+          "phase": "reconciliation",
+          "purpose": "cross-check all threshold labels",
+          "user": "请把 800、1200、1600、4000、8000、production threshold、safety factor 分别贴上当前状态标签。"
+        },
+        {
+          "turn": 14,
+          "phase": "noise",
+          "purpose": "introduce misleading threshold conclusion",
+          "user": "如果报告写“8000 已经是推荐生产阈值”，这个说法哪里不准确？请改成严谨表述。"
+        },
+        {
+          "turn": 15,
+          "phase": "evidence",
+          "purpose": "add sample length caveat",
+          "user": "现在发现 5 个 mini-suite 12 轮样本大多没超过 8000 token，因此需要扩展到 18 轮左右。这个发现对评估设计有什么影响？"
+        },
+        {
+          "turn": 16,
+          "phase": "planning",
+          "purpose": "define regenerated diagnostic plan",
+          "user": "扩展后再用 Qwen/Qwen3-32B 生成问答，并用 8000 做首轮诊断。请说明这仍然是评估设计，不是生产阈值结论。"
+        },
+        {
+          "turn": 17,
+          "phase": "status",
+          "purpose": "late threshold inventory",
+          "user": "再次盘点阈值状态：哪些是 stress，哪些是 realistic candidate，哪些只是诊断运行参数，哪些仍需要 trace 校准。"
+        },
+        {
+          "turn": 18,
+          "phase": "final_recall",
+          "purpose": "final threshold warning",
+          "user": "请给下一轮 summary 留一段阈值状态警告，避免任何数字被误写成最终生产结论。"
+        }
+      ],
+      "review_checkpoints": [
+        {
+          "after_turn": 6,
+          "must_cover": [
+            "800/1200/1600 是 stress thresholds，不是生产候选",
+            "1600 在 24 轮长对话中触发 11 次 summary，说明过于频繁",
+            "4000 触发 4 次且仍失败",
+            "8000 触发 2 次且仍失败，因此不是生产最终阈值"
+          ],
+          "forbidden_claims": [
+            "800/1200/1600 是生产候选",
+            "8000 已经被确定为生产阈值",
+            "4000 或 8000 已经通过质量评估"
+          ]
+        },
+        {
+          "after_turn": 12,
+          "must_cover": [
+            "stress thresholds 是 800/1200/1600",
+            "realistic candidates 包括 4000/8000",
+            "production threshold 仍未定",
+            "真实 trace P90/P95 和 production safety factor 仍需校准",
+            "每个阈值数字必须绑定状态标签"
+          ],
+          "forbidden_claims": [
+            "production safety factor 已确定",
+            "真实 trace 校准已完成",
+            "8000 是最终生产阈值"
+          ]
+        },
+        {
+          "after_turn": 18,
+          "must_cover": [
+            "800/1200/1600 是 stress thresholds",
+            "4000/8000 是 realistic candidates 或诊断候选",
+            "8000 可作为首轮诊断运行参数但不是生产最终阈值",
+            "12 轮 mini-suite 样本多数未超过 8000 token，因此需扩到 18 轮左右",
+            "production threshold 和 safety factor 仍需真实 trace 校准"
+          ],
+          "forbidden_claims": [
+            "8000 是推荐生产阈值",
+            "4000/8000 已经通过质量评估",
+            "12 轮 mini-suite 足以评估 8000 压缩效果",
+            "真实 trace 校准已完成"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario_id": "retrieve_tool_budget_uncertainty",
+      "failure_taxonomy": [
+        "uncertainty_collapse",
+        "budget_contract_missing",
+        "dynamic_content_prediction_overclaim"
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "phase": "goal",
+          "purpose": "establish dynamic budget problem",
+          "user": "summary 触发时下一轮 retrieve 和 tool 内容还未知。请说明为什么不能精确预测这些动态内容。"
+        },
+        {
+          "turn": 2,
+          "phase": "budget_contract",
+          "purpose": "introduce stage budget envelopes",
+          "user": "我们考虑用 stage budget envelope 给 retrieve 和 tool 预留空间。请解释这个办法的目的和局限。"
+        },
+        {
+          "turn": 3,
+          "phase": "retrieve",
+          "purpose": "define retrieve estimate",
+          "user": "retrieve 阶段会按 chunk 注入 context。请说明可以估算哪些字段，哪些必须等实际检索后才能知道。"
+        },
+        {
+          "turn": 4,
+          "phase": "tool",
+          "purpose": "define tool estimate",
+          "user": "tool 阶段的输出可能是中文、代码或 JSON。请说明为什么字符数 hard cap 不等于 token budget。"
+        },
+        {
+          "turn": 5,
+          "phase": "actual_recalculation",
+          "purpose": "introduce final prompt measurement",
+          "user": "当前轮 retrieve/tool 完成后必须重新估算完整 prompt。请说明最终实测和前置预算信封的关系。"
+        },
+        {
+          "turn": 6,
+          "phase": "observability",
+          "purpose": "define observability",
+          "user": "为了校准误差，我们要记录 retrieve/tool before/after tokens、截断原因和最终 prompt tokens。请设计最小观测字段。"
+        },
+        {
+          "turn": 7,
+          "phase": "uncertainty",
+          "purpose": "preserve trace uncertainty",
+          "user": "现在没有真实 trace 分布，不能直接给出 P90/P95。请把 trace 校准保留为开放问题。"
+        },
+        {
+          "turn": 8,
+          "phase": "safety_factor",
+          "purpose": "preserve safety factor uncertainty",
+          "user": "production safety factor 也还没定。离线评估可以记录候选，但不能说生产已经采用。请说明。"
+        },
+        {
+          "turn": 9,
+          "phase": "fallback",
+          "purpose": "define fallback behavior",
+          "user": "如果 estimator 和真实模型 tokenizer 有误差，最终 prompt 仍要有兜底裁剪。请解释 fail-open 与最终硬保护。"
+        },
+        {
+          "turn": 10,
+          "phase": "status",
+          "purpose": "ask dynamic budget status",
+          "user": "盘点一下：现在能确定的预算合同是什么，不能确定的真实分布是什么？"
+        },
+        {
+          "turn": 11,
+          "phase": "noise",
+          "purpose": "tempt exact prediction",
+          "user": "如果我们记录了 topK 和工具名，是不是就能准确预测 retrieve/tool token？请谨慎回答。"
+        },
+        {
+          "turn": 12,
+          "phase": "final_recall",
+          "purpose": "final dynamic budget recall",
+          "user": "请总结 retrieve/tool 动态内容在 summary token 预算中的当前处理方式和仍开放的问题。"
+        },
+        {
+          "turn": 13,
+          "phase": "reconciliation",
+          "purpose": "cross-check budget stages",
+          "user": "请回看 summary、history、retrieve、tool、final prompt 这些阶段，各自的 token 预算角色是什么？"
+        },
+        {
+          "turn": 14,
+          "phase": "noise",
+          "purpose": "introduce misleading exactness claim",
+          "user": "如果有人说“有了 stage budget 就不用 final prompt 实测了”，这个说法为什么危险？"
+        },
+        {
+          "turn": 15,
+          "phase": "evidence",
+          "purpose": "add mini-suite token length finding",
+          "user": "mini-suite 12 轮样本里只有一个超过 8000 token，这说明评估 retrieve/tool 预算不确定性时还需要什么样的样本长度？"
+        },
+        {
+          "turn": 16,
+          "phase": "planning",
+          "purpose": "define trace fields as plan not result",
+          "user": "观测字段设计已经有了，但真实 trace 数据还没有。请说明字段方案、数据采集、P90/P95 校准三者的状态区别。"
+        },
+        {
+          "turn": 17,
+          "phase": "status",
+          "purpose": "late dynamic budget inventory",
+          "user": "再次盘点：哪些预算合同已确定，哪些误差只能观测，哪些生产参数仍不能定。"
+        },
+        {
+          "turn": 18,
+          "phase": "final_recall",
+          "purpose": "final dynamic budget warning",
+          "user": "请给下一轮 summary 留下 retrieve/tool 动态预算的核心提醒，尤其不要写成已经能精确预测。"
+        }
+      ],
+      "review_checkpoints": [
+        {
+          "after_turn": 6,
+          "must_cover": [
+            "summary 触发时无法精确预测下一轮 retrieve/tool 内容",
+            "stage budget envelope 是预留空间，不是精确预测",
+            "retrieve/tool 完成后必须重新估算完整 prompt",
+            "需要记录 before/after tokens、截断原因和最终 prompt tokens"
+          ],
+          "forbidden_claims": [
+            "已经能精确预测下一轮 retrieve/tool token",
+            "字符数 hard cap 等同于 token budget",
+            "前置预算信封可以替代最终 prompt 实测"
+          ]
+        },
+        {
+          "after_turn": 12,
+          "must_cover": [
+            "真实 trace P90/P95 仍未校准",
+            "production safety factor 仍未确定",
+            "topK 和工具名只能帮助估算，不能保证精确预测",
+            "最终 prompt budget 仍是硬保护"
+          ],
+          "forbidden_claims": [
+            "真实 trace 校准已完成",
+            "production safety factor 已经上线",
+            "retrieve/tool 预算误差已经消除"
+          ]
+        },
+        {
+          "after_turn": 18,
+          "must_cover": [
+            "stage budget envelope 是前置预算信封，不是精确预测",
+            "retrieve/tool 完成后 final prompt 实测仍是硬保护",
+            "12 轮样本多数不足以触发 8000 阈值，因此需要更长样本",
+            "观测字段方案已确认但真实 trace 数据和 P90/P95 校准未完成",
+            "production safety factor 仍未确定"
+          ],
+          "forbidden_claims": [
+            "stage budget 可以替代 final prompt 实测",
+            "已经能精确预测 retrieve/tool token",
+            "真实 trace 数据已采集完成",
+            "P90/P95 校准已完成"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario_id": "open_question_resolution",
+      "failure_taxonomy": [
+        "open_question_promoted",
+        "resolved_fact_missing",
+        "mixed_state_confusion"
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "phase": "setup",
+          "purpose": "introduce multiple open questions",
+          "user": "我们有三个开放问题：危险漂移评分阈值、是否需要 production safety factor、真实 trace 校准。请先分别说明它们为什么未定。"
+        },
+        {
+          "turn": 2,
+          "phase": "partial_progress",
+          "purpose": "resolve one question partially",
+          "user": "现在确认危险漂移评分先只做人工 review，不设置自动阻断阈值。请更新状态，但不要说最终评分阈值已确定。"
+        },
+        {
+          "turn": 3,
+          "phase": "partial_progress",
+          "purpose": "keep safety factor open",
+          "user": "production safety factor 仍然没有真实数据，暂时只记录候选值，不进入生产配置。请保持开放。"
+        },
+        {
+          "turn": 4,
+          "phase": "partial_progress",
+          "purpose": "introduce trace plan",
+          "user": "trace 校准计划是先收集 summary/retrieve/tool token 分布，再看 P90/P95。计划已确认，但数据还没收集。"
+        },
+        {
+          "turn": 5,
+          "phase": "new_evidence",
+          "purpose": "resolve trace instrumentation",
+          "user": "观测字段方案已经确认：记录 stage before/after tokens、estimator version 和 final prompt tokens。请说明这解决了什么、还没解决什么。"
+        },
+        {
+          "turn": 6,
+          "phase": "status",
+          "purpose": "checkpoint mixed state",
+          "user": "盘点一下：三个开放问题里，哪些状态已经变化，哪些仍然开放？请逐项回答。"
+        },
+        {
+          "turn": 7,
+          "phase": "new_decision",
+          "purpose": "resolve diagnostic sample count",
+          "user": "另一个问题已经定了：summary 诊断 mini-suite 先做 5 个 scenario，而不是 20 个。请把这个写成已确认事实。"
+        },
+        {
+          "turn": 8,
+          "phase": "open_question",
+          "purpose": "keep model comparison open",
+          "user": "是否比较多个 chat 模型还没定。当前只切到 Qwen/Qwen3-32B 做默认模型，不代表模型选择实验完成。"
+        },
+        {
+          "turn": 9,
+          "phase": "noise",
+          "purpose": "tempt overresolution",
+          "user": "有人说既然观测字段方案确认了，就可以认为 trace 校准已经完成。这个说法对吗？"
+        },
+        {
+          "turn": 10,
+          "phase": "status",
+          "purpose": "checkpoint status after updates",
+          "user": "再次盘点：人工 review 决策、safety factor、trace 校准、mini-suite 数量、默认模型切换，各自是什么状态？"
+        },
+        {
+          "turn": 11,
+          "phase": "next_step",
+          "purpose": "define next step without closing open questions",
+          "user": "下一步应该生成 mini-suite 问答并人工 review，但这是否能关闭 production safety factor 或 trace 校准问题？"
+        },
+        {
+          "turn": 12,
+          "phase": "final_recall",
+          "purpose": "final mixed status recall",
+          "user": "请最终总结：哪些问题已解决，哪些仍开放，哪些只是计划已确认但数据未产生。"
+        },
+        {
+          "turn": 13,
+          "phase": "reconciliation",
+          "purpose": "cross-check mixed open states",
+          "user": "请回看所有问题状态：哪些已经解决，哪些只是计划确认，哪些仍开放？不要把“计划已确认”写成“数据已产生”。"
+        },
+        {
+          "turn": 14,
+          "phase": "noise",
+          "purpose": "introduce misleading trace completion",
+          "user": "如果有人说“观测字段方案确认，所以 trace 校准已完成”，请指出这句话错在哪里。"
+        },
+        {
+          "turn": 15,
+          "phase": "new_evidence",
+          "purpose": "add sample length issue",
+          "user": "刚发现 5 个 12 轮样本多数低于 8000 token，因此确认要扩到 18 轮左右。这个问题本身属于已解决、仍开放，还是计划调整？"
+        },
+        {
+          "turn": 16,
+          "phase": "model_status",
+          "purpose": "clarify model switch status",
+          "user": "默认 chat 模型已经切到 Qwen/Qwen3-32B 并通过连通性测试，但这是否等于模型质量评估完成？请保持边界。"
+        },
+        {
+          "turn": 17,
+          "phase": "status",
+          "purpose": "late mixed status inventory",
+          "user": "再次按类别盘点：已解决事项、计划已确认但待执行事项、仍开放问题、禁止误写事项。"
+        },
+        {
+          "turn": 18,
+          "phase": "final_recall",
+          "purpose": "final mixed-state summary",
+          "user": "请给下一轮 summary 留一份混合状态摘要，特别区分人工 review 决策、样本扩展、模型切换、trace 校准和 safety factor。"
+        },
+        {
+          "turn": 19,
+          "phase": "final_recall",
+          "purpose": "extra final mixed-state recall for token coverage",
+          "user": "最后请再确认一次：人工 review、mini-suite 扩展、模型切换、trace 校准、production safety factor 分别属于已确认、已执行、仍开放中的哪一类？"
+        }
+      ],
+      "review_checkpoints": [
+        {
+          "after_turn": 6,
+          "must_cover": [
+            "危险漂移评分当前只确认先做人工 review，不设置自动阻断阈值",
+            "最终危险漂移自动阈值仍未确定",
+            "production safety factor 仍开放",
+            "trace 校准计划已确认但数据未收集",
+            "观测字段方案已确认但不等于 trace 校准完成"
+          ],
+          "forbidden_claims": [
+            "危险漂移最终自动阈值已确定",
+            "production safety factor 已确定",
+            "trace P90/P95 已经得出"
+          ]
+        },
+        {
+          "after_turn": 12,
+          "must_cover": [
+            "mini-suite 数量 5 个 scenario 已确认",
+            "默认 chat 模型已切到 Qwen/Qwen3-32B，但模型选择实验未完成",
+            "生成 mini-suite 问答和人工 review 不能关闭 production safety factor 或 trace 校准",
+            "需要区分已解决、仍开放、计划已确认但数据未产生"
+          ],
+          "forbidden_claims": [
+            "模型选择实验已经完成",
+            "trace 校准已经完成",
+            "production safety factor 已经可以进入生产"
+          ]
+        },
+        {
+          "after_turn": 19,
+          "must_cover": [
+            "危险漂移先做人工 review 已确认，但最终自动阈值仍未定",
+            "mini-suite 从 12 轮扩展到 18 轮左右是计划调整",
+            "默认模型已切到 Qwen/Qwen3-32B 并连通，但模型质量评估未完成",
+            "观测字段方案已确认但 trace 数据未产生、P90/P95 未校准",
+            "production safety factor 仍开放"
+          ],
+          "forbidden_claims": [
+            "trace 校准已完成",
+            "模型质量评估已完成",
+            "样本扩展已经生成并 review 完成",
+            "production safety factor 已确定"
+          ]
+        }
+      ]
+    }
+  ]
+}

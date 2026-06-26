@@ -5,6 +5,7 @@ import (
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
+	agentstate "local/rag-project/internal/app/agent/state"
 )
 
 const (
@@ -36,22 +37,30 @@ func buildCapabilityRuntimePolicy(searchHandle agentcapability.Handle, fetchHand
 
 func (p capabilityRuntimePolicy) retryDirective(session *agentruntime.RuntimeSession) (branch string, reason string, confidence float64, progressKind string, capabilityName string, rerunNode string, applied bool) {
 	errorClass, spec, reasonPrefix := p.activeFailure(session)
+	schedule := agentruntime.EvaluateCapabilitySchedule(agentruntime.CapabilityScheduleInput{
+		Session:             session,
+		RuntimeOptions:      sessionRuntimeOptions(session),
+		Snapshot:            sessionSnapshot(session),
+		PatternAction:       "reactive_retry",
+		Spec:                spec,
+		SkipInputValidation: true,
+	})
 	switch errorClass {
 	case agentcapability.ErrorClassValidation:
 		return branchDegrade, reasonPrefix + "_validation_failed", 0.60, progressNone, "", "", true
 	case agentcapability.ErrorClassDependency:
 		return branchDegrade, reasonPrefix + "_dependency_failed", 0.60, progressNone, "", "", true
 	case agentcapability.ErrorClassPermission:
-		if requiresRuntimeApproval(session, spec) {
+		if schedule.Decision == agentruntime.ScheduleDecisionWaitApproval {
 			return branchApproval, reasonPrefix + "_approval_required", 0.70, progressNone, spec.Name, rerunNodeForReasonPrefix(reasonPrefix), true
 		}
 		return branchDegrade, reasonPrefix + "_permission_required", 0.60, progressNone, "", "", true
 	case agentcapability.ErrorClassExternal:
 		progressKind = progressKindForRetry(reasonPrefix)
-		if strings.TrimSpace(spec.Idempotency) == agentcapability.IdempotencyUnknown {
+		if strings.TrimSpace(schedule.Idempotency) == agentcapability.IdempotencyUnknown {
 			return branchDegrade, "retry_blocked_unknown_idempotency", 0.55, progressNone, "", "", true
 		}
-		if session != nil && session.Metadata.ResumeCount > 0 && !spec.SupportsResume {
+		if schedule.Decision == agentruntime.ScheduleDecisionDegrade && schedule.Reason == "resume_not_supported" {
 			return branchDegrade, "resume_retry_not_supported", 0.55, progressNone, "", "", true
 		}
 		if nextNoProgressRounds(session, progressKind) >= 2 {
@@ -67,13 +76,31 @@ func (p capabilityRuntimePolicy) retryDirective(session *agentruntime.RuntimeSes
 }
 
 func requiresRuntimeApproval(session *agentruntime.RuntimeSession, spec agentcapability.Spec) bool {
-	if spec.RequiresApproval {
-		return true
-	}
+	return agentruntime.EvaluateCapabilitySchedule(agentruntime.CapabilityScheduleInput{
+		Session:             session,
+		RuntimeOptions:      sessionRuntimeOptions(session),
+		Snapshot:            sessionSnapshot(session),
+		PatternAction:       "reactive_gate",
+		Spec:                spec,
+		SkipInputValidation: true,
+	}).Decision == agentruntime.ScheduleDecisionWaitApproval
+}
+
+func sessionRuntimeOptions(session *agentruntime.RuntimeSession) agentstate.RuntimeOptions {
 	if session == nil {
-		return false
+		return agentstate.RuntimeOptions{}
 	}
-	return session.Snapshot.Request.RuntimeOptions.RequireApproval || session.Request.Options.RequireApproval
+	if session.Snapshot.Request.RuntimeOptions != (agentstate.RuntimeOptions{}) {
+		return session.Snapshot.Request.RuntimeOptions
+	}
+	return session.Request.Options
+}
+
+func sessionSnapshot(session *agentruntime.RuntimeSession) agentstate.StateSnapshot {
+	if session == nil {
+		return agentstate.StateSnapshot{}
+	}
+	return session.Snapshot
 }
 
 func (p capabilityRuntimePolicy) activeFailure(session *agentruntime.RuntimeSession) (errorClass string, spec agentcapability.Spec, reasonPrefix string) {

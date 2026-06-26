@@ -8,6 +8,7 @@ import (
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
+	"local/rag-project/internal/app/rag/core/tokenbudget"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/convention"
 )
@@ -77,16 +78,18 @@ func (s *RagChatService) runLegacyToolWorkflowStage(
 		},
 		run: func(ctx context.Context) (ragChatToolStageResult, error) {
 			result, err := s.toolWorkflow.Run(ctx, ragtool.WorkflowInput{
-				Question:         strings.TrimSpace(input.Question),
-				UserID:           strings.TrimSpace(input.UserID),
-				ConversationID:   strings.TrimSpace(input.ConversationID),
-				TraceID:          strings.TrimSpace(traceID),
-				Control:          defaultWorkflowControl(),
-				KnowledgeBaseIDs: append([]string(nil), input.KnowledgeBaseIDs...),
-				History:          append([]convention.ChatMessage(nil), history...),
-				RewriteResult:    rewriteResult,
-				RetrieveResult:   retrieveResult,
-				EventSink:        ragChatWorkflowEventSink{sink: sink},
+				Question:           strings.TrimSpace(input.Question),
+				UserID:             strings.TrimSpace(input.UserID),
+				ConversationID:     strings.TrimSpace(input.ConversationID),
+				TraceID:            strings.TrimSpace(traceID),
+				Control:            defaultWorkflowControl(),
+				KnowledgeBaseIDs:   append([]string(nil), input.KnowledgeBaseIDs...),
+				History:            append([]convention.ChatMessage(nil), history...),
+				RewriteResult:      rewriteResult,
+				RetrieveResult:     retrieveResult,
+				ContextTokenBudget: s.chatContextBudget.ToolTokens,
+				ContextEstimator:   s.chatContextBudget.Estimator,
+				EventSink:          ragChatWorkflowEventSink{sink: sink},
 			})
 			if err != nil {
 				return ragChatToolStageResult{}, err
@@ -101,6 +104,56 @@ func (s *RagChatService) runLegacyToolWorkflowStage(
 			return buildToolWorkflowStageTraceExtra(result)
 		},
 	})
+}
+
+func (s *RagChatService) applyRetrieveContextBudget(ctx context.Context, traceID string, result ragretrieve.Result) ragretrieve.Result {
+	if s == nil || s.chatContextBudget.RetrieveTokens <= 0 || len(result.Chunks) == 0 {
+		return result
+	}
+	contextText, stats := ragretrieve.BuildKnowledgeContextWithinBudget(
+		result.Chunks,
+		s.chatContextBudget.RetrieveTokens,
+		s.chatContextBudget.Estimator,
+	)
+	result.KnowledgeContext = contextText
+	if s.tracer != nil {
+		s.tracer.appendTraceRunExtra(ctx, traceID, map[string]any{
+			"retrieveContextBudget": stats,
+		})
+	}
+	return result
+}
+
+func (s *RagChatService) applyToolContextBudget(ctx context.Context, traceID string, result ragChatToolStageResult) ragChatToolStageResult {
+	if s == nil || s.chatContextBudget.ToolTokens <= 0 || strings.TrimSpace(result.result.Context) == "" {
+		return result
+	}
+	before := s.chatContextBudget.Estimator.EstimateTokens(result.result.Context)
+	trimmed, changed := tokenbudget.TruncateText(
+		result.result.Context,
+		s.chatContextBudget.ToolTokens,
+		s.chatContextBudget.Estimator,
+	)
+	result.result.Context = trimmed
+	stats := result.result.ContextBudget
+	if stats.TokensBefore == 0 {
+		stats.TokensBefore = before
+	}
+	stats.TokensAfter = s.chatContextBudget.Estimator.EstimateTokens(trimmed)
+	stats.Truncated = stats.Truncated || changed
+	if stats.RetainedSections == 0 && strings.TrimSpace(trimmed) != "" {
+		stats.RetainedSections = 1
+	}
+	if changed && strings.TrimSpace(trimmed) == "" && stats.DroppedSections == 0 {
+		stats.DroppedSections = 1
+	}
+	result.result.ContextBudget = stats
+	if s.tracer != nil {
+		s.tracer.appendTraceRunExtra(ctx, traceID, map[string]any{
+			"toolContextBudget": stats,
+		})
+	}
+	return result
 }
 
 func (s *RagChatService) runAgentToolWorkflowStage(
@@ -219,7 +272,19 @@ func (s *RagChatService) runPromptStage(
 			if err != nil {
 				return ragChatPromptStageResult{}, err
 			}
-			budgetResult.EstimatedPromptTokens = estimateChatMessagesTokens(messages, s.chatContextBudget.normalized().Estimator)
+			normalizedBudget := s.chatContextBudget.normalized()
+			budgetResult.EstimatedPromptTokens = estimateChatMessagesTokensWithOverhead(
+				messages,
+				normalizedBudget.Estimator,
+				normalizedBudget.MessageOverheadTokens,
+			)
+			budgetResult.StageTokens = estimateChatContextStageTokens(
+				s.promptService,
+				promptContext,
+				normalizedBudget.Estimator,
+				normalizedBudget.MessageOverheadTokens,
+				budgetResult.EstimatedPromptTokens,
+			)
 			result := ragChatPromptStageResult{messages: messages, budget: budgetResult}
 			if hasOverride {
 				overrideCopy := override

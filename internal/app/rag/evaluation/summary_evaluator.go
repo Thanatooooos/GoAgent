@@ -7,10 +7,69 @@ import (
 	"time"
 )
 
+type SummaryEvalMode string
+
+const (
+	SummaryEvalModeStandard SummaryEvalMode = "standard"
+	SummaryEvalModeStrategy SummaryEvalMode = "strategy"
+)
+
+type SummaryStrategyThresholdUnit string
+
+const (
+	SummaryStrategyThresholdTokens SummaryStrategyThresholdUnit = "tokens"
+	SummaryStrategyThresholdTurns  SummaryStrategyThresholdUnit = "turns"
+)
+
+const defaultSummaryStrategyMessageOverheadTokens = 4
+
+type SummaryEvaluatorRuntimeOptions struct {
+	Mode                  SummaryEvalMode
+	ThresholdUnit         SummaryStrategyThresholdUnit
+	Thresholds            []int
+	MessageOverheadTokens int
+}
+
+func (o SummaryEvaluatorRuntimeOptions) normalizedMode() SummaryEvalMode {
+	if o.Mode == SummaryEvalModeStrategy {
+		return SummaryEvalModeStrategy
+	}
+	return SummaryEvalModeStandard
+}
+
+func (o SummaryEvaluatorRuntimeOptions) normalizedStrategy() (SummaryEvaluatorRuntimeOptions, error) {
+	if o.normalizedMode() != SummaryEvalModeStrategy {
+		return o, nil
+	}
+	if o.ThresholdUnit == "" {
+		o.ThresholdUnit = SummaryStrategyThresholdTurns
+	}
+	switch o.ThresholdUnit {
+	case SummaryStrategyThresholdTokens, SummaryStrategyThresholdTurns:
+	default:
+		return SummaryEvaluatorRuntimeOptions{}, fmt.Errorf(
+			"unsupported summary strategy threshold unit %q",
+			o.ThresholdUnit,
+		)
+	}
+	o.Thresholds = normalizeStrategyThresholds(o.Thresholds)
+	if len(o.Thresholds) == 0 {
+		return SummaryEvaluatorRuntimeOptions{}, fmt.Errorf("summary strategy thresholds are required")
+	}
+	if o.MessageOverheadTokens < 0 {
+		o.MessageOverheadTokens = 0
+	}
+	if o.MessageOverheadTokens == 0 {
+		o.MessageOverheadTokens = defaultSummaryStrategyMessageOverheadTokens
+	}
+	return o, nil
+}
+
 type SummaryEvaluator struct {
 	generator       SummaryGenerator
 	judge           Judge
 	answerGenerator SummaryAnswerGenerator
+	runtime         SummaryEvaluatorRuntimeOptions
 }
 
 type SummaryEvaluatorOption func(*SummaryEvaluator)
@@ -24,6 +83,12 @@ func WithSummaryJudge(judge Judge) SummaryEvaluatorOption {
 func WithSummaryAnswerGenerator(generator SummaryAnswerGenerator) SummaryEvaluatorOption {
 	return func(e *SummaryEvaluator) {
 		e.answerGenerator = generator
+	}
+}
+
+func WithSummaryRuntimeOptions(options SummaryEvaluatorRuntimeOptions) SummaryEvaluatorOption {
+	return func(e *SummaryEvaluator) {
+		e.runtime = options
 	}
 }
 
@@ -53,17 +118,58 @@ func (e *SummaryEvaluator) Run(ctx context.Context, input RunInput) (SuiteResult
 	if e == nil || e.generator == nil {
 		return SuiteResult{}, fmt.Errorf("summary generator is required")
 	}
+	runtimeOptions, err := e.runtime.normalizedStrategy()
+	if err != nil {
+		return SuiteResult{}, err
+	}
 	samples, err := ParseSummarySamples(input.RawSamples)
 	if err != nil {
 		return SuiteResult{}, err
 	}
 
 	results := make([]SharedSampleResult, 0, len(samples))
+	strategySampleResults := make([]SummaryStrategySampleResult, 0, len(samples))
 	tagStats := map[string]*tagSummaryAccumulator{}
 	criticalFailureCount := 0
 	artifacts := map[string]any{}
 
 	for _, sample := range samples {
+		if runtimeOptions.normalizedMode() == SummaryEvalModeStrategy {
+			strategyResult, err := runSummaryStrategySweep(ctx, summaryStrategyDependencies{
+				Generator:             e.generator,
+				Judge:                 e.judge,
+				AnswerGenerator:       e.answerGenerator,
+				ThresholdUnit:         runtimeOptions.ThresholdUnit,
+				Thresholds:            runtimeOptions.Thresholds,
+				MessageOverheadTokens: runtimeOptions.MessageOverheadTokens,
+			}, sample)
+			if err != nil {
+				return SuiteResult{}, fmt.Errorf("run strategy sample %q: %w", sample.Name, err)
+			}
+			strategySampleResults = append(strategySampleResults, strategyResult)
+			sampleResult := buildStrategySharedSampleResult(sample, strategyResult)
+			results = append(results, sampleResult)
+			artifacts[sample.Name] = buildSummaryStrategyArtifact(strategyResult)
+			if len(sampleResult.CriticalFailures) > 0 {
+				criticalFailureCount++
+			}
+			for _, tag := range sample.Tags {
+				acc := tagStats[tag]
+				if acc == nil {
+					acc = &tagSummaryAccumulator{}
+					tagStats[tag] = acc
+				}
+				acc.total++
+				if sampleResult.Passed {
+					acc.passed++
+				}
+				if len(sampleResult.CriticalFailures) > 0 {
+					acc.criticalFailures++
+				}
+			}
+			continue
+		}
+
 		generated, err := e.generator.Generate(ctx, SummaryGenerationInput{
 			SourceMessages:  append([]SummaryMessage(nil), sample.Input.SourceMessages...),
 			PreviousSummary: sample.Input.PreviousSummary,
@@ -144,13 +250,17 @@ func (e *SummaryEvaluator) Run(ctx context.Context, input RunInput) (SuiteResult
 		}
 	}
 
+	metrics := map[string]any{
+		"sample_count": len(results),
+	}
+	if runtimeOptions.normalizedMode() == SummaryEvalModeStrategy {
+		metrics["threshold_aggregates"] = buildSummaryStrategyThresholdAggregates(strategySampleResults)
+	}
 	aggregate := SharedAggregateResult{
 		PassRate:            rate(countPassed(results), len(results)),
 		CriticalFailureRate: rate(criticalFailureCount, len(results)),
 		ByTag:               buildTagAggregates(tagStats),
-		Metrics: map[string]any{
-			"sample_count": len(results),
-		},
+		Metrics:             metrics,
 	}
 
 	return SuiteResult{

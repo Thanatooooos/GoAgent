@@ -47,7 +47,10 @@ type ServiceOptions struct {
 }
 
 type Service struct {
-	runner        *agentkernel.Runner
+	// kernelRunner is the compiled graph execution layer. Service owns request
+	// mapping and outward responses, but not the graph execution mechanics.
+	kernelRunner  *agentkernel.Runner
+	runtimeEngine *agentruntime.Engine
 	handoff       *agenthandoff.Builder
 	registry      *agentcapability.Registry
 	bindings      agentcapability.RoleBindings
@@ -96,6 +99,7 @@ func newRuntimeSession(req Request, maxIterations int, outputMode string, runtim
 			Options:  options,
 		},
 		Snapshot: agentstate.StateSnapshot{
+			SchemaVersion: agentstate.CurrentSnapshotVersion,
 			Request: agentstate.RequestState{
 				Question:       question,
 				UserID:         userID,

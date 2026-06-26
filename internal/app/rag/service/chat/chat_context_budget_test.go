@@ -54,6 +54,82 @@ func TestApplyChatContextBudgetDisabledPreservesHistory(t *testing.T) {
 	}
 }
 
+func TestApplyChatContextBudgetReportsActualStageTokens(t *testing.T) {
+	estimator := fixedTokenEstimator{factor: 1}
+	promptService := ragprompt.NewService(nil)
+	input := ragprompt.Context{
+		Question:         "question",
+		MemoryContext:    "memory",
+		SessionContext:   "session",
+		KnowledgeContext: "retrieve",
+		ToolContext:      "tool",
+		History: []convention.ChatMessage{
+			convention.SystemMessage("对话摘要：summary"),
+		},
+	}
+
+	result, err := applyChatContextBudget(
+		ChatContextBudgetOptions{
+			Enabled:         true,
+			MaxPromptTokens: 1000,
+			Estimator:       estimator,
+		},
+		promptService,
+		input,
+	)
+	if err != nil {
+		t.Fatalf("applyChatContextBudget() error = %v", err)
+	}
+	if result.StageTokens.History == 0 ||
+		result.StageTokens.Memory == 0 ||
+		result.StageTokens.Session == 0 ||
+		result.StageTokens.Retrieve == 0 ||
+		result.StageTokens.Tool == 0 {
+		t.Fatalf("missing stage token breakdown: %+v", result.StageTokens)
+	}
+	messages, err := promptService.BuildMessages(input)
+	if err != nil {
+		t.Fatalf("BuildMessages() error = %v", err)
+	}
+	wantTotal := estimateChatMessagesTokens(messages, estimator)
+	if result.StageTokens.Total != wantTotal {
+		t.Fatalf("total tokens = %d, want %d", result.StageTokens.Total, wantTotal)
+	}
+}
+
+func TestApplyChatContextBudgetIncludesMessageOverhead(t *testing.T) {
+	estimator := fixedTokenEstimator{factor: 1}
+	promptService := ragprompt.NewService(nil)
+	input := ragprompt.Context{
+		Question: "question",
+		History: []convention.ChatMessage{
+			convention.UserMessage("history"),
+		},
+	}
+	messages, err := promptService.BuildMessages(input)
+	if err != nil {
+		t.Fatalf("BuildMessages() error = %v", err)
+	}
+
+	result, err := applyChatContextBudget(
+		ChatContextBudgetOptions{
+			Enabled:               true,
+			MaxPromptTokens:       1000,
+			MessageOverheadTokens: 4,
+			Estimator:             estimator,
+		},
+		promptService,
+		input,
+	)
+	if err != nil {
+		t.Fatalf("applyChatContextBudget() error = %v", err)
+	}
+	want := estimateChatMessagesTokens(messages, estimator) + len(messages)*4
+	if result.EstimatedPromptTokens != want {
+		t.Fatalf("estimated prompt tokens = %d, want %d", result.EstimatedPromptTokens, want)
+	}
+}
+
 func TestTrimHistoryForTokenBudgetDropsOldestMessages(t *testing.T) {
 	t.Parallel()
 	history := []convention.ChatMessage{

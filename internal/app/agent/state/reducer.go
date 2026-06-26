@@ -1,5 +1,10 @@
 package state
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Reducer is the only runtime component allowed to merge a StateDelta back
 // into a StateSnapshot.
 type Reducer interface {
@@ -11,7 +16,10 @@ type DefaultReducer struct{}
 
 // Apply merges the supplied delta into the snapshot and returns a new snapshot.
 func (r DefaultReducer) Apply(snapshot StateSnapshot, delta StateDelta) (StateSnapshot, error) {
-	next := snapshot
+	if err := ValidateSnapshotCompatibility(snapshot); err != nil {
+		return StateSnapshot{}, err
+	}
+	next := NormalizeSnapshot(snapshot)
 
 	if delta.Request != nil {
 		applyRequestDelta(&next.Request, *delta.Request)
@@ -33,6 +41,14 @@ func (r DefaultReducer) Apply(snapshot StateSnapshot, delta StateDelta) (StateSn
 	}
 	if delta.Answer != nil {
 		applyAnswerDelta(&next.Answer, *delta.Answer)
+	}
+
+	if delta.Execution == nil || delta.Execution.Status == nil {
+		next.Execution.Status = deriveExecutionStatus(next)
+	}
+
+	if err := validateSnapshot(next); err != nil {
+		return StateSnapshot{}, err
 	}
 
 	return next, nil
@@ -118,7 +134,7 @@ func applyEvidenceDelta(target *EvidenceState, delta EvidenceDelta) {
 		return
 	}
 	if len(delta.AddItems) > 0 {
-		target.Items = append(target.Items, delta.AddItems...)
+		target.Items = appendUniqueEvidenceItems(target.Items, delta.AddItems...)
 	}
 	if delta.Sufficient != nil {
 		target.Sufficient = *delta.Sufficient
@@ -130,7 +146,7 @@ func applyEvidenceDelta(target *EvidenceState, delta EvidenceDelta) {
 		target.NewItemsThisRound = *delta.NewItemsThisRound
 	}
 	if len(delta.OpenQuestions) > 0 {
-		target.OpenQuestions = append(target.OpenQuestions, delta.OpenQuestions...)
+		target.OpenQuestions = appendUniqueStrings(target.OpenQuestions, delta.OpenQuestions...)
 	}
 }
 
@@ -170,6 +186,9 @@ func applyApprovalDelta(target *ApprovalState, delta ApprovalDelta) {
 func applyExecutionDelta(target *ExecutionState, delta ExecutionDelta) {
 	if target == nil {
 		return
+	}
+	if delta.Status != nil {
+		target.Status = *delta.Status
 	}
 	if delta.CurrentNode != nil {
 		target.CurrentNode = *delta.CurrentNode
@@ -240,6 +259,30 @@ func appendUniqueStrings(existing []string, values ...string) []string {
 	return result
 }
 
+func appendUniqueEvidenceItems(existing []EvidenceItem, values ...EvidenceItem) []EvidenceItem {
+	if len(values) == 0 {
+		return existing
+	}
+	seen := make(map[string]struct{}, len(existing)+len(values))
+	result := append([]EvidenceItem(nil), existing...)
+	for _, item := range existing {
+		seen[evidenceIdentity(item)] = struct{}{}
+	}
+	for _, item := range values {
+		key := evidenceIdentity(item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	return result
+}
+
+func evidenceIdentity(item EvidenceItem) string {
+	return item.ID + "|" + item.SourceRef + "|" + item.Content
+}
+
 func applyAnswerDelta(target *AnswerState, delta AnswerDelta) {
 	if target == nil {
 		return
@@ -252,5 +295,112 @@ func applyAnswerDelta(target *AnswerState, delta AnswerDelta) {
 	}
 	if delta.Final != nil {
 		target.Final = *delta.Final
+		target.Draft = ""
+	}
+}
+
+func validateSnapshot(snapshot StateSnapshot) error {
+	if err := ValidateSnapshotCompatibility(snapshot); err != nil {
+		return err
+	}
+	if err := validatePlanState(snapshot.Plan); err != nil {
+		return err
+	}
+	if err := validateApprovalState(snapshot.Approval); err != nil {
+		return err
+	}
+	if err := validateExecutionState(snapshot.Execution); err != nil {
+		return err
+	}
+	if err := validateAnswerState(snapshot.Answer); err != nil {
+		return err
+	}
+	if err := validateExecutionStatus(snapshot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validatePlanState(state PlanState) error {
+	if state.CurrentStepIndex < -1 {
+		return fmt.Errorf("plan current step index must be -1 or a valid step index")
+	}
+	if len(state.Steps) == 0 {
+		if state.CurrentStepIndex > 0 {
+			return fmt.Errorf("plan current step index %d out of bounds for empty plan", state.CurrentStepIndex)
+		}
+		return nil
+	}
+	if state.CurrentStepIndex >= len(state.Steps) && state.CurrentStepIndex != -1 {
+		return fmt.Errorf("plan current step index %d out of bounds for %d steps", state.CurrentStepIndex, len(state.Steps))
+	}
+	return nil
+}
+
+func validateApprovalState(state ApprovalState) error {
+	status := strings.TrimSpace(state.Status)
+	if status != "" && !isKnownApprovalStatus(status) {
+		return fmt.Errorf("unknown approval status %q", status)
+	}
+	if status == ApprovalStatusPending && !state.ReviewedAt.IsZero() {
+		return fmt.Errorf("approval pending state cannot include reviewed_at")
+	}
+	return nil
+}
+
+func validateExecutionState(state ExecutionState) error {
+	status := strings.TrimSpace(state.Status)
+	if status != "" && !isKnownExecutionStatus(status) {
+		return fmt.Errorf("unknown execution status %q", status)
+	}
+	if !state.Interrupted && strings.TrimSpace(state.InterruptReason) != "" {
+		return fmt.Errorf("execution interrupt reason requires interrupted=true")
+	}
+	return nil
+}
+
+func validateAnswerState(state AnswerState) error {
+	if strings.TrimSpace(state.Final) != "" && strings.TrimSpace(state.Draft) != "" {
+		return fmt.Errorf("answer final and draft are mutually exclusive")
+	}
+	if strings.TrimSpace(state.DegradeReason) != "" && strings.TrimSpace(state.Draft) != "" {
+		return fmt.Errorf("answer degrade reason and draft are mutually exclusive")
+	}
+	return nil
+}
+
+func isKnownApprovalStatus(status string) bool {
+	switch status {
+	case ApprovalStatusNone, ApprovalStatusPending, ApprovalStatusApproved, ApprovalStatusRejected, ApprovalStatusExpired, ApprovalStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateExecutionStatus(snapshot StateSnapshot) error {
+	status := strings.TrimSpace(snapshot.Execution.Status)
+	if status == "" {
+		return nil
+	}
+	switch status {
+	case ExecutionStatusInterrupted:
+		if !snapshot.Execution.Interrupted && strings.TrimSpace(snapshot.Approval.Status) != ApprovalStatusPending {
+			return fmt.Errorf("execution status %q requires interrupted=true", status)
+		}
+	case ExecutionStatusCompleted, ExecutionStatusDegraded, ExecutionStatusFailed, ExecutionStatusRunning, ExecutionStatusResuming:
+		if snapshot.Execution.Interrupted {
+			return fmt.Errorf("execution status %q conflicts with interrupted=true", status)
+		}
+	}
+	return nil
+}
+
+func isKnownExecutionStatus(status string) bool {
+	switch status {
+	case ExecutionStatusRunning, ExecutionStatusInterrupted, ExecutionStatusResuming, ExecutionStatusCompleted, ExecutionStatusDegraded, ExecutionStatusFailed:
+		return true
+	default:
+		return false
 	}
 }

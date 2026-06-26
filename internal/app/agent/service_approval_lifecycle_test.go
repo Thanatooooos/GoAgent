@@ -25,6 +25,9 @@ func TestApprovalLifecycle_RejectedResumeProducesDegradeEvent(t *testing.T) {
 	if initial.Outcome.Status != RunStatusAwaitingApproval || initial.Outcome.Approval == nil {
 		t.Fatalf("expected awaiting approval initial outcome, got %+v", initial.Outcome)
 	}
+	if !hasRuntimeEventType(initial.Journal, agentstate.EventTypeApprovalPending) {
+		t.Fatalf("expected pending-approval journal event, got %+v", initial.Journal)
+	}
 
 	rejected, err := service.ResumeAfterApproval(context.Background(), ResumeApprovalRequest{
 		CheckpointID: initial.Outcome.CheckpointID,
@@ -46,6 +49,9 @@ func TestApprovalLifecycle_RejectedResumeProducesDegradeEvent(t *testing.T) {
 	}
 	if !hasRuntimeEventType(rejected.Journal, agentstate.EventTypeDegraded) {
 		t.Fatalf("expected rejected lifecycle journal to contain a degraded event, got %+v", rejected.Journal)
+	}
+	if !hasRuntimeEventType(rejected.Journal, agentstate.EventTypeApprovalRejected) {
+		t.Fatalf("expected rejected lifecycle journal to contain an approval_rejected event, got %+v", rejected.Journal)
 	}
 	assertPendingSessionMissing(t, service, initial.Outcome.CheckpointID, initial.Outcome.Approval.SessionID)
 }
@@ -186,6 +192,9 @@ func TestApprovalLifecycle_HandoffApprovedResumeRecordsAuditMetadataAndClearsPen
 	if resumed.Outcome.Status != RunStatusCompleted {
 		t.Fatalf("expected completed handoff outcome after approval resume, got %+v", resumed.Outcome)
 	}
+	if resumed.Handoff.Replay.EventTypeCounts[agentstate.EventTypeApprovalResolved] == 0 {
+		t.Fatalf("expected approved handoff replay to count approval_resolved, got %+v", resumed.Handoff.Replay.EventTypeCounts)
+	}
 
 	stored, ok := store.lastPut(initial.Outcome.CheckpointID)
 	if !ok || stored == nil {
@@ -258,6 +267,64 @@ func TestApprovalLifecycle_HandoffResumeWhenApprovalNotPendingReturnsFailedPreco
 	assertServiceErrorDescriptor(t, err, ErrorCodeApprovalNotPending, ErrorKindFailedPrecondition, false)
 }
 
+func TestApprovalLifecycle_ApprovedResumeEventsRemainOrdered(t *testing.T) {
+	service := newContractTestService(t, true)
+
+	initial, err := service.RunDetailed(context.Background(), Request{
+		Question: "approval ordered approve flow",
+	})
+	if err != nil {
+		t.Fatalf("RunDetailed() error = %v", err)
+	}
+
+	resumed, err := service.ResumeAfterApproval(context.Background(), ResumeApprovalRequest{
+		CheckpointID: initial.Outcome.CheckpointID,
+		Decision:     ApprovalDecisionApproved,
+		DecisionNote: "ordered approve",
+	})
+	if err != nil {
+		t.Fatalf("ResumeAfterApproval() error = %v", err)
+	}
+
+	assertRuntimeEventOrder(t, resumed.Journal,
+		agentstate.EventTypeSessionStarted,
+		agentstate.EventTypeCheckpointRecorded,
+		agentstate.EventTypeInterrupt,
+		agentstate.EventTypeApprovalPending,
+		agentstate.EventTypeApprovalResolved,
+		agentstate.EventTypeResumeCompleted,
+	)
+}
+
+func TestApprovalLifecycle_RejectedResumeEventsRemainOrdered(t *testing.T) {
+	service := newContractTestService(t, true)
+
+	initial, err := service.RunDetailed(context.Background(), Request{
+		Question: "approval ordered reject flow",
+	})
+	if err != nil {
+		t.Fatalf("RunDetailed() error = %v", err)
+	}
+
+	rejected, err := service.ResumeAfterApproval(context.Background(), ResumeApprovalRequest{
+		CheckpointID: initial.Outcome.CheckpointID,
+		Decision:     ApprovalDecisionRejected,
+		DecisionNote: "ordered reject",
+	})
+	if err != nil {
+		t.Fatalf("ResumeAfterApproval() error = %v", err)
+	}
+
+	assertRuntimeEventOrder(t, rejected.Journal,
+		agentstate.EventTypeSessionStarted,
+		agentstate.EventTypeCheckpointRecorded,
+		agentstate.EventTypeInterrupt,
+		agentstate.EventTypeApprovalPending,
+		agentstate.EventTypeApprovalRejected,
+		agentstate.EventTypeDegraded,
+	)
+}
+
 func hasRuntimeEventType(events []agentstate.RuntimeEvent, eventType string) bool {
 	for _, event := range events {
 		if event.EventType == eventType {
@@ -265,6 +332,26 @@ func hasRuntimeEventType(events []agentstate.RuntimeEvent, eventType string) boo
 		}
 	}
 	return false
+}
+
+func assertRuntimeEventOrder(t *testing.T, events []agentstate.RuntimeEvent, expected ...string) {
+	t.Helper()
+
+	nextIndex := 0
+	for _, eventType := range expected {
+		found := false
+		for nextIndex < len(events) {
+			if events[nextIndex].EventType == eventType {
+				found = true
+				nextIndex++
+				break
+			}
+			nextIndex++
+		}
+		if !found {
+			t.Fatalf("expected runtime event %q in order, got %+v", eventType, events)
+		}
+	}
 }
 
 func newContractTestServiceWithStore(t *testing.T, requireApproval bool, store agentruntime.SessionStore) *Service {

@@ -5,7 +5,7 @@ import "time"
 // CloneSnapshot deep-copies a state snapshot so replay/projection can safely
 // reuse it without sharing slice backing arrays.
 func CloneSnapshot(snapshot StateSnapshot) StateSnapshot {
-	cloned := snapshot
+	cloned := NormalizeSnapshot(snapshot)
 	cloned.Request.KnowledgeBaseIDs = append([]string(nil), snapshot.Request.KnowledgeBaseIDs...)
 	cloned.Context.SearchResults = cloneSearchResultRefs(snapshot.Context.SearchResults)
 	cloned.Context.FetchResults = cloneFetchResultRefs(snapshot.Context.FetchResults)
@@ -20,6 +20,7 @@ func CloneSnapshot(snapshot StateSnapshot) StateSnapshot {
 	cloned.Execution.ScheduledActions = append([]string(nil), snapshot.Execution.ScheduledActions...)
 	cloned.Execution.CompletedActions = append([]string(nil), snapshot.Execution.CompletedActions...)
 	cloned.Execution.FailedActions = append([]string(nil), snapshot.Execution.FailedActions...)
+	cloned.Pattern.Data = cloneStringAnyMap(snapshot.Pattern.Data)
 	return cloned
 }
 
@@ -81,6 +82,7 @@ func CloneDelta(delta StateDelta) StateDelta {
 	}
 	if delta.Execution != nil {
 		cloned.Execution = &ExecutionDelta{
+			Status:                      cloneStringPtr(delta.Execution.Status),
 			CurrentNode:                 cloneStringPtr(delta.Execution.CurrentNode),
 			IterationIncrement:          delta.Execution.IterationIncrement,
 			ContinueCountIncrement:      delta.Execution.ContinueCountIncrement,

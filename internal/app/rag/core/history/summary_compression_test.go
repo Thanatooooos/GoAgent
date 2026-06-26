@@ -17,7 +17,7 @@ func TestBuildStructuredSummaryPromptUsesChineseInstructions(t *testing.T) {
 		{Role: "assistant", Content: "目前看到 indexer 阶段报错。"},
 	}
 
-	prompt := buildStructuredSummaryPrompt(tier, latest, historyMessages)
+	prompt := buildStructuredSummaryPromptWithVariant(tier, latest, historyMessages, StructuredSummaryPromptVariantLegacy)
 
 	requiredPhrases := []string{
 		"你正在将一段对话压缩为结构化工作记忆。",
@@ -61,7 +61,7 @@ func TestBuildStructuredSummaryPromptIncludesRepairOrientedRules(t *testing.T) {
 		{Role: "user", Content: "根因还没确认，先不要下结论。"},
 	}
 
-	prompt := buildStructuredSummaryPrompt(tier, latest, historyMessages)
+	prompt := buildStructuredSummaryPromptWithVariant(tier, latest, historyMessages, StructuredSummaryPromptVariantLegacy)
 
 	requiredPhrases := []string{
 		"只保留当前仍然有效的目标和约束，保持当前边界",
@@ -78,5 +78,44 @@ func TestBuildStructuredSummaryPromptIncludesRepairOrientedRules(t *testing.T) {
 		if !strings.Contains(prompt, phrase) {
 			t.Fatalf("expected prompt to contain %q, got:\n%s", phrase, prompt)
 		}
+	}
+}
+
+func TestBuildStructuredSummaryPromptGuardsAgainstPromotingAssistantProposals(t *testing.T) {
+	tier := SummaryBudgetTier{MaxChars: 320}
+	prompt := buildStructuredSummaryPrompt(tier, domain.ConversationSummary{}, []domain.ConversationMessage{{Role: "assistant", Content: "???? RRF"}})
+
+	required := "如果某项结论只来自助手建议、示例代码或通用方案说明，而没有被用户确认或实际落地，不要写成 established_facts"
+	if !strings.Contains(prompt, required) {
+		t.Fatalf("expected prompt to contain %q, got:\n%s", required, prompt)
+	}
+}
+
+func TestBuildStructuredSummaryPromptDefaultsToStateAwareVariant(t *testing.T) {
+	tier := SummaryBudgetTier{MaxChars: 320}
+	prompt := buildStructuredSummaryPrompt(tier, domain.ConversationSummary{}, nil)
+
+	requiredPhrases := []string{
+		"状态边界事实",
+		"禁止完成态漂移",
+		"8000 是 diagnostic run parameter，不是 production final threshold",
+		"如果对话中存在明确未确认、待验证、仍开放的问题，则必须非空",
+	}
+	for _, phrase := range requiredPhrases {
+		if !strings.Contains(prompt, phrase) {
+			t.Fatalf("expected state-aware prompt to contain %q, got:\n%s", phrase, prompt)
+		}
+	}
+}
+
+func TestBuildStructuredSummaryPromptCanUseLegacyVariantForAB(t *testing.T) {
+	tier := SummaryBudgetTier{MaxChars: 320}
+	prompt := buildStructuredSummaryPromptWithVariant(tier, domain.ConversationSummary{}, nil, StructuredSummaryPromptVariantLegacy)
+
+	if !strings.Contains(prompt, "你正在将一段对话压缩为结构化工作记忆。只返回 JSON。") {
+		t.Fatalf("expected legacy prompt to retain original opening, got:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "状态边界事实") {
+		t.Fatalf("expected legacy prompt not to contain state-aware section, got:\n%s", prompt)
 	}
 }

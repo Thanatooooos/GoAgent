@@ -351,3 +351,189 @@ func TestBuildReplayView_WithSkippedCapabilityAndActiveCheckpoint(t *testing.T) 
 		t.Fatalf("expected active interrupted checkpoint state, got %+v", view.CheckpointState)
 	}
 }
+
+func TestBuildReplayView_ProjectsPendingApprovalFromSharedStateNotPatternState(t *testing.T) {
+	now := time.Now()
+	session := &RuntimeSession{
+		SessionID: "sess-approval-replay",
+		Request: RequestEnvelope{
+			Question: "needs approval",
+		},
+		Snapshot: agentstate.StateSnapshot{
+			Request: agentstate.RequestState{
+				Question: "needs approval",
+			},
+			Approval: agentstate.ApprovalState{
+				Status:       agentstate.ApprovalStatusPending,
+				Reason:       "web_fetch_approval_required",
+				Capability:   "web_fetch",
+				CheckpointID: "cp-approval",
+				RerunNode:    "fetch",
+				RequestedAt:  now,
+			},
+			Execution: agentstate.ExecutionState{
+				Interrupted:     true,
+				InterruptReason: "awaiting approval",
+			},
+			Pattern: agentstate.PatternState{
+				Name: "reactive",
+				Data: map[string]any{
+					"approval_status": "approved",
+					"checkpoint_id":   "wrong-pattern-checkpoint",
+				},
+			},
+		},
+		Journal: []agentstate.RuntimeEvent{
+			{
+				SessionID:   "sess-approval-replay",
+				Sequence:    1,
+				Node:        "fetch",
+				EventType:   agentstate.EventTypeInterrupt,
+				Timestamp:   now,
+				PayloadText: "awaiting approval",
+				Checkpoint: &agentstate.CheckpointRef{
+					ID:   "cp-approval",
+					Node: "fetch",
+				},
+			},
+		},
+		Checkpoint: &CheckpointRef{
+			ID:          "cp-approval",
+			Node:        "fetch",
+			EventOffset: 1,
+			CreatedAt:   now,
+		},
+	}
+
+	view := BuildReplayView(session)
+
+	if view.ApprovalStatus != agentstate.ApprovalStatusPending {
+		t.Fatalf("expected pending approval status from shared state, got %+v", view)
+	}
+	if view.ApprovalReason != "web_fetch_approval_required" {
+		t.Fatalf("expected approval reason from shared state, got %+v", view)
+	}
+	if view.ApprovalCapability != "web_fetch" {
+		t.Fatalf("expected approval capability from shared state, got %+v", view)
+	}
+	if view.ApprovalCheckpointID != "cp-approval" {
+		t.Fatalf("expected approval checkpoint id from shared state, got %+v", view)
+	}
+	if view.ApprovalRerunNode != "fetch" {
+		t.Fatalf("expected approval rerun node from shared state, got %+v", view)
+	}
+	if view.CheckpointState.Status != "interrupted" || !view.CheckpointState.Active {
+		t.Fatalf("expected interrupted active checkpoint state, got %+v", view.CheckpointState)
+	}
+}
+
+func TestBuildReplayView_ReconstructsPendingApprovalFromJournalWhenSnapshotMissing(t *testing.T) {
+	now := time.Now()
+	session := &RuntimeSession{
+		SessionID: "sess-approval-journal",
+		Request: RequestEnvelope{
+			Question: "journal approval fallback",
+		},
+		Journal: []agentstate.RuntimeEvent{
+			{
+				SessionID:   "sess-approval-journal",
+				Sequence:    1,
+				Node:        "approval",
+				EventType:   agentstate.EventTypeApprovalPending,
+				Timestamp:   now,
+				PayloadText: "web_fetch_approval_required",
+				Checkpoint: &agentstate.CheckpointRef{
+					ID:   "cp-journal-approval",
+					Node: "approval",
+				},
+			},
+			{
+				SessionID:   "sess-approval-journal",
+				Sequence:    2,
+				Node:        "fetch",
+				EventType:   agentstate.EventTypeInterrupt,
+				Timestamp:   now.Add(1 * time.Second),
+				PayloadText: "awaiting approval",
+				Checkpoint: &agentstate.CheckpointRef{
+					ID:   "cp-journal-approval",
+					Node: "fetch",
+				},
+			},
+		},
+	}
+
+	view := BuildReplayView(session)
+
+	if view.ApprovalStatus != agentstate.ApprovalStatusPending {
+		t.Fatalf("expected pending approval reconstructed from journal, got %+v", view)
+	}
+	if view.ApprovalReason != "web_fetch_approval_required" {
+		t.Fatalf("expected approval reason from journal, got %+v", view)
+	}
+	if view.ApprovalCheckpointID != "cp-journal-approval" {
+		t.Fatalf("expected approval checkpoint from journal, got %+v", view)
+	}
+	if view.CheckpointState.Status != "interrupted" || !view.CheckpointState.Active {
+		t.Fatalf("expected checkpoint state from journal, got %+v", view.CheckpointState)
+	}
+}
+
+func TestBuildReplayView_ReconstructsResolvedApprovalFromJournalWhenSnapshotMissing(t *testing.T) {
+	now := time.Now()
+	session := &RuntimeSession{
+		SessionID: "sess-approval-resolved-journal",
+		Request: RequestEnvelope{
+			Question: "journal approval resolved fallback",
+		},
+		Journal: []agentstate.RuntimeEvent{
+			{
+				SessionID:   "sess-approval-resolved-journal",
+				Sequence:    1,
+				Node:        "approval",
+				EventType:   agentstate.EventTypeApprovalPending,
+				Timestamp:   now,
+				PayloadText: "fetch_approval_required",
+				Checkpoint: &agentstate.CheckpointRef{
+					ID:   "cp-resolved-approval",
+					Node: "approval",
+				},
+			},
+			{
+				SessionID:   "sess-approval-resolved-journal",
+				Sequence:    2,
+				Node:        "approval",
+				EventType:   agentstate.EventTypeApprovalResolved,
+				Timestamp:   now.Add(1 * time.Second),
+				PayloadText: agentstate.ApprovalStatusApproved,
+				Checkpoint: &agentstate.CheckpointRef{
+					ID:   "cp-resolved-approval",
+					Node: "approval",
+				},
+			},
+			{
+				SessionID:   "sess-approval-resolved-journal",
+				Sequence:    3,
+				Node:        "approval",
+				EventType:   agentstate.EventTypeResumeCompleted,
+				Timestamp:   now.Add(2 * time.Second),
+				PayloadText: "checkpoint_id=cp-resolved-approval",
+				Checkpoint: &agentstate.CheckpointRef{
+					ID:   "cp-resolved-approval",
+					Node: "approval",
+				},
+			},
+		},
+	}
+
+	view := BuildReplayView(session)
+
+	if view.ApprovalStatus != agentstate.ApprovalStatusApproved {
+		t.Fatalf("expected approved status reconstructed from journal, got %+v", view)
+	}
+	if view.ApprovalCheckpointID != "cp-resolved-approval" {
+		t.Fatalf("expected approval checkpoint from journal, got %+v", view)
+	}
+	if view.CheckpointState.Status != "resumed" || view.CheckpointState.Active {
+		t.Fatalf("expected resumed checkpoint state from journal, got %+v", view.CheckpointState)
+	}
+}

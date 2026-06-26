@@ -121,7 +121,8 @@ func NewService(opts ServiceOptions) (*Service, error) {
 	}
 
 	service := &Service{
-		runner:        runner,
+		kernelRunner:  runner,
+		runtimeEngine: agentruntime.NewEngine(runner),
 		handoff:       handoffBuilder,
 		registry:      registry,
 		bindings:      bindings,

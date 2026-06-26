@@ -34,6 +34,7 @@ type RagChatService struct {
 	agentRuntime            AgentRuntimeService
 	agentRuntimeMode        string
 	chatContextBudget       ChatContextBudgetOptions
+	summaryTrigger          raghistory.SummaryTrigger
 }
 
 type LongTermMemoryWritebackInput struct {
@@ -57,6 +58,7 @@ type RagChatDeps struct {
 	ChatService         aichat.LLMService
 	Tracer              *ChatTracer
 	AgentRuntime        AgentRuntimeService
+	SummaryTrigger      raghistory.SummaryTrigger
 }
 
 // RagChatOptions configures optional RagChatService behavior at construction time.
@@ -117,6 +119,7 @@ func NewRagChatServiceWithDeps(deps RagChatDeps, opts RagChatOptions) (*RagChatS
 	service.longTermMemoryWriteback = opts.LongTermMemoryWriteback
 	service.toolWorkflow = opts.ToolWorkflow
 	service.agentRuntime = deps.AgentRuntime
+	service.summaryTrigger = deps.SummaryTrigger
 	service.chatContextBudget = opts.ChatContextBudget.normalized()
 	return service, nil
 }

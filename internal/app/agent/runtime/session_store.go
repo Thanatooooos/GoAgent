@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	agentstate "local/rag-project/internal/app/agent/state"
 )
 
 // SessionStore persists resumable runtime sessions outside the checkpoint bytes.
@@ -27,6 +29,7 @@ type SessionStore interface {
 }
 
 // CloneSession deep-copies a runtime session for safe persistence and replay.
+// Snapshot compatibility defaults are normalized as part of the clone.
 func CloneSession(session *RuntimeSession) *RuntimeSession {
 	if session == nil {
 		return nil
@@ -38,6 +41,39 @@ func CloneSession(session *RuntimeSession) *RuntimeSession {
 	cloned.Journal = cloneRuntimeEvents(session.Journal)
 	cloned.Checkpoint = cloneRuntimeCheckpoint(session.Checkpoint)
 	return &cloned
+}
+
+// cloneCompatibleSession enforces the explicit snapshot compatibility path used
+// at session persistence boundaries: older snapshots are normalized during the
+// clone, while unsupported future versions are rejected.
+func cloneCompatibleSession(session *RuntimeSession) (*RuntimeSession, error) {
+	if session == nil {
+		return nil, nil
+	}
+	if err := validateSessionSnapshotCompatibility(session); err != nil {
+		return nil, err
+	}
+	return CloneSession(session), nil
+}
+
+func validateSessionSnapshotCompatibility(session *RuntimeSession) error {
+	if session == nil {
+		return nil
+	}
+	if err := validateSessionSnapshot("initial_snapshot", session.InitialSnapshot); err != nil {
+		return err
+	}
+	if err := validateSessionSnapshot("snapshot", session.Snapshot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSessionSnapshot(label string, snapshot agentstate.StateSnapshot) error {
+	if err := agentstate.ValidateSnapshotCompatibility(snapshot); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return nil
 }
 
 func checkpointKey(checkpointID string) (string, error) {

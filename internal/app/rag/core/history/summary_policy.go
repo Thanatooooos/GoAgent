@@ -5,6 +5,7 @@ import "strings"
 type SummaryBudgetInput struct {
 	MessageCount int
 	TotalChars   int
+	TotalTokens  int
 	Messages     []string
 }
 
@@ -15,6 +16,16 @@ type SummaryBudgetTier struct {
 
 func SelectSummaryBudget(input SummaryBudgetInput, options SummaryBudgetOptions) SummaryBudgetTier {
 	options = normalizeSummaryBudgetOptions(options)
+
+	if input.TotalTokens > 0 {
+		if input.TotalTokens >= 4000 {
+			return SummaryBudgetTier{Name: "large", MaxChars: options.LargeMaxChars}
+		}
+		if input.TotalTokens >= 2000 || containsDenseTechnicalSignals(input.Messages) {
+			return SummaryBudgetTier{Name: "medium", MaxChars: options.MediumMaxChars}
+		}
+		return SummaryBudgetTier{Name: "small", MaxChars: options.SmallMaxChars}
+	}
 
 	if options.LargeMessageCountMin > 0 && input.MessageCount >= options.LargeMessageCountMin {
 		return SummaryBudgetTier{Name: "large", MaxChars: options.LargeMaxChars}

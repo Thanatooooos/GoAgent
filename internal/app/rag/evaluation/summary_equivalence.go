@@ -126,15 +126,36 @@ func RunSummaryEquivalence(ctx context.Context, answerGen SummaryAnswerGenerator
 	if judge == nil {
 		return SummaryEquivalenceEvaluation{}, fmt.Errorf("judge is required")
 	}
+	return runSummaryEquivalenceWithContexts(
+		ctx,
+		answerGen,
+		judge,
+		sample.NextTurnEval.Queries,
+		renderSourceMessages(sample.Input.SourceMessages),
+		strings.TrimSpace(generated.Rendered),
+	)
+}
+
+func runSummaryEquivalenceWithContexts(
+	ctx context.Context,
+	answerGen SummaryAnswerGenerator,
+	judge Judge,
+	queries []SummaryNextTurnQuery,
+	fullContext string,
+	summaryContext string,
+) (SummaryEquivalenceEvaluation, error) {
+	if answerGen == nil {
+		return SummaryEquivalenceEvaluation{}, fmt.Errorf("summary answer generator is required")
+	}
+	if judge == nil {
+		return SummaryEquivalenceEvaluation{}, fmt.Errorf("judge is required")
+	}
 
 	config := fixedSummaryAnswerConfig()
-	fullContext := renderSourceMessages(sample.Input.SourceMessages)
-	summaryContext := strings.TrimSpace(generated.Rendered)
-
-	results := make([]SummaryEquivalenceQueryResult, 0, len(sample.NextTurnEval.Queries))
+	results := make([]SummaryEquivalenceQueryResult, 0, len(queries))
 	totalScore := 0.0
 	allPassed := true
-	for _, query := range sample.NextTurnEval.Queries {
+	for _, query := range queries {
 		fullAnswer, err := answerGen.Answer(ctx, SummaryAnswerInput{
 			Question: query.Query,
 			Context:  fullContext,

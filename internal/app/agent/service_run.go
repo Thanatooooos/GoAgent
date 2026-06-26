@@ -52,7 +52,7 @@ func (s *Service) RunHandoffDetailed(ctx context.Context, req Request) (HandoffR
 }
 
 func (s *Service) runDetailedSession(ctx context.Context, req Request) (*agentruntime.RuntimeSession, RunOutcome, error) {
-	if s == nil || s.runner == nil {
+	if s == nil || s.runtimeEngine == nil {
 		return nil, RunOutcome{}, serviceError(ErrorCodeServiceNotInitialized, "agent service is not initialized")
 	}
 	question := strings.TrimSpace(req.Question)
@@ -64,8 +64,12 @@ func (s *Service) runDetailedSession(ctx context.Context, req Request) (*agentru
 	logAgentRunStart(req, s.pattern, s.runtimeName, s.maxIterations)
 	logAgentToolStageSeed(req, session)
 	checkpointID := newCheckpointID(session)
-	final, err := s.runner.RunWithCheckpoint(ctx, session, checkpointID)
-	if err != nil {
+	runResult, err := s.runtimeEngine.RunWithCheckpoint(ctx, session, checkpointID)
+	final := session
+	if runResult != nil && runResult.Session != nil {
+		final = runResult.Session
+	}
+	if runResult != nil && runResult.Outcome.Decision == agentruntime.DecisionWaitApproval {
 		if s.normalizePendingApproval(final, checkpointID) {
 			if storeErr := s.storePendingSession(ctx, checkpointID, final); storeErr != nil {
 				logAgentExecutionError("store_pending_session", req.TraceID, checkpointID, storeErr)
@@ -75,6 +79,9 @@ func (s *Service) runDetailedSession(ctx context.Context, req Request) (*agentru
 			logAgentRunCompleted(final, outcome)
 			return final, outcome, nil
 		}
+		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeRuntimeExecutionFailed, "agent runtime execution failed", "normalize_pending_approval", err)
+	}
+	if err != nil {
 		logAgentExecutionError("run_with_checkpoint", req.TraceID, checkpointID, err)
 		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeRuntimeExecutionFailed, "agent runtime execution failed", "run_with_checkpoint", err)
 	}
@@ -139,6 +146,7 @@ func (s *Service) normalizePendingApproval(session *agentruntime.RuntimeSession,
 		if session.Snapshot.Approval.RequestedAt.IsZero() {
 			session.Snapshot.Approval.RequestedAt = now
 		}
+		appendApprovalRuntimeEvent(session, "approval", agentstate.EventTypeApprovalPending, session.Snapshot.Approval.Reason, session.Snapshot.Approval.CheckpointID)
 		return true
 	}
 
@@ -149,12 +157,30 @@ func (s *Service) normalizePendingApproval(session *agentruntime.RuntimeSession,
 	session.Snapshot.Approval = agentstate.ApprovalState{
 		Status:       agentstate.ApprovalStatusPending,
 		Reason:       approvalRequiredReason(session.Snapshot.Execution.CurrentNode),
-		Node:         session.Snapshot.Execution.CurrentNode,
+		Node:         "approval",
 		Capability:   capabilityName,
 		CheckpointID: firstNonEmpty(checkpointID, checkpointIDFromSession(session)),
 		RerunNode:    rerunNode,
 		RequestedAt:  now,
 	}
+	if pending := agentruntime.BuildPendingApprovalDelta(
+		session.Snapshot.Approval.Reason,
+		capabilityName,
+		rerunNode,
+		session.Snapshot.Approval.CheckpointID,
+		now,
+	); pending != nil {
+		session.Snapshot.Approval = agentstate.ApprovalState{
+			Status:       derefString(pending.Status),
+			Reason:       derefString(pending.Reason),
+			Node:         derefString(pending.Node),
+			Capability:   derefString(pending.Capability),
+			CheckpointID: derefString(pending.CheckpointID),
+			RerunNode:    derefString(pending.RerunNode),
+			RequestedAt:  derefTime(pending.RequestedAt),
+		}
+	}
+	appendApprovalRuntimeEvent(session, "approval", agentstate.EventTypeApprovalPending, session.Snapshot.Approval.Reason, session.Snapshot.Approval.CheckpointID)
 	return true
 }
 
@@ -293,4 +319,29 @@ func boolPtr(value bool) *bool {
 
 func stringPtr(value string) *string {
 	return &value
+}
+
+func appendApprovalRuntimeEvent(session *agentruntime.RuntimeSession, node string, eventType string, payload string, checkpointID string) {
+	if session == nil {
+		return
+	}
+	event := agentstate.NewRuntimeEventAt(time.Now(), session.SessionID, node, eventType, payload)
+	if trimmed := strings.TrimSpace(checkpointID); trimmed != "" {
+		event.Checkpoint = agentstate.NewCheckpointRef(trimmed, node)
+	}
+	appendRuntimeEvent(session, event)
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func derefTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }

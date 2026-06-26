@@ -5,6 +5,7 @@ import (
 
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/convention"
 	infraai "local/rag-project/internal/infra-ai"
 	aichat "local/rag-project/internal/infra-ai/chat"
@@ -33,6 +34,29 @@ func (bootstrapLLMServiceStub) StreamChatWithRequest(convention.ChatRequest, aic
 }
 
 var _ aichat.LLMService = (*bootstrapLLMServiceStub)(nil)
+
+func TestBuildChatContextBudgetOptionsIncludesStageBudgets(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Rag.Memory.ChatContext.MaxPromptTokens = 8000
+	cfg.Rag.Memory.ChatContext.FixedReserveTokens = 800
+	cfg.Rag.Memory.ChatContext.SafetyReserveTokens = 500
+	cfg.Rag.Memory.ChatContext.StageBudget.MemoryTokens = 500
+	cfg.Rag.Memory.ChatContext.StageBudget.SessionRecallTokens = 1500
+	cfg.Rag.Memory.ChatContext.StageBudget.RetrieveTokens = 2000
+	cfg.Rag.Memory.ChatContext.StageBudget.ToolTokens = 1500
+	cfg.Rag.Memory.SummaryToken.MessageOverheadTokens = 4
+
+	got := buildChatContextBudgetOptions(cfg)
+	if got.FixedReserveTokens != 800 ||
+		got.SafetyReserveTokens != 500 ||
+		got.MemoryTokens != 500 ||
+		got.SessionRecallTokens != 1500 ||
+		got.RetrieveTokens != 2000 ||
+		got.ToolTokens != 1500 ||
+		got.MessageOverheadTokens != 4 {
+		t.Fatalf("unexpected chat context budget options: %+v", got)
+	}
+}
 
 func TestBuildLongTermMemoryWriteback(t *testing.T) {
 	t.Parallel()

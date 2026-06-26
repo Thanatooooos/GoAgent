@@ -134,3 +134,40 @@ func TestBuildProjectionTimeline(t *testing.T) {
 		t.Fatalf("expected query to persist at sequence 3, got %+v", timeline[2].Snapshot.Context)
 	}
 }
+
+func TestProjectSnapshotAt_NormalizesLegacySnapshotVersion(t *testing.T) {
+	session := &RuntimeSession{
+		SessionID: "sess-legacy-version",
+		InitialSnapshot: agentstate.StateSnapshot{
+			Request: agentstate.RequestState{
+				Question: "legacy snapshot",
+			},
+		},
+	}
+
+	projected, err := ProjectSnapshotAt(session, 0, nil)
+	if err != nil {
+		t.Fatalf("ProjectSnapshotAt(sequence=0) error = %v", err)
+	}
+
+	if projected.SchemaVersion != agentstate.CurrentSnapshotVersion {
+		t.Fatalf("expected normalized schema version %d, got %d", agentstate.CurrentSnapshotVersion, projected.SchemaVersion)
+	}
+}
+
+func TestProjectSnapshotAt_RejectsUnsupportedFutureSnapshotVersion(t *testing.T) {
+	session := &RuntimeSession{
+		SessionID: "sess-future-version",
+		InitialSnapshot: agentstate.StateSnapshot{
+			SchemaVersion: agentstate.CurrentSnapshotVersion + 1,
+			Request: agentstate.RequestState{
+				Question: "future snapshot",
+			},
+		},
+	}
+
+	_, err := ProjectSnapshotAt(session, 0, nil)
+	if err == nil {
+		t.Fatal("expected unsupported future snapshot version to fail")
+	}
+}

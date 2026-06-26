@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,5 +127,124 @@ func TestFileSessionStoreDeleteIsIdempotent(t *testing.T) {
 	}
 	if ok || stored != nil {
 		t.Fatalf("expected deleted session to remain absent, got ok=%v session=%+v", ok, stored)
+	}
+}
+
+func TestFileSessionStoreGet_NormalizesLegacySnapshotCompatibility(t *testing.T) {
+	rootDir := t.TempDir()
+	store, err := NewFileSessionStore(rootDir)
+	if err != nil {
+		t.Fatalf("NewFileSessionStore() error = %v", err)
+	}
+
+	legacySession := &RuntimeSession{
+		SessionID: "session-legacy-file-store",
+		InitialSnapshot: agentstate.StateSnapshot{
+			Request: agentstate.RequestState{
+				Question: "legacy session",
+			},
+		},
+		Snapshot: agentstate.StateSnapshot{
+			Request: agentstate.RequestState{
+				Question: "legacy session",
+			},
+			Approval: agentstate.ApprovalState{
+				Status:       agentstate.ApprovalStatusPending,
+				CheckpointID: "checkpoint-legacy-file-store",
+			},
+		},
+	}
+
+	payload, err := json.Marshal(legacySession)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	key, err := checkpointKey("checkpoint-legacy-file-store")
+	if err != nil {
+		t.Fatalf("checkpointKey() error = %v", err)
+	}
+	if err := writeStoreFile(store.pathForKey(key), payload); err != nil {
+		t.Fatalf("writeStoreFile() error = %v", err)
+	}
+
+	stored, ok, err := store.Get(context.Background(), "checkpoint-legacy-file-store")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok || stored == nil {
+		t.Fatalf("expected legacy session to load, got ok=%v session=%+v", ok, stored)
+	}
+	if stored.InitialSnapshot.SchemaVersion != agentstate.CurrentSnapshotVersion {
+		t.Fatalf("expected initial snapshot schema version %d, got %d", agentstate.CurrentSnapshotVersion, stored.InitialSnapshot.SchemaVersion)
+	}
+	if stored.Snapshot.SchemaVersion != agentstate.CurrentSnapshotVersion {
+		t.Fatalf("expected snapshot schema version %d, got %d", agentstate.CurrentSnapshotVersion, stored.Snapshot.SchemaVersion)
+	}
+	if stored.Snapshot.Execution.Status != agentstate.ExecutionStatusInterrupted {
+		t.Fatalf("expected legacy approval-pending snapshot to derive interrupted status, got %+v", stored.Snapshot.Execution)
+	}
+}
+
+func TestFileSessionStoreGet_RejectsUnsupportedFutureSnapshotVersion(t *testing.T) {
+	rootDir := t.TempDir()
+	store, err := NewFileSessionStore(rootDir)
+	if err != nil {
+		t.Fatalf("NewFileSessionStore() error = %v", err)
+	}
+
+	futureSession := &RuntimeSession{
+		SessionID: "session-future-file-store",
+		Snapshot: agentstate.StateSnapshot{
+			SchemaVersion: agentstate.CurrentSnapshotVersion + 1,
+			Request: agentstate.RequestState{
+				Question: "future session",
+			},
+		},
+	}
+
+	payload, err := json.Marshal(futureSession)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	key, err := checkpointKey("checkpoint-future-file-store")
+	if err != nil {
+		t.Fatalf("checkpointKey() error = %v", err)
+	}
+	if err := writeStoreFile(store.pathForKey(key), payload); err != nil {
+		t.Fatalf("writeStoreFile() error = %v", err)
+	}
+
+	_, _, err = store.Get(context.Background(), "checkpoint-future-file-store")
+	if err == nil {
+		t.Fatal("expected unsupported future snapshot version to fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported snapshot schema version") {
+		t.Fatalf("expected unsupported snapshot schema version error, got %v", err)
+	}
+}
+
+func TestFileSessionStorePut_RejectsUnsupportedFutureSnapshotVersion(t *testing.T) {
+	rootDir := t.TempDir()
+	store, err := NewFileSessionStore(rootDir)
+	if err != nil {
+		t.Fatalf("NewFileSessionStore() error = %v", err)
+	}
+
+	session := &RuntimeSession{
+		SessionID: "session-future-put",
+		Snapshot: agentstate.StateSnapshot{
+			SchemaVersion: agentstate.CurrentSnapshotVersion + 1,
+			Request: agentstate.RequestState{
+				Question: "future put session",
+			},
+		},
+	}
+
+	err = store.Put(context.Background(), "checkpoint-future-put", session)
+	if err == nil {
+		t.Fatal("expected Put() to reject unsupported future snapshot version")
+	}
+	if !strings.Contains(err.Error(), "unsupported snapshot schema version") {
+		t.Fatalf("expected unsupported snapshot schema version error, got %v", err)
 	}
 }

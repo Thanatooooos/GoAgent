@@ -63,6 +63,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	s.emitPreparedObservabilityEvents(prepared, question, sink)
 
 	retrieveResult, fallbackPrompt := s.applyFallbackGuard(ctx, prepared, question, sink)
+	retrieveResult = s.applyRetrieveContextBudget(ctx, prepared.state.traceID, retrieveResult)
 
 	toolStage, err := s.runToolWorkflowStage(
 		ctx,
@@ -85,6 +86,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 			},
 		}
 	}
+	toolStage = s.applyToolContextBudget(ctx, prepared.state.traceID, toolStage)
 	logRagChatToolStageResult(ctx, toolStage)
 	s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, buildRuntimePathTraceExtra(chatPath, resolveToolBackend(toolStage), input, s.agentRuntimeMode))
 	if toolStage.result.Degraded {

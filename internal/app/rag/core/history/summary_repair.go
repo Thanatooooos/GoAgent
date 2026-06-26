@@ -1,4 +1,4 @@
-﻿package history
+package history
 
 import "strings"
 
@@ -19,80 +19,83 @@ type summaryRepairItem struct {
 }
 
 var summaryRepairBoundaryMarkers = []string{
-	"当前不",
-	"当前仅",
-	"当前先",
-	"暂不",
-	"先不",
-	"不要",
-	"不能",
-	"不进入",
-	"不做",
-	"不改",
-	"避免",
-	"只保留",
-	"仅保留",
-	"当前边界",
+	"\u5f53\u524d\u4e0d",
+	"\u5f53\u524d\u4ec5",
+	"\u5f53\u524d\u5148",
+	"\u6682\u4e0d",
+	"\u5148\u4e0d",
+	"\u4e0d\u8981",
+	"\u4e0d\u80fd",
+	"\u4e0d\u8fdb\u5165",
+	"\u4e0d\u505a",
+	"\u4e0d\u6539",
+	"\u907f\u514d",
+	"\u53ea\u4fdd\u7559",
+	"\u4ec5\u4fdd\u7559",
+	"\u5f53\u524d\u8fb9\u754c",
 }
 
 var summaryRepairUnresolvedMarkers = []string{
-	"待确认",
-	"待核实",
-	"待验证",
-	"未确认",
-	"未核实",
-	"未验证",
-	"还没确认",
-	"还未确认",
-	"没确认",
-	"需要确认",
-	"有待确认",
-	"暂不确定",
-	"不确定",
-	"候选",
-	"疑似",
+	"\u5f85\u786e\u8ba4",
+	"\u5f85\u6838\u5b9e",
+	"\u5f85\u9a8c\u8bc1",
+	"\u672a\u786e\u8ba4",
+	"\u672a\u6838\u5b9e",
+	"\u672a\u9a8c\u8bc1",
+	"\u8fd8\u6ca1\u786e\u8ba4",
+	"\u8fd8\u672a\u786e\u8ba4",
+	"\u6ca1\u786e\u8ba4",
+	"\u9700\u8981\u786e\u8ba4",
+	"\u6709\u5f85\u786e\u8ba4",
+	"\u6682\u4e0d\u786e\u5b9a",
+	"\u4e0d\u786e\u5b9a",
+	"\u5019\u9009",
+	"\u7591\u4f3c",
+	"\u5efa\u8bae",
+	"\u63a8\u8350",
+	"\u53ef\u8003\u8651",
+	"\u53ef\u4ee5\u8003\u8651",
 }
 
 var summaryRepairProgressMarkers = []string{
-	"已确认",
-	"已经确认",
-	"已完成",
-	"已经完成",
-	"已修复",
-	"已经修复",
-	"已更新",
-	"已经更新",
-	"已切换",
-	"已经切换",
-	"已整理",
-	"已收敛",
-	"已落地",
-	"刚确认",
-	"刚完成",
-	"刚修复",
-	"刚更新",
-	"确认完成",
-	"完成了",
-	"修复完成",
+	"\u5df2\u786e\u8ba4",
+	"\u5df2\u7ecf\u786e\u8ba4",
+	"\u5df2\u5b8c\u6210",
+	"\u5df2\u7ecf\u5b8c\u6210",
+	"\u5df2\u4fee\u590d",
+	"\u5df2\u7ecf\u4fee\u590d",
+	"\u5df2\u66f4\u65b0",
+	"\u5df2\u7ecf\u66f4\u65b0",
+	"\u5df2\u5207\u6362",
+	"\u5df2\u7ecf\u5207\u6362",
+	"\u5df2\u6574\u7406",
+	"\u5df2\u6536\u655b",
+	"\u5df2\u843d\u5730",
+	"\u521a\u786e\u8ba4",
+	"\u521a\u5b8c\u6210",
+	"\u521a\u4fee\u590d",
+	"\u521a\u66f4\u65b0",
+	"\u786e\u8ba4\u5b8c\u6210",
+	"\u5b8c\u6210\u4e86",
+	"\u4fee\u590d\u5b8c\u6210",
 }
 
 var summaryRepairBackgroundMarkers = []string{
-	"不是当前重点",
-	"只是背景问题",
-	"背景问题",
-	"暂不处理",
-	"不是当前主线",
+	"\u4e0d\u662f\u5f53\u524d\u91cd\u70b9",
+	"\u53ea\u662f\u80cc\u666f\u95ee\u9898",
+	"\u80cc\u666f\u95ee\u9898",
+	"\u6682\u4e0d\u5904\u7406",
+	"\u4e0d\u662f\u5f53\u524d\u4e3b\u7ebf",
 }
 
 var summaryRepairActivePriorityMarkers = []string{
-	"当前真正活跃的目标",
-	"当前活跃目标",
-	"当前重点",
-	"本周重点",
-	"当前主线",
+	"\u5f53\u524d\u771f\u6b63\u6d3b\u8dc3\u7684\u76ee\u6807",
+	"\u5f53\u524d\u6d3b\u8dc3\u76ee\u6807",
+	"\u5f53\u524d\u91cd\u70b9",
+	"\u672c\u5468\u91cd\u70b9",
+	"\u5f53\u524d\u4e3b\u7ebf",
 }
 
-// RepairStructuredSummary conservatively reuses only already-present content.
 func RepairStructuredSummary(summary StructuredSummary) StructuredSummary {
 	summary.Normalize()
 
@@ -201,7 +204,6 @@ func appendUniqueSummaryItem(items []string, item string) []string {
 	return append(items, item)
 }
 
-
 func summaryRepairSectionPriority(section summaryRepairSection) int {
 	switch section {
 	case summaryRepairSectionOpenQuestions:
@@ -225,7 +227,6 @@ func repairSummarySectionForItem(source summaryRepairSection, item string) summa
 	if isSummaryRepairBackgroundOnlyItem(item) {
 		return summaryRepairSectionBackgroundIssues
 	}
-	// Unresolved content is safer than boundary language, so it wins first.
 	if isSummaryRepairUnresolvedItem(item) {
 		return summaryRepairSectionOpenQuestions
 	}
@@ -294,5 +295,3 @@ func dedupeSummaryItems(items []string) []string {
 	}
 	return result
 }
-
-

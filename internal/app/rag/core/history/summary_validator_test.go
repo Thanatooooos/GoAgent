@@ -44,6 +44,24 @@ func TestValidateStructuredSummaryAcceptsCriticalEntityCoverage(t *testing.T) {
 	}
 }
 
+func TestValidateStructuredSummaryIgnoresCodeSnippetFragmentsWhenCheckingCriticalEntities(t *testing.T) {
+	summary := StructuredSummary{
+		SchemaVersion:    1,
+		Goal:             "???????",
+		EstablishedFacts: []string{"?????????????????"},
+	}
+	source := []domain.ConversationMessage{
+		{Role: "assistant", Content: "???RRF(d, k) = sum_{i=1}^{n} 1 / (k + rank_i(d))"},
+		{Role: "assistant", Content: "for rank, (doc_id, score) in enumerate(result, start=1): sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)"},
+		{Role: "assistant", Content: `input_ids = tokenizer.encode("rewrite", return_tensors="pt"); tokenizer.decode(outputs[0], skip_special_tokens=True)`},
+	}
+
+	result := ValidateStructuredSummary(summary, source)
+	if !result.Accepted {
+		t.Fatalf("expected validator to ignore code snippet fragments, got %+v", result)
+	}
+}
+
 func TestGenerateStructuredSummaryRepairsBeforeValidation(t *testing.T) {
 	llm := &repairAwareLLMStub{
 		response: `{"schema_version":1,"goal":"整理结构化摘要","established_facts":["接口方案还没确认"]}`,

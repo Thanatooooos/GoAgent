@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	rageval "local/rag-project/internal/app/rag/evaluation"
@@ -84,7 +86,7 @@ func TestRunUsesInjectedRegistryAndExecutesSuite(t *testing.T) {
 			buildRuntime: func(context.Context, string) (*ragbootstrap.Runtime, error) {
 				return &ragbootstrap.Runtime{}, nil
 			},
-			buildRegistry: func(*ragbootstrap.Runtime, rageval.SuiteName, []string) (*rageval.Registry, error) {
+			buildRegistry: func(*ragbootstrap.Runtime, rageval.SuiteName, []string, summaryEvalOptions) (*rageval.Registry, error) {
 				return registry, nil
 			},
 		},
@@ -114,8 +116,86 @@ func TestRunUsesInjectedRegistryAndExecutesSuite(t *testing.T) {
 	}
 }
 
+func TestRunWithDepsPassesSummaryStrategyFlags(t *testing.T) {
+	var captured summaryEvalOptions
+	registry := rageval.NewRegistry()
+	if err := registry.Register(&evalRunnerTestEvaluator{
+		suite:       rageval.SuiteSummary,
+		loadSamples: []byte(`[{"name":"sample-1"}]`),
+		runResult: rageval.SuiteResult{
+			Suite:       string(rageval.SuiteSummary),
+			RunMetadata: rageval.RunMetadata{Suite: string(rageval.SuiteSummary), SampleSetID: "summary.json"},
+		},
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	exitCode := runWithDeps(
+		[]string{"-suite", "summary", "-input", "summary.json", "-summary-mode", "strategy", "-summary-thresholds", "4,8,12"},
+		io.Discard,
+		io.Discard,
+		evalRunnerDeps{
+			buildRuntime: func(context.Context, string) (*ragbootstrap.Runtime, error) {
+				return &ragbootstrap.Runtime{LLMChat: summaryOnlyLLMService{}}, nil
+			},
+			buildRegistry: func(_ *ragbootstrap.Runtime, _ rageval.SuiteName, _ []string, options summaryEvalOptions) (*rageval.Registry, error) {
+				captured = options
+				return registry, nil
+			},
+		},
+	)
+	if exitCode != 0 {
+		t.Fatalf("runWithDeps() exitCode = %d, want 0", exitCode)
+	}
+	if captured.mode != rageval.SummaryEvalModeStrategy {
+		t.Fatalf("mode = %q, want %q", captured.mode, rageval.SummaryEvalModeStrategy)
+	}
+	if captured.thresholdUnit != rageval.SummaryStrategyThresholdTurns {
+		t.Fatalf("thresholdUnit = %q, want turns", captured.thresholdUnit)
+	}
+	if len(captured.thresholds) != 3 {
+		t.Fatalf("thresholds = %#v, want 3 items", captured.thresholds)
+	}
+}
+
+func TestRunWithDepsPassesSummaryPromptVariantFlag(t *testing.T) {
+	var captured summaryEvalOptions
+	registry := rageval.NewRegistry()
+	if err := registry.Register(&evalRunnerTestEvaluator{
+		suite:       rageval.SuiteSummary,
+		loadSamples: []byte(`[{"name":"sample-1"}]`),
+		runResult: rageval.SuiteResult{
+			Suite:       string(rageval.SuiteSummary),
+			RunMetadata: rageval.RunMetadata{Suite: string(rageval.SuiteSummary), SampleSetID: "summary.json"},
+		},
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	exitCode := runWithDeps(
+		[]string{"-suite", "summary", "-input", "summary.json", "-summary-prompt-variant", "legacy"},
+		io.Discard,
+		io.Discard,
+		evalRunnerDeps{
+			buildRuntime: func(context.Context, string) (*ragbootstrap.Runtime, error) {
+				return &ragbootstrap.Runtime{LLMChat: summaryOnlyLLMService{}}, nil
+			},
+			buildRegistry: func(_ *ragbootstrap.Runtime, _ rageval.SuiteName, _ []string, options summaryEvalOptions) (*rageval.Registry, error) {
+				captured = options
+				return registry, nil
+			},
+		},
+	)
+	if exitCode != 0 {
+		t.Fatalf("runWithDeps() exitCode = %d, want 0", exitCode)
+	}
+	if captured.promptVariant != raghistory.StructuredSummaryPromptVariantLegacy {
+		t.Fatalf("promptVariant = %q, want legacy", captured.promptVariant)
+	}
+}
+
 func TestBuildPhase1RegistrySummaryDoesNotRequireRewriteService(t *testing.T) {
-	registry, err := buildPhase1Registry(&ragbootstrap.Runtime{LLMChat: summaryOnlyLLMService{}}, rageval.SuiteSummary, nil, rewriteEvalOptions{})
+	registry, err := buildPhase1Registry(&ragbootstrap.Runtime{LLMChat: summaryOnlyLLMService{}}, rageval.SuiteSummary, nil, rewriteEvalOptions{}, summaryEvalOptions{})
 	if err != nil {
 		t.Fatalf("buildPhase1Registry(summary) error = %v", err)
 	}
@@ -131,7 +211,7 @@ func TestBuildPhase1RegistryRewriteDoesNotRequireLLMChat(t *testing.T) {
 	registry, err := buildPhase1Registry(&ragbootstrap.Runtime{
 		Rewrite:  rewriteOnlyService{},
 		Retrieve: rewriteOnlyRetrieveService{},
-	}, rageval.SuiteRewrite, nil, rewriteEvalOptions{})
+	}, rageval.SuiteRewrite, nil, rewriteEvalOptions{}, summaryEvalOptions{})
 	if err != nil {
 		t.Fatalf("buildPhase1Registry(rewrite) error = %v", err)
 	}
@@ -151,7 +231,7 @@ func TestBuildPhase1RegistrySummaryWiresJudgeAndEquivalence(t *testing.T) {
 		"draft spec first",
 		`{"passed":true,"score":1,"details":{"dangerous_drift":false}}`,
 	}}
-	registry, err := buildPhase1Registry(&ragbootstrap.Runtime{LLMChat: chat}, rageval.SuiteSummary, nil, rewriteEvalOptions{})
+	registry, err := buildPhase1Registry(&ragbootstrap.Runtime{LLMChat: chat}, rageval.SuiteSummary, nil, rewriteEvalOptions{}, summaryEvalOptions{})
 	if err != nil {
 		t.Fatalf("buildPhase1Registry(summary) error = %v", err)
 	}
@@ -233,8 +313,8 @@ func TestRunSummarySuiteEndToEndEmitsSharedContract(t *testing.T) {
 			buildRuntime: func(context.Context, string) (*ragbootstrap.Runtime, error) {
 				return &ragbootstrap.Runtime{LLMChat: llm}, nil
 			},
-			buildRegistry: func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, kbIDs []string) (*rageval.Registry, error) {
-				return buildPhase1Registry(runtime, suite, kbIDs, rewriteEvalOptions{})
+			buildRegistry: func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, kbIDs []string, summaryOpts summaryEvalOptions) (*rageval.Registry, error) {
+				return buildPhase1Registry(runtime, suite, kbIDs, rewriteEvalOptions{}, summaryOpts)
 			},
 		},
 	)
@@ -286,8 +366,8 @@ func TestRunRewriteSuiteEndToEndUsesDefaultAssetPath(t *testing.T) {
 					Retrieve: rewriteOnlyRetrieveService{},
 				}, nil
 			},
-			buildRegistry: func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, kbIDs []string) (*rageval.Registry, error) {
-				return buildPhase1Registry(runtime, suite, kbIDs, rewriteEvalOptions{})
+			buildRegistry: func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, kbIDs []string, summaryOpts summaryEvalOptions) (*rageval.Registry, error) {
+				return buildPhase1Registry(runtime, suite, kbIDs, rewriteEvalOptions{}, summaryOpts)
 			},
 		},
 	)
@@ -335,8 +415,8 @@ func TestRunAllSuitesEndToEndEmitsSuiteResultArray(t *testing.T) {
 					Retrieve: rewriteOnlyRetrieveService{},
 				}, nil
 			},
-			buildRegistry: func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, kbIDs []string) (*rageval.Registry, error) {
-				return buildPhase1Registry(runtime, suite, kbIDs, rewriteEvalOptions{})
+			buildRegistry: func(runtime *ragbootstrap.Runtime, suite rageval.SuiteName, kbIDs []string, summaryOpts summaryEvalOptions) (*rageval.Registry, error) {
+				return buildPhase1Registry(runtime, suite, kbIDs, rewriteEvalOptions{}, summaryOpts)
 			},
 		},
 	)

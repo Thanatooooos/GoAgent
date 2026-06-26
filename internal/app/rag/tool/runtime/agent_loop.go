@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"local/rag-project/internal/app/rag/core/tokenbudget"
 	. "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/log"
 )
@@ -234,13 +235,24 @@ func (w *AgentLoop) Run(ctx context.Context, input WorkflowInput) (WorkflowResul
 		agentState = state
 	}
 
+	renderedContext := RenderContextWithRegistry(w.executor.registry, allResults)
+	var contextBudget tokenbudget.TruncationStats
+	if input.ContextTokenBudget > 0 {
+		renderedContext, contextBudget = RenderContextWithRegistryWithinBudget(
+			w.executor.registry,
+			allResults,
+			input.ContextTokenBudget,
+			input.ContextEstimator,
+		)
+	}
 	workflowResult := WorkflowResult{
 		Used:           len(allResults) > 0,
-		Context:        RenderContextWithRegistry(w.executor.registry, allResults),
+		Context:        renderedContext,
 		AnswerGuidance: BuildAnswerGuidanceWithRegistry(w.executor.registry, allResults),
 		Control:        deriveWorkflowControlWithRegistry(input, allResults, w.executor.registry),
 		Calls:          allCalls,
 		Rounds:         rounds,
+		ContextBudget:  contextBudget,
 	}
 	workflowResult.TraceMeta = buildWorkflowTraceMetaWithRegistry(workflowResult.Control, input.RetrieveResult, allResults, w.executor.registry)
 	if len(degradeReasons) > 0 {

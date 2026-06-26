@@ -28,7 +28,7 @@ func main() {
 	configDir := flag.String("config-dir", "configs", "config directory used with -execute")
 	jsonOutput := flag.Bool("json", false, "print evaluation summary as JSON")
 	outputPath := flag.String("output", "", "write evaluation summary to a file instead of stdout")
-	rerankModel := flag.String("rerank-model", "", "optional rerank model override, e.g. qwen3-rerank or rerank-noop")
+	rerankModel := flag.String("rerank-model", "", "optional rerank model override, e.g. qwen3-reranker-8b or rerank-noop")
 	vectorTopKMultiplier := flag.Int("vector-topk-multiplier", 0, "optional override for rag.search.channels.vector-global.top-k-multiplier")
 	searchModeOverride := flag.String("search-mode", "", "optional retrieval mode override: semantic, keyword, hybrid, auto")
 	rewrite := flag.Bool("rewrite", false, "run query rewrite before retrieval (uses LLM API when enabled in config)")

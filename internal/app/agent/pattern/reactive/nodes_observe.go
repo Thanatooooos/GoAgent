@@ -60,24 +60,17 @@ func approvalDeltaForPolicy(session *agentruntime.RuntimeSession, policy observe
 		return nil
 	}
 	now := time.Now()
-	status := agentstate.ApprovalStatusPending
-	reason := policy.Reason
-	node := branchApproval
-	capability := policy.ApprovalCapability
-	rerunNode := policy.ApprovalRerunNode
 	checkpointID := ""
 	if session != nil && session.Checkpoint != nil {
 		checkpointID = session.Checkpoint.ID
 	}
-	return &agentstate.ApprovalDelta{
-		Status:       &status,
-		Reason:       &reason,
-		Node:         &node,
-		Capability:   stringPtrIfNotEmpty(capability),
-		CheckpointID: stringPtrIfNotEmpty(checkpointID),
-		RerunNode:    stringPtrIfNotEmpty(rerunNode),
-		RequestedAt:  &now,
-	}
+	return agentruntime.BuildPendingApprovalDelta(
+		policy.Reason,
+		policy.ApprovalCapability,
+		policy.ApprovalRerunNode,
+		checkpointID,
+		now,
+	)
 }
 
 func maybeOverrideObservePolicy(ctx context.Context, planner agentplanner.Planner, session *agentruntime.RuntimeSession, baseline observePolicyResult, outputMode string) observePolicyResult {

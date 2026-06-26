@@ -119,3 +119,24 @@ Phase 1 does not deliver:
 - Checklist status did not change today: Phase 1 framework work remains largely
   implemented, while full `summary` suite execution is still blocked by runtime
   model availability and unfinished sample authoring under Task 6.
+
+### 8. Add summary strategy evaluation mode
+
+- [ ] Extend the `summary` evaluator with `standard` and `strategy` execution
+      modes.
+- [ ] Add runner flags for global threshold sweeps, including at least
+      `-summary-mode` and `-summary-thresholds`.
+- [ ] Extend the summary sample schema with an optional `strategy_eval` block
+      containing checkpoint-based evaluation contracts.
+- [ ] Implement repeated incremental summary compression simulation across full
+      multi-turn dialogues.
+- [ ] Add token accounting for baseline full-context cost versus
+      summary-strategy cost.
+- [ ] Reuse summary rule checks, field judge checks, and downstream equivalence
+      checks at checkpoint and final-eval boundaries.
+- [ ] Emit threshold-level sample artifacts and suite aggregates, including
+      Pareto-candidate reporting.
+- [ ] Author an initial strategy-focused summary sample set that is dense enough
+      to expose repeated-compression drift.
+- [ ] Add focused tests for turn replay, threshold sweeps, checkpoint
+      evaluation, token accounting, and aggregate reporting.
