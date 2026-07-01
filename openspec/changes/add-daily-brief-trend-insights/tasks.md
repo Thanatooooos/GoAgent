@@ -24,6 +24,8 @@ This change does not deliver:
 - [ ] Confirm that user-facing copy must avoid explicit `7d` / `30d` labels.
 - [ ] Confirm that the first page load returns at most one primary domain
       insight.
+- [ ] Confirm that the top module is centered on one analytical paragraph with
+      supporting signals, not on a single short headline.
 
 Verification:
 
@@ -37,6 +39,8 @@ Verification:
 - [ ] Define the `AI` extension axes for Phase 1.
 - [ ] Define signal kinds: `rising`, `falling`, `new`, `persistent`, `shift`.
 - [ ] Define evidence-group and methodology contracts.
+- [ ] Define the sibling `dailybrief/trend` package boundary and its public
+      entrypoints.
 
 Verification:
 
@@ -61,6 +65,7 @@ Verification:
 
 - [ ] Define `TrendObservation`.
 - [ ] Define `TrendInsightSnapshot`.
+- [ ] Define `background_json` as part of the same snapshot record.
 - [ ] Define how evidence refs link back to visible content.
 - [ ] Define the latest-snapshot read rule for the page.
 
@@ -75,6 +80,8 @@ Verification:
 - [ ] Define frontend empty/degraded/absent behavior for the trend module.
 - [ ] Define evidence expansion behavior.
 - [ ] Define optional methodology display behavior.
+- [ ] Define evidence priority as `brief item` first and candidate fallback
+      second.
 
 Verification:
 
@@ -85,7 +92,7 @@ Verification:
 ## 6. Define Rollout and Validation Plan
 
 - [ ] Define a Phase-1 rollout focused on `AI`.
-- [ ] Define required unit, service, HTTP, and frontend tests.
+- [ ] Define required unit, trend-package, HTTP, and frontend tests.
 - [ ] Define snapshot tuning inputs: thresholds, wording, evidence quality.
 - [x] Execute `openspec validate add-daily-brief-trend-insights --strict`.
 

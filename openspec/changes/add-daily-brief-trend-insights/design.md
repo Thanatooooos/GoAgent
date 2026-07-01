@@ -54,9 +54,9 @@ field, then consume the day's concrete items.
 
 The module should present:
 
-- one main headline
-- one short summary paragraph
-- three compact signal cards
+- one main interpretation paragraph
+- two or three compact signal cards
+- one light background sentence
 - one optional evidence expand area
 
 The module should **not** visibly expose internal time-window labels such as
@@ -73,9 +73,13 @@ Instead, user-facing wording should feel natural:
 
 Example rendering:
 
-- Headline:
-  - "Recently, AI has shifted from pure model release theater toward
-    open-weight supply and inference-cost competition."
+- Main paragraph:
+  - "Recently, AI has shifted away from pure model-release theater toward a
+    mix of open-weight supply, inference-cost competition, and stronger agent
+    tooling focus. Open releases are more visible than before, while benchmark
+    talk is no longer the only organizing storyline. At the same time,
+    deployment and governance constraints are appearing often enough to shape
+    the field's center of gravity rather than just its edges."
 - Signal cards:
   - "Open-weight releases are more prominent"
   - "Agent tooling is now a primary storyline"
@@ -85,6 +89,39 @@ Example rendering:
     stretch, rather than looking like a one-day anomaly."
 - Evidence drawer:
   - representative items grouped by signal
+
+The paragraph is the primary content surface. The signal cards are supporting
+scan-friendly distillations rather than the main event.
+
+## Package Boundary
+
+Trend analysis should not continue growing the existing
+`internal/app/dailybrief/service` package.
+
+Recommended layout:
+
+```text
+internal/app/dailybrief/domain
+internal/app/dailybrief/service
+internal/app/dailybrief/trend
+internal/adapter/repository/postgres/dailybrief
+internal/adapter/http/dailybrief
+internal/bootstrap/dailybrief
+```
+
+Boundary intent:
+
+- `domain`
+  - core `Daily Brief` entities such as subscription, issue, item, and
+    generation run
+- `service`
+  - existing brief generation, subscription, read, and publish flows
+- `trend`
+  - one analysis subdomain for observation labeling, aggregation, signal
+    detection, evidence selection, synthesis, and snapshot assembly
+
+`trend` should be a sibling package to `service`, not a nested `service/trend`
+subtree.
 
 ## Topic Selection
 
@@ -115,8 +152,9 @@ The analysis pipeline should follow five stages:
 
 ### 1. Observation Labeling
 
-Each candidate or published brief item should be converted into a structured
-`TrendObservation`.
+Each normalized candidate should be converted into a structured
+`TrendObservation`, and trend evidence should prefer already visible published
+brief items whenever possible.
 
 Recommended fields:
 
@@ -165,7 +203,7 @@ Aggregation outputs should include:
 - share by facet value
 - delta vs prior comparison window
 - continuity score across consecutive buckets
-- candidate evidence refs for each signal
+- evidence refs for each signal
 
 ### 3. Change Detection
 
@@ -203,7 +241,13 @@ Evidence selection should favor:
 Phase 1 should prefer evidence that can be shown to the user directly:
 
 - brief items from recent issues
-- or otherwise cleanly normalized source items
+- otherwise cleanly normalized source items only as fallback
+
+Phase 1 should therefore use this evidence order:
+
+1. recent published `brief item`
+2. cleaned candidate-level evidence only when a necessary signal is not well
+   represented in published items
 
 ### 5. Snapshot Synthesis
 
@@ -213,7 +257,8 @@ The LLM's role here is:
 
 - summarize structured change
 - explain why it matters
-- phrase the judgment naturally
+- phrase the judgment naturally as one short analytical paragraph plus concise
+  supporting signal labels
 
 The LLM's role is **not**:
 
@@ -389,8 +434,7 @@ Suggested shape:
 type TrendInsight = {
   topic: string
   generatedAt: string
-  headline: string
-  summary: string
+  interpretation: string
   signals: TrendSignal[]
   background: TrendBackground | null
   evidenceGroups: EvidenceGroup[]
@@ -400,7 +444,7 @@ type TrendInsight = {
 type TrendSignal = {
   kind: "rising" | "falling" | "new" | "persistent" | "shift"
   title: string
-  summary: string
+  summary: string | null
   tags: string[]
 }
 
@@ -469,7 +513,9 @@ Suggested responsibility:
 
 - internal analytic record
 - not directly user-facing
-- may reference source item, candidate, or published brief item
+- primarily derived from candidate-level normalized content
+- may later be linked to published item evidence when a user-visible reference
+  exists
 
 ### TrendInsightSnapshot
 
@@ -478,8 +524,7 @@ Stores the synthesized insight for one topic and one generation moment.
 Suggested fields:
 
 - `topic`
-- `headline`
-- `summary`
+- `interpretation`
 - `signals_json`
 - `background_json`
 - `evidence_json`
@@ -489,6 +534,8 @@ Suggested fields:
 - `background_window_ref`
 
 The page should read the latest snapshot instead of triggering new synthesis.
+`background_json` should be persisted as part of the same snapshot instead of
+being managed as a separate first-phase read model.
 
 ## Failure and Degradation
 
@@ -533,13 +580,14 @@ The trend module must never block the normal brief page from loading.
 Recommended rollout order:
 
 1. define data contracts and persistence model
-2. implement general axes
-3. implement one `AI` extension template
-4. build recent-window aggregation and background calibration
-5. synthesize and persist snapshots
-6. expose snapshot through `GET /daily-brief/today`
-7. render the top-of-page module
-8. tune thresholds and wording using real traces
+2. introduce the sibling `trend` package boundary
+3. implement general axes
+4. implement one `AI` extension template
+5. build recent-window aggregation and background calibration
+6. synthesize and persist snapshots
+7. expose snapshot through `GET /daily-brief/today`
+8. render the top-of-page module
+9. tune thresholds and wording using real traces
 
 ## Open Questions
 

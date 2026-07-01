@@ -190,7 +190,7 @@ The module must not emit unsupported thematic claims.
 
 Every major signal should be supported by:
 
-- representative items
+- representative items, preferably published brief items
 - recent counts or share movement
 - explicit comparison to a prior period
 
@@ -209,8 +209,8 @@ This change is complete only when all of the following are true:
 4. The system uses a longer background window to calibrate whether the recent
    change looks like noise or a larger shift.
 5. The UI does not need to expose explicit `7d` or `30d` labels to users.
-6. The module returns structured signals and evidence, not only one opaque
-   paragraph.
+6. The module returns one analytical paragraph plus structured signals and
+   evidence, not only one opaque blob.
 7. The system supports a reusable set of general analysis axes across domains.
 8. The system supports one richer `AI`-specific extension template in Phase 1.
 9. The page can show one evidence-backed insight even when the normal brief is
@@ -242,8 +242,8 @@ The main implementation-time questions are:
 
 - how to choose the primary domain when a user subscribes to multiple active
   domains with comparable activity
-- whether evidence should point to raw candidate items, published issue items,
-  or both
+- how often candidate fallback evidence should be used when published issue
+  items do not adequately support a surfaced signal
 - whether the first release should include user-facing affordances to switch
   domains manually
 

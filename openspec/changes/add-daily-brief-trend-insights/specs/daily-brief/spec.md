@@ -21,6 +21,19 @@ Brief` page before the normal issue content.
 - THEN the system SHALL still render the normal brief page content
 - AND it SHALL omit the trend module rather than fail the page
 
+### Requirement: Trend insight shall center on one analytical paragraph
+
+The system SHALL render the primary trend judgment as one short analytical
+paragraph, with compact supporting signals as secondary content.
+
+#### Scenario: Render paragraph-first interpretation
+
+- GIVEN a valid trend insight exists
+- WHEN the module is rendered
+- THEN the system SHALL render one analytical paragraph as the primary
+  interpretation surface
+- AND any supporting signal cards SHALL remain secondary to that paragraph
+
 ### Requirement: Trend insight shall describe domain change rather than only user preference drift
 
 The system SHALL explain how the subscribed domain recently changed, not only
@@ -81,6 +94,12 @@ items.
 - GIVEN a trend signal is rendered
 - THEN the system SHALL be able to show representative supporting items for
   that signal
+
+#### Scenario: Prefer visible brief items as evidence
+
+- GIVEN representative published brief items exist for a surfaced signal
+- THEN the system SHALL prefer those brief items over raw candidate-only
+  evidence in the user-facing evidence view
 
 #### Scenario: Suppress unsupported signal
 
@@ -148,6 +167,13 @@ frontend rather than only one opaque paragraph.
 - GIVEN the system has longer-window calibration or methodology detail
 - THEN the trend insight model SHALL allow optional background and methodology
   fields
+
+#### Scenario: Persist background with the same snapshot
+
+- GIVEN a trend insight snapshot is stored
+- THEN the system SHALL persist its background calibration as part of the same
+  snapshot read model rather than requiring a separate first-phase background
+  entity
 
 ### Requirement: Trend insight shall fail open on insufficient data
 
