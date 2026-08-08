@@ -68,11 +68,10 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 
 	runtimeEnabled := s.citationEnabled && prepared.retrievalUsed && strings.TrimSpace(retrieveResult.KnowledgeContext) != ""
 	citationProtocol := ""
-	var expander *ragcitation.StreamExpander
 	if s.citationEnabled {
 		citationProtocol = ragcitation.ProtocolPrompt(runtimeEnabled)
-		expander = ragcitation.NewStreamExpander(prepared.state.citation, runtimeEnabled)
 	}
+	expander := ragcitation.NewStreamExpander(prepared.state.citation, runtimeEnabled)
 
 	toolStage, err := s.runToolWorkflowStage(
 		ctx,

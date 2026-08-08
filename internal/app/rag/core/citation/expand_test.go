@@ -73,6 +73,20 @@ func TestStreamExpanderPassthroughWhenNilRegistry(t *testing.T) {
 	}
 }
 
+func TestStreamExpanderStripsRefsWithNilRegistryWhenDisabled(t *testing.T) {
+	d := NewStreamExpander(nil, false)
+	var out strings.Builder
+	out.WriteString(d.Feed("前文 <re"))
+	out.WriteString(d.Feed("f id=\"c1\"/> 后文"))
+	out.WriteString(d.Flush())
+	if strings.Contains(out.String(), "ref") || strings.Contains(out.String(), "c1") {
+		t.Fatalf("disabled nil-registry expander must strip refs, got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "前文") || !strings.Contains(out.String(), "后文") {
+		t.Fatalf("prose should be preserved, got %q", out.String())
+	}
+}
+
 func TestExpandTextUnterminatedRefDoesNotSwallowProse(t *testing.T) {
 	r := NewRegistry()
 	got := r.ExpandText("x <ref for citation. rest of prose", true)

@@ -12,6 +12,12 @@ var (
 	modelKBTagRE   = regexp.MustCompile(`(?is)<kb\b[^>]*>`)
 )
 
+// stripCitationMarkup removes private <ref> and output-only <kb> tags.
+func stripCitationMarkup(text string) string {
+	text = modelKBTagRE.ReplaceAllString(text, "")
+	return refCandidateRE.ReplaceAllString(text, "")
+}
+
 // ExpandText converts the private <ref/> protocol into the public <kb/> tag
 // contract. Unknown handles fail closed and disappear; model-written <kb>
 // tags are dropped because public tags are output-only.
@@ -21,7 +27,7 @@ func (r *Registry) ExpandText(text string, enabled bool) string {
 	}
 	text = modelKBTagRE.ReplaceAllString(text, "")
 	if !enabled {
-		return refCandidateRE.ReplaceAllString(text, "")
+		return stripCitationMarkup(text)
 	}
 	return refCandidateRE.ReplaceAllStringFunc(text, func(tag string) string {
 		match := refTagRE.FindStringSubmatch(tag)
@@ -57,7 +63,10 @@ func NewStreamExpander(registry *Registry, enabled bool) *StreamExpander {
 }
 
 func (d *StreamExpander) Feed(chunk string) string {
-	if d == nil || d.registry == nil {
+	if d == nil {
+		return chunk
+	}
+	if d.registry == nil && d.enabled {
 		return chunk
 	}
 	data := d.pending + chunk
@@ -83,8 +92,10 @@ func (d *StreamExpander) Feed(chunk string) string {
 				break
 			}
 			tag := data[:end+1]
-			if refTagRE.MatchString(tag) {
+			if d.registry != nil {
 				out.WriteString(d.registry.ExpandText(tag, d.enabled))
+			} else {
+				out.WriteString(stripCitationMarkup(tag))
 			}
 			data = data[end+1:]
 			continue
