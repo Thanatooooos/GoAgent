@@ -10,6 +10,7 @@ import (
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/framework/convention"
+	aichat "local/rag-project/internal/infra-ai/chat"
 )
 
 func TestPrepareChatRegistersAndRendersCitations(t *testing.T) {
@@ -154,5 +155,99 @@ func TestApplyRetrieveContextBudgetUsesCitationRenderer(t *testing.T) {
 	)
 	if !strings.Contains(result.KnowledgeContext, `<chunk id="c1"`) {
 		t.Fatalf("budget render missing handle: %s", result.KnowledgeContext)
+	}
+}
+
+func TestChatStreamingExpandsRefToKBWhenEnabled(t *testing.T) {
+	retrieve := &retrieveServiceStub{
+		result: ragretrieve.Result{
+			KnowledgeContext: "知识",
+			Chunks: []convention.RetrievedChunk{
+				{ID: "chunk-a", DocumentID: "doc-a", KnowledgeBaseID: "kb-a", Text: "内容", Metadata: map[string]any{"document_title": "标题"}},
+			},
+		},
+	}
+	service, createdMessage := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "hello",
+			SubQuestions:      []string{"public internet access policy"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieve,
+		func(_ *RagChatDeps, opts *RagChatOptions) {
+			opts.CitationEnabled = true
+		},
+	)
+	service.chatService = &llmServiceStub{
+		streamFn: func(request convention.ChatRequest, callback aichat.StreamCallback) {
+			callback.OnContent("根据 <ref id=\"c1\"/> 说明。")
+			callback.OnComplete()
+		},
+	}
+
+	sink := &fallbackSinkStub{}
+	err := service.Chat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "hello",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, sink)
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	if createdMessage == nil {
+		t.Fatal("expected created assistant message")
+	}
+	if !strings.Contains(createdMessage.Content, `<kb doc="标题" chunk_id="chunk-a" kb_id="kb-a" />`) {
+		t.Fatalf("persisted content missing expanded kb tag: %q", createdMessage.Content)
+	}
+	if strings.Contains(createdMessage.Content, "ref") || strings.Contains(createdMessage.Content, "c1") {
+		t.Fatalf("private ref/handle leaked into persisted content: %q", createdMessage.Content)
+	}
+}
+
+func TestChatStreamingStripsRefWhenDisabled(t *testing.T) {
+	retrieve := &retrieveServiceStub{
+		result: ragretrieve.Result{
+			KnowledgeContext: "知识",
+			Chunks: []convention.RetrievedChunk{
+				{ID: "chunk-a", Text: "内容"},
+			},
+		},
+	}
+	service, createdMessage := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{
+			RewrittenQuestion: "hello",
+			SubQuestions:      []string{"public internet access policy"},
+			NeedRetrieval:     true,
+		},
+		nil,
+		retrieve,
+	)
+	service.chatService = &llmServiceStub{
+		streamFn: func(request convention.ChatRequest, callback aichat.StreamCallback) {
+			callback.OnContent("根据 <ref id=\"c1\"/> 说明。")
+			callback.OnComplete()
+		},
+	}
+
+	sink := &fallbackSinkStub{}
+	err := service.Chat(context.Background(), RagChatInput{
+		ConversationID:   "conv-1",
+		UserID:           "user-1",
+		Question:         "hello",
+		KnowledgeBaseIDs: []string{"kb-1"},
+	}, sink)
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	if createdMessage == nil {
+		t.Fatal("expected created assistant message")
+	}
+	if strings.Contains(createdMessage.Content, "ref") {
+		t.Fatalf("disabled path must strip refs, got %q", createdMessage.Content)
 	}
 }
