@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"strings"
 	"testing"
 
 	"local/rag-project/internal/framework/convention"
@@ -38,5 +39,38 @@ func TestServiceBuildMessages(t *testing.T) {
 	}
 	if messages[8].Content != "What is RAG?" {
 		t.Fatalf("unexpected final question: %q", messages[8].Content)
+	}
+}
+
+func TestBuildMessagesAppendsCitationProtocol(t *testing.T) {
+	service := NewService(nil)
+	messages, err := service.BuildMessages(Context{
+		Question:         "问题",
+		CitationProtocol: "## 协议\n不要引用。",
+	})
+	if err != nil {
+		t.Fatalf("BuildMessages() error = %v", err)
+	}
+	var found bool
+	for _, m := range messages {
+		if m.Role == convention.SystemRole && strings.Contains(m.Content, "Citation Protocol") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("citation protocol not injected, got %+v", messages)
+	}
+}
+
+func TestBuildMessagesSkipsEmptyCitationProtocol(t *testing.T) {
+	service := NewService(nil)
+	messages, err := service.BuildMessages(Context{Question: "问题"})
+	if err != nil {
+		t.Fatalf("BuildMessages() error = %v", err)
+	}
+	for _, m := range messages {
+		if strings.Contains(m.Content, "Citation Protocol") {
+			t.Fatalf("empty citation protocol should not be injected: %+v", messages)
+		}
 	}
 }

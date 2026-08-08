@@ -15,6 +15,7 @@ type Context struct {
 	ToolContext      string
 	WorkflowPolicy   string
 	AnswerGuidance   string
+	CitationProtocol string
 	History          []convention.ChatMessage
 	SystemPromptKey  string
 	SystemPrompt     string
@@ -71,6 +72,9 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 	if strings.TrimSpace(ctx.AnswerGuidance) != "" {
 		messages = append(messages, convention.SystemMessage(formatAnswerGuidance(ctx.AnswerGuidance)))
 	}
+	if strings.TrimSpace(ctx.CitationProtocol) != "" {
+		messages = append(messages, convention.SystemMessage(formatCitationProtocol(ctx.CitationProtocol)))
+	}
 	if len(ctx.History) > 0 {
 		messages = append(messages, ctx.History...)
 	}
@@ -102,4 +106,8 @@ func formatWorkflowPolicy(policy string) string {
 
 func formatAnswerGuidance(guidance string) string {
 	return "## Answer Guidance\n" + strings.TrimSpace(guidance)
+}
+
+func formatCitationProtocol(protocol string) string {
+	return "## Citation Protocol\n" + strings.TrimSpace(protocol)
 }
