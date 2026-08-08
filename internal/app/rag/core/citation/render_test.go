@@ -44,17 +44,55 @@ func TestRenderKnowledgeContextEscapesText(t *testing.T) {
 func TestRenderKnowledgeContextWithBudgetTruncates(t *testing.T) {
 	r := NewRegistry()
 	chunks := []convention.RetrievedChunk{
-		{ID: "chunk-a", Text: strings.Repeat("很长的内容", 200)},
-		{ID: "chunk-b", Text: "短的"},
+		{ID: "chunk-a", Text: strings.Repeat("x", 200)},
+		{ID: "chunk-b", Text: "短"},
 	}
-	rendered, stats := RenderKnowledgeContextWithBudget(r, chunks, 30, tokenbudget.NewDefaultEstimator())
+	const budget = 100
+	rendered, stats := RenderKnowledgeContextWithBudget(r, chunks, budget, tokenbudget.RuneEstimator{})
+	if stats.CandidateChunks != 2 {
+		t.Fatalf("candidate chunks = %d, want 2", stats.CandidateChunks)
+	}
 	if stats.RetainedChunks == 0 {
 		t.Fatal("budget render retained zero chunks")
 	}
-	if !strings.Contains(rendered, "</retrieval>") {
-		t.Fatalf("budget render must close retrieval tag: %s", rendered)
+	if stats.RetainedChunks >= stats.CandidateChunks {
+		t.Fatalf("first chunk too long, second should be dropped: retained=%d candidate=%d", stats.RetainedChunks, stats.CandidateChunks)
 	}
-	if stats.CandidateChunks != 2 {
-		t.Fatalf("candidate chunks = %d, want 2", stats.CandidateChunks)
+	if stats.TokensAfter > budget {
+		t.Fatalf("budget exceeded: tokensAfter=%d budget=%d", stats.TokensAfter, budget)
+	}
+	if !strings.Contains(rendered, `id="c1"`) {
+		t.Fatalf("handle must survive truncation: %s", rendered)
+	}
+	if !strings.HasSuffix(rendered, "</retrieval>") {
+		t.Fatalf("render must close retrieval tag: %s", rendered)
+	}
+	if !stats.Truncated {
+		t.Fatal("expected truncated=true when chunks are dropped")
+	}
+}
+
+func TestRenderKnowledgeContextWithBudgetEnvelopeTooLarge(t *testing.T) {
+	r := NewRegistry()
+	chunks := []convention.RetrievedChunk{{ID: "chunk-a", Text: "x"}}
+	rendered, stats := RenderKnowledgeContextWithBudget(r, chunks, 10, tokenbudget.RuneEstimator{})
+	if rendered != "" {
+		t.Fatalf("envelope-only budget must render empty, got %q", rendered)
+	}
+	if stats.RetainedChunks != 0 {
+		t.Fatalf("retained chunks = %d, want 0", stats.RetainedChunks)
+	}
+	if !stats.Truncated {
+		t.Fatal("expected truncated=true when the envelope cannot fit")
+	}
+}
+
+func TestRenderKnowledgeContextWithBudgetNilRegistry(t *testing.T) {
+	rendered, stats := RenderKnowledgeContextWithBudget(nil, []convention.RetrievedChunk{{ID: "chunk-a", Text: "x"}}, 100, tokenbudget.RuneEstimator{})
+	if rendered != "" {
+		t.Fatalf("nil registry must render empty, got %q", rendered)
+	}
+	if stats.CandidateChunks != 1 {
+		t.Fatalf("candidate chunks = %d, want 1", stats.CandidateChunks)
 	}
 }

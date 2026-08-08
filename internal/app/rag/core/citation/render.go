@@ -48,36 +48,34 @@ func RenderKnowledgeContextWithBudget(registry *Registry, chunks []convention.Re
 	stats := RenderStats{CandidateChunks: len(chunks)}
 	full := RenderKnowledgeContext(registry, chunks)
 	stats.TokensBefore = estimator.EstimateTokens(full)
-	if len(chunks) == 0 || budget <= 0 {
+	if registry == nil || len(chunks) == 0 || budget <= 0 {
 		stats.Truncated = len(chunks) > 0
 		return "", stats
 	}
-	headerTokens := estimator.EstimateTokens(retrievalHeader)
-	footerTokens := estimator.EstimateTokens(retrievalFooter)
-	newlineTokens := estimator.EstimateTokens("\n")
+	if estimator.EstimateTokens(retrievalHeader+"\n"+retrievalFooter) > budget {
+		stats.Truncated = true
+		return "", stats
+	}
 
 	var b strings.Builder
 	b.WriteString(retrievalHeader)
-	used := headerTokens + footerTokens
 	for _, chunk := range chunks {
 		fullPart := renderChunkElement(registry, chunk, chunk.Text)
-		if used+newlineTokens+estimator.EstimateTokens(fullPart) <= budget {
-			b.WriteString("\n  ")
-			b.WriteString(fullPart)
-			used += newlineTokens + estimator.EstimateTokens(fullPart)
+		candidate := b.String() + "\n  " + fullPart + "\n" + retrievalFooter
+		if estimator.EstimateTokens(candidate) <= budget {
+			b.WriteString("\n  " + fullPart)
 			stats.RetainedChunks++
 			continue
 		}
 		prefix := renderChunkPrefix(registry, chunk)
-		prefixTokens := estimator.EstimateTokens(prefix)
-		if used+newlineTokens+prefixTokens+estimator.EstimateTokens("</chunk>") <= budget {
-			textBudget := budget - used - newlineTokens - prefixTokens - estimator.EstimateTokens("</chunk>")
-			truncatedText, _ := tokenbudget.TruncateText(chunk.Text, textBudget, estimator)
-			if strings.TrimSpace(truncatedText) != "" {
-				part := prefix + escapeText(truncatedText) + "</chunk>"
-				b.WriteString("\n  ")
-				b.WriteString(part)
-				used += newlineTokens + estimator.EstimateTokens(part)
+		fixedPortion := b.String() + "\n  " + prefix + "</chunk>" + "\n" + retrievalFooter
+		textBudget := budget - estimator.EstimateTokens(fixedPortion)
+		truncatedText, _ := tokenbudget.TruncateText(chunk.Text, textBudget, estimator)
+		if strings.TrimSpace(truncatedText) != "" {
+			part := prefix + escapeText(truncatedText) + "</chunk>"
+			truncatedCandidate := b.String() + "\n  " + part + "\n" + retrievalFooter
+			if estimator.EstimateTokens(truncatedCandidate) <= budget {
+				b.WriteString("\n  " + part)
 				stats.RetainedChunks++
 			}
 		}
