@@ -1,5 +1,5 @@
 import { api } from "@/services/api";
-import type { ApprovalPendingLookupPayload } from "@/types";
+import type { ApprovalPendingLookupPayload, ChunkDetail } from "@/types";
 
 export async function stopTask(taskId: string) {
   return api.post<void>(`/rag/v3/stop?taskId=${encodeURIComponent(taskId)}`);
@@ -15,4 +15,8 @@ export async function submitFeedback(messageId: string, vote: number) {
   return api.post<void>(`/conversations/messages/${messageId}/feedback`, {
     vote
   });
+}
+
+export async function getChunkDetail(chunkId: string) {
+  return api.get<ChunkDetail, ChunkDetail>(`/knowledge-base/chunks/${encodeURIComponent(chunkId)}`);
 }

@@ -152,3 +152,11 @@ export interface SessionRecallPayload {
   candidateCount?: number;
   hits?: SessionRecallHitPayload[];
 }
+
+export interface ChunkDetail {
+  id: string;
+  content: string;
+  chunkIndex: number;
+  docId: string;
+  kbId: string;
+}

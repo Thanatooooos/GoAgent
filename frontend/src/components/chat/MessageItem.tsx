@@ -2,6 +2,7 @@ import * as React from "react";
 import { AlertCircle, Brain, CheckCircle2, ChevronDown, Database, History, Wrench, XCircle } from "lucide-react";
 
 import { ApprovalPendingCard } from "@/components/chat/ApprovalPendingCard";
+import { CitationNumberProvider } from "@/components/chat/citationContext";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
@@ -301,7 +302,11 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             </div>
           ) : null}
 
-          {hasContent ? <MarkdownRenderer content={message.content} /> : null}
+          {hasContent ? (
+            <CitationNumberProvider>
+              <MarkdownRenderer content={message.content} />
+            </CitationNumberProvider>
+          ) : null}
 
           {message.status === "error" ? (
             <p className="text-xs text-rose-500">生成已中断。</p>
