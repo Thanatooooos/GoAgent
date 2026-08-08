@@ -111,6 +111,9 @@ func (s *RagChatService) applyRetrieveContextBudget(ctx context.Context, traceID
 	if s == nil || s.chatContextBudget.RetrieveTokens <= 0 || len(result.Chunks) == 0 {
 		return result
 	}
+	if registry != nil && strings.TrimSpace(result.KnowledgeContext) == "" {
+		return result
+	}
 	if registry != nil {
 		contextText, stats := ragcitation.RenderKnowledgeContextWithBudget(
 			registry,
