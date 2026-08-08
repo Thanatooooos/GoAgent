@@ -19,6 +19,7 @@ type KnowledgeChunkService interface {
 	Delete(ctx context.Context, input service.DeleteKnowledgeChunkInput) error
 	Enable(ctx context.Context, input service.EnableKnowledgeChunkInput) error
 	BatchToggleEnabled(ctx context.Context, input service.BatchToggleKnowledgeChunksInput) error
+	GetByID(ctx context.Context, chunkID string) (domain.KnowledgeChunk, error)
 }
 
 type KnowledgeChunkHandler struct {
@@ -65,6 +66,7 @@ func RegisterKnowledgeChunkRoutes(r gin.IRoutes, service KnowledgeChunkService) 
 	r.DELETE("/knowledge-base/docs/:docId/chunks/:chunkId", handler.Delete)
 	r.PATCH("/knowledge-base/docs/:docId/chunks/:chunkId/enable", handler.Enable)
 	r.PATCH("/knowledge-base/docs/:docId/chunks/batch-enable", handler.BatchEnable)
+	r.GET("/knowledge-base/chunks/:chunkId", handler.Get)
 }
 
 func (h *KnowledgeChunkHandler) Page(c *gin.Context) {
@@ -188,6 +190,19 @@ func (h *KnowledgeChunkHandler) BatchEnable(c *gin.Context) {
 		return
 	}
 	writeSuccess[any](c, nil)
+}
+
+func (h *KnowledgeChunkHandler) Get(c *gin.Context) {
+	if h == nil || h.service == nil {
+		_ = c.Error(exception.NewServiceException("knowledge chunk service is required", nil))
+		return
+	}
+	chunk, err := h.service.GetByID(c.Request.Context(), c.Param("chunkId"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	writeSuccess(c, toKnowledgeChunkVO(chunk))
 }
 
 func toKnowledgeChunkVO(item domain.KnowledgeChunk) knowledgeChunkVO {

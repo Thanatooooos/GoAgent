@@ -24,6 +24,7 @@ type knowledgeChunkServiceStub struct {
 	deleteFn             func(ctx context.Context, input service.DeleteKnowledgeChunkInput) error
 	enableFn             func(ctx context.Context, input service.EnableKnowledgeChunkInput) error
 	batchToggleEnabledFn func(ctx context.Context, input service.BatchToggleKnowledgeChunksInput) error
+	getByIDFn            func(ctx context.Context, chunkID string) (domain.KnowledgeChunk, error)
 }
 
 func (s knowledgeChunkServiceStub) Page(ctx context.Context, input service.PageKnowledgeChunkInput) (service.KnowledgeChunkPageResult, error) {
@@ -66,6 +67,13 @@ func (s knowledgeChunkServiceStub) BatchToggleEnabled(ctx context.Context, input
 		return s.batchToggleEnabledFn(ctx, input)
 	}
 	return nil
+}
+
+func (s knowledgeChunkServiceStub) GetByID(ctx context.Context, chunkID string) (domain.KnowledgeChunk, error) {
+	if s.getByIDFn != nil {
+		return s.getByIDFn(ctx, chunkID)
+	}
+	return domain.KnowledgeChunk{}, nil
 }
 
 func TestKnowledgeChunkHandlerPageMatchesRagentIPageShape(t *testing.T) {
@@ -171,6 +179,48 @@ func TestKnowledgeChunkHandlerBatchEnable(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestKnowledgeChunkHandlerGetByID(t *testing.T) {
+	router := newKnowledgeChunkRouter(knowledgeChunkServiceStub{
+		getByIDFn: func(ctx context.Context, chunkID string) (domain.KnowledgeChunk, error) {
+			if chunkID != "chunk-1" {
+				t.Fatalf("unexpected chunk id: %s", chunkID)
+			}
+			return domain.KnowledgeChunk{
+				ID:              "chunk-1",
+				KnowledgeBaseID: "kb-1",
+				DocumentID:      "doc-1",
+				ChunkIndex:      0,
+				Content:         "来源内容",
+				Enabled:         true,
+			}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/knowledge-base/chunks/chunk-1", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Code string `json:"code"`
+		Data struct {
+			ID      string `json:"id"`
+			Content string `json:"content"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Code != "0" {
+		t.Fatalf("unexpected code: %s", result.Code)
+	}
+	if result.Data.ID != "chunk-1" || result.Data.Content != "来源内容" {
+		t.Fatalf("unexpected data: %+v", result.Data)
 	}
 }
 

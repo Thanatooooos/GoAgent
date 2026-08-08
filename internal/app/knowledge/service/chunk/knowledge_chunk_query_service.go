@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
 	"local/rag-project/internal/framework/exception"
 	"local/rag-project/internal/framework/paging"
@@ -40,4 +41,19 @@ func (s *KnowledgeChunkService) Page(ctx context.Context, input PageKnowledgeChu
 		Page:     page,
 		PageSize: pageSize,
 	}, nil
+}
+
+func (s *KnowledgeChunkService) GetByID(ctx context.Context, chunkID string) (domain.KnowledgeChunk, error) {
+	if s == nil || s.chunkRepo == nil {
+		return domain.KnowledgeChunk{}, exception.NewServiceException("knowledge chunk repository is required", nil)
+	}
+	chunkID = strings.TrimSpace(chunkID)
+	if chunkID == "" {
+		return domain.KnowledgeChunk{}, exception.NewClientException("knowledge chunk id is required", nil)
+	}
+	chunk, err := s.chunkRepo.GetByID(ctx, chunkID)
+	if err != nil {
+		return domain.KnowledgeChunk{}, exception.NewServiceException("failed to get knowledge chunk", err)
+	}
+	return chunk, nil
 }
