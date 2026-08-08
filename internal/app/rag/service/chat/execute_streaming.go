@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 
+	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
@@ -39,6 +40,7 @@ type ragChatStreamCallback struct {
 
 	estimator            TokenEstimator
 	promptTokensEstimate int
+	expander             *ragcitation.StreamExpander
 
 	mu       sync.Mutex
 	content  strings.Builder
@@ -50,6 +52,7 @@ func newRagChatStreamCallback(
 	sink RagChatEventSink,
 	estimator TokenEstimator,
 	promptTokensEstimate int,
+	expander *ragcitation.StreamExpander,
 ) *ragChatStreamCallback {
 	if estimator == nil {
 		estimator = RoughTokenEstimator{}
@@ -59,6 +62,7 @@ func newRagChatStreamCallback(
 		sink:                 sink,
 		estimator:            estimator,
 		promptTokensEstimate: promptTokensEstimate,
+		expander:             expander,
 	}
 	go callback.watchCancel()
 	return callback
@@ -66,9 +70,13 @@ func newRagChatStreamCallback(
 
 func (c *ragChatStreamCallback) OnContent(content string) {
 	c.mu.Lock()
-	c.content.WriteString(content)
+	expanded := content
+	if c.expander != nil {
+		expanded = c.expander.Feed(content)
+	}
+	c.content.WriteString(expanded)
 	c.mu.Unlock()
-	_ = c.sink.SendMessage(content)
+	_ = c.sink.SendMessage(expanded)
 }
 
 func (c *ragChatStreamCallback) OnThinking(content string) {
@@ -87,7 +95,7 @@ func (c *ragChatStreamCallback) OnError(err error) {
 }
 
 func (c *ragChatStreamCallback) buildTaskResult(err error) ragChatTaskResult {
-	content := c.currentContent()
+	content := c.finalizeContent()
 	thinking := c.currentThinking()
 	completionTokens := c.estimator.EstimateTokens(content) + c.estimator.EstimateTokens(thinking)
 	return ragChatTaskResult{
@@ -106,9 +114,17 @@ func (c *ragChatStreamCallback) watchCancel() {
 	c.task.doneCh <- result
 }
 
-func (c *ragChatStreamCallback) currentContent() string {
+// finalizeContent flushes any expander tail and returns the fully expanded
+// content for persistence.
+func (c *ragChatStreamCallback) finalizeContent() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.expander != nil {
+		rest := c.expander.Flush()
+		if rest != "" {
+			c.content.WriteString(rest)
+		}
+	}
 	return c.content.String()
 }
 

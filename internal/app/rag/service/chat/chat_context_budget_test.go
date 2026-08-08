@@ -230,6 +230,7 @@ func TestRunPromptStageRecordsChatContextBudgetTrace(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 		"trace-budget-1",
 	)
 	if err != nil {

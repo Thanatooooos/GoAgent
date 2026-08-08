@@ -6,6 +6,7 @@ import (
 
 	agentapp "local/rag-project/internal/app/agent"
 	ragcache "local/rag-project/internal/app/rag/cache"
+	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragtool "local/rag-project/internal/app/rag/tool/core"
 	"local/rag-project/internal/framework/exception"
 	"local/rag-project/internal/framework/log"
@@ -63,7 +64,15 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	s.emitPreparedObservabilityEvents(prepared, question, sink)
 
 	retrieveResult, fallbackPrompt := s.applyFallbackGuard(ctx, prepared, question, sink)
-	retrieveResult = s.applyRetrieveContextBudget(ctx, prepared.state.traceID, retrieveResult)
+	retrieveResult = s.applyRetrieveContextBudget(ctx, prepared.state.traceID, retrieveResult, prepared.state.citation)
+
+	runtimeEnabled := s.citationEnabled && prepared.retrievalUsed && strings.TrimSpace(retrieveResult.KnowledgeContext) != ""
+	citationProtocol := ""
+	var expander *ragcitation.StreamExpander
+	if s.citationEnabled {
+		citationProtocol = ragcitation.ProtocolPrompt(runtimeEnabled)
+		expander = ragcitation.NewStreamExpander(prepared.state.citation, runtimeEnabled)
+	}
 
 	toolStage, err := s.runToolWorkflowStage(
 		ctx,
@@ -129,6 +138,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		toolStage.result.Control.PromptString(),
 		toolStage.result.AnswerGuidance,
 		effectiveFallbackPrompt(fallbackPrompt, toolStage.result.Used, question),
+		citationProtocol,
 		prepared.state.traceID,
 	)
 	if err != nil {
@@ -145,6 +155,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		promptStage.messages,
 		promptStage.budget.EstimatedPromptTokens,
 		input.DeepThinking,
+		expander,
 		sink,
 	)
 	if err != nil {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 
+	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/log"
 )
 
@@ -33,6 +35,11 @@ type subQuestionRetrieveResult struct {
 }
 
 func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (ragChatPreparedState, error) {
+	var registry *ragcitation.Registry
+	if s.citationEnabled {
+		registry = ragcitation.NewRegistry()
+	}
+
 	conversationStage, err := s.runConversationStage(ctx, input)
 	if err != nil {
 		return ragChatPreparedState{}, err
@@ -41,6 +48,14 @@ func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (r
 	memoryStage, err := s.runMemoryStage(ctx, conversationStage.conversationID, strings.TrimSpace(input.UserID))
 	if err != nil {
 		return ragChatPreparedState{}, err
+	}
+
+	if s.citationEnabled {
+		for i := range memoryStage.history {
+			if memoryStage.history[i].Role == convention.AssistantRole {
+				memoryStage.history[i].Content = registry.CompactPublicCitations(memoryStage.history[i].Content)
+			}
+		}
 	}
 
 	userMessageStage, err := s.runUserMessageStage(ctx, input, conversationStage.conversationID)
@@ -81,8 +96,16 @@ func (s *RagChatService) prepareChat(ctx context.Context, input RagChatInput) (r
 	if err != nil {
 		return ragChatPreparedState{}, err
 	}
+
+	if s.citationEnabled && retrieveStage.used && len(retrieveStage.result.Chunks) > 0 {
+		registry.RegisterChunks(retrieveStage.result.Chunks)
+		retrieveStage.result.KnowledgeContext = ragcitation.RenderKnowledgeContext(registry, retrieveStage.result.Chunks)
+	}
+
+	state := runtimeStage.state
+	state.citation = registry
 	return ragChatPreparedState{
-		state:          runtimeStage.state,
+		state:          state,
 		history:        memoryStage.history,
 		userMessage:    userMessageStage.message,
 		rewriteResult:  rewriteStage.result,

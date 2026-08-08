@@ -1604,6 +1604,7 @@ func TestRunPromptStageCurrentTurnExplicitInstructionOverridesRecalledPreference
 		"",
 		"",
 		"",
+		"",
 		"trace-1",
 	)
 	if err != nil {
@@ -1637,6 +1638,7 @@ func TestRunPromptStageRecordsPreferenceOverrideObservability(t *testing.T) {
 		"Rule Memories:\n- Always answer in Chinese.",
 		"",
 		ragretrieve.Result{},
+		"",
 		"",
 		"",
 		"",
@@ -1730,6 +1732,7 @@ func TestPrepareChatIncludesLongTermMemoryContextInPrompt(t *testing.T) {
 		prepared.memoryContext,
 		prepared.sessionContext,
 		ragretrieve.Result{},
+		"",
 		"",
 		"",
 		"",
@@ -1905,6 +1908,7 @@ func TestPrepareChatRecallsEarlierConfigMessageIntoPrompt(t *testing.T) {
 		"",
 		prepared.sessionContext,
 		ragretrieve.Result{},
+		"",
 		"",
 		"",
 		"",

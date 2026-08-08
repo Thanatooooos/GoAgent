@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	raghistory "local/rag-project/internal/app/rag/core/history"
+	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/log"
@@ -50,6 +51,7 @@ func (s *RagChatService) runStreamingAnswer(
 	messages []convention.ChatMessage,
 	promptTokensEstimate int,
 	deepThinking bool,
+	expander *ragcitation.StreamExpander,
 	sink RagChatEventSink,
 ) (ragChatTaskResult, error) {
 	task := s.taskRegistry.New()
@@ -68,6 +70,7 @@ func (s *RagChatService) runStreamingAnswer(
 		sink,
 		s.chatContextBudget.normalized().Estimator,
 		promptTokensEstimate,
+		expander,
 	)
 	handle, err := s.chatService.StreamChatWithRequest(request, callback)
 	if err != nil {

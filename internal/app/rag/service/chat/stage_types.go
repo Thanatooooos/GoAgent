@@ -5,6 +5,7 @@ import (
 	"time"
 
 	agentapp "local/rag-project/internal/app/agent"
+	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/domain"
@@ -19,6 +20,7 @@ type ragChatRuntimeState struct {
 	userMessageID string
 	traceID       string
 	startTime     time.Time
+	citation      *ragcitation.Registry
 }
 
 type ragChatTraceNode struct {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	agentstate "local/rag-project/internal/app/agent/state"
+	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
@@ -106,8 +107,23 @@ func (s *RagChatService) runLegacyToolWorkflowStage(
 	})
 }
 
-func (s *RagChatService) applyRetrieveContextBudget(ctx context.Context, traceID string, result ragretrieve.Result) ragretrieve.Result {
+func (s *RagChatService) applyRetrieveContextBudget(ctx context.Context, traceID string, result ragretrieve.Result, registry *ragcitation.Registry) ragretrieve.Result {
 	if s == nil || s.chatContextBudget.RetrieveTokens <= 0 || len(result.Chunks) == 0 {
+		return result
+	}
+	if registry != nil {
+		contextText, stats := ragcitation.RenderKnowledgeContextWithBudget(
+			registry,
+			result.Chunks,
+			s.chatContextBudget.RetrieveTokens,
+			s.chatContextBudget.Estimator,
+		)
+		result.KnowledgeContext = contextText
+		if s.tracer != nil {
+			s.tracer.appendTraceRunExtra(ctx, traceID, map[string]any{
+				"retrieveContextBudget": stats,
+			})
+		}
 		return result
 	}
 	contextText, stats := ragretrieve.BuildKnowledgeContextWithinBudget(
@@ -237,6 +253,7 @@ func (s *RagChatService) runPromptStage(
 	workflowPolicy string,
 	answerGuidance string,
 	systemPromptOverride string,
+	citationProtocol string,
 	traceID string,
 ) (ragChatPromptStageResult, error) {
 	return runRagChatStage(ctx, s.tracer, traceID, ragChatStage[ragChatPromptStageResult]{
@@ -254,6 +271,7 @@ func (s *RagChatService) runPromptStage(
 				ToolContext:      toolContext,
 				WorkflowPolicy:   workflowPolicy,
 				AnswerGuidance:   answerGuidance,
+				CitationProtocol: citationProtocol,
 				History:          history,
 				SystemPrompt:     systemPromptOverride,
 			}
