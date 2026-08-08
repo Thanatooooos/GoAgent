@@ -8,8 +8,8 @@ import (
 
 var (
 	refTagRE       = regexp.MustCompile(`(?i)<ref\s+id\s*=\s*"([^"]+)"\s*/?>`)
-	refCandidateRE = regexp.MustCompile(`(?is)<ref(?:\s|$)[^>]*(?:>|$)`)
-	modelKBTagRE   = regexp.MustCompile(`(?is)<kb(?:\s|$)[^>]*(?:>|$)`)
+	refCandidateRE = regexp.MustCompile(`(?is)<ref\b[^>]*>`)
+	modelKBTagRE   = regexp.MustCompile(`(?is)<kb\b[^>]*>`)
 )
 
 // ExpandText converts the private <ref/> protocol into the public <kb/> tag
@@ -110,10 +110,10 @@ func (d *StreamExpander) Flush() string {
 	}
 	pending := d.pending
 	d.pending = ""
-	if isSourceTagPending(strings.ToLower(pending)) {
+	if pending == "" {
 		return ""
 	}
-	return d.registry.ExpandText(pending, d.enabled)
+	return ""
 }
 
 func isRefTagStart(value string) bool {

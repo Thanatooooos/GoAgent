@@ -72,3 +72,56 @@ func TestStreamExpanderPassthroughWhenNilRegistry(t *testing.T) {
 		t.Fatalf("nil registry should pass through, got %q", got)
 	}
 }
+
+func TestExpandTextUnterminatedRefDoesNotSwallowProse(t *testing.T) {
+	r := NewRegistry()
+	got := r.ExpandText("x <ref for citation. rest of prose", true)
+	if got != "x <ref for citation. rest of prose" {
+		t.Fatalf("unterminated ref swallowed prose, got %q", got)
+	}
+}
+
+func TestExpandTextDropsBareRefTags(t *testing.T) {
+	r := NewRegistry()
+	got := r.ExpandText("a <ref> b <ref/> c", true)
+	if got != "a  b  c" {
+		t.Fatalf("bare ref tags not dropped, got %q", got)
+	}
+}
+
+func TestStreamExpanderDropsBareRefTag(t *testing.T) {
+	r := NewRegistry()
+	d := NewStreamExpander(r, true)
+	if got := d.Feed("a <ref> b"); got != "a  b" {
+		t.Fatalf("bare ref tag not dropped, got %q", got)
+	}
+}
+
+func TestStreamExpanderThreeChunkSplit(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterChunk(ChunkReference{ChunkID: "chunk-a", DocumentTitle: "标题"})
+	d := NewStreamExpander(r, true)
+	var out strings.Builder
+	out.WriteString(d.Feed("<re"))
+	out.WriteString(d.Feed("f id=\"c1\""))
+	out.WriteString(d.Feed("/> done"))
+	out.WriteString(d.Flush())
+	want := `<kb doc="标题" chunk_id="chunk-a" /> done`
+	if out.String() != want {
+		t.Fatalf("three-chunk split output = %q, want %q", out.String(), want)
+	}
+}
+
+func TestStreamExpanderLessThanBoundaryAndNonTag(t *testing.T) {
+	r := NewRegistry()
+	d := NewStreamExpander(r, true)
+	got := d.Feed("a <")
+	got += d.Feed("10 b")
+	if got != "a <10 b" {
+		t.Fatalf("less-than boundary output = %q, want %q", got, "a <10 b")
+	}
+	d = NewStreamExpander(r, true)
+	if got := d.Feed("use <refactor> here"); got != "use <refactor> here" {
+		t.Fatalf("non-tag word mangled, got %q", got)
+	}
+}
