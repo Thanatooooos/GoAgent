@@ -35,6 +35,7 @@ type RagChatService struct {
 	agentRuntimeMode        string
 	chatContextBudget       ChatContextBudgetOptions
 	summaryTrigger          raghistory.SummaryTrigger
+	citationEnabled         bool
 }
 
 type LongTermMemoryWritebackInput struct {
@@ -73,6 +74,7 @@ type RagChatOptions struct {
 	LongTermMemoryWriteback LongTermMemoryWriteback
 	ToolWorkflow            ragtool.Workflow
 	ChatContextBudget       ChatContextBudgetOptions
+	CitationEnabled         bool
 }
 
 func NewRagChatServiceWithDeps(deps RagChatDeps, opts RagChatOptions) (*RagChatService, error) {
@@ -121,6 +123,7 @@ func NewRagChatServiceWithDeps(deps RagChatDeps, opts RagChatOptions) (*RagChatS
 	service.agentRuntime = deps.AgentRuntime
 	service.summaryTrigger = deps.SummaryTrigger
 	service.chatContextBudget = opts.ChatContextBudget.normalized()
+	service.citationEnabled = opts.CitationEnabled
 	return service, nil
 }
 

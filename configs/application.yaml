@@ -36,6 +36,7 @@ milvus:
   uri: http://localhost:19530
 
 rag:
+  citation-enabled: true
   vector:
     type: pg  # optional: milvus / pg
 

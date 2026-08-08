@@ -102,17 +102,18 @@ type HikariConfig struct {
 }
 
 type RagConfig struct {
-	Vector       RagVectorConfig       `mapstructure:"vector"`
-	Default      RagDefaultConfig      `mapstructure:"default"`
-	Agent        RagAgentConfig        `mapstructure:"agent"`
-	Retrieve     RagRetrieveConfig     `mapstructure:"retrieve"`
-	QueryRewrite RagQueryRewriteConfig `mapstructure:"query-rewrite"`
-	RateLimit    RagRateLimitConfig    `mapstructure:"rate-limit"`
-	Memory       RagMemoryConfig       `mapstructure:"memory"`
-	Knowledge    RagKnowledgeConfig    `mapstructure:"knowledge"`
-	MCP          RagMCPConfig          `mapstructure:"mcp"`
-	Search       RagSearchConfig       `mapstructure:"search"`
-	Trace        RagTraceConfig        `mapstructure:"trace"`
+	Vector          RagVectorConfig       `mapstructure:"vector"`
+	Default         RagDefaultConfig      `mapstructure:"default"`
+	Agent           RagAgentConfig        `mapstructure:"agent"`
+	Retrieve        RagRetrieveConfig     `mapstructure:"retrieve"`
+	QueryRewrite    RagQueryRewriteConfig `mapstructure:"query-rewrite"`
+	RateLimit       RagRateLimitConfig    `mapstructure:"rate-limit"`
+	Memory          RagMemoryConfig       `mapstructure:"memory"`
+	Knowledge       RagKnowledgeConfig    `mapstructure:"knowledge"`
+	MCP             RagMCPConfig          `mapstructure:"mcp"`
+	Search          RagSearchConfig       `mapstructure:"search"`
+	Trace           RagTraceConfig        `mapstructure:"trace"`
+	CitationEnabled bool                  `mapstructure:"citation-enabled"`
 }
 
 type RagVectorConfig struct {

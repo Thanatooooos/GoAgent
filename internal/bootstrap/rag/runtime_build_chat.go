@@ -57,6 +57,7 @@ func buildChatService(
 			SubquestionConcurrency:  cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
 			RequestCacheMaxEntries:  readRequestCacheMaxEntries(cfg),
 			AgentRuntimeMode:        cfg.Rag.Agent.Chat.Mode,
+			CitationEnabled:         cfg.Rag.CitationEnabled,
 			SessionRecall:           retrieve.sessionRecallService,
 			LongTermMemoryRecall:    memory.explicitMemoryService.RecallService(),
 			LongTermMemoryWriteback: adaptLongTermMemoryWriteback(buildLongTermMemoryWriteback(buildCtx, memory)),
