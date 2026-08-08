@@ -145,10 +145,10 @@ func (s *LLMService) callRewriteLLM(systemPrompt string, question string) (Resul
 	if err != nil {
 		return Result{}, fmt.Errorf("rewrite llm call: %w", err)
 	}
-	return parseRewriteResponse(response), nil
+	return parseRewriteResponse(response, question), nil
 }
 
-func parseRewriteResponse(raw string) Result {
+func parseRewriteResponse(raw string, fallbackQuestion string) Result {
 	raw = strings.TrimSpace(raw)
 	if extracted := extractJSONBlock(raw); extracted != "" {
 		raw = extracted
@@ -156,7 +156,7 @@ func parseRewriteResponse(raw string) Result {
 
 	var parsed rewriteLLMResponse
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return fallbackResult(raw)
+		return fallbackResult(fallbackQuestion)
 	}
 
 	rewritten := strings.TrimSpace(parsed.Rewritten)

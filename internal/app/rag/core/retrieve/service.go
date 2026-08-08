@@ -299,15 +299,54 @@ func toRetrievedChunks(hits []corevector.SearchHit) []convention.RetrievedChunk 
 
 	result := make([]convention.RetrievedChunk, 0, len(hits))
 	for _, hit := range hits {
+		metadata := cloneMetadata(hit.Metadata)
+		chunkID := hit.ChunkID
+		text := hit.Text
+		if strings.EqualFold(readMetadataString(metadata, "record_type"), "question") {
+			if sourceID := readMetadataString(metadata, "source_chunk_id"); sourceID != "" {
+				chunkID = sourceID
+			}
+			if sourceText := readMetadataString(metadata, "source_content"); sourceText != "" {
+				text = sourceText
+			}
+			if metadata == nil {
+				metadata = map[string]any{}
+			}
+			metadata["retrieval_source"] = "question"
+		} else if metadata != nil {
+			metadata["retrieval_source"] = "content"
+		}
+		if parentText := readMetadataString(metadata, "parent_content"); parentText != "" {
+			text = parentText
+			if metadata == nil {
+				metadata = map[string]any{}
+			}
+			metadata["context_source"] = "parent"
+		}
 		result = append(result, convention.RetrievedChunk{
-			ID:              hit.ChunkID,
-			Text:            hit.Text,
+			ID:              chunkID,
+			Text:            text,
 			Score:           hit.Score,
 			DocumentID:      hit.DocumentID,
 			KnowledgeBaseID: hit.KnowledgeBaseID,
 			ChunkIndex:      hit.Index,
-			Metadata:        hit.Metadata,
+			Metadata:        metadata,
 		})
 	}
 	return result
+}
+
+func readMetadataString(metadata map[string]any, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	value, ok := metadata[key]
+	if !ok {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }

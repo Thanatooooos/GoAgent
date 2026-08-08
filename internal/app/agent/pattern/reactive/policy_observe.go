@@ -51,6 +51,10 @@ func evaluateObservePolicy(session *agentruntime.RuntimeSession, outputMode stri
 		Answerable:            answerable,
 	}
 
+	if pendingApprovalDirective(session, &result) {
+		return result
+	}
+
 	switch {
 	case answerable:
 		result.Branch = terminalBranchForMode(session, outputMode)
@@ -84,6 +88,22 @@ func evaluateObservePolicy(session *agentruntime.RuntimeSession, outputMode stri
 	}
 
 	return result
+}
+
+func pendingApprovalDirective(session *agentruntime.RuntimeSession, result *observePolicyResult) bool {
+	if session == nil || result == nil {
+		return false
+	}
+	if session.Snapshot.Approval.Status != agentstate.ApprovalStatusPending {
+		return false
+	}
+	result.Branch = branchApproval
+	result.Reason = firstNonEmpty(session.Snapshot.Approval.Reason, "approval_required")
+	result.ApprovalCapability = session.Snapshot.Approval.Capability
+	result.ApprovalRerunNode = session.Snapshot.Approval.RerunNode
+	result.Confidence = 0.80
+	result.ProgressKind = progressNone
+	return true
 }
 
 func terminalBranchForMode(session *agentruntime.RuntimeSession, outputMode string) string {

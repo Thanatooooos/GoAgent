@@ -224,8 +224,12 @@ func newTestAgentServiceWithPatternAndStore(t *testing.T, patternName string, se
 		t.Fatalf("Compile() error = %v", err)
 	}
 	return &Service{
-		kernelRunner:  runner,
-		runtimeEngine: agentruntime.NewEngine(runner),
+		kernelRunner: runner,
+		runtimeEngine: agentruntime.NewEngine(
+			runner,
+			agentruntime.WithReducer(agentstate.DefaultReducer{}),
+			agentruntime.WithPendingApprovalCompat(agentruntime.NewLegacyPendingApprovalCompatResolver(registry, bindings)),
+		),
 		handoff:       buildHandoffBuilder(registry, bindings, patternName),
 		registry:      registry,
 		bindings:      bindings,

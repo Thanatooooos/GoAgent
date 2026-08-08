@@ -346,8 +346,8 @@ func TestCompile_RunDegradePath(t *testing.T) {
 	if result.Snapshot.Execution.LastProgressKind != progressNone {
 		t.Fatalf("expected no-progress kind on direct degrade path, got %+v", result.Snapshot.Execution)
 	}
-	if !hasEventType(result.Journal, agentstate.EventTypeCapabilitySkipped) {
-		t.Fatalf("expected capability_skipped event, got %+v", result.Journal)
+	if !hasEventType(result.Journal, agentstate.EventTypeFailed) {
+		t.Fatalf("expected failed event from scheduler precondition rejection, got %+v", result.Journal)
 	}
 	if !hasEventType(result.Journal, agentstate.EventTypeDegraded) {
 		t.Fatalf("expected degraded event, got %+v", result.Journal)
@@ -909,7 +909,7 @@ func TestCompile_PlannerOverridesNextQueryAndFetchGuidance(t *testing.T) {
 	}
 }
 
-func TestCompile_ApprovalGatedFetchInterruptsBeforeNode(t *testing.T) {
+func TestCompile_ApprovalGatedFetchInterruptsAtApprovalGate(t *testing.T) {
 	searchService := agentsearch.NewService(stubProvider{
 		name: "stub",
 		search: func(query string) ([]searchprovider.SearchResult, error) {
@@ -956,7 +956,7 @@ func TestCompile_ApprovalGatedFetchInterruptsBeforeNode(t *testing.T) {
 
 	result, err := runner.RunWithCheckpoint(context.Background(), newSession("sess-approval", "approval please", 2), "cp-fetch-approval")
 	if err == nil {
-		t.Fatal("expected interrupt error before approval-gated fetch")
+		t.Fatal("expected interrupt error before approval-gated resume handoff")
 	}
 	if _, ok := compose.ExtractInterruptInfo(err); !ok {
 		t.Fatalf("expected interrupt info, got %v", err)
@@ -964,14 +964,17 @@ func TestCompile_ApprovalGatedFetchInterruptsBeforeNode(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected interrupted runtime session")
 	}
-	if result.Checkpoint == nil || result.Checkpoint.Node != "fetch" {
-		t.Fatalf("expected checkpoint on fetch node, got %+v", result.Checkpoint)
+	if result.Checkpoint == nil || result.Checkpoint.Node != "approval" {
+		t.Fatalf("expected checkpoint on approval node, got %+v", result.Checkpoint)
 	}
-	if result.Snapshot.Execution.CurrentNode != "fetch" || !result.Snapshot.Execution.Interrupted {
-		t.Fatalf("expected execution interrupt state on fetch, got %+v", result.Snapshot.Execution)
+	if result.Snapshot.Execution.CurrentNode != "approval" || !result.Snapshot.Execution.Interrupted {
+		t.Fatalf("expected execution interrupt state on approval, got %+v", result.Snapshot.Execution)
 	}
 	if !hasEventType(result.Journal, agentstate.EventTypeInterrupt) {
 		t.Fatalf("expected interrupt event, got %+v", result.Journal)
+	}
+	if result.Snapshot.Approval.Status != agentstate.ApprovalStatusPending || result.Snapshot.Approval.Capability != agentcapability.NameWebFetch {
+		t.Fatalf("expected shared approval state for fetch gate, got %+v", result.Snapshot.Approval)
 	}
 	if len(result.Snapshot.Context.SearchResults) == 0 {
 		t.Fatalf("expected search to finish before fetch interrupt, got %+v", result.Snapshot.Context)

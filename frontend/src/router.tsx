@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { LoginPage } from "@/pages/LoginPage";
 import { ChatPage } from "@/pages/ChatPage";
+import { DailyBriefPage } from "@/pages/DailyBriefPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { AdminLayout } from "@/pages/admin/AdminLayout";
 import { DashboardPage } from "@/pages/admin/dashboard/DashboardPage";
@@ -82,6 +83,14 @@ export const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <ChatPage />
+      </RequireAuth>
+    )
+  },
+  {
+    path: "/brief",
+    element: (
+      <RequireAuth>
+        <DailyBriefPage />
       </RequireAuth>
     )
   },

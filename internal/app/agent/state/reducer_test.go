@@ -27,6 +27,39 @@ func TestDefaultReducerApply_BackfillsSnapshotVersionAndPatternState(t *testing.
 	}
 }
 
+func TestDefaultReducerApply_PatternDeltaReplacesPatternState(t *testing.T) {
+	reducer := DefaultReducer{}
+	name := "plan_execute"
+	data := map[string]any{
+		"phase": "execute",
+	}
+
+	next, err := reducer.Apply(StateSnapshot{
+		Pattern: PatternState{
+			Name: "reactive",
+			Data: map[string]any{
+				"phase": "observe",
+				"mode":  "legacy",
+			},
+		},
+	}, StateDelta{
+		Pattern: &PatternDelta{
+			Name: &name,
+			Data: data,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	if next.Pattern.Name != "plan_execute" {
+		t.Fatalf("expected pattern name overwrite, got %+v", next.Pattern)
+	}
+	if len(next.Pattern.Data) != 1 || next.Pattern.Data["phase"] != "execute" {
+		t.Fatalf("expected pattern data replace semantics, got %+v", next.Pattern.Data)
+	}
+}
+
 func TestDefaultReducerApply_RequestConversationIDOnlyBackfills(t *testing.T) {
 	reducer := DefaultReducer{}
 

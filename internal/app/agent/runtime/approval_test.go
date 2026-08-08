@@ -82,9 +82,9 @@ func TestBuildApprovedApprovalNodeResult_UsesSharedResumeContract(t *testing.T) 
 		SessionID: "sess-approved-approval-result",
 		Snapshot: agentstate.StateSnapshot{
 			Approval: agentstate.ApprovalState{
-				Reason:      "fetch_approval_required",
-				RerunNode:   "fetch",
-				ReviewedAt:  reviewedAt,
+				Reason:       "fetch_approval_required",
+				RerunNode:    "fetch",
+				ReviewedAt:   reviewedAt,
 				DecisionNote: "approved",
 			},
 		},
@@ -125,5 +125,87 @@ func TestBuildRejectedApprovalNodeResult_CanOptionallySetDegradeReason(t *testin
 	}
 	if result.Delta.Answer == nil || result.Delta.Answer.DegradeReason == nil || *result.Delta.Answer.DegradeReason != "approval_rejected" {
 		t.Fatalf("expected degrade reason when requested, got %+v", result.Delta.Answer)
+	}
+}
+
+func TestNormalizePendingApprovalSession_AppendsSharedStateAppliedEvent(t *testing.T) {
+	session := &RuntimeSession{
+		SessionID: "sess-normalize-pending-approval",
+		Snapshot: agentstate.StateSnapshot{
+			Approval: agentstate.ApprovalState{
+				Status: agentstate.ApprovalStatusPending,
+				Reason: "fetch_approval_required",
+			},
+			Execution: agentstate.ExecutionState{
+				Interrupted: true,
+			},
+		},
+	}
+
+	ok := NormalizePendingApprovalSession(session, "cp-normalize-pending-approval")
+	if !ok {
+		t.Fatal("expected pending approval normalization to apply")
+	}
+	if runtimeEventCount(session, agentstate.EventTypeStateApplied, "approval") == 0 {
+		t.Fatalf("expected shared state_applied event, got %+v", session.Journal)
+	}
+	if session.Snapshot.Approval.CheckpointID != "cp-normalize-pending-approval" {
+		t.Fatalf("expected checkpoint id to be normalized through shared state, got %+v", session.Snapshot.Approval)
+	}
+}
+
+func TestApplyApprovalDecision_AppendsSharedStateAppliedEvent(t *testing.T) {
+	session := &RuntimeSession{
+		SessionID: "sess-apply-approval-decision",
+		Snapshot: agentstate.StateSnapshot{
+			Approval: agentstate.ApprovalState{
+				Status:       agentstate.ApprovalStatusPending,
+				Reason:       "fetch_approval_required",
+				CheckpointID: "cp-apply-approval-decision",
+			},
+			Execution: agentstate.ExecutionState{
+				Interrupted: true,
+			},
+		},
+	}
+
+	if err := ApplyApprovalDecision(session, "cp-apply-approval-decision", agentstate.ApprovalStatusApproved, "approved by reviewer"); err != nil {
+		t.Fatalf("ApplyApprovalDecision() error = %v", err)
+	}
+	if runtimeEventCount(session, agentstate.EventTypeStateApplied, "approval") == 0 {
+		t.Fatalf("expected shared state_applied event, got %+v", session.Journal)
+	}
+	if session.Snapshot.Approval.DecisionNote != "approved by reviewer" || session.Snapshot.Approval.ReviewedAt.IsZero() {
+		t.Fatalf("expected approval review metadata to be written via shared state, got %+v", session.Snapshot.Approval)
+	}
+}
+
+func TestFinalizeRejectedApproval_AppendsSharedStateAppliedEvent(t *testing.T) {
+	session := &RuntimeSession{
+		SessionID: "sess-finalize-rejected-approval",
+		Snapshot: agentstate.StateSnapshot{
+			Approval: agentstate.ApprovalState{
+				Status:       agentstate.ApprovalStatusRejected,
+				Reason:       "fetch_approval_required",
+				CheckpointID: "cp-finalize-rejected-approval",
+			},
+			Execution: agentstate.ExecutionState{
+				Interrupted: true,
+			},
+		},
+	}
+
+	final, err := FinalizeRejectedApproval(session)
+	if err != nil {
+		t.Fatalf("FinalizeRejectedApproval() error = %v", err)
+	}
+	if final == nil {
+		t.Fatal("expected finalized session")
+	}
+	if runtimeEventCount(final, agentstate.EventTypeStateApplied, "degrade") == 0 {
+		t.Fatalf("expected shared state_applied event, got %+v", final.Journal)
+	}
+	if final.Snapshot.Answer.DegradeReason != "approval_rejected" || final.Snapshot.Execution.Interrupted {
+		t.Fatalf("expected finalized rejected approval state, got %+v", final.Snapshot)
 	}
 }

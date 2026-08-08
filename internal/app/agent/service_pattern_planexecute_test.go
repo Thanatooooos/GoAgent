@@ -376,8 +376,12 @@ func newPlanExecuteDocumentApprovalService(t *testing.T, outputMode string, sess
 	}
 
 	return &Service{
-		kernelRunner:  runner,
-		runtimeEngine: agentruntime.NewEngine(runner),
+		kernelRunner: runner,
+		runtimeEngine: agentruntime.NewEngine(
+			runner,
+			agentruntime.WithReducer(agentstate.DefaultReducer{}),
+			agentruntime.WithPendingApprovalCompat(agentruntime.NewLegacyPendingApprovalCompatResolver(registry, bindings)),
+		),
 		handoff:       buildHandoffBuilder(registry, bindings, PatternPlanExecute),
 		registry:      registry,
 		bindings:      bindings,

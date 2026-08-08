@@ -41,6 +41,9 @@ func newExecuteStepNode(registry *agentcapability.Registry, resolver agentresolv
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
+		if scheduled, ok := scheduledStepExecutionResult(plan, step, execution); ok {
+			return scheduled, nil
+		}
 
 		result := execution.Invocation
 		step.Status = agentstate.PlanStepStatusRunning
@@ -114,4 +117,50 @@ func legacyInvocationInputForStep(step agentstate.PlanStep) any {
 	default:
 		return nil
 	}
+}
+
+func scheduledStepExecutionResult(plan agentstate.PlanState, step agentstate.PlanStep, execution agentruntime.CapabilityExecutionResult) (agentruntime.NodeResult, bool) {
+	if execution.Schedule.Decision == agentruntime.ScheduleDecisionExecute {
+		return agentruntime.NodeResult{}, false
+	}
+
+	result := execution.Invocation
+	if execution.Schedule.Decision != agentruntime.ScheduleDecisionWaitApproval {
+		step.AttemptCount++
+	}
+	step.LastSummary = firstNonEmpty(result.Observation.Summary, result.Action.Summary, step.Title)
+	step.LastError = ""
+	step.LastErrorClass = result.ErrorClass
+	if result.ErrorClass != "" {
+		step.LastError = step.LastSummary
+	}
+	resultState := resultSummary(step, result.Status, result.ErrorClass, result.Output, result.Observation.Summary)
+	if execution.Schedule.Decision != agentruntime.ScheduleDecisionWaitApproval {
+		resultState.Attempt = step.AttemptCount
+		resultState.StartedAt = execution.StartedAt
+		resultState.CompletedAt = time.Now()
+		resultState.DurationMs = resultState.CompletedAt.Sub(resultState.StartedAt).Milliseconds()
+	}
+	plan.Steps[plan.CurrentStepIndex] = step
+	plan.LastStepResult = resultState
+
+	delta := result.Delta
+	delta.Plan = &agentstate.PlanDelta{
+		Replace: &plan,
+	}
+	if execution.Schedule.Decision == agentruntime.ScheduleDecisionWaitApproval {
+		delta.Approval = agentruntime.BuildPendingApprovalDelta(
+			step.CapabilityName+"_approval_required",
+			step.CapabilityName,
+			"execute_step",
+			"",
+			time.Now(),
+		)
+	}
+	delta.Execution = executionNodeDelta("execute_step")
+
+	return agentruntime.NodeResult{
+		Events: execution.Events,
+		Delta:  delta,
+	}, true
 }

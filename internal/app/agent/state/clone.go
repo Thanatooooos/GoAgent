@@ -106,6 +106,12 @@ func CloneDelta(delta StateDelta) StateDelta {
 			Final:         cloneStringPtr(delta.Answer.Final),
 		}
 	}
+	if delta.Pattern != nil {
+		cloned.Pattern = &PatternDelta{
+			Name: cloneStringPtr(delta.Pattern.Name),
+			Data: cloneStringAnyMap(delta.Pattern.Data),
+		}
+	}
 	return cloned
 }
 

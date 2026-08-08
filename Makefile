@@ -9,7 +9,7 @@ INTEGRATION_RUSTFS_ACCESS_KEY_ID := rustfsadmin
 INTEGRATION_RUSTFS_SECRET_ACCESS_KEY := rustfsadmin
 INTEGRATION_RUSTFS_BUCKET := knowledge
 
-.PHONY: test test-go test-frontend lint lint-frontend build build-frontend integration-up integration-down test-integration test-integration-pipeline test-integration-upload
+.PHONY: test test-go test-frontend lint lint-frontend build build-frontend integration-up integration-down test-integration test-integration-pipeline test-integration-upload test-integration-dailybrief
 
 test: test-go
 
@@ -35,7 +35,7 @@ integration-up:
 integration-down:
 	$(COMPOSE) down
 
-test-integration: test-integration-pipeline test-integration-upload
+test-integration: test-integration-pipeline test-integration-upload test-integration-dailybrief
 
 test-integration-pipeline:
 	RAG_INTEGRATION_PIPELINE=1 \
@@ -55,3 +55,10 @@ test-integration-upload:
 	RUSTFS_SECRET_ACCESS_KEY=$(INTEGRATION_RUSTFS_SECRET_ACCESS_KEY) \
 	RUSTFS_BUCKET=$(INTEGRATION_RUSTFS_BUCKET) \
 	go test ./internal/app/knowledge/service/test ./internal/adapter/storage/s3/test -run 'TestKnowledgeDocumentUploadIntegration|TestFileStorageUploadOpenDeleteIntegration' -count=1
+
+test-integration-dailybrief:
+	RAG_INTEGRATION_DAILY_BRIEF=1 \
+	POSTGRES_URL=$(INTEGRATION_POSTGRES_URL) \
+	POSTGRES_USER=$(INTEGRATION_POSTGRES_USER) \
+	POSTGRES_PASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) \
+	go test ./internal/bootstrap/dailybrief -run 'TestDailyBriefPipelineE2E|TestDailyBriefRetryE2E' -count=1

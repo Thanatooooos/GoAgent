@@ -1,16 +1,20 @@
 package executor
 
 import (
-	ingestionrunner "local/rag-project/internal/app/ingestion/service/runner"
-	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"context"
 	"errors"
+	ingestionrunner "local/rag-project/internal/app/ingestion/service/runner"
+	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+
 	"local/rag-project/internal/app/ingestion/domain"
+	fwlog "local/rag-project/internal/framework/log"
 )
 
 // retryTestRunner 可在指定失败次数后返回成功。
@@ -124,6 +128,66 @@ func TestExecutorRetriesNodeOnTransientFailure(t *testing.T) {
 	if runner.failCount != 3 {
 		t.Fatalf("expected 3 total attempts (2 fails + 1 success), got %d", runner.failCount)
 	}
+}
+
+func TestExecutorExecuteRunsWorkflowSynchronously(t *testing.T) {
+	runner := &retryTestRunner{nodeType: "fetcher"}
+	registry := ingestionrunner.NewNodeRunnerRegistry(runner)
+	observer := newRetryTaskObserverStub()
+
+	svc := NewExecutorService(ExecutorServiceOptions{
+		WorkflowBuilder: ingestionworkflow.NewEinoGraphWorkflowBuilder(),
+		NodeRunners:     registry,
+		TaskObserver:    observer,
+		MaxConcurrent:   1,
+	})
+	defer svc.Close()
+
+	pipeline := domain.Pipeline{
+		ID: "p-1",
+		Nodes: []domain.PipelineNode{
+			{NodeID: "n-1", NodeType: "fetcher"},
+		},
+	}
+	task := domain.Task{ID: "t-1", PipelineID: "p-1", SourceType: domain.TaskSourceTypeFile}
+
+	if err := svc.Execute(context.Background(), pipeline, task); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.failCount != 1 {
+		t.Fatalf("expected synchronous execution to call runner once, got %d", runner.failCount)
+	}
+}
+
+func TestExecutorLogsTaskAndPipelineContext(t *testing.T) {
+	runner := &retryTestRunner{nodeType: "fetcher"}
+	core, observed := observer.New(zap.InfoLevel)
+	svc := NewExecutorService(ExecutorServiceOptions{
+		WorkflowBuilder: ingestionworkflow.NewEinoGraphWorkflowBuilder(),
+		NodeRunners:     ingestionrunner.NewNodeRunnerRegistry(runner),
+		MaxConcurrent:   1,
+	})
+	defer svc.Close()
+
+	pipeline := domain.Pipeline{ID: "p-1", Nodes: []domain.PipelineNode{{NodeID: "n-1", NodeType: "fetcher"}}}
+	task := domain.Task{ID: "task-1", PipelineID: "p-1", SourceType: domain.TaskSourceTypeFile}
+	ctx := fwlog.BindLogger(context.Background(), zap.New(core).Sugar())
+	if err := svc.Execute(ctx, pipeline, task); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	for _, entry := range observed.All() {
+		if entry.Message == "ingestion task started" {
+			fields := entry.ContextMap()
+			if fields["task_id"] == "task-1" && fields["pipeline_id"] == "p-1" {
+				return
+			}
+		}
+	}
+	t.Fatalf("expected task start log with correlation fields, got %+v", observed.All())
 }
 
 func TestExecutorFailsAfterMaxRetries(t *testing.T) {

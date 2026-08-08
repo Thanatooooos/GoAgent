@@ -68,3 +68,5 @@ tmp_*
 .gocache-*
 
 tmp
+
+.gotelemetry

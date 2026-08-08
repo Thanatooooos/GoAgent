@@ -31,6 +31,9 @@ func newFetchNode(fetchCapability agentcapability.Handle) (agentkernel.Node, err
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
+		if scheduled, ok := scheduledCapabilityNodeResult("fetch", fetchCapability.Spec().Name, execution); ok {
+			return scheduled, nil
+		}
 		if _, ok := execution.Invocation.Output.(agentfetch.Output); !ok && execution.Invocation.Status != agentcapability.StatusSkipped {
 			return agentruntime.NodeResult{}, fmt.Errorf("fetch capability returned unexpected output type %T", execution.Invocation.Output)
 		}

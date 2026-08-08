@@ -62,6 +62,8 @@ func BuildPendingApprovalNodeResult(session *RuntimeSession, note string) NodeRe
 func BuildPendingApprovalDelta(reason string, capability string, rerunNode string, checkpointID string, requestedAt time.Time) *agentstate.ApprovalDelta {
 	status := agentstate.ApprovalStatusPending
 	node := "approval"
+	reviewedAt := time.Time{}
+	decisionNote := ""
 	return &agentstate.ApprovalDelta{
 		Status:       &status,
 		Reason:       stringPtrIfNotEmpty(reason),
@@ -70,6 +72,8 @@ func BuildPendingApprovalDelta(reason string, capability string, rerunNode strin
 		CheckpointID: stringPtrIfNotEmpty(checkpointID),
 		RerunNode:    stringPtrIfNotEmpty(rerunNode),
 		RequestedAt:  &requestedAt,
+		ReviewedAt:   &reviewedAt,
+		DecisionNote: &decisionNote,
 	}
 }
 
@@ -145,11 +149,261 @@ func BuildRejectedApprovalNodeResult(session *RuntimeSession, target string, pro
 	}
 }
 
+// NormalizePendingApprovalSession ensures a pending approval session already
+// produced by runtime/pattern code has complete shared approval state and one
+// approval_pending lifecycle event before service projection/persistence.
+func NormalizePendingApprovalSession(session *RuntimeSession, checkpointID string) bool {
+	return normalizePendingApprovalSession(session, checkpointID, agentstate.DefaultReducer{})
+}
+
+func normalizePendingApprovalSession(session *RuntimeSession, checkpointID string, reducer agentstate.Reducer) bool {
+	if session == nil || !isInterruptedSession(session) {
+		return false
+	}
+	if strings.TrimSpace(session.Snapshot.Approval.Status) != agentstate.ApprovalStatusPending {
+		return false
+	}
+
+	now := time.Now()
+	finalCheckpointID := firstNonEmpty(
+		strings.TrimSpace(session.Snapshot.Approval.CheckpointID),
+		strings.TrimSpace(checkpointID),
+		firstNonEmptyRuntimeCheckpointID(session, ""),
+	)
+	requestedAt := session.Snapshot.Approval.RequestedAt
+	if requestedAt.IsZero() {
+		requestedAt = now
+	}
+	reason := approvalReason(session)
+	node := firstNonEmpty(strings.TrimSpace(session.Snapshot.Approval.Node), "approval")
+	delta := agentstate.StateDelta{
+		Approval: &agentstate.ApprovalDelta{
+			Status:       stringPtr(agentstate.ApprovalStatusPending),
+			Reason:       stringPtr(reason),
+			Node:         stringPtr(node),
+			Capability:   stringPtrIfNotEmpty(strings.TrimSpace(session.Snapshot.Approval.Capability)),
+			CheckpointID: stringPtrIfNotEmpty(finalCheckpointID),
+			RerunNode:    stringPtrIfNotEmpty(strings.TrimSpace(session.Snapshot.Approval.RerunNode)),
+			RequestedAt:  &requestedAt,
+		},
+		Execution: &agentstate.ExecutionDelta{
+			Interrupted:     boolPtr(true),
+			InterruptReason: stringPtr(reason),
+		},
+	}
+	if err := newStateApplier(reducer).apply(session, "approval", delta, now); err != nil {
+		return false
+	}
+	if !hasApprovalLifecycleEvent(session, agentstate.EventTypeApprovalPending, finalCheckpointID) {
+		appendApprovalRuntimeEvent(session, "approval", agentstate.EventTypeApprovalPending, reason, finalCheckpointID)
+	}
+	return true
+}
+
+// ApplyApprovalDecision records the reviewed approval status in shared runtime
+// state before any resume/finalize operation continues.
+func ApplyApprovalDecision(session *RuntimeSession, checkpointID string, decision string, note string) error {
+	return applyApprovalDecision(session, checkpointID, decision, note, agentstate.DefaultReducer{})
+}
+
+func applyApprovalDecision(session *RuntimeSession, checkpointID string, decision string, note string, reducer agentstate.Reducer) error {
+	if session == nil {
+		return nil
+	}
+	now := time.Now()
+	trimmedDecision := strings.TrimSpace(decision)
+	finalCheckpointID := firstNonEmpty(
+		strings.TrimSpace(session.Snapshot.Approval.CheckpointID),
+		strings.TrimSpace(checkpointID),
+		firstNonEmptyRuntimeCheckpointID(session, ""),
+	)
+	if finalCheckpointID != "" {
+		checkpointID = finalCheckpointID
+	}
+	reason := strings.TrimSpace(session.Snapshot.Approval.Reason)
+	delta := agentstate.StateDelta{
+		Approval: &agentstate.ApprovalDelta{
+			Status:       &trimmedDecision,
+			CheckpointID: stringPtrIfNotEmpty(finalCheckpointID),
+			ReviewedAt:   &now,
+			DecisionNote: stringPtr(strings.TrimSpace(note)),
+		},
+		Execution: &agentstate.ExecutionDelta{
+			Interrupted:     boolPtr(true),
+			InterruptReason: stringPtr(reason),
+		},
+	}
+	if err := newStateApplier(reducer).apply(session, "approval", delta, now); err != nil {
+		return err
+	}
+	session.Metadata.ApprovalDecision = trimmedDecision
+	session.Metadata.ApprovalNote = strings.TrimSpace(note)
+	session.Metadata.UpdatedAt = now
+
+	eventType := agentstate.EventTypeApprovalResolved
+	if trimmedDecision == agentstate.ApprovalStatusRejected {
+		eventType = agentstate.EventTypeApprovalRejected
+	}
+	if !hasApprovalLifecycleEvent(session, eventType, finalCheckpointID) {
+		appendApprovalRuntimeEvent(session, "approval", eventType, trimmedDecision, finalCheckpointID)
+	}
+	return nil
+}
+
+// FinalizeRejectedApproval converts a rejected approval into the stable
+// degraded shared runtime state used by outward projections.
+func FinalizeRejectedApproval(session *RuntimeSession) (*RuntimeSession, error) {
+	return finalizeRejectedApproval(session, agentstate.DefaultReducer{})
+}
+
+func finalizeRejectedApproval(session *RuntimeSession, reducer agentstate.Reducer) (*RuntimeSession, error) {
+	if session == nil {
+		return nil, nil
+	}
+	now := time.Now()
+	reason := "approval_rejected"
+	final := "I couldn't continue because the required approval was not granted."
+	reviewedAt := session.Snapshot.Approval.ReviewedAt
+	if reviewedAt.IsZero() {
+		reviewedAt = now
+	}
+	delta := agentstate.StateDelta{
+		Evidence: &agentstate.EvidenceDelta{
+			SufficiencyReason: &reason,
+		},
+		Approval: &agentstate.ApprovalDelta{
+			Status:     stringPtr(agentstate.ApprovalStatusRejected),
+			ReviewedAt: &reviewedAt,
+		},
+		Execution: &agentstate.ExecutionDelta{
+			CurrentNode:      stringPtr("degrade"),
+			LastBranchTarget: stringPtr("degrade"),
+			LastBranchReason: stringPtr(reason),
+			Interrupted:      boolPtr(false),
+			InterruptReason:  stringPtr(""),
+		},
+		Answer: &agentstate.AnswerDelta{
+			DegradeReason: &reason,
+			Final:         &final,
+		},
+	}
+	if err := newStateApplier(reducer).apply(session, "degrade", delta, now); err != nil {
+		return nil, err
+	}
+	session.Metadata.ApprovalDecision = agentstate.ApprovalStatusRejected
+	session.Metadata.UpdatedAt = now
+	if !hasRuntimeEventTypeInSession(session, agentstate.EventTypeDegraded) {
+		appendRuntimeEvent(session, agentstate.NewRuntimeEventAt(now, session.SessionID, "degrade", agentstate.EventTypeDegraded, reason))
+	}
+	return session, nil
+}
+
+// MergeApprovalResumeHistory preserves approval lifecycle events when the
+// resumed runner returns a new session instance with a fresh journal.
+func MergeApprovalResumeHistory(previous *RuntimeSession, current *RuntimeSession) {
+	if previous == nil || current == nil || previous == current {
+		return
+	}
+	if len(previous.Journal) == 0 {
+		return
+	}
+	if len(current.Journal) == 0 {
+		current.Journal = cloneRuntimeJournal(previous.Journal)
+		return
+	}
+	if current.Journal[0].Sequence != 1 {
+		return
+	}
+	if !hasRuntimeEventTypeInSession(previous, agentstate.EventTypeApprovalPending) ||
+		hasRuntimeEventTypeInSession(current, agentstate.EventTypeApprovalPending) {
+		return
+	}
+
+	merged := cloneRuntimeJournal(previous.Journal)
+	start := 0
+	if current.Journal[0].EventType == agentstate.EventTypeSessionStarted {
+		start = 1
+	}
+	for i := start; i < len(current.Journal); i++ {
+		event := current.Journal[i]
+		event.Sequence = len(merged) + 1
+		if strings.TrimSpace(event.SessionID) == "" {
+			event.SessionID = current.SessionID
+		}
+		merged = append(merged, event)
+	}
+	current.Journal = merged
+}
+
 func approvalReason(session *RuntimeSession) string {
 	if session == nil {
 		return "approval_required"
 	}
 	return firstNonEmpty(session.Snapshot.Approval.Reason, session.Snapshot.Evidence.SufficiencyReason, "approval_required")
+}
+
+func appendRuntimeEvent(session *RuntimeSession, event agentstate.RuntimeEvent) {
+	if session == nil {
+		return
+	}
+	event.Sequence = len(session.Journal) + 1
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	if strings.TrimSpace(event.SessionID) == "" {
+		event.SessionID = session.SessionID
+	}
+	session.Journal = append(session.Journal, event)
+}
+
+func appendApprovalRuntimeEvent(session *RuntimeSession, node string, eventType string, payload string, checkpointID string) {
+	if session == nil {
+		return
+	}
+	event := agentstate.NewRuntimeEventAt(time.Now(), session.SessionID, node, eventType, payload)
+	if trimmed := strings.TrimSpace(checkpointID); trimmed != "" {
+		event.Checkpoint = agentstate.NewCheckpointRef(trimmed, node)
+	}
+	appendRuntimeEvent(session, event)
+}
+
+func hasRuntimeEventTypeInSession(session *RuntimeSession, eventType string) bool {
+	if session == nil {
+		return false
+	}
+	for _, event := range session.Journal {
+		if event.EventType == eventType {
+			return true
+		}
+	}
+	return false
+}
+
+func hasApprovalLifecycleEvent(session *RuntimeSession, eventType string, checkpointID string) bool {
+	if session == nil {
+		return false
+	}
+	for _, event := range session.Journal {
+		if event.EventType != eventType {
+			continue
+		}
+		if strings.TrimSpace(checkpointID) == "" {
+			return true
+		}
+		if event.Checkpoint != nil && strings.TrimSpace(event.Checkpoint.ID) == strings.TrimSpace(checkpointID) {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneRuntimeJournal(events []agentstate.RuntimeEvent) []agentstate.RuntimeEvent {
+	if len(events) == 0 {
+		return nil
+	}
+	cloned := make([]agentstate.RuntimeEvent, len(events))
+	copy(cloned, events)
+	return cloned
 }
 
 func approvalPendingExecutionDelta(reason string) *agentstate.ExecutionDelta {
@@ -185,6 +439,10 @@ func sessionID(session *RuntimeSession) string {
 }
 
 func stringPtr(value string) *string {
+	return &value
+}
+
+func boolPtr(value bool) *bool {
 	return &value
 }
 

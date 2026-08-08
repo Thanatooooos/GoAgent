@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -55,5 +56,36 @@ func TestOpenAIStyleChatClientParsesUsage(t *testing.T) {
 	}
 	if usage.PromptTokens != 12 || usage.CompletionTokens != 3 || usage.TotalTokens != 15 {
 		t.Fatalf("unexpected usage: %+v", usage)
+	}
+}
+
+func TestOpenAIStyleChatClientChatWithUsageContextHonorsCanceledContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		t.Fatal("request should not reach server when context is already canceled")
+	}))
+	defer srv.Close()
+
+	client := chat.NewBaiLianChatClient(srv.Client())
+	request := convention.ChatRequest{
+		Messages: []convention.ChatMessage{convention.UserMessage("hi")},
+	}
+	target := model.ModelTarget{
+		Id: "test-model",
+		Candidate: config.ModelCandidate{
+			Provider: client.Provider(),
+			Model:    "qwen-test",
+		},
+		Provider: config.ProviderConfig{
+			Url:       srv.URL,
+			ApiKey:    "test-key",
+			Endpoints: map[string]string{"chat": "/chat/completions"},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := client.ChatWithUsageContext(ctx, request, target)
+	if err == nil {
+		t.Fatal("expected canceled context to abort chat request")
 	}
 }

@@ -35,6 +35,9 @@ func mergeStateDeltaInto(target *StateDelta, delta StateDelta) {
 	if delta.Answer != nil {
 		target.Answer = mergeAnswerDelta(target.Answer, delta.Answer)
 	}
+	if delta.Pattern != nil {
+		target.Pattern = mergePatternDelta(target.Pattern, delta.Pattern)
+	}
 }
 
 func mergeRequestDelta(left, right *RequestDelta) *RequestDelta {
@@ -356,6 +359,31 @@ func mergeAnswerDelta(left, right *AnswerDelta) *AnswerDelta {
 	}
 	if right.Final != nil {
 		merged.Final = cloneStringPtr(right.Final)
+	}
+	return merged
+}
+
+func mergePatternDelta(left, right *PatternDelta) *PatternDelta {
+	switch {
+	case left == nil && right == nil:
+		return nil
+	case left == nil:
+		clone := CloneDelta(StateDelta{Pattern: right})
+		return clone.Pattern
+	case right == nil:
+		clone := CloneDelta(StateDelta{Pattern: left})
+		return clone.Pattern
+	}
+
+	merged := &PatternDelta{
+		Name: cloneStringPtr(left.Name),
+		Data: cloneStringAnyMap(left.Data),
+	}
+	if right.Name != nil {
+		merged.Name = cloneStringPtr(right.Name)
+	}
+	if right.Data != nil {
+		merged.Data = cloneStringAnyMap(right.Data)
 	}
 	return merged
 }

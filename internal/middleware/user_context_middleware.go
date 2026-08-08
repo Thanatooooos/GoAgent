@@ -78,6 +78,12 @@ func UserContextMiddleware(loader UserLoaderFunc, extractor LoginIDExtractor) gi
 		}
 
 		contextx.Set(c, user)
+		ctx := fwlog.NewContext(c.Request.Context(),
+			"user_id", user.UserID,
+			"username", user.Username,
+			"role", user.Role,
+		)
+		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
 }

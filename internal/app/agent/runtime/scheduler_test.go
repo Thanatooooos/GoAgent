@@ -34,7 +34,7 @@ func TestEvaluateCapabilitySchedule_RequiresApprovalYieldsWaitApproval(t *testin
 	}
 }
 
-func TestEvaluateCapabilitySchedule_RuntimeOptionRequireApprovalYieldsWaitApproval(t *testing.T) {
+func TestEvaluateCapabilitySchedule_RuntimeOptionRequireApprovalSkipsLowRiskSearch(t *testing.T) {
 	result := EvaluateCapabilitySchedule(CapabilityScheduleInput{
 		Session: &RuntimeSession{
 			Snapshot: agentstate.StateSnapshot{
@@ -46,12 +46,13 @@ func TestEvaluateCapabilitySchedule_RuntimeOptionRequireApprovalYieldsWaitApprov
 			},
 		},
 		Spec: agentcapability.Spec{
-			Name: agentcapability.NameWebSearch,
+			Name:      agentcapability.NameWebSearch,
+			RiskLevel: agentcapability.RiskLevelLow,
 		},
 	})
 
-	if result.Decision != ScheduleDecisionWaitApproval {
-		t.Fatalf("expected runtime require-approval to gate execution, got %+v", result)
+	if result.Decision != ScheduleDecisionExecute {
+		t.Fatalf("expected low-risk search to bypass runtime require-approval gate, got %+v", result)
 	}
 }
 
@@ -129,7 +130,8 @@ func TestEvaluateCapabilitySchedule_UsesExplicitRuntimeOptionsWithoutSession(t *
 		},
 		PatternAction: "plan_execute_gate",
 		Spec: agentcapability.Spec{
-			Name: agentcapability.NameWebFetch,
+			Name:      agentcapability.NameWebFetch,
+			RiskLevel: agentcapability.RiskLevelMedium,
 		},
 	})
 
@@ -174,6 +176,7 @@ func TestBuildCapabilityScheduleBatches_GroupsOnlyParallelSafeExecutions(t *test
 			PatternAction: "approval_gate",
 			Spec: agentcapability.Spec{
 				Name:             "approval_fetch",
+				RiskLevel:        agentcapability.RiskLevelMedium,
 				SupportsParallel: true,
 			},
 		},

@@ -14,35 +14,38 @@ const (
 )
 
 const (
-	KnowledgeDocumentStatusPending = "pending"
-	KnowledgeDocumentStatusRunning = "running"
-	KnowledgeDocumentStatusSuccess = "success"
-	KnowledgeDocumentStatusFailed  = "failed"
+	KnowledgeDocumentStatusPending  = "pending"
+	KnowledgeDocumentStatusRunning  = "running"
+	KnowledgeDocumentStatusSuccess  = "success"
+	KnowledgeDocumentStatusFailed   = "failed"
 	KnowledgeDocumentStatusDeleting = "deleting"
 )
 
 type KnowledgeDocument struct {
-	ID              string
-	KnowledgeBaseID string
-	Name            string
-	Enabled         bool
-	ChunkCount      int
-	FileURL         string
-	FileType        string
-	FileSize        int64
-	ProcessMode     string
-	Status          string
-	SourceType      string
-	SourceLocation  string
-	ScheduleEnabled bool
-	ScheduleCron    string
-	ChunkStrategy   string
-	ChunkConfig     []byte
-	PipelineID      string
-	CreatedBy       string
-	UpdatedBy       string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                  string
+	KnowledgeBaseID     string
+	Name                string
+	Enabled             bool
+	ChunkCount          int
+	FileURL             string
+	FileType            string
+	FileSize            int64
+	ProcessMode         string
+	Status              string
+	SourceType          string
+	SourceLocation      string
+	ScheduleEnabled     bool
+	ScheduleCron        string
+	ChunkStrategy       string
+	ChunkConfig         []byte
+	PipelineID          string
+	Summary             string
+	SummaryStatus       string
+	SummaryErrorMessage string
+	CreatedBy           string
+	UpdatedBy           string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 func NewUploadedKnowledgeDocument(id, knowledgeBaseID, name, fileURL, fileType, createdBy string, fileSize int64) KnowledgeDocument {

@@ -128,6 +128,15 @@ func assessEvidencePolicy(session *agentruntime.RuntimeSession, step agentstate.
 			contextDelta:  contextDelta,
 		}
 	}
+	if strings.TrimSpace(step.CapabilityName) == agentcapability.NameWebFetch && len(last.URLs) == 0 {
+		return assessmentPolicyResult{
+			disposition:   assessmentFailed,
+			retryable:     false,
+			failureReason: reasonFetchEvidenceMissing,
+			evidenceItems: evidenceItems,
+			contextDelta:  contextDelta,
+		}
+	}
 	return assessmentPolicyResult{
 		disposition:   assessmentFailed,
 		retryable:     true,

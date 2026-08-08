@@ -52,6 +52,7 @@ type TaskService struct {
 	taskRepo     port.TaskRepository
 	taskNodeRepo port.TaskNodeRepository
 	executor     port.TaskExecutor
+	queue        port.TaskQueue
 	now          func() time.Time
 }
 
@@ -61,12 +62,18 @@ func NewTaskService(
 	taskRepo port.TaskRepository,
 	taskNodeRepo port.TaskNodeRepository,
 	executor port.TaskExecutor,
+	queues ...port.TaskQueue,
 ) *TaskService {
+	var queue port.TaskQueue
+	if len(queues) > 0 {
+		queue = queues[0]
+	}
 	return &TaskService{
 		pipelineRepo: pipelineRepo,
 		taskRepo:     taskRepo,
 		taskNodeRepo: taskNodeRepo,
 		executor:     executor,
+		queue:        queue,
 		now:          time.Now,
 	}
 }
@@ -222,8 +229,12 @@ func (s *TaskService) Create(ctx context.Context, input CreateTaskInput) (domain
 		return domain.Task{}, exception.NewServiceException("failed to create ingestion task", err)
 	}
 
-	// 第一阶段先保留执行提交边界；执行器存在时再真正异步推进。
-	if s.executor != nil {
+	if s.queue != nil {
+		if err := s.queue.Enqueue(ctx, item.ID); err != nil {
+			return domain.Task{}, exception.NewServiceException("failed to enqueue ingestion task", err)
+		}
+	} else if s.executor != nil {
+		// Compatibility path for runtimes that have not yet wired a durable queue.
 		if err := s.executor.Submit(ctx, pipeline, item); err != nil {
 			return domain.Task{}, exception.NewServiceException("failed to submit ingestion task", err)
 		}

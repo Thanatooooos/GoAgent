@@ -53,6 +53,9 @@ func newDegradeNode() (agentkernel.Node, error) {
 			reason = "insufficient_evidence"
 		}
 		final := "I couldn't gather enough reliable fetched evidence to answer confidently."
+		if reason == "approval_rejected" {
+			final = "I couldn't continue because the required approval was not granted."
+		}
 		return agentruntime.NodeResult{
 			Events: []agentstate.RuntimeEvent{
 				agentstate.NewRuntimeEventAt(time.Now(), session.SessionID, "degrade", agentstate.EventTypeDegraded, reason),

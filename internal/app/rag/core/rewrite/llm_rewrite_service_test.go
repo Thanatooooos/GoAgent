@@ -58,16 +58,19 @@ func TestLLMRewriteServiceParsesNeedRetrieval(t *testing.T) {
 	}
 }
 
-func TestLLMRewriteServiceFallsBackWhenJSONInvalid(t *testing.T) {
+func TestLLMRewriteServiceFallsBackToOriginalQuestionWhenJSONInvalid(t *testing.T) {
 	llm := &stubLLMService{response: "not json"}
 	service := NewLLMService(llm)
 
 	result := service.RewriteWithSplit("hello")
-	if result.RewrittenQuestion != "not json" {
-		t.Fatalf("expected fallback to raw model text, got %q", result.RewrittenQuestion)
+	if result.RewrittenQuestion != "hello" {
+		t.Fatalf("expected fallback to original question, got %q", result.RewrittenQuestion)
 	}
-	if !result.NeedRetrieval {
-		t.Fatal("expected fallback text to infer retrieval")
+	if len(result.SubQuestions) != 1 || result.SubQuestions[0] != "hello" {
+		t.Fatalf("expected original question as the only fallback sub-question, got %v", result.SubQuestions)
+	}
+	if result.NeedRetrieval {
+		t.Fatal("expected greeting fallback to skip retrieval")
 	}
 }
 
@@ -140,7 +143,7 @@ func TestParseRewriteResponseIgnoresUnknownFields(t *testing.T) {
 		t.Fatalf("marshal payload: %v", err)
 	}
 
-	result := parseRewriteResponse(string(raw))
+	result := parseRewriteResponse(string(raw), "")
 	if result.RewrittenQuestion != "解释 RAG 工作流" {
 		t.Fatalf("unexpected rewritten question: %q", result.RewrittenQuestion)
 	}

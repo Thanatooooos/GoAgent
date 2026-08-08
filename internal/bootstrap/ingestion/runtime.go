@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
 	"local/rag-project/internal/adapter/feishu"
@@ -17,6 +20,7 @@ import (
 	corechunk "local/rag-project/internal/app/core/chunk"
 	coreparser "local/rag-project/internal/app/core/parser"
 	ingestionservice "local/rag-project/internal/app/ingestion/service"
+	ingestionqueue "local/rag-project/internal/app/ingestion/service/queue"
 	knowledgeport "local/rag-project/internal/app/knowledge/port"
 	"local/rag-project/internal/framework/config"
 	infraai "local/rag-project/internal/infra-ai"
@@ -30,6 +34,7 @@ type Runtime struct {
 	Task     *ingestionservice.TaskService
 	Executor *ingestionservice.ExecutorService
 	Metrics  *ingestionservice.MetricsService
+	Queue    *ingestionqueue.AsynqRuntime
 }
 
 // RuntimeOptions 描述 ingestion runtime 的装配参数。
@@ -72,6 +77,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	taskNodeRepo := postgresingestion.NewTaskNodeRepository(db)
 	baseRepo := postgresknowledge.NewKnowledgeBaseRepository(db)
 	chunkRepo := postgresknowledge.NewKnowledgeChunkRepository(db)
+	documentRepo := postgresknowledge.NewKnowledgeDocumentRepository(db, nil)
 	metricsService := ingestionservice.NewMetricsService(readIngestionMaxConcurrent(cfg))
 	taskObserver := ingestionservice.NewMultiTaskObserver(
 		ingestionservice.NewRepositoryTaskObserver(taskRepo, taskNodeRepo),
@@ -100,10 +106,10 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	nodeRunners := ingestionservice.NewNodeRunnerRegistry(
 		fetcher,
 		ingestionservice.NewParserNodeRunner(coreparser.NewDefaultSelector(nil)),
-		ingestionservice.NewEnhancerNodeRunner(),
+		ingestionservice.NewEnhancerNodeRunner(ingestionservice.NewLLMDocumentEnricher(aiRuntime.Chat)),
 		ingestionservice.NewChunkerNodeRunner(corechunk.NewDefaultSelector()),
 		ingestionservice.NewEnricherNodeRunner(),
-		ingestionservice.NewIndexerNodeRunner(baseRepo, chunkRepo, vectorStore, aiRuntime.Embedding),
+		ingestionservice.NewIndexerNodeRunner(baseRepo, chunkRepo, vectorStore, aiRuntime.Embedding, documentRepo),
 	)
 	executor := ingestionservice.NewExecutorService(ingestionservice.ExecutorServiceOptions{
 		TaskRepo:        taskRepo,
@@ -118,13 +124,59 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	})
 	metricsService.SetMaxConcurrent(executor.MaxConcurrent())
 
+	var durableQueue *ingestionqueue.AsynqRuntime
+	if cfg != nil && strings.TrimSpace(cfg.Spring.Data.Redis.Host) != "" {
+		processor := ingestionqueue.NewAsynqProcessor(ingestionqueue.NewWorker(taskRepo, pipelineRepo, executor))
+		queueRuntime, err := ingestionqueue.NewAsynqRuntime(ingestionqueue.AsynqRuntimeOptions{
+			Redis: asynq.RedisClientOpt{
+				Addr:     cfg.Spring.Data.Redis.Host + ":" + strconv.Itoa(cfg.Spring.Data.Redis.Port),
+				Password: cfg.Spring.Data.Redis.Password,
+				DB:       cfg.Spring.Data.Redis.DB,
+			},
+			QueueName:    "ingestion",
+			Concurrency:  readIngestionMaxConcurrent(cfg),
+			MaxRetries:   readIngestionMaxRetries(cfg),
+			RetryBackoff: time.Duration(readIngestionRetryBackoffMs(cfg)) * time.Millisecond,
+		}, processor)
+		if err != nil {
+			executor.Close()
+			if ownsDB {
+				_ = closeRuntimeDB(db)
+			}
+			return nil, fmt.Errorf("create durable ingestion queue: %w", err)
+		}
+		if err := ingestionqueue.RecoverPending(ctx, taskRepo, queueRuntime.Queue, 100); err != nil {
+			_ = queueRuntime.Close()
+			executor.Close()
+			if ownsDB {
+				_ = closeRuntimeDB(db)
+			}
+			return nil, fmt.Errorf("recover pending ingestion tasks: %w", err)
+		}
+		if err := queueRuntime.Start(); err != nil {
+			_ = queueRuntime.Close()
+			executor.Close()
+			if ownsDB {
+				_ = closeRuntimeDB(db)
+			}
+			return nil, fmt.Errorf("start durable ingestion queue: %w", err)
+		}
+		durableQueue = queueRuntime
+	}
+
+	taskService := ingestionservice.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, executor)
+	if durableQueue != nil {
+		taskService = ingestionservice.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, executor, durableQueue.Queue)
+	}
+
 	return &Runtime{
 		DB:       db,
 		ownsDB:   ownsDB,
 		Pipeline: ingestionservice.NewPipelineService(pipelineRepo, nodeRunners),
-		Task:     ingestionservice.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, executor),
+		Task:     taskService,
 		Executor: executor,
 		Metrics:  metricsService,
+		Queue:    durableQueue,
 	}, nil
 }
 
@@ -132,6 +184,11 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 func (r *Runtime) Close() error {
 	if r == nil {
 		return nil
+	}
+	if r.Queue != nil {
+		if err := r.Queue.Close(); err != nil {
+			return err
+		}
 	}
 	if r.Executor != nil {
 		r.Executor.Close()

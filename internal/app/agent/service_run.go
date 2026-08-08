@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	agentcapability "local/rag-project/internal/app/agent/capability"
 	agenthandoff "local/rag-project/internal/app/agent/handoff"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
 	agentstate "local/rag-project/internal/app/agent/state"
@@ -70,7 +69,7 @@ func (s *Service) runDetailedSession(ctx context.Context, req Request) (*agentru
 		final = runResult.Session
 	}
 	if runResult != nil && runResult.Outcome.Decision == agentruntime.DecisionWaitApproval {
-		if s.normalizePendingApproval(final, checkpointID) {
+		if s.runtimeEngine.NormalizePendingApprovalSession(final, checkpointID) {
 			if storeErr := s.storePendingSession(ctx, checkpointID, final); storeErr != nil {
 				logAgentExecutionError("store_pending_session", req.TraceID, checkpointID, storeErr)
 				return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeApprovalSessionSaveFailed, "failed to persist pending approval session", "store_pending_session", storeErr)
@@ -134,90 +133,6 @@ func (s *Service) isAwaitingApproval(session *agentruntime.RuntimeSession) bool 
 	return strings.TrimSpace(session.Snapshot.Approval.Status) == agentstate.ApprovalStatusPending
 }
 
-func (s *Service) normalizePendingApproval(session *agentruntime.RuntimeSession, checkpointID string) bool {
-	if session == nil || !session.Snapshot.Execution.Interrupted {
-		return false
-	}
-	now := time.Now()
-	if s.isAwaitingApproval(session) {
-		if strings.TrimSpace(session.Snapshot.Approval.CheckpointID) == "" {
-			session.Snapshot.Approval.CheckpointID = firstNonEmpty(checkpointID, checkpointIDFromSession(session))
-		}
-		if session.Snapshot.Approval.RequestedAt.IsZero() {
-			session.Snapshot.Approval.RequestedAt = now
-		}
-		appendApprovalRuntimeEvent(session, "approval", agentstate.EventTypeApprovalPending, session.Snapshot.Approval.Reason, session.Snapshot.Approval.CheckpointID)
-		return true
-	}
-
-	spec, capabilityName, rerunNode, ok := s.approvalCapabilityForNode(session.Snapshot.Execution.CurrentNode)
-	if !ok || !spec.RequiresApproval {
-		return false
-	}
-	session.Snapshot.Approval = agentstate.ApprovalState{
-		Status:       agentstate.ApprovalStatusPending,
-		Reason:       approvalRequiredReason(session.Snapshot.Execution.CurrentNode),
-		Node:         "approval",
-		Capability:   capabilityName,
-		CheckpointID: firstNonEmpty(checkpointID, checkpointIDFromSession(session)),
-		RerunNode:    rerunNode,
-		RequestedAt:  now,
-	}
-	if pending := agentruntime.BuildPendingApprovalDelta(
-		session.Snapshot.Approval.Reason,
-		capabilityName,
-		rerunNode,
-		session.Snapshot.Approval.CheckpointID,
-		now,
-	); pending != nil {
-		session.Snapshot.Approval = agentstate.ApprovalState{
-			Status:       derefString(pending.Status),
-			Reason:       derefString(pending.Reason),
-			Node:         derefString(pending.Node),
-			Capability:   derefString(pending.Capability),
-			CheckpointID: derefString(pending.CheckpointID),
-			RerunNode:    derefString(pending.RerunNode),
-			RequestedAt:  derefTime(pending.RequestedAt),
-		}
-	}
-	appendApprovalRuntimeEvent(session, "approval", agentstate.EventTypeApprovalPending, session.Snapshot.Approval.Reason, session.Snapshot.Approval.CheckpointID)
-	return true
-}
-
-func (s *Service) approvalCapabilityForNode(node string) (agentcapability.Spec, string, string, bool) {
-	if s == nil || s.registry == nil {
-		return agentcapability.Spec{}, "", "", false
-	}
-	switch strings.TrimSpace(node) {
-	case "search":
-		return s.specFromRole(agentcapability.RoleSearch, "search")
-	case "fetch":
-		return s.specFromRole(agentcapability.RoleFetch, "fetch")
-	case "external_evidence":
-		return s.specFromRole(agentcapability.RoleCollectExternalEvidence, "external_evidence")
-	default:
-		return agentcapability.Spec{}, "", "", false
-	}
-}
-
-func (s *Service) specFromRole(role string, rerunNode string) (agentcapability.Spec, string, string, bool) {
-	name := ""
-	if s.bindings != nil {
-		name = s.bindings.Resolve(role)
-	}
-	if strings.TrimSpace(name) == "" && s.registry != nil {
-		resolved, err := agentcapability.ResolveBinding(s.registry, s.bindings, role)
-		if err == nil {
-			name = resolved
-		}
-	}
-	if strings.TrimSpace(name) == "" {
-		return agentcapability.Spec{}, "", "", false
-	}
-	spec, ok := s.registry.Spec(name)
-	return spec, name, rerunNode, ok
-}
-
 // storePendingSession persists one pending approval session under the canonical
 // checkpoint lookup key and, when distinct, a secondary session-id alias.
 func (s *Service) storePendingSession(ctx context.Context, checkpointID string, session *agentruntime.RuntimeSession) error {
@@ -277,71 +192,4 @@ func newCheckpointID(session *agentruntime.RuntimeSession) string {
 		base = strings.ReplaceAll(strings.TrimSpace(session.SessionID), " ", "_")
 	}
 	return fmt.Sprintf("approval-%s-%d", base, time.Now().UnixNano())
-}
-
-func approvalRequiredReason(node string) string {
-	switch strings.TrimSpace(node) {
-	case "search":
-		return "search_approval_required"
-	case "fetch":
-		return "fetch_approval_required"
-	case "external_evidence":
-		return "external_evidence_approval_required"
-	default:
-		return "approval_required"
-	}
-}
-
-func (s *Service) applySessionDelta(session *agentruntime.RuntimeSession, node string, delta agentstate.StateDelta, now time.Time) error {
-	if session == nil {
-		return nil
-	}
-	reducer := s.reducer
-	if reducer == nil {
-		reducer = agentstate.DefaultReducer{}
-	}
-	nextSnapshot, err := reducer.Apply(session.Snapshot, delta)
-	if err != nil {
-		return err
-	}
-	session.Snapshot = nextSnapshot
-	session.Metadata.UpdatedAt = now
-	event := agentstate.NewRuntimeEventAt(now, session.SessionID, node, agentstate.EventTypeStateApplied, "")
-	cloned := agentstate.CloneDelta(delta)
-	event.Delta = &cloned
-	appendRuntimeEvent(session, event)
-	return nil
-}
-
-func boolPtr(value bool) *bool {
-	return &value
-}
-
-func stringPtr(value string) *string {
-	return &value
-}
-
-func appendApprovalRuntimeEvent(session *agentruntime.RuntimeSession, node string, eventType string, payload string, checkpointID string) {
-	if session == nil {
-		return
-	}
-	event := agentstate.NewRuntimeEventAt(time.Now(), session.SessionID, node, eventType, payload)
-	if trimmed := strings.TrimSpace(checkpointID); trimmed != "" {
-		event.Checkpoint = agentstate.NewCheckpointRef(trimmed, node)
-	}
-	appendRuntimeEvent(session, event)
-}
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
-func derefTime(value *time.Time) time.Time {
-	if value == nil {
-		return time.Time{}
-	}
-	return *value
 }

@@ -1,8 +1,8 @@
 package runner
 
 import (
-	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"context"
+	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"strings"
 
 	corechunk "local/rag-project/internal/app/core/chunk"
@@ -50,25 +50,52 @@ func (r *ChunkerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Exe
 		MinChunkSize: readIntSetting(node.Settings, "minChunkSize"),
 	}.Normalize()
 
-	chunks, err := r.selector.Chunk(state.Parsed.Content, options)
-	if err != nil {
-		return state, nil, exception.NewServiceException("failed to chunk parsed content", err)
-	}
-
 	next := state.Clone()
-	next.Chunks = make([]ingestionworkflow.ChunkPayload, 0, len(chunks))
-	for _, item := range chunks {
-		next.Chunks = append(next.Chunks, ingestionworkflow.ChunkPayload{
-			Index:    item.Index,
-			Content:  item.Text,
-			Metadata: item.Metadata,
-		})
+	parentChildEnabled := readBoolSetting(node.Settings, "enableParentChild")
+	chunkMode := "flat"
+	if parentChildEnabled {
+		parentOptions := options
+		parentOptions.ChunkSize = readIntSetting(node.Settings, "parentChunkSize")
+		parentOptions.OverlapSize = readIntSetting(node.Settings, "parentOverlapSize")
+		parentOptions = parentOptions.Normalize()
+		childOptions := options
+		childOptions.ChunkSize = readIntSetting(node.Settings, "childChunkSize")
+		childOptions.OverlapSize = readIntSetting(node.Settings, "childOverlapSize")
+		childOptions = childOptions.Normalize()
+
+		result, err := corechunk.SplitParentChild(state.Parsed.Content, parentOptions, childOptions)
+		if err != nil {
+			return state, nil, exception.NewServiceException("failed to split parent child chunks", err)
+		}
+		next.ParentChunks = make([]ingestionworkflow.ParentChunkPayload, 0, len(result.Parents))
+		for _, parent := range result.Parents {
+			next.ParentChunks = append(next.ParentChunks, ingestionworkflow.ParentChunkPayload{Index: parent.Index, Content: parent.Text})
+		}
+		next.Chunks = make([]ingestionworkflow.ChunkPayload, 0, len(result.Children))
+		for _, child := range result.Children {
+			parentIndex := child.ParentIndex
+			next.Chunks = append(next.Chunks, ingestionworkflow.ChunkPayload{
+				Index: child.Index, Content: child.Text, Metadata: child.Metadata, ParentIndex: &parentIndex,
+			})
+		}
+		chunkMode = "parent_child"
+	} else {
+		chunks, err := r.selector.Chunk(state.Parsed.Content, options)
+		if err != nil {
+			return state, nil, exception.NewServiceException("failed to chunk parsed content", err)
+		}
+		next.ParentChunks = nil
+		next.Chunks = make([]ingestionworkflow.ChunkPayload, 0, len(chunks))
+		for _, item := range chunks {
+			next.Chunks = append(next.Chunks, ingestionworkflow.ChunkPayload{Index: item.Index, Content: item.Text, Metadata: item.Metadata})
+		}
 	}
 
 	output := map[string]any{
 		"strategy":    string(options.Strategy),
 		"chunkCount":  len(next.Chunks),
-		"placeholder": true,
+		"parentCount": len(next.ParentChunks),
+		"chunkMode":   chunkMode,
 	}
 	return next, output, nil
 }

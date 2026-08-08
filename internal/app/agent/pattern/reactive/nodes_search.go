@@ -28,6 +28,9 @@ func newSearchNode(searchCapability agentcapability.Handle) (agentkernel.Node, e
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
+		if scheduled, ok := scheduledCapabilityNodeResult("search", searchCapability.Spec().Name, execution); ok {
+			return scheduled, nil
+		}
 		if _, ok := execution.Invocation.Output.(agentsearch.SearchOutput); !ok {
 			return agentruntime.NodeResult{}, fmt.Errorf("search capability returned unexpected output type %T", execution.Invocation.Output)
 		}

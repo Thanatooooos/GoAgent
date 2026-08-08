@@ -15,12 +15,13 @@ type ChannelSampleResult struct {
 }
 
 type ChannelAggregateMetrics struct {
-	ChannelName              string             `json:"channelName"`
-	SampleCount              int                `json:"sampleCount"`
-	HitRateAtK               map[int]float64    `json:"hitRateAtK"`
-	AverageFirstRelevantRank float64            `json:"averageFirstRelevantRank,omitempty"`
-	UniqueHitCount           int                `json:"uniqueHitCount"`
-	OverlapHitCount          int                `json:"overlapHitCount"`
+	ChannelName              string          `json:"channelName"`
+	SampleCount              int             `json:"sampleCount"`
+	HitRateAtK               map[int]float64 `json:"hitRateAtK"`
+	MRR                      float64         `json:"mrr"`
+	AverageFirstRelevantRank float64         `json:"averageFirstRelevantRank,omitempty"`
+	UniqueHitCount           int             `json:"uniqueHitCount"`
+	OverlapHitCount          int             `json:"overlapHitCount"`
 }
 
 func evaluateChannelSample(sample Sample, ks []int) ([]ChannelSampleResult, error) {
@@ -141,6 +142,7 @@ func aggregateChannelMetrics(results []SampleResult, ks []int) []ChannelAggregat
 		}
 		var firstRankTotal float64
 		var firstRankCount int
+		var mrrTotal float64
 		for _, sample := range samples {
 			for _, k := range ks {
 				if sample.HitAtK[k] {
@@ -150,6 +152,7 @@ func aggregateChannelMetrics(results []SampleResult, ks []int) []ChannelAggregat
 			if sample.FirstRelevantRank > 0 {
 				firstRankTotal += float64(sample.FirstRelevantRank)
 				firstRankCount++
+				mrrTotal += 1.0 / float64(sample.FirstRelevantRank)
 			}
 			metrics.UniqueHitCount += sample.UniqueHitCount
 			metrics.OverlapHitCount += sample.OverlapHitCount
@@ -158,6 +161,7 @@ func aggregateChannelMetrics(results []SampleResult, ks []int) []ChannelAggregat
 		for _, k := range ks {
 			metrics.HitRateAtK[k] /= total
 		}
+		metrics.MRR = mrrTotal / total
 		if firstRankCount > 0 {
 			metrics.AverageFirstRelevantRank = firstRankTotal / float64(firstRankCount)
 		}

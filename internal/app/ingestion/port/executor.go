@@ -10,3 +10,8 @@ import (
 type TaskExecutor interface {
 	Submit(ctx context.Context, pipeline domain.Pipeline, task domain.Task) error
 }
+
+// TaskQueue persists task delivery independently from the current process.
+type TaskQueue interface {
+	Enqueue(ctx context.Context, taskID string) error
+}

@@ -30,6 +30,9 @@ func newExternalEvidenceNode(workflowCapability agentcapability.Handle) (agentke
 		if err != nil {
 			return agentruntime.NodeResult{}, err
 		}
+		if scheduled, ok := scheduledCapabilityNodeResult("external_evidence", workflowCapability.Spec().Name, execution); ok {
+			return scheduled, nil
+		}
 		if execution.Invocation.Status == agentcapability.StatusSkipped {
 			execution.Events[len(execution.Events)-1].PayloadText = firstNonEmpty(
 				execution.Invocation.Observation.Summary,

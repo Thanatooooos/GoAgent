@@ -15,6 +15,7 @@ type RewriteEvaluator struct {
 	retrieve                ragretrieve.Service
 	embedding               QueryEmbedder
 	judge                   Judge
+	artifactStore           *RewriteArtifactStore
 	retrievalKs             []int
 	subQuestionOptions      ragretrieve.SubQuestionOptions
 	defaultKnowledgeBaseIDs []string
@@ -55,6 +56,12 @@ func WithRewriteQueryEmbedder(embedder QueryEmbedder) RewriteEvaluatorOption {
 func WithRewriteJudge(judge Judge) RewriteEvaluatorOption {
 	return func(e *RewriteEvaluator) {
 		e.judge = judge
+	}
+}
+
+func WithRewriteArtifactStore(store *RewriteArtifactStore) RewriteEvaluatorOption {
+	return func(e *RewriteEvaluator) {
+		e.artifactStore = store
 	}
 }
 
@@ -106,6 +113,27 @@ func (e *RewriteEvaluator) Run(ctx context.Context, input RunInput) (SuiteResult
 	var softGateOverrideCount int
 
 	for _, sample := range samples {
+		if checkpoint, loaded, err := e.loadRewriteCheckpoint(sample); err != nil {
+			return SuiteResult{}, err
+		} else if loaded {
+			e.applyRewriteCheckpoint(
+				checkpoint,
+				&results,
+				artifacts,
+				&baselineRetrievalResults,
+				&candidateRetrievalResults,
+				&retrievalRegressionCount,
+				&semanticScoreTotal,
+				&semanticScoreCount,
+				&judgeScoreTotal,
+				&judgeScoreCount,
+				&softGateOverrideCount,
+				&criticalFailureCount,
+				tagStats,
+			)
+			continue
+		}
+
 		if err := ExecuteRewriteSample(ctx, &sample, e.rewrite); err != nil {
 			return SuiteResult{}, fmt.Errorf("execute rewrite sample %q: %w", sample.Name, err)
 		}
@@ -233,6 +261,17 @@ func (e *RewriteEvaluator) Run(ctx context.Context, input RunInput) (SuiteResult
 			artifact["judge_evaluation"] = judgeEval
 		}
 		artifacts[sample.Name] = artifact
+		if err := e.saveRewriteCheckpoint(RewriteSampleCheckpoint{
+			SampleName:         sample.Name,
+			Query:              sample.Query,
+			Sample:             sample,
+			SampleResult:       sampleResult,
+			Artifact:           artifact,
+			BaselineRetrieval:  baselineRetrievalFromComparison(retrievalComparison),
+			CandidateRetrieval: candidateRetrievalFromComparison(retrievalComparison),
+		}); err != nil {
+			return SuiteResult{}, fmt.Errorf("save rewrite checkpoint %q: %w", sample.Name, err)
+		}
 
 		if len(criticalFailures) > 0 {
 			criticalFailureCount++
@@ -272,6 +311,12 @@ func (e *RewriteEvaluator) Run(ctx context.Context, input RunInput) (SuiteResult
 		aggregateMetrics["hit_at_k_uplift"] = aggregateMetricDelta(candidateAggregate.HitRateAtK, baselineAggregate.HitRateAtK, e.retrievalKs)
 		aggregateMetrics["recall_at_k_uplift"] = aggregateMetricDelta(candidateAggregate.AverageRecallAtK, baselineAggregate.AverageRecallAtK, e.retrievalKs)
 		aggregateMetrics["ndcg_at_k_uplift"] = aggregateMetricDelta(candidateAggregate.AverageNDCGAtK, baselineAggregate.AverageNDCGAtK, e.retrievalKs)
+
+		if channelReport := BuildRewriteRetrievalChannelReport(baselineRetrievalResults, candidateRetrievalResults, e.retrievalKs); channelReport != nil {
+			for key, value := range channelReport {
+				aggregateMetrics[key] = value
+			}
+		}
 	}
 	if semanticScoreCount > 0 {
 		aggregateMetrics["avg_semantic_score"] = roundSummaryScore(semanticScoreTotal / float64(semanticScoreCount))
@@ -365,4 +410,97 @@ func buildRewriteQualityScore(checks RewriteCheckResult) float64 {
 		return 0
 	}
 	return total / count
+}
+
+func (e *RewriteEvaluator) loadRewriteCheckpoint(sample RewriteSample) (RewriteSampleCheckpoint, bool, error) {
+	if e == nil || e.artifactStore == nil || !e.artifactStore.ResumeEnabled() {
+		return RewriteSampleCheckpoint{}, false, nil
+	}
+	return e.artifactStore.Load(sample.Name, sample.Query)
+}
+
+func (e *RewriteEvaluator) saveRewriteCheckpoint(checkpoint RewriteSampleCheckpoint) error {
+	if e == nil || e.artifactStore == nil || !e.artifactStore.Enabled() {
+		return nil
+	}
+	return e.artifactStore.Save(checkpoint)
+}
+
+func baselineRetrievalFromComparison(comparison *RewriteRetrievalComparison) *SampleResult {
+	if comparison == nil {
+		return nil
+	}
+	baseline := comparison.Baseline
+	return &baseline
+}
+
+func candidateRetrievalFromComparison(comparison *RewriteRetrievalComparison) *SampleResult {
+	if comparison == nil {
+		return nil
+	}
+	candidate := comparison.Candidate
+	return &candidate
+}
+
+func (e *RewriteEvaluator) applyRewriteCheckpoint(
+	checkpoint RewriteSampleCheckpoint,
+	results *[]SharedSampleResult,
+	artifacts map[string]any,
+	baselineRetrievalResults *[]SampleResult,
+	candidateRetrievalResults *[]SampleResult,
+	retrievalRegressionCount *int,
+	semanticScoreTotal *float64,
+	semanticScoreCount *int,
+	judgeScoreTotal *float64,
+	judgeScoreCount *int,
+	softGateOverrideCount *int,
+	criticalFailureCount *int,
+	tagStats map[string]*tagSummaryAccumulator,
+) {
+	sampleResult := checkpoint.SampleResult
+	*results = append(*results, sampleResult)
+	artifacts[checkpoint.SampleName] = checkpoint.Artifact
+	if checkpoint.BaselineRetrieval != nil {
+		*baselineRetrievalResults = append(*baselineRetrievalResults, *checkpoint.BaselineRetrieval)
+	}
+	if checkpoint.CandidateRetrieval != nil {
+		*candidateRetrievalResults = append(*candidateRetrievalResults, *checkpoint.CandidateRetrieval)
+	}
+	if comparison, ok := checkpoint.Artifact["retrieval_comparison"].(*RewriteRetrievalComparison); ok && comparison != nil {
+		if comparison.CriticalRegression {
+			*retrievalRegressionCount++
+		}
+	} else if comparisonMap, ok := checkpoint.Artifact["retrieval_comparison"].(map[string]any); ok {
+		if critical, ok := comparisonMap["critical_regression"].(bool); ok && critical {
+			*retrievalRegressionCount++
+		}
+	}
+	if semanticScore, ok := checkpoint.SampleResult.Scores["semantic_score"].(float64); ok {
+		*semanticScoreTotal += semanticScore
+		*semanticScoreCount++
+	}
+	if judgeScore, ok := checkpoint.SampleResult.Scores["judge_score"].(float64); ok {
+		*judgeScoreTotal += judgeScore
+		*judgeScoreCount++
+	}
+	if passPath, ok := checkpoint.SampleResult.Scores["pass_path"].(string); ok && passPath == "semantic_judge" {
+		*softGateOverrideCount++
+	}
+	if len(sampleResult.CriticalFailures) > 0 {
+		*criticalFailureCount++
+	}
+	for _, tag := range sampleResult.Tags {
+		acc := tagStats[tag]
+		if acc == nil {
+			acc = &tagSummaryAccumulator{}
+			tagStats[tag] = acc
+		}
+		acc.total++
+		if sampleResult.Passed {
+			acc.passed++
+		}
+		if len(sampleResult.CriticalFailures) > 0 {
+			acc.criticalFailures++
+		}
+	}
 }

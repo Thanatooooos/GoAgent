@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"context"
+
 	"local/rag-project/internal/framework/convention"
 )
 
@@ -21,4 +23,19 @@ type LLMService interface {
 type UsageAwareLLMService interface {
 	LLMService
 	ChatWithRequestUsage(request convention.ChatRequest) (string, TokenUsage, error)
+}
+
+// ContextAwareLLMService is an optional extension for non-streaming chat calls
+// that should honor the caller's context cancellation or deadline.
+type ContextAwareLLMService interface {
+	LLMService
+	ChatWithRequestContext(ctx context.Context, request convention.ChatRequest) (string, error)
+	ChatWithModelContext(ctx context.Context, request convention.ChatRequest, modelID string) (string, error)
+}
+
+// ContextAwareUsageAwareLLMService is an optional extension for usage-aware
+// chat calls that should honor caller context.
+type ContextAwareUsageAwareLLMService interface {
+	UsageAwareLLMService
+	ChatWithRequestUsageContext(ctx context.Context, request convention.ChatRequest) (string, TokenUsage, error)
 }

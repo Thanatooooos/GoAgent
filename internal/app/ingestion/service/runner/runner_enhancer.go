@@ -1,8 +1,8 @@
 package runner
 
 import (
-	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"context"
+	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"strings"
 
 	"local/rag-project/internal/app/ingestion/domain"
@@ -10,10 +10,14 @@ import (
 )
 
 // EnhancerNodeRunner provides a lightweight content-enhancement stage before/after chunking.
-type EnhancerNodeRunner struct{}
+type EnhancerNodeRunner struct{ documentEnricher DocumentEnricher }
 
-func NewEnhancerNodeRunner() *EnhancerNodeRunner {
-	return &EnhancerNodeRunner{}
+func NewEnhancerNodeRunner(enrichers ...DocumentEnricher) *EnhancerNodeRunner {
+	runner := &EnhancerNodeRunner{}
+	if len(enrichers) > 0 {
+		runner.documentEnricher = enrichers[0]
+	}
+	return runner
 }
 
 func (r *EnhancerNodeRunner) NodeType() string {
@@ -88,9 +92,43 @@ func (r *EnhancerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Ex
 	}
 
 	modelID := readStringSetting(node.Settings, "modelId")
+	llmDegraded := false
+	if r.documentEnricher != nil && includesEnrichmentTask(tasks, "summary", "questions") {
+		options := EnrichmentOptions{QuestionCount: readIntSetting(node.Settings, "questionCount"), MaxQuestionLength: readIntSetting(node.Settings, "maxQuestionLength"), SummaryMaxChars: readIntSetting(node.Settings, "summaryMaxInputChars")}
+		if options.QuestionCount <= 0 {
+			options.QuestionCount = 2
+		}
+		if options.MaxQuestionLength <= 0 {
+			options.MaxQuestionLength = 120
+		}
+		if options.SummaryMaxChars <= 0 {
+			options.SummaryMaxChars = 12000
+		}
+		if includesEnrichmentTask(tasks, "summary") {
+			summary, err := r.documentEnricher.Summarize(ctx, sampleDocumentForSummary(next.Parsed.Content, options.SummaryMaxChars), options)
+			if err != nil {
+				next.Enrichment.SummaryStatus = "failed"
+				next.Enrichment.SummaryError = err.Error()
+				llmDegraded = true
+			} else {
+				next.Enrichment.Summary = strings.TrimSpace(summary)
+				next.Enrichment.SummaryStatus = "success"
+			}
+		}
+		if includesEnrichmentTask(tasks, "questions") {
+			for index := range next.Chunks {
+				questions, err := r.documentEnricher.GenerateQuestions(ctx, next.Parsed.Title, next.Chunks[index].Content, options)
+				if err != nil {
+					llmDegraded = true
+					continue
+				}
+				next.Chunks[index].Questions = normalizeGeneratedQuestions(questions, options.QuestionCount, options.MaxQuestionLength)
+			}
+		}
+	}
 	next.Artifacts["enhancer"] = map[string]any{
 		"tasks":           append([]string(nil), appliedTasks...),
-		"mode":            "heuristic",
+		"mode":            map[bool]string{true: "llm_degraded", false: "heuristic"}[llmDegraded],
 		"modelId":         modelID,
 		"parsedKeywords":  documentKeywords,
 		"parsedQuestions": documentQuestions,
@@ -99,7 +137,7 @@ func (r *EnhancerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Ex
 	output := map[string]any{
 		"taskCount":           len(appliedTasks),
 		"appliedTasks":        appliedTasks,
-		"mode":                "heuristic",
+		"mode":                map[bool]string{true: "llm_degraded", false: "heuristic"}[llmDegraded],
 		"modelId":             modelID,
 		"parsedContentLength": len(next.Parsed.Content),
 		"chunkCount":          len(next.Chunks),
@@ -111,4 +149,15 @@ func (r *EnhancerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Ex
 		output["questions"] = documentQuestions
 	}
 	return next, output, nil
+}
+
+func includesEnrichmentTask(tasks []enrichmentTask, wanted ...string) bool {
+	for _, task := range tasks {
+		for _, value := range wanted {
+			if task.Type == value {
+				return true
+			}
+		}
+	}
+	return false
 }

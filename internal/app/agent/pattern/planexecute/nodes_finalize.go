@@ -19,6 +19,9 @@ func newFinalizeNode(configuredOutputMode string) (agentkernel.Node, error) {
 				degradeReason = firstNonEmpty(session.Snapshot.Plan.LastAssessment, reasonPlanFailed)
 			}
 			final := "I couldn't gather enough reliable fetched evidence to answer confidently."
+			if degradeReason == "approval_rejected" {
+				final = "I couldn't continue because the required approval was not granted."
+			}
 			logFinalizedOutput(session, mode, final, degradeReason)
 			return agentruntime.NodeResult{
 				Events: []agentstate.RuntimeEvent{

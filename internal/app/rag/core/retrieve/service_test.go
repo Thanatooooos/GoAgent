@@ -21,6 +21,35 @@ func TestBuildKnowledgeContext(t *testing.T) {
 	}
 }
 
+func TestToRetrievedChunksNormalizesQuestionHitToSourceChunk(t *testing.T) {
+	chunks := toRetrievedChunks([]corevector.SearchHit{{
+		ChunkID: "doc-1-0-q-0", DocumentID: "doc-1", Score: 0.9, Text: "预测问题",
+		Metadata: map[string]any{"record_type": "question", "source_chunk_id": "doc-1-0", "source_content": "源子块正文"},
+	}})
+	if len(chunks) != 1 {
+		t.Fatalf("expected one chunk, got %#v", chunks)
+	}
+	if chunks[0].ID != "doc-1-0" || chunks[0].Text != "源子块正文" {
+		t.Fatalf("unexpected normalized chunk: %#v", chunks[0])
+	}
+	if chunks[0].Metadata["retrieval_source"] != "question" {
+		t.Fatalf("expected question source, got %#v", chunks[0].Metadata)
+	}
+}
+
+func TestToRetrievedChunksUsesParentContentWhileKeepingChildCitationID(t *testing.T) {
+	chunks := toRetrievedChunks([]corevector.SearchHit{{
+		ChunkID: "doc-1-0", DocumentID: "doc-1", Score: 0.9, Text: "源子块正文",
+		Metadata: map[string]any{"record_type": "child", "parent_chunk_id": "doc-1-p-0", "parent_content": "完整父块上下文"},
+	}})
+	if len(chunks) != 1 || chunks[0].ID != "doc-1-0" || chunks[0].Text != "完整父块上下文" {
+		t.Fatalf("expected parent context with child citation, got %#v", chunks)
+	}
+	if chunks[0].Metadata["context_source"] != "parent" {
+		t.Fatalf("expected parent context source, got %#v", chunks[0].Metadata)
+	}
+}
+
 func TestBuildKnowledgeContextWithSection(t *testing.T) {
 	context := BuildKnowledgeContext([]convention.RetrievedChunk{
 		{Text: "内容A", Metadata: map[string]any{"section": "第一章 > 概述"}},

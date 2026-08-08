@@ -489,8 +489,8 @@ func TestRagChatServiceResumeAfterApprovalPersistsAcrossRuntimeRestart(t *testin
 	if len(initialSink.approvalPending) != 1 || strings.TrimSpace(initialSink.approvalPending[0].CheckpointID) == "" {
 		t.Fatalf("expected approval payload with checkpoint, got %+v", initialSink.approvalPending)
 	}
-	if transport.Attempts() != 1 {
-		t.Fatalf("expected one fetch attempt before approval, got %d", transport.Attempts())
+	if transport.Attempts() != 0 {
+		t.Fatalf("expected approval gate to block pre-approval fetch, got %d attempts", transport.Attempts())
 	}
 
 	resumedRuntime := newPersistentAgentRuntimeForRagChatTest(t, persistenceDir, transport)
@@ -516,8 +516,8 @@ func TestRagChatServiceResumeAfterApprovalPersistsAcrossRuntimeRestart(t *testin
 	if resumeSink.finishCalls != 1 || resumeSink.doneCalls != 1 {
 		t.Fatalf("expected finish and done once, got finish=%d done=%d", resumeSink.finishCalls, resumeSink.doneCalls)
 	}
-	if transport.Attempts() != 2 {
-		t.Fatalf("expected resumed runtime to issue a second fetch attempt, got %d", transport.Attempts())
+	if transport.Attempts() != 1 {
+		t.Fatalf("expected approved resume to issue the first fetch attempt, got %d", transport.Attempts())
 	}
 	if strings.TrimSpace(createdMessage.Content) == "" {
 		t.Fatalf("expected resumed assistant message to be persisted, got %+v", createdMessage)
@@ -567,10 +567,7 @@ type approvalResumeRoundTripper struct {
 }
 
 func (t *approvalResumeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	attempt := t.attempts.Add(1)
-	if attempt == 1 {
-		return nil, errors.New("forbidden by upstream provider")
-	}
+	t.attempts.Add(1)
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header: http.Header{

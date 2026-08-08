@@ -15,6 +15,8 @@ type KnowledgeChunkModel struct {
 	ContentHash     string                `gorm:"column:content_hash;type:varchar(64)"`
 	CharCount       int                   `gorm:"column:char_count"`
 	TokenCount      int                   `gorm:"column:token_count"`
+	RecordType      string                `gorm:"column:record_type;type:varchar(16);not null;default:child"`
+	ParentChunkID   string                `gorm:"column:parent_chunk_id;type:varchar(64);index"`
 	Enabled         int16                 `gorm:"column:enabled;not null;default:1"`
 	CreatedBy       string                `gorm:"column:created_by;type:varchar(20);not null"`
 	UpdatedBy       string                `gorm:"column:updated_by;type:varchar(20)"`

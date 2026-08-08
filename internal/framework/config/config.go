@@ -41,15 +41,16 @@ type RedisConfig struct {
 }
 
 type Config struct {
-	Server  ServerConfig  `mapstructure:"server"`
-	Spring  SpringConfig  `mapstructure:"spring"`
-	Rag     RagConfig     `mapstructure:"rag"`
-	AI      AIConfig      `mapstructure:"ai"`
-	Parser  ParserConfig  `mapstructure:"parser"`
-	RustFS  RustFSConfig  `mapstructure:"rustfs"`
-	Feishu  FeishuConfig  `mapstructure:"feishu"`
-	SaToken SaTokenConfig `mapstructure:"sa-token"`
-	App     AppConfig     `mapstructure:"app"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Spring     SpringConfig     `mapstructure:"spring"`
+	Rag        RagConfig        `mapstructure:"rag"`
+	AI         AIConfig         `mapstructure:"ai"`
+	Parser     ParserConfig     `mapstructure:"parser"`
+	RustFS     RustFSConfig     `mapstructure:"rustfs"`
+	Feishu     FeishuConfig     `mapstructure:"feishu"`
+	SaToken    SaTokenConfig    `mapstructure:"sa-token"`
+	DailyBrief DailyBriefConfig `mapstructure:"daily-brief"`
+	App        AppConfig        `mapstructure:"app"`
 }
 
 // FeishuConfig 飞书开放平台配置。
@@ -392,6 +393,11 @@ type AIConfig struct {
 	Rerank    ModelGroup                `mapstructure:"rerank"`
 	Selection Selection                 `mapstructure:"selection"`
 	Stream    Stream                    `mapstructure:"stream"`
+	HTTP      AIHTTPConfig              `mapstructure:"http"`
+}
+
+type AIHTTPConfig struct {
+	TimeoutMs int `mapstructure:"timeout-ms"`
 }
 
 type ProviderConfig struct {
@@ -488,6 +494,32 @@ type SaTokenConfig struct {
 
 type AppConfig struct {
 	DemoMode bool `mapstructure:"demo-mode"`
+}
+
+type DailyBriefConfig struct {
+	Schedule   DailyBriefScheduleConfig   `mapstructure:"schedule"`
+	Retry      DailyBriefRetryConfig      `mapstructure:"retry"`
+	Generation DailyBriefGenerationConfig `mapstructure:"generation"`
+}
+
+type DailyBriefScheduleConfig struct {
+	ScanDelayMs  int `mapstructure:"scan-delay-ms"`
+	RunTimeoutMs int `mapstructure:"run-timeout-ms"`
+	LockSeconds  int `mapstructure:"lock-seconds"`
+	BatchSize    int `mapstructure:"batch-size"`
+}
+
+type DailyBriefRetryConfig struct {
+	MaxAttempts    int `mapstructure:"max-attempts"`
+	BackoffMinutes int `mapstructure:"backoff-minutes"`
+}
+
+type DailyBriefGenerationConfig struct {
+	MaxCandidates     int    `mapstructure:"max-candidates"`
+	MaxItems          int    `mapstructure:"max-items"`
+	MaxItemsPerTopic  int    `mapstructure:"max-items-per-topic"`
+	PromptVersion     string `mapstructure:"prompt-version"`
+	Model             string `mapstructure:"model"`
 }
 
 var cfg *Config

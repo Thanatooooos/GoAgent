@@ -253,6 +253,9 @@ ai:
   stream:
     message-chunk-size: 1
 
+  http:
+    timeout-ms: 420000
+
   chat:
     default-model: qwen3-32b
     deep-thinking-model: qwen3-32b
@@ -343,6 +346,22 @@ sa-token:
   token-style: simple-uuid
   is-log: false
   is-print: false
+
+daily-brief:
+  schedule:
+    scan-delay-ms: 10000
+    run-timeout-ms: 600000
+    lock-seconds: 900
+    batch-size: 20
+  retry:
+    max-attempts: 2
+    backoff-minutes: 30
+  generation:
+    max-candidates: 46
+    max-items: 46
+    max-items-per-topic: 2
+    prompt-version: v4
+    model: qwen3-32b
 
 app:
   demo-mode: false

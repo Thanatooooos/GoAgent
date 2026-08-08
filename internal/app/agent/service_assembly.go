@@ -121,8 +121,12 @@ func NewService(opts ServiceOptions) (*Service, error) {
 	}
 
 	service := &Service{
-		kernelRunner:  runner,
-		runtimeEngine: agentruntime.NewEngine(runner),
+		kernelRunner: runner,
+		runtimeEngine: agentruntime.NewEngine(
+			runner,
+			agentruntime.WithReducer(agentstate.DefaultReducer{}),
+			agentruntime.WithPendingApprovalCompat(agentruntime.NewLegacyPendingApprovalCompatResolver(registry, bindings)),
+		),
 		handoff:       handoffBuilder,
 		registry:      registry,
 		bindings:      bindings,

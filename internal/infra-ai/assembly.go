@@ -46,7 +46,7 @@ func NewRuntime() *Runtime {
 func NewRuntimeWithOptions(opts RuntimeOptions) *Runtime {
 	httpClient := opts.HTTPClient
 	if httpClient == nil {
-		httpClient = newDefaultHTTPClient(defaultHTTPTimeout)
+		httpClient = newDefaultHTTPClient(httpTimeout())
 	}
 
 	streamClient := opts.StreamHTTPClient
@@ -111,4 +111,12 @@ func streamTimeout() time.Duration {
 		return defaultStreamTimeout
 	}
 	return time.Duration(cfg.Rag.Default.SseTimeoutMs) * time.Millisecond
+}
+
+func httpTimeout() time.Duration {
+	cfg := config.Get()
+	if cfg == nil || cfg.AI.HTTP.TimeoutMs <= 0 {
+		return defaultHTTPTimeout
+	}
+	return time.Duration(cfg.AI.HTTP.TimeoutMs) * time.Millisecond
 }

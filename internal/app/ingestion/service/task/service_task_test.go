@@ -85,6 +85,15 @@ func (s *taskServiceTaskNodeRepoStub) ListByTaskID(ctx context.Context, taskID s
 	return nil, nil
 }
 
+type taskQueueStub struct {
+	enqueued []string
+}
+
+func (s *taskQueueStub) Enqueue(_ context.Context, taskID string) error {
+	s.enqueued = append(s.enqueued, taskID)
+	return nil
+}
+
 func TestTaskServiceCreateRejectsActiveDocumentTask(t *testing.T) {
 	t.Parallel()
 
@@ -150,5 +159,32 @@ func TestTaskServiceCreateAllowsNewDocumentTask(t *testing.T) {
 	}
 	if len(taskRepo.created) != 1 {
 		t.Fatalf("expected one task created, got %d", len(taskRepo.created))
+	}
+}
+
+func TestTaskServiceCreateEnqueuesPersistedTaskID(t *testing.T) {
+	t.Parallel()
+
+	taskRepo := &taskServiceTaskRepoStub{activeDocumentIDs: map[string]bool{}}
+	queue := &taskQueueStub{}
+	svc := NewTaskService(
+		&taskServicePipelineRepoStub{pipeline: domain.Pipeline{ID: "pipe-1", Name: "demo"}},
+		taskRepo,
+		&taskServiceTaskNodeRepoStub{},
+		nil,
+		queue,
+	)
+
+	_, err := svc.Create(context.Background(), CreateTaskInput{
+		ID:             "task-1",
+		PipelineID:     "pipe-1",
+		SourceType:     domain.TaskSourceTypeFile,
+		SourceLocation: "/tmp/demo.md",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if len(queue.enqueued) != 1 || queue.enqueued[0] != "task-1" {
+		t.Fatalf("enqueued task IDs = %v, want [task-1]", queue.enqueued)
 	}
 }

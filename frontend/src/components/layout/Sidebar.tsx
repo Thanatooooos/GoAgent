@@ -6,6 +6,7 @@ import {
   LogOut,
   MessageSquare,
   MoreHorizontal,
+  Newspaper,
   Pencil,
   PlayCircle,
   Plus,
@@ -13,7 +14,7 @@ import {
   Settings,
   Trash2
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
   AlertDialog,
@@ -54,6 +55,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     fetchSessions
   } = useChatStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuthStore();
   const [query, setQuery] = React.useState("");
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
@@ -124,6 +126,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const avatarUrl = user?.avatar?.trim();
   const showAvatar = Boolean(avatarUrl) && !avatarFailed;
   const avatarFallback = (user?.username || user?.userId || "用户").slice(0, 1).toUpperCase();
+  const onBriefPage = location.pathname.startsWith("/brief");
   const sessionTitleFont =
     "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Helvetica Neue\", Arial, sans-serif";
 
@@ -211,6 +214,32 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <span className="flex-1">
                   <span className="block text-sm font-semibold text-[#1F2937]">新建对话</span>
                   <span className="block text-xs text-[#94A3B8]">从空白开始</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "mt-2 flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
+                  onBriefPage
+                    ? "border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]"
+                    : "border-white/80 bg-white/80 text-[#334155] hover:bg-white"
+                )}
+                onClick={() => {
+                  navigate("/brief");
+                  onClose();
+                }}
+              >
+                <span
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center rounded-2xl",
+                    onBriefPage ? "bg-[#DBEAFE] text-[#1D4ED8]" : "bg-[#EEF2FF] text-[#4F46E5]"
+                  )}
+                >
+                  <Newspaper className="h-4 w-4" />
+                </span>
+                <span className="flex-1">
+                  <span className="block text-sm font-semibold">每日简报</span>
+                  <span className="block text-xs text-[#94A3B8]">AI 与技术资讯摘要</span>
                 </span>
               </button>
               {user?.role === "admin" ? (

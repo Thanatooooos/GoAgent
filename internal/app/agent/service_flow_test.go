@@ -7,6 +7,7 @@ import (
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
 	agentfetch "local/rag-project/internal/app/agent/fetch"
+	agentruntime "local/rag-project/internal/app/agent/runtime"
 	agentsearch "local/rag-project/internal/app/agent/search"
 	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	agentstate "local/rag-project/internal/app/agent/state"
@@ -32,23 +33,10 @@ func TestServiceRunDetailed_RuntimeApprovalThenResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search.NewCapability() error = %v", err)
 	}
-	attempt := 0
 	fetchHandle, err := agentfetch.NewCapability(stubFetchFlow{
 		fetch: func(_ context.Context, urls []string) (agentfetch.Output, error) {
-			attempt++
 			if len(urls) != 1 || urls[0] != "https://restricted.example/doc" {
 				t.Fatalf("unexpected urls: %v", urls)
-			}
-			if attempt == 1 {
-				return agentfetch.Output{
-					Summary:       "fetch requires approval",
-					Degraded:      true,
-					DegradeReason: "provider requires approval",
-					ErrorMessage:  "permission denied by upstream provider",
-					Pages: []agentfetch.PageResult{
-						{URL: urls[0], ErrorMessage: "403 forbidden"},
-					},
-				}, nil
 			}
 			return agentfetch.Output{
 				Summary: "fetched approved content",
@@ -81,7 +69,7 @@ func TestServiceRunDetailed_RuntimeApprovalThenResume(t *testing.T) {
 	}
 	if result.Outcome.Approval.Status != agentstate.ApprovalStatusPending ||
 		result.Outcome.Approval.ReasonCode != "fetch_approval_required" ||
-		result.Outcome.Approval.Trigger != "capability_permission_error" {
+		result.Outcome.Approval.Trigger != "approval_gate" {
 		t.Fatalf("expected enriched approval state for runtime approval, got %+v", result.Outcome.Approval)
 	}
 	if result.Outcome.Approval.CapabilityKind != agentcapability.KindTool ||
@@ -166,7 +154,7 @@ func TestServiceRunDetailed_CapabilityApprovalGateThenResume(t *testing.T) {
 	if result.Outcome.Approval.Node != "approval" || result.Outcome.Approval.Capability != agentcapability.NameWebFetch {
 		t.Fatalf("expected capability approval to stop before fetch, got %+v", result.Outcome.Approval)
 	}
-	if result.Outcome.Approval.Trigger != "interrupt_before_node" ||
+	if result.Outcome.Approval.Trigger != "approval_gate" ||
 		result.Outcome.Approval.RerunNode != "fetch" ||
 		result.Outcome.Approval.SearchQuery != "capability approval flow" {
 		t.Fatalf("expected capability approval context, got %+v", result.Outcome.Approval)
@@ -272,23 +260,10 @@ func TestServiceResumeHandoffAfterApproval_CompletesAndClearsPendingSession(t *t
 	if err != nil {
 		t.Fatalf("search.NewCapability() error = %v", err)
 	}
-	attempt := 0
 	fetchHandle, err := agentfetch.NewCapability(stubFetchFlow{
 		fetch: func(_ context.Context, urls []string) (agentfetch.Output, error) {
-			attempt++
 			if len(urls) != 1 || urls[0] != "https://handoff.example/doc" {
 				t.Fatalf("unexpected urls: %v", urls)
-			}
-			if attempt == 1 {
-				return agentfetch.Output{
-					Summary:       "fetch requires approval",
-					Degraded:      true,
-					DegradeReason: "provider requires approval",
-					ErrorMessage:  "permission denied by upstream provider",
-					Pages: []agentfetch.PageResult{
-						{URL: urls[0], ErrorMessage: "403 forbidden"},
-					},
-				}, nil
 			}
 			return agentfetch.Output{
 				Summary: "handoff approved content",
@@ -357,23 +332,10 @@ func TestServiceResumeAfterApproval_ApprovedSessionUpdatesMetadataAndClearsPendi
 	if err != nil {
 		t.Fatalf("search.NewCapability() error = %v", err)
 	}
-	attempt := 0
 	fetchHandle, err := agentfetch.NewCapability(stubFetchFlow{
 		fetch: func(_ context.Context, urls []string) (agentfetch.Output, error) {
-			attempt++
 			if len(urls) != 1 || urls[0] != "https://metadata.example/doc" {
 				t.Fatalf("unexpected urls: %v", urls)
-			}
-			if attempt == 1 {
-				return agentfetch.Output{
-					Summary:       "fetch requires approval",
-					Degraded:      true,
-					DegradeReason: "provider requires approval",
-					ErrorMessage:  "permission denied by upstream provider",
-					Pages: []agentfetch.PageResult{
-						{URL: urls[0], ErrorMessage: "403 forbidden"},
-					},
-				}, nil
 			}
 			return agentfetch.Output{
 				Summary: "metadata approved content",
@@ -536,23 +498,10 @@ func TestServiceResumeAfterApproval_StoresApprovalAuditMetadataOnApprove(t *test
 	if err != nil {
 		t.Fatalf("search.NewCapability() error = %v", err)
 	}
-	attempt := 0
 	fetchHandle, err := agentfetch.NewCapability(stubFetchFlow{
 		fetch: func(_ context.Context, urls []string) (agentfetch.Output, error) {
-			attempt++
 			if len(urls) != 1 || urls[0] != "https://audit-approve.example/doc" {
 				t.Fatalf("unexpected urls: %v", urls)
-			}
-			if attempt == 1 {
-				return agentfetch.Output{
-					Summary:       "fetch requires approval",
-					Degraded:      true,
-					DegradeReason: "provider requires approval",
-					ErrorMessage:  "permission denied by upstream provider",
-					Pages: []agentfetch.PageResult{
-						{URL: urls[0], ErrorMessage: "403 forbidden"},
-					},
-				}, nil
 			}
 			return agentfetch.Output{
 				Summary: "audit approved content",
@@ -699,23 +648,10 @@ func TestServiceResumeAfterApproval_IncrementsResumeCountOnRunnerResume(t *testi
 	if err != nil {
 		t.Fatalf("search.NewCapability() error = %v", err)
 	}
-	attempt := 0
 	fetchHandle, err := agentfetch.NewCapability(stubFetchFlow{
 		fetch: func(_ context.Context, urls []string) (agentfetch.Output, error) {
-			attempt++
 			if len(urls) != 1 || urls[0] != "https://resume-count.example/doc" {
 				t.Fatalf("unexpected urls: %v", urls)
-			}
-			if attempt == 1 {
-				return agentfetch.Output{
-					Summary:       "fetch requires approval",
-					Degraded:      true,
-					DegradeReason: "provider requires approval",
-					ErrorMessage:  "permission denied by upstream provider",
-					Pages: []agentfetch.PageResult{
-						{URL: urls[0], ErrorMessage: "403 forbidden"},
-					},
-				}, nil
 			}
 			return agentfetch.Output{
 				Summary: "resume count approved content",
@@ -758,12 +694,8 @@ func TestServiceResumeAfterApproval_IncrementsResumeCountOnRunnerResume(t *testi
 	if err != nil {
 		t.Fatalf("resolveApprovalResumeDecision() error = %v", err)
 	}
-	if err := service.applyApprovalDecision(pendingSession, initial.Outcome.CheckpointID, ResumeApprovalRequest{
-		CheckpointID: initial.Outcome.CheckpointID,
-		Decision:     ApprovalDecisionApproved,
-		DecisionNote: "approved for resume count",
-	}, decision); err != nil {
-		t.Fatalf("applyApprovalDecision() error = %v", err)
+	if err := agentruntime.ApplyApprovalDecision(pendingSession, initial.Outcome.CheckpointID, decision.value, "approved for resume count"); err != nil {
+		t.Fatalf("runtime.ApplyApprovalDecision() error = %v", err)
 	}
 	if err := service.sessionStore.Put(context.Background(), initial.Outcome.CheckpointID, pendingSession); err != nil {
 		t.Fatalf("sessionStore.Put() error = %v", err)

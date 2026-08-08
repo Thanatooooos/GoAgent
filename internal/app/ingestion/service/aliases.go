@@ -44,8 +44,8 @@ type (
 	NodeMetricsSnapshot      = ingestionobserver.NodeMetricsSnapshot
 	TaskObserver             = ingestionobserver.TaskObserver
 	MultiTaskObserver        = ingestionobserver.MultiTaskObserver
-	RepositoryTaskObserver     = ingestionobserver.RepositoryTaskObserver
-	MetricsObserver            = ingestionobserver.MetricsObserver
+	RepositoryTaskObserver   = ingestionobserver.RepositoryTaskObserver
+	MetricsObserver          = ingestionobserver.MetricsObserver
 
 	NodeRunnerRegistry = ingestionrunner.NodeRunnerRegistry
 	NodeRunner         = ingestionrunner.NodeRunner
@@ -55,6 +55,8 @@ type (
 	ChunkerNodeRunner  = ingestionrunner.ChunkerNodeRunner
 	EnricherNodeRunner = ingestionrunner.EnricherNodeRunner
 	IndexerNodeRunner  = ingestionrunner.IndexerNodeRunner
+	DocumentEnricher   = ingestionrunner.DocumentEnricher
+	PromptCompleter    = ingestionrunner.PromptCompleter
 
 	WorkflowBuilder          = ingestionworkflow.WorkflowBuilder
 	EinoGraphWorkflowBuilder = ingestionworkflow.EinoGraphWorkflowBuilder
@@ -79,8 +81,9 @@ func NewTaskService(
 	taskRepo port.TaskRepository,
 	taskNodeRepo port.TaskNodeRepository,
 	executor port.TaskExecutor,
+	queues ...port.TaskQueue,
 ) *TaskService {
-	return ingestiontask.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, executor)
+	return ingestiontask.NewTaskService(pipelineRepo, taskRepo, taskNodeRepo, executor, queues...)
 }
 
 func NewExecutorService(options ExecutorServiceOptions) *ExecutorService {
@@ -115,8 +118,12 @@ func NewParserNodeRunner(selector *coreparser.Selector) *ParserNodeRunner {
 	return ingestionrunner.NewParserNodeRunner(selector)
 }
 
-func NewEnhancerNodeRunner() *EnhancerNodeRunner {
-	return ingestionrunner.NewEnhancerNodeRunner()
+func NewEnhancerNodeRunner(enrichers ...DocumentEnricher) *EnhancerNodeRunner {
+	return ingestionrunner.NewEnhancerNodeRunner(enrichers...)
+}
+
+func NewLLMDocumentEnricher(client PromptCompleter) DocumentEnricher {
+	return ingestionrunner.NewLLMDocumentEnricher(client)
 }
 
 func NewChunkerNodeRunner(selector *corechunk.Selector) *ChunkerNodeRunner {
@@ -132,8 +139,9 @@ func NewIndexerNodeRunner(
 	chunkRepo knowledgeport.KnowledgeChunkRepository,
 	vectorStore knowledgeport.VectorStore,
 	embedding aiembedding.EmbeddingService,
+	documentRepos ...knowledgeport.KnowledgeDocumentRepository,
 ) *IndexerNodeRunner {
-	return ingestionrunner.NewIndexerNodeRunner(baseRepo, chunkRepo, vectorStore, embedding)
+	return ingestionrunner.NewIndexerNodeRunner(baseRepo, chunkRepo, vectorStore, embedding, documentRepos...)
 }
 
 func NewEinoGraphWorkflowBuilder() *EinoGraphWorkflowBuilder {

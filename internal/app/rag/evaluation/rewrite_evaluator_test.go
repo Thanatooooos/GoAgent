@@ -174,15 +174,25 @@ func TestRewriteEvaluatorRunReportsRetrievalComparison(t *testing.T) {
 				Chunks: []convention.RetrievedChunk{
 					{ID: "chunk-x", DocumentID: "doc-x", Score: 0.9},
 				},
+				ChannelRetrieved: map[string][]convention.RetrievedChunk{
+					"keyword":       {{ID: "chunk-x", DocumentID: "doc-x", Score: 0.9}},
+					"vector_global": {{ID: "chunk-x", DocumentID: "doc-x", Score: 0.8}},
+				},
 			}},
 			"Go GMP 调度模型": {{
 				Chunks: []convention.RetrievedChunk{
 					{ID: "chunk-1", DocumentID: "doc-1", Score: 0.95},
 				},
+				ChannelRetrieved: map[string][]convention.RetrievedChunk{
+					"vector_global": {{ID: "chunk-1", DocumentID: "doc-1", Score: 0.95}},
+				},
 			}},
 			"Go netpoller 多路复用": {{
 				Chunks: []convention.RetrievedChunk{
 					{ID: "chunk-2", DocumentID: "doc-2", Score: 0.8},
+				},
+				ChannelRetrieved: map[string][]convention.RetrievedChunk{
+					"keyword": {{ID: "chunk-2", DocumentID: "doc-2", Score: 0.8}},
 				},
 			}},
 		},
@@ -229,6 +239,17 @@ func TestRewriteEvaluatorRunReportsRetrievalComparison(t *testing.T) {
 	baselineMRR, baselineOK := result.Aggregate.Metrics["baseline_mrr"].(float64)
 	if !candidateOK || !baselineOK || candidateMRR <= baselineMRR {
 		t.Fatalf("candidate_mrr = %v, baseline_mrr = %v, want candidate > baseline", result.Aggregate.Metrics["candidate_mrr"], result.Aggregate.Metrics["baseline_mrr"])
+	}
+	baselineChannels, ok := result.Aggregate.Metrics["baseline_channels"].([]ChannelAggregateMetrics)
+	if !ok || len(baselineChannels) == 0 {
+		t.Fatalf("baseline_channels = %#v, want channel aggregates", result.Aggregate.Metrics["baseline_channels"])
+	}
+	candidateChannels, ok := result.Aggregate.Metrics["candidate_channels"].([]ChannelAggregateMetrics)
+	if !ok || len(candidateChannels) == 0 {
+		t.Fatalf("candidate_channels = %#v, want channel aggregates", result.Aggregate.Metrics["candidate_channels"])
+	}
+	if _, ok := result.Aggregate.Metrics["channel_mrr_uplift"].(map[string]float64); !ok {
+		t.Fatalf("channel_mrr_uplift = %#v, want map", result.Aggregate.Metrics["channel_mrr_uplift"])
 	}
 }
 

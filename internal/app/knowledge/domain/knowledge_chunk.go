@@ -11,6 +11,8 @@ type KnowledgeChunk struct {
 	ContentHash     string
 	CharCount       int
 	TokenCount      int
+	RecordType      string
+	ParentChunkID   string
 	Enabled         bool
 	CreatedBy       string
 	UpdatedBy       string

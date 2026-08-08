@@ -45,6 +45,9 @@ func (p capabilityRuntimePolicy) retryDirective(session *agentruntime.RuntimeSes
 		Spec:                spec,
 		SkipInputValidation: true,
 	})
+	if schedule.Decision == agentruntime.ScheduleDecisionDegrade && schedule.Reason == "resume_not_supported" {
+		return branchDegrade, "resume_retry_not_supported", 0.55, progressNone, "", "", true
+	}
 	switch errorClass {
 	case agentcapability.ErrorClassValidation:
 		return branchDegrade, reasonPrefix + "_validation_failed", 0.60, progressNone, "", "", true
@@ -59,9 +62,6 @@ func (p capabilityRuntimePolicy) retryDirective(session *agentruntime.RuntimeSes
 		progressKind = progressKindForRetry(reasonPrefix)
 		if strings.TrimSpace(schedule.Idempotency) == agentcapability.IdempotencyUnknown {
 			return branchDegrade, "retry_blocked_unknown_idempotency", 0.55, progressNone, "", "", true
-		}
-		if schedule.Decision == agentruntime.ScheduleDecisionDegrade && schedule.Reason == "resume_not_supported" {
-			return branchDegrade, "resume_retry_not_supported", 0.55, progressNone, "", "", true
 		}
 		if nextNoProgressRounds(session, progressKind) >= 2 {
 			return "", "", 0, "", "", "", false

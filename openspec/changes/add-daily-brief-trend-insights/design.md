@@ -8,7 +8,8 @@ The module appears at the top of the existing page and answers a different
 question from the rest of the brief:
 
 - the normal brief answers "what happened"
-- the trend insight answers "what recently changed in this field"
+- the trend insight answers "what this field currently looks like, what
+  recently changed, and what that change suggests"
 
 The design deliberately separates:
 
@@ -24,7 +25,7 @@ judgment rather than real-time freshness or broad cross-domain depth.
 This design aims to:
 
 1. define the user-facing `Trend Insight` module shape
-2. define the internal analysis pipeline for recent domain change
+2. define the internal analysis pipeline for recent domain state and change
 3. define reusable general analysis axes plus one richer `AI` extension
 4. define update cadence and comparison-window responsibilities
 5. define one stable read contract for the frontend
@@ -69,17 +70,29 @@ Instead, user-facing wording should feel natural:
 - "This now looks like..."
 - "This is not only a one-off spike..."
 
+The main paragraph should combine three layers into one natural piece of
+analysis:
+
+- `summary`
+  - what the field currently looks like over the recent stretch
+- `change`
+  - what shifted relative to the previous comparable stretch
+- `implication`
+  - what that shift likely means for how the field should now be read
+
 ### Example Shape
 
 Example rendering:
 
 - Main paragraph:
-  - "Recently, AI has shifted away from pure model-release theater toward a
-    mix of open-weight supply, inference-cost competition, and stronger agent
-    tooling focus. Open releases are more visible than before, while benchmark
-    talk is no longer the only organizing storyline. At the same time,
-    deployment and governance constraints are appearing often enough to shape
-    the field's center of gravity rather than just its edges."
+  - "Recently, AI no longer looks like a field organized only around flagship
+    model launches. It now reads more like a mix of open-weight supply,
+    inference-cost competition, agent tooling, and practical deployment
+    concerns. Compared with the previous stretch, open releases and
+    engineering-oriented signals are more prominent, while pure benchmark
+    storytelling is less dominant. That suggests the center of gravity is
+    moving from 'who is strongest' toward 'what is usable, affordable, and
+    easier to fit into real workflows.'"
 - Signal cards:
   - "Open-weight releases are more prominent"
   - "Agent tooling is now a primary storyline"
@@ -90,8 +103,44 @@ Example rendering:
 - Evidence drawer:
   - representative items grouped by signal
 
-The paragraph is the primary content surface. The signal cards are supporting
-scan-friendly distillations rather than the main event.
+The paragraph is the primary content surface. It should read like a compact
+domain judgment rather than a headline expansion. The signal cards are
+supporting scan-friendly distillations rather than the main event.
+
+### Tone and Expression
+
+Phase 1 should adopt a `light-editorial, analysis-first` writing style.
+
+This means:
+
+- the paragraph should feel like a concise editorial judgment
+- the judgment must still be grounded in structured signals and evidence
+- the language should sound confident but not overclaim
+
+Recommended paragraph shape:
+
+1. sentence one summarizes what the field currently looks like
+2. sentence two explains what shifted relative to the prior stretch
+3. sentence three interprets what that shift likely means
+
+Recommended language characteristics:
+
+- use phrasing such as "is starting to look more like", "is shifting toward",
+  "is becoming more visible", and "is no longer the only center of gravity"
+- prefer comparative and directional language over absolute declarations
+- preserve room for uncertainty when evidence is mixed
+
+Avoid:
+
+- overly dramatic certainty such as "clearly", "completely", or "has already
+  proven"
+- generic analyst filler that reads like a template-generated weekly report
+- unsupported causal claims when the system only observes correlation and
+  salience change
+
+The signal cards should stay shorter and more direct than the main paragraph.
+The evidence drawer should become more neutral and factual, rather than
+repeating the editorial tone of the top-level judgment.
 
 ## Package Boundary
 
@@ -142,13 +191,14 @@ The system should suppress the module when:
 
 ## Internal Analysis Model
 
-The analysis pipeline should follow five stages:
+The analysis pipeline should follow six stages:
 
 1. observation labeling
-2. window aggregation
-3. change detection
-4. evidence selection
-5. synthesis into one stable snapshot
+2. recent-state summarization
+3. window aggregation
+4. change detection
+5. evidence selection
+6. synthesis into one stable snapshot
 
 ### 1. Observation Labeling
 
@@ -179,7 +229,45 @@ This labeling may use mixed techniques:
 The design must allow partial labeling. Not every item must populate every
 axis.
 
-### 2. Window Aggregation
+### 2. Recent-State Summarization
+
+Before asking what changed, the system should first establish what the domain
+currently looks like.
+
+This stage should summarize the recent window itself and answer questions such
+as:
+
+- which event types are currently dominant
+- which capability or value-chain layers are most visible
+- which actor groups are most active
+- which competitive themes now organize the field
+
+This summary is not yet a historical comparison. It is a structured description
+of the recent domain state.
+
+Suggested outputs:
+
+- dominant facets
+- secondary supporting facets
+- concentration score
+- candidate "current storyline" labels
+
+This stage should materialize one internal object:
+
+```ts
+type CurrentStateSummary = {
+  summary: string
+  dominantThemes: string[]
+  supportingThemes: string[]
+  dominantFacets: string[]
+  concentrationScore: number | null
+}
+```
+
+Its job is to describe the recent domain state without yet making a historical
+comparison.
+
+### 3. Window Aggregation
 
 The system should aggregate observations over two window families:
 
@@ -205,7 +293,7 @@ Aggregation outputs should include:
 - continuity score across consecutive buckets
 - evidence refs for each signal
 
-### 3. Change Detection
+### 4. Change Detection
 
 The system should not send all raw counts directly into the final LLM prompt.
 
@@ -227,7 +315,30 @@ Each signal candidate should carry:
 
 This keeps synthesis grounded and auditable.
 
-### 4. Evidence Selection
+This stage should materialize one internal object:
+
+```ts
+type DomainChangeSet = {
+  risingThemes: string[]
+  fadingThemes: string[]
+  emergingThemes: string[]
+  persistentThemes: string[]
+  primaryShift: string | null
+}
+```
+
+The goal is not to preserve every measurable delta. The goal is to keep only
+the changes that are strong enough to support user-facing interpretation.
+
+The combination of recent-state summarization and change detection is
+important:
+
+- `summary` prevents the module from sounding like isolated delta reporting
+- `change` prevents the module from becoming a generic static overview
+
+The product should do both.
+
+### 5. Evidence Selection
 
 Every major user-facing signal must be attached to representative content.
 
@@ -249,14 +360,15 @@ Phase 1 should therefore use this evidence order:
 2. cleaned candidate-level evidence only when a necessary signal is not well
    represented in published items
 
-### 5. Snapshot Synthesis
+### 6. Snapshot Synthesis
 
 The final synthesis step should produce one `TrendInsightSnapshot`.
 
 The LLM's role here is:
 
+- summarize the current domain state
 - summarize structured change
-- explain why it matters
+- explain why the combined state-and-change judgment matters
 - phrase the judgment naturally as one short analytical paragraph plus concise
   supporting signal labels
 
@@ -265,6 +377,144 @@ The LLM's role is **not**:
 - infer trend directly from unconstrained raw content
 - invent unsupported structure
 - bypass sample-size and evidence thresholds
+
+The synthesis step should use one additional internal object:
+
+```ts
+type InterpretationFrame = {
+  primary: string
+  secondary: string | null
+  summaryFocus: string
+  changeFocus: string
+  implicationFocus: string
+  tone: "light_editorial_analysis"
+  cautionLevel: "high" | "medium" | "low"
+}
+```
+
+`InterpretationFrame` should be derived before free-form writing begins. Its
+job is to constrain what kind of explanation the model is allowed to produce.
+
+Phase 1 should use a small bounded frame set rather than open-ended
+interpretation categories.
+
+Recommended frame set:
+
+- `capability_to_utility`
+  - the field is shifting from raw capability competition toward usability,
+    deployment, cost, and workflow fit
+- `open_to_closed_balance_shift`
+  - the field is rebalancing between open supply and closed platform control
+- `experimentation_to_adoption`
+  - the field is moving from demos and exploration toward real usage and
+    business absorption
+- `acceleration_to_constraint`
+  - the field is still advancing, but external constraints such as policy,
+    reliability, copyright, or compute are now entering the main storyline
+- `fragmentation_to_structure`
+  - the field is becoming more legible, with clearer dominant themes and less
+    purely fragmented motion
+
+Phase 1 should choose:
+
+- exactly one `primary` frame
+- at most one `secondary` frame
+
+The primary frame should carry the main implication sentence. The secondary
+frame may add nuance, but should not compete with the primary explanation.
+
+Recommended frame triggers:
+
+- `capability_to_utility`
+  - stronger `tooling_framework`, `infra_serving`, `developer_tool`,
+    `enterprise_solution`, or applied workflow signals
+  - weaker relative dominance of pure `benchmark_or_report` or flagship model
+    theater
+- `open_to_closed_balance_shift`
+  - strong movement in `open_weights`, `open_source_stack`, `api_only`, or
+    `closed_product`
+- `experimentation_to_adoption`
+  - rising `enterprise_solution`, `industry_workflow`, or `consumer_feature`
+  - declining dominance of `research_demo`
+- `acceleration_to_constraint`
+  - rising `policy`, `risk_exposed`, `compute`, `copyright`,
+    `distribution`, or `reliability`
+- `fragmentation_to_structure`
+  - stronger persistence, clearer concentration, and lower thematic scatter in
+    the recent state summary
+
+The implementation should prefer explicit mapping logic from structured signals
+to frames. The LLM may help phrase the chosen frame, but should not invent a
+new frame family at runtime.
+
+### Frame Priority and Conflict Resolution
+
+Multiple frames may appear valid at the same time. Phase 1 should therefore
+define a stable selection rule rather than letting the writer combine every
+plausible interpretation.
+
+Recommended selection procedure:
+
+1. score each frame from structured signals
+2. suppress frames below the confidence floor
+3. select the highest-confidence frame as `primary`
+4. allow one `secondary` frame only when it adds real nuance without
+   reframing the whole paragraph
+5. otherwise collapse to one-frame output
+
+Recommended priority order when scores are close:
+
+1. `capability_to_utility`
+2. `experimentation_to_adoption`
+3. `open_to_closed_balance_shift`
+4. `acceleration_to_constraint`
+5. `fragmentation_to_structure`
+
+This ordering reflects product value for Phase 1:
+
+- prefer frames that explain where practical attention is moving
+- prefer frames that help users understand what to watch next
+- use structure-only frames as support, not as the first interpretation when a
+  more concrete shift is available
+
+Recommended secondary-frame rules:
+
+- `fragmentation_to_structure`
+  - may support almost any primary frame when the field is becoming more
+    legible
+- `open_to_closed_balance_shift`
+  - may support `capability_to_utility` when openness changes are important but
+    not the main implication
+- `acceleration_to_constraint`
+  - may support `experimentation_to_adoption` when adoption is rising under
+    visible operational or policy pressure
+
+Recommended exclusion rules:
+
+- do not pair `capability_to_utility` and `experimentation_to_adoption` as
+  equal co-primaries
+  - choose the one with stronger movement and absorb the other as wording
+- do not use `fragmentation_to_structure` as primary when a stronger causal or
+  directional frame is available
+- do not emit a `secondary` frame when evidence only weakly supports it
+
+When conflict remains unresolved after scoring, the system should prefer:
+
+- the frame with clearer evidence diversity
+- then the frame with stronger persistence across adjacent buckets
+- then the earlier frame in the priority order above
+
+The final paragraph should still read as one coherent judgment. It should not
+sound like a stitched list of multiple independent analyses.
+
+Recommended synthesis order:
+
+1. build `CurrentStateSummary`
+2. build `DomainChangeSet`
+3. choose `InterpretationFrame`
+4. generate the final paragraph and supporting labels
+
+This keeps the system in a `structure first, wording second` mode.
 
 ## General Analysis Axes
 
@@ -435,10 +685,16 @@ type TrendInsight = {
   topic: string
   generatedAt: string
   interpretation: string
+  currentSummary: TrendCurrentSummary | null
   signals: TrendSignal[]
   background: TrendBackground | null
   evidenceGroups: EvidenceGroup[]
   methodology: TrendMethodology | null
+}
+
+type TrendCurrentSummary = {
+  summary: string
+  dominantThemes: string[]
 }
 
 type TrendSignal = {
@@ -473,6 +729,16 @@ type TrendMethodology = {
   sampleSize: number
 }
 ```
+
+The outward read model may stay compact, but the internal pipeline should
+distinguish:
+
+- `CurrentStateSummary`
+  - what the field currently looks like
+- `DomainChangeSet`
+  - what changed relative to the prior stretch
+- `InterpretationFrame`
+  - how the final explanation should be shaped and limited
 
 The `methodology.summary` should stay human-readable and non-technical, for
 example:
@@ -536,6 +802,17 @@ Suggested fields:
 The page should read the latest snapshot instead of triggering new synthesis.
 `background_json` should be persisted as part of the same snapshot instead of
 being managed as a separate first-phase read model.
+
+The snapshot should preserve enough structure to distinguish:
+
+- what the system thinks the field currently looks like
+- what the system thinks changed
+- how those combine into the final displayed paragraph
+
+The implementation should therefore avoid sending raw item lists directly into
+the final writing prompt. It should send a bounded interpretation payload built
+from `CurrentStateSummary`, `DomainChangeSet`, evidence references, and tone
+constraints.
 
 ## Failure and Degradation
 

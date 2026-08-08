@@ -1,11 +1,11 @@
 package executor
 
 import (
+	"context"
+	"fmt"
 	ingestionobserver "local/rag-project/internal/app/ingestion/service/observer"
 	ingestionrunner "local/rag-project/internal/app/ingestion/service/runner"
 	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
-	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -97,29 +97,46 @@ func NewExecutorService(options ExecutorServiceOptions) *ExecutorService {
 
 // Submit 提供 task 提交边界，并完成最小编排准备。
 func (s *ExecutorService) Submit(ctx context.Context, pipeline domain.Pipeline, task domain.Task) error {
+	workflow, state, err := s.prepareWorkflow(ctx, pipeline, task)
+	if err != nil {
+		return err
+	}
+	return s.startWorkflow(workflow, state)
+}
+
+// Execute 在当前调用链内执行一个已持久化的 task。
+// 它供持久化队列 worker 使用，使队列确认成功只发生在 workflow 结束之后。
+func (s *ExecutorService) Execute(ctx context.Context, pipeline domain.Pipeline, task domain.Task) error {
+	workflow, state, err := s.prepareWorkflow(ctx, pipeline, task)
+	if err != nil {
+		return err
+	}
+	return s.runWorkflow(ctx, workflow, state)
+}
+
+func (s *ExecutorService) prepareWorkflow(ctx context.Context, pipeline domain.Pipeline, task domain.Task) (ingestionworkflow.WorkflowSpec, ingestionworkflow.ExecutionState, error) {
 	if s == nil {
-		return exception.NewServiceException("ingestion executor service is required", nil)
+		return ingestionworkflow.WorkflowSpec{}, ingestionworkflow.ExecutionState{}, exception.NewServiceException("ingestion executor service is required", nil)
 	}
 	if s.workflowBuilder == nil {
-		return exception.NewServiceException("ingestion workflow builder is required", nil)
+		return ingestionworkflow.WorkflowSpec{}, ingestionworkflow.ExecutionState{}, exception.NewServiceException("ingestion workflow builder is required", nil)
 	}
 	if strings.TrimSpace(task.ID) == "" {
-		return exception.NewClientException("task id is required", nil)
+		return ingestionworkflow.WorkflowSpec{}, ingestionworkflow.ExecutionState{}, exception.NewClientException("task id is required", nil)
 	}
 	if strings.TrimSpace(pipeline.ID) == "" {
-		return exception.NewClientException("pipeline id is required", nil)
+		return ingestionworkflow.WorkflowSpec{}, ingestionworkflow.ExecutionState{}, exception.NewClientException("pipeline id is required", nil)
 	}
 
 	workflow, err := s.workflowBuilder.Build(ctx, pipeline, task)
 	if err != nil {
-		return err
+		return ingestionworkflow.WorkflowSpec{}, ingestionworkflow.ExecutionState{}, err
 	}
 	if len(workflow.NodeOrder) == 0 {
-		return exception.NewClientException("ingestion workflow nodes are required", nil)
+		return ingestionworkflow.WorkflowSpec{}, ingestionworkflow.ExecutionState{}, exception.NewClientException("ingestion workflow nodes are required", nil)
 	}
 
-	state := s.newExecutionState(task, pipeline)
-	return s.startWorkflow(workflow, state)
+	return workflow, s.newExecutionState(task, pipeline), nil
 }
 
 // BuildWorkflow 暴露给后续 EINO 适配层使用的工作流构建入口。
@@ -232,7 +249,7 @@ func (s *ExecutorService) startWorkflow(workflow ingestionworkflow.WorkflowSpec,
 			}
 		}()
 
-		s.runWorkflow(runCtx, workflow, state)
+		_ = s.runWorkflow(runCtx, workflow, state)
 	}()
 	return nil
 }
@@ -263,24 +280,28 @@ func (s *ExecutorService) handleWorkflowPanic(ctx context.Context, state ingesti
 }
 
 // runWorkflow 顺序执行最小 workflow 节点链路。
-func (s *ExecutorService) runWorkflow(ctx context.Context, workflow ingestionworkflow.WorkflowSpec, state ingestionworkflow.ExecutionState) {
+func (s *ExecutorService) runWorkflow(ctx context.Context, workflow ingestionworkflow.WorkflowSpec, state ingestionworkflow.ExecutionState) error {
 	if s == nil {
-		return
+		return exception.NewServiceException("ingestion executor service is required", nil)
 	}
 	task := state.Task
+	ctx = log.NewContext(ctx,
+		"task_id", task.ID,
+		"pipeline_id", task.PipelineID,
+	)
 	startedAt := s.now()
 	task.Status = domain.TaskStatusRunning
 	task.StartedAt = &startedAt
 	task.UpdatedAt = startedAt
 	state.Task = task
-	log.Infow("ingestion task started",
+	log.FromContext(ctx).Infow("ingestion task started",
 		"taskId", task.ID,
 		"pipelineId", task.PipelineID,
 		"sourceType", task.SourceType,
 	)
 	if s.taskObserver != nil {
 		if err := s.taskObserver.OnTaskStarted(ctx, task); err != nil {
-			return
+			return err
 		}
 	}
 
@@ -295,7 +316,7 @@ func (s *ExecutorService) runWorkflow(ctx context.Context, workflow ingestionwor
 
 	totalDuration := completedAt.Sub(startedAt)
 	if execErr != nil {
-		log.Errorw("ingestion task failed",
+		log.FromContext(ctx).Errorw("ingestion task failed",
 			"taskId", task.ID,
 			"pipelineId", task.PipelineID,
 			"sourceType", task.SourceType,
@@ -303,7 +324,7 @@ func (s *ExecutorService) runWorkflow(ctx context.Context, workflow ingestionwor
 			"error", execErr.Error(),
 		)
 	} else {
-		log.Infow("ingestion task completed",
+		log.FromContext(ctx).Infow("ingestion task completed",
 			"taskId", task.ID,
 			"pipelineId", task.PipelineID,
 			"sourceType", task.SourceType,
@@ -313,13 +334,14 @@ func (s *ExecutorService) runWorkflow(ctx context.Context, workflow ingestionwor
 	}
 	if s.taskObserver != nil {
 		if err := s.taskObserver.OnTaskCompleted(ctx, task, current, execErr); err != nil {
-			log.Errorw("ingestion task completion observer failed",
+			log.FromContext(ctx).Errorw("ingestion task completion observer failed",
 				"taskId", task.ID,
 				"pipelineId", task.PipelineID,
 				"error", err.Error(),
 			)
 		}
 	}
+	return execErr
 }
 
 func (s *ExecutorService) executeWorkflowNode(ctx context.Context, runtime *einoTaskRuntime, item ingestionworkflow.WorkflowNodeSpec) error {
@@ -338,7 +360,7 @@ func (s *ExecutorService) executeWorkflowNode(ctx context.Context, runtime *eino
 		return exception.NewClientException("node runner not found for node type: "+item.Node.NodeType, nil)
 	}
 	task := current.Task
-	log.Infow("ingestion node started",
+	log.FromContext(ctx).Infow("ingestion node started",
 		"taskId", task.ID,
 		"nodeId", item.Node.NodeID,
 		"nodeType", item.Node.NodeType,
@@ -368,7 +390,7 @@ func (s *ExecutorService) executeWorkflowNode(ctx context.Context, runtime *eino
 				break
 			}
 			backoff := time.Duration(nodeRetryBackoffMs*(1<<(attempt-1))) * time.Millisecond
-			log.Infow("ingestion node retrying",
+			log.FromContext(ctx).Infow("ingestion node retrying",
 				"taskId", task.ID,
 				"nodeId", item.Node.NodeID,
 				"nodeType", item.Node.NodeType,
@@ -401,7 +423,7 @@ func (s *ExecutorService) executeWorkflowNode(ctx context.Context, runtime *eino
 		if runErr == nil {
 			break
 		}
-		log.Errorw("ingestion node attempt failed",
+		log.FromContext(ctx).Errorw("ingestion node attempt failed",
 			"taskId", task.ID,
 			"nodeId", item.Node.NodeID,
 			"nodeType", item.Node.NodeType,
@@ -418,7 +440,7 @@ func (s *ExecutorService) executeWorkflowNode(ctx context.Context, runtime *eino
 		}
 	}
 	if runErr != nil {
-		log.Errorw("ingestion node failed",
+		log.FromContext(ctx).Errorw("ingestion node failed",
 			"taskId", task.ID,
 			"nodeId", item.Node.NodeID,
 			"nodeType", item.Node.NodeType,
@@ -428,7 +450,7 @@ func (s *ExecutorService) executeWorkflowNode(ctx context.Context, runtime *eino
 		)
 		return runErr
 	}
-	log.Infow("ingestion node completed",
+	log.FromContext(ctx).Infow("ingestion node completed",
 		"taskId", task.ID,
 		"nodeId", item.Node.NodeID,
 		"nodeType", item.Node.NodeType,

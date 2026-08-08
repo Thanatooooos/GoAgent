@@ -42,6 +42,9 @@ func (r DefaultReducer) Apply(snapshot StateSnapshot, delta StateDelta) (StateSn
 	if delta.Answer != nil {
 		applyAnswerDelta(&next.Answer, *delta.Answer)
 	}
+	if delta.Pattern != nil {
+		applyPatternDelta(&next.Pattern, *delta.Pattern)
+	}
 
 	if delta.Execution == nil || delta.Execution.Status == nil {
 		next.Execution.Status = deriveExecutionStatus(next)
@@ -296,6 +299,18 @@ func applyAnswerDelta(target *AnswerState, delta AnswerDelta) {
 	if delta.Final != nil {
 		target.Final = *delta.Final
 		target.Draft = ""
+	}
+}
+
+func applyPatternDelta(target *PatternState, delta PatternDelta) {
+	if target == nil {
+		return
+	}
+	if delta.Name != nil {
+		target.Name = *delta.Name
+	}
+	if delta.Data != nil {
+		target.Data = cloneStringAnyMap(delta.Data)
 	}
 }
 

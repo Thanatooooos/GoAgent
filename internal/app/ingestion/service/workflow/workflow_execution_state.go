@@ -25,9 +25,17 @@ type ParsedDocument struct {
 
 // ChunkPayload 描述 chunker 阶段产出的结构化分块结果。
 type ChunkPayload struct {
-	Index    int
-	Content  string
-	Metadata map[string]any
+	Index       int
+	Content     string
+	Metadata    map[string]any
+	ParentIndex *int
+	Questions   []string
+}
+
+// ParentChunkPayload stores larger document context for parent-child chunking.
+type ParentChunkPayload struct {
+	Index   int
+	Content string
 }
 
 // IndexResult 描述 indexer 阶段产出的写入摘要。
@@ -37,19 +45,28 @@ type IndexResult struct {
 	Metadata   map[string]any
 }
 
+// EnrichmentPayload records best-effort LLM enrichment without blocking indexing.
+type EnrichmentPayload struct {
+	Summary       string
+	SummaryStatus string
+	SummaryError  string
+}
+
 // ExecutionState 描述一条 ingestion task 在编排过程中的共享上下文。
 type ExecutionState struct {
-	Task        domain.Task
-	Pipeline    domain.Pipeline
-	Source      SourcePayload
-	Parsed      ParsedDocument
-	Chunks      []ChunkPayload
-	IndexResult IndexResult
-	Artifacts   map[string]any
-	NodeOutputs map[string]map[string]any
-	Error       error
-	StartedAt   time.Time
-	CompletedAt *time.Time
+	Task         domain.Task
+	Pipeline     domain.Pipeline
+	Source       SourcePayload
+	Parsed       ParsedDocument
+	Chunks       []ChunkPayload
+	ParentChunks []ParentChunkPayload
+	Enrichment   EnrichmentPayload
+	IndexResult  IndexResult
+	Artifacts    map[string]any
+	NodeOutputs  map[string]map[string]any
+	Error        error
+	StartedAt    time.Time
+	CompletedAt  *time.Time
 }
 
 // Clone 为后续编排层保留一个轻量复制入口。
@@ -57,6 +74,9 @@ func (s ExecutionState) Clone() ExecutionState {
 	cloned := s
 	if len(s.Chunks) > 0 {
 		cloned.Chunks = append([]ChunkPayload(nil), s.Chunks...)
+	}
+	if len(s.ParentChunks) > 0 {
+		cloned.ParentChunks = append([]ParentChunkPayload(nil), s.ParentChunks...)
 	}
 	if len(s.Artifacts) > 0 {
 		cloned.Artifacts = make(map[string]any, len(s.Artifacts))

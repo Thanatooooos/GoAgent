@@ -23,8 +23,9 @@ func newObserveNode(planner agentplanner.Planner, outputMode string, capabilityP
 			openQuestions = nil
 		}
 
-		contextDelta := &agentstate.ContextDelta{
-			SeenURLs: fetchURLs(session),
+		contextDelta := &agentstate.ContextDelta{}
+		if policy.Branch != branchApproval {
+			contextDelta.SeenURLs = fetchURLs(session)
 		}
 		if policy.NextQuery != "" {
 			contextDelta.SearchQuery = stringPtr(policy.NextQuery)

@@ -1,338 +1,121 @@
-# Project Progress Context
+# GoAgent 项目当前快照
 
-这份文档只用于描述 `goagent` 的当前状态，不再记录按日期追加的增量更新。
+> 本文档描述当前工作区的项目状态，不记录按日期追加的变更日志。
 
-## 1. 进度
+## 项目定位
 
-项目已经从“基础能力搭建期”进入“主链路闭环、联调和质量收口期”。
+GoAgent 是一个 Go 实现的企业知识库与智能体平台：覆盖文档入库、RAG 对话、多模型调用、工具/Agent 编排、会话记忆、权限鉴别和运营级可观测性基础能力。
 
-当前整体进度可以概括为：
+当前阶段是“主链路已形成、持续补齐可靠性与质量”的状态。系统可以运行并完成主要业务闭环；部分高级能力仍以配置开关、后端接口或定向测试验证为主，尚未全部形成产品化 UI。
 
-- `Knowledge` 已具备完整的知识库、文档、chunk、调度和管理能力，重点从继续铺功能转向一致性、状态联动和排障体验。
-- `Ingestion` 已跑通 `pipeline -> task -> task_node -> knowledge 回写` 的最小可用闭环，并补齐了重试、补偿、reconcile 和基础 metrics。该模块目前以稳定性维护为主，不再是短期主工作面。
-- `RAG` 已形成最小 chat 闭环，支持多轮对话、rewrite、retrieve、prompt、trace、fallback，以及多通道检索、结构化 summary 和记忆压缩、离线评估能力。
-- `Agent / Tool` 已形成两条并行路线：
-  - 旧 `internal/app/rag/tool` 继续作为稳定生产路径。
-  - 新 `internal/app/agent` 已完成 capability、planner、handoff、runtime approval / resume、plan_execute 泛化和 mixed-capability 基础闭环。
-- approval 已不再只是后端 runtime 能力，待审批状态已经可以恢复到 chat UI，支持会话级 pending lookup、SSE 事件处理和前端审批卡片展示。
+## 代码结构
 
-当前项目状态的核心判断是：
+- `cmd/`：服务端和离线评估/诊断命令入口。
+- `configs/`：应用与模型配置。
+- `frontend/`：React 前端，包含聊天、知识库、审批和日报等页面。
+- `internal/adapter/`：HTTP、PostgreSQL、对象存储与 pgvector 适配器。
+- `internal/app/`：业务领域。
+  - `agent/`：新 Agent runtime、capability、审批、恢复和 pattern。
+  - `core/`：通用 parser、chunk 能力。
+  - `ingestion/`：可编排文档入库流水线及耐久任务队列。
+  - `knowledge/`：知识库、文档、chunk 与调度。
+  - `rag/`：会话、改写、检索、提示词、记忆、Trace 和稳定 Tool 体系。
+  - `dailybrief/`：日报及趋势洞察能力。
+- `internal/bootstrap/`：各领域运行时组装。
+- `internal/infra-ai/`：chat、embedding、rerank、多模型选择与熔断降级。
+- `internal/middleware/`：请求 ID、日志上下文、访问日志、错误处理和用户上下文。
 
-- 主链路已经成型，重点不再是“功能有没有”，而是“边界是否稳定、结果是否一致、体验是否完整”。
-- 后端重点集中在 `agent / tool / rag` 的协作边界、可解释性和可恢复性。
-- `summary` 已进入专项质量收口阶段，当前已经具备结构化 schema、repair、validation、renderer 和离线评估样本体系，工作重点是继续提升评测通过率并压低 dangerous drift。
-- `summary` 压缩触发已改为 token-aware 策略：assistant 消息落库后异步检查，按最新 summary 覆盖边界之后的未压缩尾部增量处理；summary、chat、retrieve 和 tool 共用 token 估算合同，retrieve / tool 具备独立 token budget，最终 prompt 会输出阶段级 token 用量并保留总预算兜底。
-- 前端已经具备承接 Agent 运行态和审批态的基础能力，但仍以现有链路承接为主，而不是大规模扩展新交互。
+## 已落地的核心能力
 
-## 2. 结构
+### 文档与知识库
 
-项目当前结构分为后端、前端、命令行工具和文档四个层面。
+- 知识库、文档、chunk 的 CRUD、分页、启停、删除及处理日志。
+- 文件、URL、飞书来源；支持直接切块或转入 ingestion pipeline。
+- Markdown/Tika 解析、固定长度与 Markdown 结构化切块。
+- pgvector 正文向量、关键词/BM25 与元数据检索。
+- 文档处理状态、chunk 日志、定时调度与调度执行记录。
 
-### 仓库顶层
+### 文档增强入库
 
-- `cmd`
-  - 可执行入口与评估/调试工具，当前包含 `server`、`retrieve-eval`、`retrieve-inspect`、`rewrite-eval`、`eval-sample-gen`、`corpus-loader`、`lexical-rebuild`。
-- `configs`
-  - 运行配置。
-- `docker`
-  - 容器化相关文件。
-- `docs`
-  - 项目说明、设计和上下文文档。
-- `frontend`
-  - 前端应用。
-- `internal`
-  - 后端核心代码。
-- `scripts`
-  - 辅助脚本。
-- `testdata`
-  - 测试数据。
+入库链路支持 `fetcher -> parser -> enhancer -> chunker -> enricher -> indexer` 节点编排。
 
-### 后端结构
+- 父子切块：父块仅持久化，子块负责向量检索；子块保留 `parent_chunk_id`。
+- LLM 摘要和问题预测：运行时使用 `aiRuntime.Chat`；每个子块可生成预测问题。
+- 问题独立向量化，携带 `source_chunk_id` 与源子块内容；命中问题后回链原子子块。
+- 检索可返回父块上下文，但引用 ID 保持子块 ID，兼顾上下文完整性与引用精度。
+- 摘要及状态写入文档的 `summary`、`summary_status`、`summary_error_message`。
+- LLM 调用或摘要回写失败采用降级策略：正文子块和正文向量仍继续写入，不阻断文档可检索性。
+- 新增迁移 `20260711100000_add_document_enrichment.sql`；旧数据默认按普通 `child` chunk 兼容。
 
-`internal` 当前按基础设施、应用层、启动装配和接口层组织：
+### Ingestion 与可靠性
 
-- `internal/adapter`
-  - HTTP 等适配层，对外暴露接口。
-- `internal/app`
-  - 业务应用层，是当前核心模块所在位置。
-- `internal/bootstrap`
-  - Runtime / service 装配与启动入口。
-- `internal/framework`
-  - 配置、通用框架能力。
-- `internal/infra-ai`
-  - 模型调用、embedding、rerank、provider 路由等 AI 基础设施。
-- `internal/infra-mcp`
-  - MCP 管理与工具调用底座。
-- `internal/middleware`
-  - Web 中间件。
+- Pipeline、Task、TaskNode 的 PostgreSQL 持久化与节点执行日志。
+- 节点重试、退避、失败补偿清理、reconcile 与基础 metrics。
+- Redis/Asynq 耐久队列：任务先落库再入队，进程重启时恢复待执行任务。
+- 语义为至少一次投递；任务和索引层具备幂等/清理逻辑，避免服务宕机导致已持久化任务静默丢失。
 
-`internal/app` 当前按业务域拆分为：
+### RAG 与会话
 
-- `agent`
-  - 新一代 Agent runtime、capability、pattern、approval、resume、plan_execute。
-- `core`
-  - parser、chunk 等通用核心能力。
-- `ingestion`
-  - pipeline / task / task_node 及其执行链路。
-- `knowledge`
-  - knowledge base、document、chunk 管理能力。
-- `rag`
-  - rewrite、retrieve、prompt、conversation、trace、旧 tool 体系。
-- `user`
-  - 用户相关领域能力。
+- 多轮会话、消息、反馈、会话摘要和短期滑动窗口。
+- LLM 问题重写、术语归一化、子问题拆分、规则/原问题兜底。
+- `semantic / keyword / hybrid / auto` 检索模式；向量、关键词和元数据标题多通道融合。
+- Rerank、低置信度降级、Token 预算与上下文压缩。
+- 长期记忆包含事实/偏好/会话片段召回。
+- PostgreSQL RAG Trace Run/Node：记录检索、聊天、Agent round、工具调用和观测节点；Trace 查询与诊断工具已存在。
 
-其中需要特别注意的两条主线是：
+### Agent、Tool 与外部证据
 
-- `internal/app/rag/tool`
-  - 当前稳定生产路径，承担诊断、查询、搜索、外部证据整合等 Tool 能力。
-- `internal/app/agent`
-  - 新 runtime 路线，正在承接 capability 化、审批恢复、pattern 扩展和更通用的 Agent 编排能力。
+- 稳定生产路径：`internal/app/rag/tool`，含注册、规划、执行、结果消费与工具上下文渲染。
+- 工具覆盖文档/任务/Trace 查询诊断、网页搜索、网页抓取、外部证据整合和 MCP 调用。
+- 新 Agent runtime：capability registry、scheduler、`Plan -> Act -> Observe`、并行调用、reactive 与 plan_execute pattern。
+- 支持审批、暂停恢复、前置条件、风险等级、幂等性和 mixed-capability 执行。
 
-### 前端结构
+### AI 调用与高可用
 
-`frontend/src` 当前按界面组件、状态管理和服务层拆分：
+- 统一 chat、embedding、rerank 服务抽象。
+- 多候选模型选择、优先级降级、三态熔断、流式首包探测。
+- 模型异常不会直接中断可降级场景；入库增强同样遵循“增强失败不影响正文索引”。
 
-- `components`
-  - 通用 UI 组件与聊天相关组件。
-- `hooks`
-  - 流式响应、交互等 hooks。
-- `pages`
-  - 页面入口。
-- `services`
-  - 前端 API 调用封装。
-- `stores`
-  - 会话、消息、审批状态等前端状态管理。
-- `types`
-  - 前端类型定义。
-- `utils` / `lib` / `styles`
-  - 工具函数、基础库和样式资源。
+### 身份、日志与可观测性
 
-当前前端已经能够承接聊天消息流、Tool 事件，以及 approval pending 的恢复与展示。
+- 当前认证是不透明 UUID Token + PostgreSQL 服务端 Session；前端通过 `Authorization` 发送 Token，Cookie 仅保留兼容读取路径。
+- 用户上下文中间件解析身份；路由通过 `RequireLogin`、`RequireRole` 区分公开、登录和管理员接口。
+- 请求级结构化访问日志：request ID、方法、路由模板、状态码、耗时、响应大小、客户端 IP，以及已认证用户上下文。
+- 访问日志包裹错误处理中间件，可记录最终 HTTP 状态；日志不记录请求体、Cookie、Authorization 或 query 参数。
+- Ingestion workflow 日志带 task/pipeline 上下文；RAG/Agent 有持久化 Trace，异步任务 Trace 传播仍可作为后续增强项。
 
-## 3. 已支持的功能
+### 前端与日报
 
-### 基础设施
+- 聊天流式响应、Tool 事件、Agent 结果、审批 pending 恢复与审批卡片展示。
+- 知识库、文档、入库任务和流水线管理界面。
+- 日报（Daily Brief）及趋势洞察相关模块已在当前工作区中，包含后端领域、HTTP、前端页面与数据迁移。
 
-- `infra-ai`
-  - chat
-  - embedding
-  - rerank
-  - provider 路由与候选选择
-  - JSONMode `response_format` 支持
-- `core/parser`
-  - Markdown parser
-  - Tika parser
-- `core/chunk`
-  - fixed size chunker
-  - markdown chunker
-  - chunk selector
-- Web 基础设施
-  - Gin
-  - request id
-  - global error handler
-  - user context middleware
-  - Viper 配置加载
-- 数据库迁移
-  - knowledge / vector / user / rag / ingestion 五组嵌入式 SQL 迁移
-  - 幂等迁移执行
-  - 启动时自动执行迁移
+## 数据与基础设施
 
-### Knowledge
+- PostgreSQL：业务数据、会话、Trace、入库任务、知识块、摘要状态等。
+- pgvector / pg_search：向量、BM25/关键词和元数据检索。
+- RustFS/S3：文档对象存储。
+- Redis：Asynq 耐久队列及相关运行时能力。
+- Tika：文档解析服务。
 
-- `KnowledgeBaseService`
-  - create / get / update / delete / page
-  - chunk strategies 查询
-  - embedding model 更新校验
-- `KnowledgeDocumentService`
-  - upload / get / page / search / update / enable / delete
-  - start chunk
-  - chunk log page
-  - schedule exec page
-  - 支持 `sourceType=file / url / feishu`
-  - 支持 `processMode=pipeline` 时创建 ingestion task
-  - 支持 ingestion 完成后回写 document 状态与 chunk log
-- `KnowledgeChunkService`
-  - page / create / update / delete / enable
-  - batch toggle enabled
-  - chunk / vector 同步
-- `DocumentProcessService`
-  - 文件读取
-  - 文本解析
-  - chunk 切分
-  - embedding
-  - chunk / vector 持久化
-  - chunk log 写入
-  - 文档状态流转
+## 验证状态
 
-### Ingestion
+文档增强相关定向测试已覆盖并通过：
 
-- 领域模型
-  - `Pipeline`
-  - `PipelineNode`
-  - `Task`
-  - `TaskNode`
-- PostgreSQL 持久化
-  - `pipeline / task / task_node`
-- HTTP 接口
-  - pipeline CRUD
-  - task 创建 / 分页 / 详情 / 节点日志
-  - `GET /ingestion/metrics`
-- Runtime / 执行层
-  - `WorkflowBuilder`
-  - `NodeRunnerRegistry`
-  - `TaskObserver`
-  - `ExecutorService`
-- 节点链路
-  - `fetcher`
-  - `parser`
-  - `chunker`
-  - `indexer`
-- 生产化补强
-  - 节点重试与指数退避
-  - `Indexer` 失败补偿清理
-  - `task_node` 重试信息持久化
-  - `document` 级活动 task 保护
-  - task-scoped chunk log 回写保护
-  - 即时 reconcile 与后台 reconcile scan
-  - reconcile 结果接入 ingestion metrics
+```text
+go test ./internal/app/core/chunk/test \
+  ./internal/app/ingestion/service/runner \
+  ./internal/app/rag/core/retrieve \
+  ./internal/adapter/repository/postgres/knowledge \
+  ./internal/bootstrap/ingestion -count=1
+```
 
-### RAG
+当前工作区包含日报、Agent、改写评估、耐久队列、请求日志和文档增强等多组未提交改动。全仓 `go test ./...` 仍可能受到根目录临时命令文件和 `scripts` 中多个 `main` 包影响；这不是文档增强定向测试的失败。
 
-- Domain / Repository
-  - `conversation`
-  - `conversation_message`
-  - `conversation_summary`
-  - `message_feedback`
-  - `rag_trace_run`
-  - `rag_trace_node`
-- Core
-  - `core/rewrite`
-  - `core/retrieve`
-  - `core/prompt`
-  - `core/vector`
-  - `core/memory`
-- Service / HTTP
-  - `ConversationService`
-  - `ConversationMessageService`
-  - `MessageFeedbackService`
-  - `TraceService`
-  - `RagChatService`
-- RAG 能力
-  - 多轮对话
-  - LLM rewrite
-  - memory compression
-  - structured summary schema / repair / validation / renderer
-  - `semantic / keyword / hybrid / auto` 检索模式
-  - 多通道检索架构
-  - `vector_global / keyword / metadata_title` 三路检索通道
-  - 低置信度 fallback
-  - SSE `meta` 下发 `searchMode`
-  - prompt 注入 `ToolContext`
-- 检索评估基础设施
-  - `internal/app/rag/evaluation`
-  - `cmd/retrieve-eval`
-  - `Hit@K / Recall@K / MRR`
-  - 离线样本评估与真实 retrieve 回放执行
-  - `summary` 离线评估样本、规则校验、field judge 与 downstream equivalence 判定
+## 当前边界与后续重点
 
-### Tool
-
-- `internal/app/rag/tool`
-  - `Tool`
-  - `Definition / Call / Result`
-  - `Registry`
-  - `Executor`
-  - `RenderContext`
-  - `Workflow`
-  - `Planner + PlanInput / PlanResult`
-- 当前已实现工具能力
-  - 诊断类
-    - `document_ingestion_diagnose`
-    - `task_ingestion_diagnose`
-    - `trace_retrieval_diagnose`
-  - 查询类
-    - `document_query`
-    - `document_chunk_log_query`
-    - `ingestion_task_query`
-    - `ingestion_task_node_query`
-    - `trace_node_query`
-  - 发现类
-    - `document_list`
-    - `task_list`
-  - 外部类
-    - `web_search`
-    - `web_fetch`
-  - 元工具
-    - `think`
-  - Graph
-    - `document_root_cause_diagnosis`
-    - `document_diagnose_with_search`
-    - `external_evidence_workflow`
-- 搜索与外部证据能力
-  - `web_search` 支持 DuckDuckGo / Tavily / Tavily MCP
-  - 支持 MCP 主路与 API fallback
-  - `web_fetch` 支持网页正文提取与并发抓取
-  - 支持外部证据工作流整合
-
-### Agent Runtime
-
-- 新 Agent 主链路
-  - capability registry
-  - planner
-  - handoff
-  - runtime approval / resume
-  - pending approval lookup
-  - plan_execute pattern
-- 运行时能力
-  - `Plan -> Act -> Observe` 循环
-  - LLM planner
-  - LLM observer
-  - RuleObserver fallback / guardrail
-  - 并行 tool calls
-  - trace 落库
-  - 结构化 hint / next step 驱动
-- plan_execute 泛化能力
-  - 通用 `PlanStep / PlanStepResult`
-  - step artifacts
-  - completion / failure policy
-  - mixed-capability synthesis
-  - retry / optional / replan 执行语义
-
-### MCP
-
-- `internal/infra-mcp`
-  - stdio `Manager`
-  - 懒启动 session
-  - `ListTools / CallTool / Close`
-  - runtime 生命周期回收
-- 当前接入
-  - Tavily MCP
-  - `web_search` 通过 MCP 与 fallback provider 协同工作
-
-### Chat UI / Frontend Integration
-
-- 聊天基础能力
-  - 消息流式响应
-  - Tool 事件展示
-  - Agent 结果事件处理
-- approval 相关能力
-  - conversation 级 pending approval 恢复
-  - `GET /rag/v3/chat/approval/pending`
-  - 前端会话切换时恢复待审批状态
-  - SSE 处理 `approval_pending` / `agent_outcome` / `agent_service_error`
-  - 审批卡片展示当前步骤、问题、查询、候选 URL、风险等级
-- 前端状态管理
-  - `chatStore.ts` + `chatStateModel.ts` 承接消息映射、会话合并、审批态合并
-
-## 当前结论
-
-`goagent` 当前已经具备以下项目形态：
-
-- 一个可运行的知识库与文档处理系统
-- 一个具备最小闭环的 ingestion 执行系统
-- 一个带多通道检索、trace 和评估基础设施的 RAG 系统
-- 一套仍可稳定服务生产路径的 `rag/tool` 工具体系
-- 一套正在承接通用 Agent 编排、审批恢复和 mixed-capability 扩展的 `agent runtime`
-- 一个已经能够承接聊天、Tool 事件和审批恢复展示的前端界面
-
-因此，这个项目当前最准确的定位不是“能力搭建中”，而是“主链路已经形成，正在围绕稳定性、边界、体验和扩展性持续收口”。
+- 父子切块、问题向量与摘要能力已接入后端主链路；尚未提供完整的切块预览、问题/摘要管理和开关配置 UI。
+- 预测问题向量为保证检索回链携带源子块/父块上下文，会增加向量 metadata 体积；后续可改为批量仓储回查以降低冗余。
+- 文档增强与检索已完成定向测试；仍建议在真实 PostgreSQL、Redis、对象存储和模型服务环境执行端到端入库验证。
+- Agent 新 runtime 与稳定 `rag/tool` 路线并存，后续重点是统一入口、Trace 贯通和产品层收口。
+- 工作区处于持续开发状态；提交前应按功能切分并运行对应定向测试，避免把无关变更混入同一提交。

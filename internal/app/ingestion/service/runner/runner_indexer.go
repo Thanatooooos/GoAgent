@@ -1,12 +1,12 @@
 package runner
 
 import (
-	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,11 +28,12 @@ const (
 
 // IndexerNodeRunner 提供真实索引写入实现。
 type IndexerNodeRunner struct {
-	baseRepo    knowledgeport.KnowledgeBaseRepository
-	chunkRepo   knowledgeport.KnowledgeChunkRepository
-	vectorStore knowledgeport.VectorStore
-	embedding   aiembedding.EmbeddingService
-	now         func() time.Time
+	baseRepo     knowledgeport.KnowledgeBaseRepository
+	chunkRepo    knowledgeport.KnowledgeChunkRepository
+	documentRepo knowledgeport.KnowledgeDocumentRepository
+	vectorStore  knowledgeport.VectorStore
+	embedding    aiembedding.EmbeddingService
+	now          func() time.Time
 }
 
 // NewIndexerNodeRunner 创建 indexer 运行器。
@@ -41,13 +42,19 @@ func NewIndexerNodeRunner(
 	chunkRepo knowledgeport.KnowledgeChunkRepository,
 	vectorStore knowledgeport.VectorStore,
 	embedding aiembedding.EmbeddingService,
+	documentRepos ...knowledgeport.KnowledgeDocumentRepository,
 ) *IndexerNodeRunner {
+	var documentRepo knowledgeport.KnowledgeDocumentRepository
+	if len(documentRepos) > 0 {
+		documentRepo = documentRepos[0]
+	}
 	return &IndexerNodeRunner{
-		baseRepo:    baseRepo,
-		chunkRepo:   chunkRepo,
-		vectorStore: vectorStore,
-		embedding:   embedding,
-		now:         time.Now,
+		baseRepo:     baseRepo,
+		chunkRepo:    chunkRepo,
+		documentRepo: documentRepo,
+		vectorStore:  vectorStore,
+		embedding:    embedding,
+		now:          time.Now,
 	}
 }
 
@@ -164,11 +171,16 @@ func (r *IndexerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Exe
 	}()
 
 	vectorChunks := r.buildVectorChunks(state, documentID, documentName, knowledgeBaseID, metadataFields, embedded)
+	questionVectors, err := r.buildQuestionVectors(ctx, state, documentID, documentName, knowledgeBaseID, embeddingModel)
+	if err != nil {
+		return state, output, err
+	}
+	vectorChunks = append(vectorChunks, questionVectors...)
 	if target == IndexTargetKnowledge {
 		if r.chunkRepo == nil {
 			return state, output, exception.NewServiceException("knowledge chunk repository is required", nil)
 		}
-		domainChunks := r.buildKnowledgeChunks(documentID, knowledgeBaseID, state.Task.CreatedBy, embedded)
+		domainChunks := r.buildKnowledgeChunks(state, documentID, knowledgeBaseID, state.Task.CreatedBy, embedded)
 		chunksMatch, err := r.knowledgeChunksMatch(ctx, documentID, domainChunks)
 		if err != nil {
 			return state, output, err
@@ -195,6 +207,7 @@ func (r *IndexerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Exe
 	}
 	vectorsWritten = true
 	output["vectorWriteMode"] = "replace"
+	r.persistDocumentSummary(ctx, documentID, state)
 
 	next := state.Clone()
 	next.IndexResult = ingestionworkflow.IndexResult{
@@ -209,6 +222,20 @@ func (r *IndexerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Exe
 		},
 	}
 	return next, output, nil
+}
+
+func (r *IndexerNodeRunner) persistDocumentSummary(ctx context.Context, documentID string, state ingestionworkflow.ExecutionState) {
+	if r == nil || r.documentRepo == nil || strings.TrimSpace(documentID) == "" || strings.TrimSpace(state.Enrichment.SummaryStatus) == "" {
+		return
+	}
+	_, _ = r.documentRepo.UpdateFields(ctx,
+		knowledgeport.Where(knowledgeport.KnowledgeDocument.ID.Eq(documentID)),
+		knowledgeport.Set(
+			knowledgeport.KnowledgeDocument.Summary.To(state.Enrichment.Summary),
+			knowledgeport.KnowledgeDocument.SummaryStatus.To(state.Enrichment.SummaryStatus),
+			knowledgeport.KnowledgeDocument.SummaryErrorMessage.To(state.Enrichment.SummaryError),
+		),
+	)
 }
 
 func (r *IndexerNodeRunner) loadKnowledgeBase(ctx context.Context, knowledgeBaseID string) (knowledgedomain.KnowledgeBase, error) {
@@ -243,20 +270,36 @@ func (r *IndexerNodeRunner) embedChunks(chunks []ingestionworkflow.ChunkPayload,
 }
 
 func (r *IndexerNodeRunner) buildKnowledgeChunks(
+	state ingestionworkflow.ExecutionState,
 	documentID string,
 	knowledgeBaseID string,
 	operatorID string,
 	chunks []corechunk.Chunk,
 ) []knowledgedomain.KnowledgeChunk {
-	result := make([]knowledgedomain.KnowledgeChunk, 0, len(chunks))
+	result := make([]knowledgedomain.KnowledgeChunk, 0, len(state.ParentChunks)+len(chunks))
 	operatorID = pickFirstNonEmpty(operatorID, "system")
 	now := r.now()
+	for _, parent := range state.ParentChunks {
+		parentID := parentChunkID(documentID, parent.Index)
+		chunk := knowledgedomain.NewKnowledgeChunk(parentID, knowledgeBaseID, documentID, parent.Index, parent.Content, operatorID)
+		chunk.RecordType = "parent"
+		chunk.ContentHash = hashText(parent.Content)
+		chunk.CharCount = utf8.RuneCountInString(parent.Content)
+		chunk.TokenCount = len(strings.Fields(parent.Content))
+		chunk.CreatedAt = now
+		chunk.UpdatedAt = now
+		result = append(result, chunk)
+	}
 	for index, item := range chunks {
 		chunkID := fmt.Sprintf("%s-%d", documentID, index)
 		chunk := knowledgedomain.NewKnowledgeChunk(chunkID, knowledgeBaseID, documentID, item.Index, item.Text, operatorID)
 		chunk.ContentHash = hashText(item.Text)
 		chunk.CharCount = utf8.RuneCountInString(item.Text)
 		chunk.TokenCount = len(strings.Fields(item.Text))
+		chunk.RecordType = "child"
+		if index < len(state.Chunks) && state.Chunks[index].ParentIndex != nil {
+			chunk.ParentChunkID = parentChunkID(documentID, *state.Chunks[index].ParentIndex)
+		}
 		chunk.CreatedAt = now
 		chunk.UpdatedAt = now
 		result = append(result, chunk)
@@ -300,6 +343,15 @@ func (r *IndexerNodeRunner) buildVectorChunks(
 	result := make([]knowledgeport.ChunkVector, 0, len(chunks))
 	for index, item := range chunks {
 		chunkID := fmt.Sprintf("%s-%d", documentID, index)
+		metadata := buildIndexMetadata(state, documentID, documentName, knowledgeBaseID, item, metadataFields)
+		metadata["record_type"] = "child"
+		if index < len(state.Chunks) && state.Chunks[index].ParentIndex != nil {
+			parentIndex := *state.Chunks[index].ParentIndex
+			metadata["parent_chunk_id"] = parentChunkID(documentID, parentIndex)
+			if parentIndex >= 0 && parentIndex < len(state.ParentChunks) {
+				metadata["parent_content"] = state.ParentChunks[parentIndex].Content
+			}
+		}
 		result = append(result, knowledgeport.ChunkVector{
 			ChunkID:         chunkID,
 			DocumentID:      documentID,
@@ -307,10 +359,63 @@ func (r *IndexerNodeRunner) buildVectorChunks(
 			Index:           item.Index,
 			Text:            item.Text,
 			Embedding:       item.Embedding,
-			Metadata:        buildIndexMetadata(state, documentID, documentName, knowledgeBaseID, item, metadataFields),
+			Metadata:        metadata,
 		})
 	}
 	return result
+}
+
+func (r *IndexerNodeRunner) buildQuestionVectors(
+	ctx context.Context,
+	state ingestionworkflow.ExecutionState,
+	documentID string,
+	documentName string,
+	knowledgeBaseID string,
+	embeddingModel string,
+) ([]knowledgeport.ChunkVector, error) {
+	texts := make([]string, 0)
+	type questionRef struct{ childIndex, questionIndex int }
+	refs := make([]questionRef, 0)
+	for childIndex, child := range state.Chunks {
+		for questionIndex, question := range child.Questions {
+			question = strings.TrimSpace(question)
+			if question == "" {
+				continue
+			}
+			texts = append(texts, question)
+			refs = append(refs, questionRef{childIndex: childIndex, questionIndex: questionIndex})
+		}
+	}
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	vectors, err := r.embedding.EmbedBatchWithModel(texts, embeddingModel)
+	if err != nil {
+		return nil, exception.NewServiceException("failed to embed generated questions", err)
+	}
+	if len(vectors) != len(texts) {
+		return nil, exception.NewServiceException("generated question embedding count mismatch", nil)
+	}
+	result := make([]knowledgeport.ChunkVector, 0, len(texts))
+	for index, ref := range refs {
+		child := state.Chunks[ref.childIndex]
+		sourceChunkID := fmt.Sprintf("%s-%d", documentID, child.Index)
+		metadata := map[string]any{"record_type": "question", "source_chunk_id": sourceChunkID, "task_id": state.Task.ID, "document_id": documentID, "document_name": documentName, "knowledge_base_id": knowledgeBaseID}
+		metadata["source_content"] = child.Content
+		if child.ParentIndex != nil {
+			parentIndex := *child.ParentIndex
+			metadata["parent_chunk_id"] = parentChunkID(documentID, parentIndex)
+			if parentIndex >= 0 && parentIndex < len(state.ParentChunks) {
+				metadata["parent_content"] = state.ParentChunks[parentIndex].Content
+			}
+		}
+		result = append(result, knowledgeport.ChunkVector{ChunkID: fmt.Sprintf("%s-q-%d", sourceChunkID, ref.questionIndex), DocumentID: documentID, KnowledgeBaseID: knowledgeBaseID, Index: child.Index, Text: texts[index], Embedding: vectors[index], Metadata: metadata})
+	}
+	return result, nil
+}
+
+func parentChunkID(documentID string, parentIndex int) string {
+	return fmt.Sprintf("%s-p-%d", documentID, parentIndex)
 }
 
 // buildIndexMetadata 构建写入向量存储的元数据，合并 chunk 级语义元数据。

@@ -21,6 +21,7 @@ type Phase1RegistryDependencies struct {
 	RewriteRetrievalKs             []int
 	RewriteSubQuestionOptions      ragretrieve.SubQuestionOptions
 	RewriteDefaultKnowledgeBaseIDs []string
+	RewriteArtifactStore           *RewriteArtifactStore
 }
 
 func NewPhase1Registry(deps Phase1RegistryDependencies) (*Registry, error) {
@@ -94,6 +95,9 @@ func registerPhase1RewriteSuite(registry *Registry, deps Phase1RegistryDependenc
 	}
 	if deps.RewriteJudge != nil {
 		rewriteOptions = append(rewriteOptions, WithRewriteJudge(deps.RewriteJudge))
+	}
+	if deps.RewriteArtifactStore != nil {
+		rewriteOptions = append(rewriteOptions, WithRewriteArtifactStore(deps.RewriteArtifactStore))
 	}
 	return registry.Register(NewRewriteEvaluator(deps.RewriteService, rewriteOptions...))
 }

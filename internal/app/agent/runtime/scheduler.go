@@ -69,12 +69,14 @@ func EvaluateCapabilitySchedule(input CapabilityScheduleInput) CapabilitySchedul
 	if resumedRuntime(input.Session) && !input.Spec.SupportsResume {
 		result.Decision = ScheduleDecisionDegrade
 		result.Reason = "resume_not_supported"
+		result.ErrorClass = ErrorClassDependency
 		return result
 	}
 
 	if capabilityNeedsApproval(input, input.Spec) {
 		result.Decision = ScheduleDecisionWaitApproval
 		result.Reason = "approval_required"
+		result.ErrorClass = ErrorClassPermission
 		return result
 	}
 
@@ -112,20 +114,44 @@ func BuildCapabilityScheduleBatches(inputs []CapabilityScheduleInput) []Capabili
 }
 
 func capabilityNeedsApproval(input CapabilityScheduleInput, spec agentcapability.Spec) bool {
+	if approvalAlreadyGranted(input.Session, spec.Name) {
+		return false
+	}
 	if spec.RequiresApproval {
 		return true
 	}
-	if input.RuntimeOptions.RequireApproval {
+	if input.RuntimeOptions.RequireApproval && requiresRuntimeApprovalForSpec(spec) {
 		return true
 	}
-	if input.Snapshot.Request.RuntimeOptions.RequireApproval {
+	if input.Snapshot.Request.RuntimeOptions.RequireApproval && requiresRuntimeApprovalForSpec(spec) {
 		return true
 	}
 	session := input.Session
 	if session == nil {
 		return false
 	}
-	return session.Snapshot.Request.RuntimeOptions.RequireApproval || session.Request.Options.RequireApproval
+	return (session.Snapshot.Request.RuntimeOptions.RequireApproval || session.Request.Options.RequireApproval) && requiresRuntimeApprovalForSpec(spec)
+}
+
+func approvalAlreadyGranted(session *RuntimeSession, capabilityName string) bool {
+	if session == nil {
+		return false
+	}
+	if strings.TrimSpace(session.Snapshot.Approval.Status) != agentstate.ApprovalStatusApproved {
+		return false
+	}
+	return strings.TrimSpace(session.Snapshot.Approval.Capability) == strings.TrimSpace(capabilityName)
+}
+
+func requiresRuntimeApprovalForSpec(spec agentcapability.Spec) bool {
+	switch strings.TrimSpace(spec.RiskLevel) {
+	case agentcapability.RiskLevelLow:
+		return false
+	case agentcapability.RiskLevelMedium, agentcapability.RiskLevelHigh:
+		return true
+	default:
+		return false
+	}
 }
 
 func resumedRuntime(session *RuntimeSession) bool {

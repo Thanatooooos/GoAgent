@@ -71,7 +71,7 @@ func Compile(ctx context.Context, cfg Config) (*agentkernel.Runner, error) {
 	}
 	kernelCfg.InterruptBeforeNodes = agentpattern.MergeInterruptBeforeNodes(
 		kernelCfg.InterruptBeforeNodes,
-		requiredInterruptNodes(searchCapability, fetchCapability, workflowCapability, kernelCfg.CheckpointStore != nil),
+		requiredInterruptNodes(kernelCfg.CheckpointStore != nil),
 	)
 	capabilityPolicy := buildCapabilityRuntimePolicy(searchCapability, fetchCapability, workflowCapability, cfg.Runtime.PreferExternalEvidenceWorkflow)
 	approvalResumeEnabled := kernelCfg.CheckpointStore != nil
@@ -175,24 +175,11 @@ func Compile(ctx context.Context, cfg Config) (*agentkernel.Runner, error) {
 	return builder.Compile(ctx)
 }
 
-func requiredInterruptNodes(searchCapability agentcapability.Handle, fetchCapability agentcapability.Handle, workflowCapability agentcapability.Handle, enableApprovalResume bool) []string {
-	nodes := make([]string, 0, 3)
-	if enableApprovalResume {
-		nodes = append(nodes, "approval")
+func requiredInterruptNodes(enableApprovalResume bool) []string {
+	if !enableApprovalResume {
+		return nil
 	}
-	if workflowCapability != nil {
-		if requiresApproval(workflowCapability.Spec()) {
-			nodes = append(nodes, "external_evidence")
-		}
-		return nodes
-	}
-	if searchCapability != nil && requiresApproval(searchCapability.Spec()) {
-		nodes = append(nodes, "search")
-	}
-	if fetchCapability != nil && requiresApproval(fetchCapability.Spec()) {
-		nodes = append(nodes, "fetch")
-	}
-	return nodes
+	return []string{"approval"}
 }
 
 func approvalBranchTargets(preferWorkflow bool) []string {
@@ -200,10 +187,6 @@ func approvalBranchTargets(preferWorkflow bool) []string {
 		return []string{"external_evidence", "degrade"}
 	}
 	return []string{"search", "fetch", "degrade"}
-}
-
-func requiresApproval(spec agentcapability.Spec) bool {
-	return spec.RequiresApproval
 }
 
 func resolveWorkflowCapability(registry *agentcapability.Registry, bindings agentcapability.RoleBindings) (agentcapability.Handle, error) {

@@ -91,49 +91,55 @@ func Set(assignments ...UpdateAssignment) UpdateAssignments {
 }
 
 type KnowledgeDocumentFieldSet struct {
-	ID              Field[string]
-	KnowledgeBaseID Field[string]
-	Name            Field[string]
-	Enabled         Field[bool]
-	ChunkCount      Field[int]
-	FileURL         Field[string]
-	FileType        Field[string]
-	FileSize        Field[int64]
-	ProcessMode     Field[string]
-	Status          Field[string]
-	SourceType      Field[string]
-	SourceLocation  Field[string]
-	ScheduleEnabled Field[*bool]
-	ScheduleCron    Field[string]
-	ChunkStrategy   Field[string]
-	ChunkConfig     Field[[]byte]
-	PipelineID      Field[string]
-	UpdatedBy       Field[string]
-	UpdatedAt       Field[time.Time]
-	Deleted         Field[bool]
+	ID                  Field[string]
+	KnowledgeBaseID     Field[string]
+	Name                Field[string]
+	Enabled             Field[bool]
+	ChunkCount          Field[int]
+	FileURL             Field[string]
+	FileType            Field[string]
+	FileSize            Field[int64]
+	ProcessMode         Field[string]
+	Status              Field[string]
+	SourceType          Field[string]
+	SourceLocation      Field[string]
+	ScheduleEnabled     Field[*bool]
+	ScheduleCron        Field[string]
+	ChunkStrategy       Field[string]
+	ChunkConfig         Field[[]byte]
+	PipelineID          Field[string]
+	Summary             Field[string]
+	SummaryStatus       Field[string]
+	SummaryErrorMessage Field[string]
+	UpdatedBy           Field[string]
+	UpdatedAt           Field[time.Time]
+	Deleted             Field[bool]
 }
 
 var KnowledgeDocument = KnowledgeDocumentFieldSet{
-	ID:              Field[string]{Key: "knowledge_document.id"},
-	KnowledgeBaseID: Field[string]{Key: "knowledge_document.knowledge_base_id"},
-	Name:            Field[string]{Key: "knowledge_document.name"},
-	Enabled:         Field[bool]{Key: "knowledge_document.enabled"},
-	ChunkCount:      Field[int]{Key: "knowledge_document.chunk_count"},
-	FileURL:         Field[string]{Key: "knowledge_document.file_url"},
-	FileType:        Field[string]{Key: "knowledge_document.file_type"},
-	FileSize:        Field[int64]{Key: "knowledge_document.file_size"},
-	ProcessMode:     Field[string]{Key: "knowledge_document.process_mode"},
-	Status:          Field[string]{Key: "knowledge_document.status"},
-	SourceType:      Field[string]{Key: "knowledge_document.source_type"},
-	SourceLocation:  Field[string]{Key: "knowledge_document.source_location"},
-	ScheduleEnabled: Field[*bool]{Key: "knowledge_document.schedule_enabled"},
-	ScheduleCron:    Field[string]{Key: "knowledge_document.schedule_cron"},
-	ChunkStrategy:   Field[string]{Key: "knowledge_document.chunk_strategy"},
-	ChunkConfig:     Field[[]byte]{Key: "knowledge_document.chunk_config"},
-	PipelineID:      Field[string]{Key: "knowledge_document.pipeline_id"},
-	UpdatedBy:       Field[string]{Key: "knowledge_document.updated_by"},
-	UpdatedAt:       Field[time.Time]{Key: "knowledge_document.updated_at"},
-	Deleted:         Field[bool]{Key: "knowledge_document.deleted"},
+	ID:                  Field[string]{Key: "knowledge_document.id"},
+	KnowledgeBaseID:     Field[string]{Key: "knowledge_document.knowledge_base_id"},
+	Name:                Field[string]{Key: "knowledge_document.name"},
+	Enabled:             Field[bool]{Key: "knowledge_document.enabled"},
+	ChunkCount:          Field[int]{Key: "knowledge_document.chunk_count"},
+	FileURL:             Field[string]{Key: "knowledge_document.file_url"},
+	FileType:            Field[string]{Key: "knowledge_document.file_type"},
+	FileSize:            Field[int64]{Key: "knowledge_document.file_size"},
+	ProcessMode:         Field[string]{Key: "knowledge_document.process_mode"},
+	Status:              Field[string]{Key: "knowledge_document.status"},
+	SourceType:          Field[string]{Key: "knowledge_document.source_type"},
+	SourceLocation:      Field[string]{Key: "knowledge_document.source_location"},
+	ScheduleEnabled:     Field[*bool]{Key: "knowledge_document.schedule_enabled"},
+	ScheduleCron:        Field[string]{Key: "knowledge_document.schedule_cron"},
+	ChunkStrategy:       Field[string]{Key: "knowledge_document.chunk_strategy"},
+	ChunkConfig:         Field[[]byte]{Key: "knowledge_document.chunk_config"},
+	PipelineID:          Field[string]{Key: "knowledge_document.pipeline_id"},
+	Summary:             Field[string]{Key: "knowledge_document.summary"},
+	SummaryStatus:       Field[string]{Key: "knowledge_document.summary_status"},
+	SummaryErrorMessage: Field[string]{Key: "knowledge_document.summary_error_message"},
+	UpdatedBy:           Field[string]{Key: "knowledge_document.updated_by"},
+	UpdatedAt:           Field[time.Time]{Key: "knowledge_document.updated_at"},
+	Deleted:             Field[bool]{Key: "knowledge_document.deleted"},
 }
 
 type UpdateValue[T any] struct {
@@ -175,23 +181,26 @@ type KnowledgeDocumentConditions struct {
 }
 
 type KnowledgeDocumentPatch struct {
-	Name            UpdateValue[string]
-	Enabled         UpdateValue[bool]
-	ChunkCount      UpdateValue[int]
-	FileURL         UpdateValue[string]
-	FileType        UpdateValue[string]
-	FileSize        UpdateValue[int64]
-	ProcessMode     UpdateValue[string]
-	Status          UpdateValue[string]
-	SourceType      UpdateValue[string]
-	SourceLocation  UpdateValue[string]
-	ScheduleEnabled UpdateValue[*bool]
-	ScheduleCron    UpdateValue[string]
-	ChunkStrategy   UpdateValue[string]
-	ChunkConfig     UpdateValue[[]byte]
-	PipelineID      UpdateValue[string]
-	UpdatedBy       UpdateValue[string]
-	UpdatedAt       UpdateValue[time.Time]
+	Name                UpdateValue[string]
+	Enabled             UpdateValue[bool]
+	ChunkCount          UpdateValue[int]
+	FileURL             UpdateValue[string]
+	FileType            UpdateValue[string]
+	FileSize            UpdateValue[int64]
+	ProcessMode         UpdateValue[string]
+	Status              UpdateValue[string]
+	SourceType          UpdateValue[string]
+	SourceLocation      UpdateValue[string]
+	ScheduleEnabled     UpdateValue[*bool]
+	ScheduleCron        UpdateValue[string]
+	ChunkStrategy       UpdateValue[string]
+	ChunkConfig         UpdateValue[[]byte]
+	PipelineID          UpdateValue[string]
+	Summary             UpdateValue[string]
+	SummaryStatus       UpdateValue[string]
+	SummaryErrorMessage UpdateValue[string]
+	UpdatedBy           UpdateValue[string]
+	UpdatedAt           UpdateValue[time.Time]
 }
 
 type KnowledgeDocumentScheduleConditions struct {

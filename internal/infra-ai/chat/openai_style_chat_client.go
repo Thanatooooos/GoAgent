@@ -181,13 +181,25 @@ func (op *OpenAIStyleChatClient) extractContent(resp openAIStyleChatResponse) (s
 }
 
 func (op *OpenAIStyleChatClient) Chat(req convention.ChatRequest, target model.ModelTarget) (string, error) {
-	content, _, err := op.ChatWithUsage(req, target)
+	content, _, err := op.ChatWithUsageContext(context.Background(), req, target)
 	return content, err
 }
 
 func (op *OpenAIStyleChatClient) ChatWithUsage(req convention.ChatRequest, target model.ModelTarget) (string, TokenUsage, error) {
+	return op.ChatWithUsageContext(context.Background(), req, target)
+}
+
+func (op *OpenAIStyleChatClient) ChatContext(ctx context.Context, req convention.ChatRequest, target model.ModelTarget) (string, error) {
+	content, _, err := op.ChatWithUsageContext(ctx, req, target)
+	return content, err
+}
+
+func (op *OpenAIStyleChatClient) ChatWithUsageContext(ctx context.Context, req convention.ChatRequest, target model.ModelTarget) (string, TokenUsage, error) {
 	if err := op.validateRequest(req, target); err != nil {
 		return "", TokenUsage{}, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	body, err := op.marshalRequestBody(req, target, false)
@@ -195,7 +207,7 @@ func (op *OpenAIStyleChatClient) ChatWithUsage(req convention.ChatRequest, targe
 		return "", TokenUsage{}, err
 	}
 
-	httpReq, err := op.newRequest(context.Background(), target, body, aihttp.MediaTypeJSON)
+	httpReq, err := op.newRequest(ctx, target, body, aihttp.MediaTypeJSON)
 	if err != nil {
 		return "", TokenUsage{}, err
 	}

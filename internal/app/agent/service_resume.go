@@ -62,7 +62,7 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 		return nil, RunOutcome{}, serviceError(ErrorCodeApprovalNotPending, "checkpoint "+checkpointID+" is not awaiting approval")
 	}
 
-	if err := s.applyApprovalDecision(session, checkpointID, req, decision); err != nil {
+	if err := s.runtimeEngine.ApplyApprovalDecision(session, checkpointID, decision.value, req.DecisionNote); err != nil {
 		logAgentExecutionError("apply_approval_decision", session.Request.TraceID, checkpointID, err)
 		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeRuntimeExecutionFailed, "failed to apply approval decision", "apply_approval_decision", err)
 	}
@@ -71,7 +71,7 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 		return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeApprovalSessionSaveFailed, "failed to persist approval decision", "store_approval_decision", err)
 	}
 	if !decision.approved && shouldFinalizeRejectedApprovalWithoutResume(session) {
-		final, finalizeErr := s.finalizeRejectedApproval(session)
+		final, finalizeErr := s.runtimeEngine.FinalizeRejectedApproval(session)
 		if finalizeErr != nil {
 			logAgentExecutionError("finalize_rejected_approval", session.Request.TraceID, checkpointID, finalizeErr)
 			return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeRuntimeExecutionFailed, "failed to finalize rejected approval", "finalize_rejected_approval", finalizeErr)
@@ -90,9 +90,8 @@ func (s *Service) resumeAfterApproval(ctx context.Context, req ResumeApprovalReq
 	if runResult != nil && runResult.Session != nil {
 		final = runResult.Session
 	}
-	mergeApprovalResumeHistory(session, final)
 	if runResult != nil && runResult.Outcome.Decision == agentruntime.DecisionWaitApproval {
-		if s.normalizePendingApproval(final, checkpointID) {
+		if s.runtimeEngine.NormalizePendingApprovalSession(final, checkpointID) {
 			if storeErr := s.storePendingSession(ctx, checkpointID, final); storeErr != nil {
 				logAgentExecutionError("store_pending_session_after_resume", session.Request.TraceID, checkpointID, storeErr)
 				return nil, RunOutcome{}, serviceErrorWrap(ErrorCodeApprovalSessionSaveFailed, "failed to persist pending approval session after resume", "store_pending_session_after_resume", storeErr)

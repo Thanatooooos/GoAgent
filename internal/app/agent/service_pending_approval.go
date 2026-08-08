@@ -30,6 +30,9 @@ func (s *Service) GetPendingApproval(ctx context.Context, req PendingApprovalLoo
 	if err != nil {
 		return nil, false, err
 	}
+	if sessionFound && session != nil && !s.isAwaitingApproval(session) && s.runtimeEngine.NormalizePendingApprovalSession(session, ref.CheckpointID) {
+		_ = s.storePendingSession(ctx, ref.CheckpointID, session)
+	}
 	if !sessionFound || session == nil || !s.pendingApprovalBelongsToLookup(session, conversationID, userID) || !approvalCheckpointMatchesRequest(session, ref.CheckpointID) || !s.isAwaitingApproval(session) {
 		s.deletePendingApprovalLookup(ctx, session, conversationID, userID)
 		return nil, false, nil

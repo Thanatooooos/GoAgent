@@ -29,21 +29,8 @@ func TestServiceGetPendingApprovalTracksConversationLookup(t *testing.T) {
 		t.Fatalf("search.NewCapability() error = %v", err)
 	}
 
-	attempt := 0
 	fetchHandle, err := agentfetch.NewCapability(stubFetchFlow{
 		fetch: func(_ context.Context, urls []string) (agentfetch.Output, error) {
-			attempt++
-			if attempt == 1 {
-				return agentfetch.Output{
-					Summary:       "fetch requires approval",
-					Degraded:      true,
-					DegradeReason: "provider requires approval",
-					ErrorMessage:  "permission denied by upstream provider",
-					Pages: []agentfetch.PageResult{
-						{URL: urls[0], ErrorMessage: "403 forbidden"},
-					},
-				}, nil
-			}
 			return agentfetch.Output{
 				Summary: "fetched approved content",
 				Pages: []agentfetch.PageResult{
@@ -125,5 +112,40 @@ func TestServiceGetPendingApprovalReturnsNotFoundForUnknownConversation(t *testi
 	}
 	if strings.TrimSpace(service.runtimeName) == "" {
 		t.Fatalf("expected helper service to stay initialized")
+	}
+}
+
+func TestServiceGetPendingApprovalNormalizesLegacySessionViaRuntimeEngine(t *testing.T) {
+	service := newContractTestService(t, true)
+	session := newRuntimeSession(Request{
+		Question: "legacy pending approval lookup",
+		UserID:   "user-legacy",
+		ToolStage: &ToolStageContext{
+			ConversationID: "conv-legacy",
+		},
+	}, 2, agentstate.OutputModeFinalAnswer, runtimeNameForPattern(PatternReactive))
+	session.SessionID = "sess-legacy-pending-lookup"
+	session.Snapshot.Execution.CurrentNode = "fetch"
+	session.Snapshot.Execution.Interrupted = true
+	session.Snapshot.Execution.InterruptReason = "fetch_approval_required"
+	checkpointID := "cp-legacy-pending-lookup"
+
+	if err := service.sessionStore.Put(context.Background(), checkpointID, session); err != nil {
+		t.Fatalf("sessionStore.Put() error = %v", err)
+	}
+	service.putPendingApprovalLookup(context.Background(), checkpointID, session)
+
+	pending, ok, err := service.GetPendingApproval(context.Background(), PendingApprovalLookupRequest{
+		ConversationID: "conv-legacy",
+		UserID:         "user-legacy",
+	})
+	if err != nil {
+		t.Fatalf("GetPendingApproval() error = %v", err)
+	}
+	if !ok || pending == nil {
+		t.Fatalf("expected runtime engine to normalize legacy pending approval lookup, got ok=%v pending=%+v", ok, pending)
+	}
+	if pending.Status != agentstate.ApprovalStatusPending || pending.CapabilityName != "web_fetch" || pending.RerunNode != "fetch" {
+		t.Fatalf("expected normalized approval payload, got %+v", pending)
 	}
 }

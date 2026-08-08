@@ -10,7 +10,7 @@ import (
 )
 
 func TestParseRewriteResponseValidJSON(t *testing.T) {
-	result := parseRewriteResponse(`{"rewritten":"什么是RAG","sub_questions":["RAG定义","RAG原理"],"need_retrieval":true}`)
+	result := parseRewriteResponse(`{"rewritten":"什么是RAG","sub_questions":["RAG定义","RAG原理"],"need_retrieval":true}`, "")
 
 	if result.RewrittenQuestion != "什么是RAG" {
 		t.Fatalf("expected rewritten question, got %q", result.RewrittenQuestion)
@@ -25,7 +25,7 @@ func TestParseRewriteResponseValidJSON(t *testing.T) {
 
 func TestParseRewriteResponseMarkdownJSONBlock(t *testing.T) {
 	raw := "```json\n{\"rewritten\":\"hello world\",\"sub_questions\":[\"q1\"],\"need_retrieval\":false}\n```"
-	result := parseRewriteResponse(raw)
+	result := parseRewriteResponse(raw, "")
 
 	if result.RewrittenQuestion != "hello world" {
 		t.Fatalf("expected rewritten question, got %q", result.RewrittenQuestion)
@@ -38,13 +38,13 @@ func TestParseRewriteResponseMarkdownJSONBlock(t *testing.T) {
 	}
 }
 
-func TestParseRewriteResponseFallbackOnInvalidJSON(t *testing.T) {
-	result := parseRewriteResponse("这不是 JSON 格式的返回")
+func TestParseRewriteResponseFallsBackToOriginalQuestionOnInvalidJSON(t *testing.T) {
+	result := parseRewriteResponse("这不是 JSON 格式的返回", "解释 RAG 原理")
 
-	if result.RewrittenQuestion != "这不是 JSON 格式的返回" {
-		t.Fatalf("expected fallback to raw text, got %q", result.RewrittenQuestion)
+	if result.RewrittenQuestion != "解释 RAG 原理" {
+		t.Fatalf("expected fallback to original question, got %q", result.RewrittenQuestion)
 	}
-	if len(result.SubQuestions) != 1 || result.SubQuestions[0] != "这不是 JSON 格式的返回" {
+	if len(result.SubQuestions) != 1 || result.SubQuestions[0] != "解释 RAG 原理" {
 		t.Fatalf("expected single fallback sub question, got %v", result.SubQuestions)
 	}
 	if !result.NeedRetrieval {
@@ -53,7 +53,7 @@ func TestParseRewriteResponseFallbackOnInvalidJSON(t *testing.T) {
 }
 
 func TestParseRewriteResponseEmpty(t *testing.T) {
-	result := parseRewriteResponse("")
+	result := parseRewriteResponse("", "")
 	if result.RewrittenQuestion != "" || len(result.SubQuestions) != 0 {
 		t.Fatalf("expected empty result, got %+v", result)
 	}

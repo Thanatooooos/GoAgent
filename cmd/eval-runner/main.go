@@ -49,6 +49,8 @@ func runWithDeps(args []string, stdout, stderr io.Writer, deps evalRunnerDeps) i
 	outputPath := fs.String("output", "", "write suite JSON to this file instead of stdout")
 	disableRewriteJudge := fs.Bool("no-rewrite-judge", false, "skip LLM judge for rewrite semantic quality scoring")
 	disableRewriteSemantic := fs.Bool("no-rewrite-semantic", false, "skip embedding similarity for rewrite evaluation")
+	artifactDir := fs.String("artifact-dir", "", "directory to persist per-sample rewrite checkpoints and semantic evaluations")
+	resumeArtifacts := fs.Bool("resume", false, "reuse completed samples from -artifact-dir when query matches")
 	rerankModel := fs.String("rerank-model", "", "override ai.rerank.default-model before loading config, e.g. qwen3-reranker-8b or rerank-noop")
 	summaryMode := fs.String("summary-mode", "standard", "summary evaluation mode: standard or strategy")
 	summaryThresholds := fs.String("summary-thresholds", "", "comma-separated summary strategy thresholds, e.g. 4,6,8,10")
@@ -107,6 +109,8 @@ func runWithDeps(args []string, stdout, stderr io.Writer, deps evalRunnerDeps) i
 	deps = deps.withDefaults(suite, evalKnowledgeBaseIDs, rewriteEvalOptions{
 		disableJudge:    *disableRewriteJudge,
 		disableSemantic: *disableRewriteSemantic,
+		artifactDir:     strings.TrimSpace(*artifactDir),
+		resume:          *resumeArtifacts,
 	}, summaryOpts)
 	runtime, err := deps.buildRuntime(context.Background(), strings.TrimSpace(*configDir))
 	if err != nil {
@@ -233,6 +237,8 @@ func resolveSummaryEvalOptions(
 type rewriteEvalOptions struct {
 	disableJudge    bool
 	disableSemantic bool
+	artifactDir     string
+	resume          bool
 }
 
 func (d evalRunnerDeps) withDefaults(
@@ -332,6 +338,9 @@ func buildPhase1Registry(runtime *ragbootstrap.Runtime, suite rageval.SuiteName,
 		if !rewriteOpts.disableJudge && runtime.LLMChat != nil {
 			registryDeps.RewriteJudge = rageval.NewPromptFileJudge(runtime.LLMChat, "")
 		}
+		if rewriteOpts.artifactDir != "" {
+			registryDeps.RewriteArtifactStore = rageval.NewRewriteArtifactStore(rewriteOpts.artifactDir, rewriteOpts.resume)
+		}
 	case rageval.SuiteAll:
 		if runtime.LLMChat == nil {
 			return nil, fmt.Errorf("llm chat service is unavailable")
@@ -355,6 +364,9 @@ func buildPhase1Registry(runtime *ragbootstrap.Runtime, suite rageval.SuiteName,
 		}
 		if !rewriteOpts.disableJudge && runtime.LLMChat != nil {
 			registryDeps.RewriteJudge = rageval.NewPromptFileJudge(runtime.LLMChat, "")
+		}
+		if rewriteOpts.artifactDir != "" {
+			registryDeps.RewriteArtifactStore = rageval.NewRewriteArtifactStore(rewriteOpts.artifactDir, rewriteOpts.resume)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported suite %q", suite)

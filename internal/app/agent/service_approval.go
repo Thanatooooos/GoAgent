@@ -114,7 +114,7 @@ func (s *Service) approvalSpecForSession(session *agentruntime.RuntimeSession, n
 		}
 	}
 
-	spec, resolvedName, _, ok := s.approvalCapabilityForNode(node)
+	spec, resolvedName, _, ok := agentruntime.ResolveLegacyApprovalCapability(s.registry, s.bindings, node)
 	if ok {
 		return spec, firstNonEmpty(capabilityName, resolvedName), true
 	}

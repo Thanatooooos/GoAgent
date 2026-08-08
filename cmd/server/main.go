@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	dailybriefhttp "local/rag-project/internal/adapter/http/dailybrief"
 	ingestionhttp "local/rag-project/internal/adapter/http/ingestion"
 	knowledgehttp "local/rag-project/internal/adapter/http/knowledge"
 	raghttp "local/rag-project/internal/adapter/http/rag"
@@ -20,6 +21,7 @@ import (
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
 	ingestionservice "local/rag-project/internal/app/ingestion/service"
 	corevector "local/rag-project/internal/app/rag/core/vector"
+	dailybriefbootstrap "local/rag-project/internal/bootstrap/dailybrief"
 	ingestionbootstrap "local/rag-project/internal/bootstrap/ingestion"
 	knowledgebootstrap "local/rag-project/internal/bootstrap/knowledge"
 	ragbootstrap "local/rag-project/internal/bootstrap/rag"
@@ -119,15 +121,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	dailyBriefRuntime, err := dailybriefbootstrap.NewRuntime(context.Background(), dailybriefbootstrap.RuntimeOptions{
+		Config:    cfg,
+		DB:        knowledgeRuntime.DB,
+		AIRuntime: aiRuntime,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "init daily brief runtime failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	r := gin.New()
-	r.Use(umw.RequestIDMiddleware())
-	r.Use(umw.LogContextMiddleware())
-	r.Use(umw.ErrorHandlerMiddleware())
 	loginIDExtractor := umw.DefaultLoginIDExtractor
 	if cfg != nil && cfg.App.DemoMode {
 		loginIDExtractor = umw.DefaultLoginIDExtractorWithDemo
 	}
-	r.Use(umw.UserContextMiddleware(userRuntime.LoadLoginUser, loginIDExtractor))
+	registerCoreMiddleware(r, userRuntime.LoadLoginUser, loginIDExtractor)
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "pong"})
@@ -138,6 +147,7 @@ func main() {
 	registerIngestionRoutes(r, cfg, ingestionRuntime)
 	registerUserRoutes(r, cfg, userRuntime)
 	registerRagRoutes(r, cfg, ragRuntime)
+	registerDailyBriefRoutes(r, cfg, dailyBriefRuntime)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
@@ -167,12 +177,24 @@ func main() {
 	}
 
 	// 按逆序关闭各 runtime
+	closeRuntime("daily-brief", dailyBriefRuntime.Close)
 	closeRuntime("user", userRuntime.Close)
 	closeRuntime("rag", ragRuntime.Close)
 	closeRuntime("ingestion", ingestionRuntime.Close)
 	closeRuntime("knowledge", knowledgeRuntime.Close)
 
 	fmt.Println("server exited")
+}
+
+func registerCoreMiddleware(r *gin.Engine, loader umw.UserLoaderFunc, extractor umw.LoginIDExtractor) {
+	if r == nil {
+		return
+	}
+	r.Use(umw.RequestIDMiddleware())
+	r.Use(umw.LogContextMiddleware())
+	r.Use(umw.AccessLogMiddleware())
+	r.Use(umw.ErrorHandlerMiddleware())
+	r.Use(umw.UserContextMiddleware(loader, extractor))
 }
 
 // closeRuntime 安全关闭 runtime，记录错误但不中断其他 runtime 的关闭。
@@ -234,4 +256,17 @@ func registerRagRoutes(r *gin.Engine, cfg *config.Config, runtime *ragbootstrap.
 	protected := resolveContextPath(r, cfg).Group("/")
 	protected.Use(umw.RequireLogin())
 	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Memory, runtime.Feedback, runtime.Chat, runtime.PreferenceCandidates, runtime.Trace, runtime.CacheMetrics)
+}
+
+func registerDailyBriefRoutes(r *gin.Engine, cfg *config.Config, runtime *dailybriefbootstrap.Runtime) {
+	if r == nil || runtime == nil {
+		return
+	}
+	protected := resolveContextPath(r, cfg).Group("/")
+	protected.Use(umw.RequireLogin())
+	dailybriefhttp.RegisterRoutes(protected, runtime.ReadService, runtime.SubscriptionService, runtime.TopicCatalogService)
+
+	admin := resolveContextPath(r, cfg).Group("/")
+	admin.Use(umw.RequireLogin(), umw.RequireRole("admin"))
+	dailybriefhttp.RegisterAdminRoutes(admin, runtime.SubscriptionSnapshotService)
 }

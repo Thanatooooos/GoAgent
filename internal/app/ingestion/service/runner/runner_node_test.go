@@ -1,8 +1,8 @@
 package runner
 
 import (
-	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"context"
+	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"os"
 	"strings"
 	"testing"
@@ -218,6 +218,61 @@ func TestIndexerNodeRunnerWritesKnowledgeChunksAndVectors(t *testing.T) {
 	}
 	if output["vectorWriteMode"] != "replace" {
 		t.Fatalf("expected vectorWriteMode replace, got %#v", output["vectorWriteMode"])
+	}
+}
+
+func TestIndexerNodeRunnerIndexesQuestionsWithSourceChunkReference(t *testing.T) {
+	chunkRepo := &indexerChunkRepoStub{}
+	vectorStore := &indexerVectorStoreStub{}
+	embedding := &indexerEmbeddingStub{vectors: [][]float32{{0.1, 0.2}}}
+	runner := NewIndexerNodeRunner(nil, chunkRepo, vectorStore, embedding)
+	parentIndex := 0
+
+	_, _, err := runner.Run(context.Background(), ingestionworkflow.ExecutionState{
+		Task: domain.Task{ID: "task-question-index", CreatedBy: "tester", Metadata: map[string]any{"knowledgeBaseId": "kb-1", "documentId": "doc-1"}},
+		Chunks: []ingestionworkflow.ChunkPayload{{
+			Index: 0, Content: "正文内容", Questions: []string{"这个文档说明了什么？"}, ParentIndex: &parentIndex,
+		}},
+		ParentChunks: []ingestionworkflow.ParentChunkPayload{{Index: 0, Content: "完整父块上下文"}},
+	}, domain.PipelineNode{Settings: map[string]any{"embeddingModel": "embed-model"}})
+	if err != nil {
+		t.Fatalf("run indexer: %v", err)
+	}
+	if len(vectorStore.upserted) != 2 {
+		t.Fatalf("expected content and question vectors, got %#v", vectorStore.upserted)
+	}
+	if vectorStore.upserted[0].Metadata["record_type"] != "child" || vectorStore.upserted[0].Metadata["parent_chunk_id"] != "doc-1-p-0" {
+		t.Fatalf("unexpected child metadata: %#v", vectorStore.upserted[0].Metadata)
+	}
+	if vectorStore.upserted[1].Metadata["record_type"] != "question" || vectorStore.upserted[1].Metadata["source_chunk_id"] != "doc-1-0" {
+		t.Fatalf("unexpected question metadata: %#v", vectorStore.upserted[1].Metadata)
+	}
+}
+
+func TestIndexerNodeRunnerPersistsParentChunksWithoutVectors(t *testing.T) {
+	chunkRepo := &indexerChunkRepoStub{}
+	vectorStore := &indexerVectorStoreStub{}
+	runner := NewIndexerNodeRunner(nil, chunkRepo, vectorStore, &indexerEmbeddingStub{vectors: [][]float32{{0.1, 0.2}}})
+	parentIndex := 0
+	_, _, err := runner.Run(context.Background(), ingestionworkflow.ExecutionState{
+		Task:         domain.Task{ID: "task-parent", CreatedBy: "tester", Metadata: map[string]any{"knowledgeBaseId": "kb-1", "documentId": "doc-parent"}},
+		ParentChunks: []ingestionworkflow.ParentChunkPayload{{Index: 0, Content: "完整父块上下文"}},
+		Chunks:       []ingestionworkflow.ChunkPayload{{Index: 0, Content: "可检索子块", ParentIndex: &parentIndex}},
+	}, domain.PipelineNode{Settings: map[string]any{"embeddingModel": "embed-model"}})
+	if err != nil {
+		t.Fatalf("run indexer: %v", err)
+	}
+	if len(chunkRepo.created) != 2 {
+		t.Fatalf("expected parent and child persistence, got %#v", chunkRepo.created)
+	}
+	if chunkRepo.created[0].RecordType != "parent" || chunkRepo.created[0].ID != "doc-parent-p-0" {
+		t.Fatalf("unexpected parent: %#v", chunkRepo.created[0])
+	}
+	if chunkRepo.created[1].RecordType != "child" || chunkRepo.created[1].ParentChunkID != "doc-parent-p-0" {
+		t.Fatalf("unexpected child: %#v", chunkRepo.created[1])
+	}
+	if len(vectorStore.upserted) != 1 {
+		t.Fatalf("expected only child vector, got %#v", vectorStore.upserted)
 	}
 }
 

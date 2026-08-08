@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -52,13 +53,25 @@ func (r *RoutingLLmService) Chat(prompt string) (string, error) {
 }
 
 func (r *RoutingLLmService) ChatWithRequest(request convention.ChatRequest) (string, error) {
-	content, _, err := r.ChatWithRequestUsage(request)
+	content, _, err := r.ChatWithRequestUsageContext(context.Background(), request)
 	return content, err
 }
 
 func (r *RoutingLLmService) ChatWithRequestUsage(request convention.ChatRequest) (string, TokenUsage, error) {
+	return r.ChatWithRequestUsageContext(context.Background(), request)
+}
+
+func (r *RoutingLLmService) ChatWithRequestContext(ctx context.Context, request convention.ChatRequest) (string, error) {
+	content, _, err := r.ChatWithRequestUsageContext(ctx, request)
+	return content, err
+}
+
+func (r *RoutingLLmService) ChatWithRequestUsageContext(ctx context.Context, request convention.ChatRequest) (string, TokenUsage, error) {
 	if r == nil || r.selector == nil {
 		return "", TokenUsage{}, fmt.Errorf(errRoutingServiceNil)
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	type chatResult struct {
@@ -72,9 +85,17 @@ func (r *RoutingLLmService) ChatWithRequestUsage(request convention.ChatRequest)
 		r.selector.SelectChatCandidates(request.ThinkingEnabled()),
 		r.resolveClient,
 		func(client ChatClient, target model.ModelTarget) (chatResult, error) {
+			if usageClient, ok := client.(ContextAwareUsageAwareChatClient); ok {
+				content, usage, err := usageClient.ChatWithUsageContext(ctx, request, target)
+				return chatResult{content: content, usage: usage}, err
+			}
 			if usageClient, ok := client.(UsageAwareChatClient); ok {
 				content, usage, err := usageClient.ChatWithUsage(request, target)
 				return chatResult{content: content, usage: usage}, err
+			}
+			if ctxAwareClient, ok := client.(ContextAwareChatClient); ok {
+				content, err := ctxAwareClient.ChatContext(ctx, request, target)
+				return chatResult{content: content}, err
 			}
 			content, err := client.Chat(request, target)
 			return chatResult{content: content}, err
@@ -87,12 +108,19 @@ func (r *RoutingLLmService) ChatWithRequestUsage(request convention.ChatRequest)
 }
 
 func (r *RoutingLLmService) ChatWithModel(request convention.ChatRequest, modelID string) (string, error) {
+	return r.ChatWithModelContext(context.Background(), request, modelID)
+}
+
+func (r *RoutingLLmService) ChatWithModelContext(ctx context.Context, request convention.ChatRequest, modelID string) (string, error) {
 	if r == nil || r.selector == nil {
 		return "", fmt.Errorf(errRoutingServiceNil)
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	if modelID == "" {
-		return r.ChatWithRequest(request)
+		return r.ChatWithRequestContext(ctx, request)
 	}
 
 	target, err := r.resolveTarget(modelID, request.ThinkingEnabled())
@@ -106,6 +134,9 @@ func (r *RoutingLLmService) ChatWithModel(request convention.ChatRequest, modelI
 		[]model.ModelTarget{target},
 		r.resolveClient,
 		func(client ChatClient, target model.ModelTarget) (string, error) {
+			if ctxAwareClient, ok := client.(ContextAwareChatClient); ok {
+				return ctxAwareClient.ChatContext(ctx, request, target)
+			}
 			return client.Chat(request, target)
 		},
 	)

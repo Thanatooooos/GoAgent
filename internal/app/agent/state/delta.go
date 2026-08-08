@@ -12,6 +12,7 @@ type StateDelta struct {
 	Approval  *ApprovalDelta  `json:"approval,omitempty"`
 	Execution *ExecutionDelta `json:"execution,omitempty"`
 	Answer    *AnswerDelta    `json:"answer,omitempty"`
+	Pattern   *PatternDelta   `json:"pattern,omitempty"`
 }
 
 // RequestDelta is intentionally small because request-scoped state should stay
@@ -75,7 +76,7 @@ type ApprovalDelta struct {
 
 // ExecutionDelta carries control-flow progress updates.
 type ExecutionDelta struct {
-	Status                      *string `json:"status,omitempty"`
+	Status                      *string  `json:"status,omitempty"`
 	CurrentNode                 *string  `json:"current_node,omitempty"`
 	IterationIncrement          int      `json:"iteration_increment,omitempty"`
 	ContinueCountIncrement      int      `json:"continue_count_increment,omitempty"`
@@ -98,4 +99,11 @@ type AnswerDelta struct {
 	Draft         *string `json:"draft,omitempty"`
 	DegradeReason *string `json:"degrade_reason,omitempty"`
 	Final         *string `json:"final,omitempty"`
+}
+
+// PatternDelta carries pattern-private state updates. Data uses replace
+// semantics so cross-pattern callers do not depend on implicit deep merges.
+type PatternDelta struct {
+	Name *string        `json:"name,omitempty"`
+	Data map[string]any `json:"data,omitempty"`
 }

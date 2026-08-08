@@ -35,23 +35,26 @@ func (r *KnowledgeDocumentRepository) Create(ctx context.Context, document domai
 
 func (r *KnowledgeDocumentRepository) Update(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
 	rows, err := r.UpdateWhere(ctx, port.KnowledgeDocumentConditions{ID: document.ID}, port.KnowledgeDocumentPatch{
-		Name:            port.ValueOf(document.Name),
-		Enabled:         port.ValueOf(document.Enabled),
-		ChunkCount:      port.ValueOf(document.ChunkCount),
-		FileURL:         port.ValueOf(document.FileURL),
-		FileType:        port.ValueOf(document.FileType),
-		FileSize:        port.ValueOf(document.FileSize),
-		ProcessMode:     port.ValueOf(document.ProcessMode),
-		Status:          port.ValueOf(document.Status),
-		SourceType:      port.ValueOf(document.SourceType),
-		SourceLocation:  port.ValueOf(document.SourceLocation),
-		ScheduleEnabled: port.ValueOf(boolPointer(document.ScheduleEnabled)),
-		ScheduleCron:    port.ValueOf(document.ScheduleCron),
-		ChunkStrategy:   port.ValueOf(document.ChunkStrategy),
-		ChunkConfig:     port.ValueOf(document.ChunkConfig),
-		PipelineID:      port.ValueOf(document.PipelineID),
-		UpdatedBy:       port.ValueOf(document.UpdatedBy),
-		UpdatedAt:       port.ValueOf(document.UpdatedAt),
+		Name:                port.ValueOf(document.Name),
+		Enabled:             port.ValueOf(document.Enabled),
+		ChunkCount:          port.ValueOf(document.ChunkCount),
+		FileURL:             port.ValueOf(document.FileURL),
+		FileType:            port.ValueOf(document.FileType),
+		FileSize:            port.ValueOf(document.FileSize),
+		ProcessMode:         port.ValueOf(document.ProcessMode),
+		Status:              port.ValueOf(document.Status),
+		SourceType:          port.ValueOf(document.SourceType),
+		SourceLocation:      port.ValueOf(document.SourceLocation),
+		ScheduleEnabled:     port.ValueOf(boolPointer(document.ScheduleEnabled)),
+		ScheduleCron:        port.ValueOf(document.ScheduleCron),
+		ChunkStrategy:       port.ValueOf(document.ChunkStrategy),
+		ChunkConfig:         port.ValueOf(document.ChunkConfig),
+		PipelineID:          port.ValueOf(document.PipelineID),
+		Summary:             port.ValueOf(document.Summary),
+		SummaryStatus:       port.ValueOf(document.SummaryStatus),
+		SummaryErrorMessage: port.ValueOf(document.SummaryErrorMessage),
+		UpdatedBy:           port.ValueOf(document.UpdatedBy),
+		UpdatedAt:           port.ValueOf(document.UpdatedAt),
 	})
 	if err != nil {
 		return domain.KnowledgeDocument{}, err
@@ -322,6 +325,15 @@ func buildKnowledgeDocumentUpdates(patch port.KnowledgeDocumentPatch) map[string
 	if patch.PipelineID.Set {
 		updates["pipeline_id"] = patch.PipelineID.Value
 	}
+	if patch.Summary.Set {
+		updates["summary"] = patch.Summary.Value
+	}
+	if patch.SummaryStatus.Set {
+		updates["summary_status"] = patch.SummaryStatus.Value
+	}
+	if patch.SummaryErrorMessage.Set {
+		updates["summary_error_message"] = patch.SummaryErrorMessage.Value
+	}
 	if patch.UpdatedBy.Set {
 		updates["updated_by"] = patch.UpdatedBy.Value
 	}
@@ -373,44 +385,50 @@ func knowledgeDocumentDBValue(field port.FieldKey, value any) (any, error) {
 }
 
 var knowledgeDocumentConditionColumns = map[port.FieldKey]string{
-	port.KnowledgeDocument.ID.Key:              "id",
-	port.KnowledgeDocument.KnowledgeBaseID.Key: "kb_id",
-	port.KnowledgeDocument.Name.Key:            "doc_name",
-	port.KnowledgeDocument.Enabled.Key:         "enabled",
-	port.KnowledgeDocument.ChunkCount.Key:      "chunk_count",
-	port.KnowledgeDocument.FileURL.Key:         "file_url",
-	port.KnowledgeDocument.FileType.Key:        "file_type",
-	port.KnowledgeDocument.FileSize.Key:        "file_size",
-	port.KnowledgeDocument.ProcessMode.Key:     "process_mode",
-	port.KnowledgeDocument.Status.Key:          "status",
-	port.KnowledgeDocument.SourceType.Key:      "source_type",
-	port.KnowledgeDocument.SourceLocation.Key:  "source_location",
-	port.KnowledgeDocument.ScheduleEnabled.Key: "schedule_enabled",
-	port.KnowledgeDocument.ScheduleCron.Key:    "schedule_cron",
-	port.KnowledgeDocument.ChunkStrategy.Key:   "chunk_strategy",
-	port.KnowledgeDocument.ChunkConfig.Key:     "chunk_config",
-	port.KnowledgeDocument.PipelineID.Key:      "pipeline_id",
-	port.KnowledgeDocument.UpdatedBy.Key:       "updated_by",
-	port.KnowledgeDocument.UpdatedAt.Key:       "update_time",
-	port.KnowledgeDocument.Deleted.Key:         "deleted",
+	port.KnowledgeDocument.ID.Key:                  "id",
+	port.KnowledgeDocument.KnowledgeBaseID.Key:     "kb_id",
+	port.KnowledgeDocument.Name.Key:                "doc_name",
+	port.KnowledgeDocument.Enabled.Key:             "enabled",
+	port.KnowledgeDocument.ChunkCount.Key:          "chunk_count",
+	port.KnowledgeDocument.FileURL.Key:             "file_url",
+	port.KnowledgeDocument.FileType.Key:            "file_type",
+	port.KnowledgeDocument.FileSize.Key:            "file_size",
+	port.KnowledgeDocument.ProcessMode.Key:         "process_mode",
+	port.KnowledgeDocument.Status.Key:              "status",
+	port.KnowledgeDocument.SourceType.Key:          "source_type",
+	port.KnowledgeDocument.SourceLocation.Key:      "source_location",
+	port.KnowledgeDocument.ScheduleEnabled.Key:     "schedule_enabled",
+	port.KnowledgeDocument.ScheduleCron.Key:        "schedule_cron",
+	port.KnowledgeDocument.ChunkStrategy.Key:       "chunk_strategy",
+	port.KnowledgeDocument.ChunkConfig.Key:         "chunk_config",
+	port.KnowledgeDocument.PipelineID.Key:          "pipeline_id",
+	port.KnowledgeDocument.Summary.Key:             "summary",
+	port.KnowledgeDocument.SummaryStatus.Key:       "summary_status",
+	port.KnowledgeDocument.SummaryErrorMessage.Key: "summary_error_message",
+	port.KnowledgeDocument.UpdatedBy.Key:           "updated_by",
+	port.KnowledgeDocument.UpdatedAt.Key:           "update_time",
+	port.KnowledgeDocument.Deleted.Key:             "deleted",
 }
 
 var knowledgeDocumentAssignmentColumns = map[port.FieldKey]string{
-	port.KnowledgeDocument.Name.Key:            "doc_name",
-	port.KnowledgeDocument.Enabled.Key:         "enabled",
-	port.KnowledgeDocument.ChunkCount.Key:      "chunk_count",
-	port.KnowledgeDocument.FileURL.Key:         "file_url",
-	port.KnowledgeDocument.FileType.Key:        "file_type",
-	port.KnowledgeDocument.FileSize.Key:        "file_size",
-	port.KnowledgeDocument.ProcessMode.Key:     "process_mode",
-	port.KnowledgeDocument.Status.Key:          "status",
-	port.KnowledgeDocument.SourceType.Key:      "source_type",
-	port.KnowledgeDocument.SourceLocation.Key:  "source_location",
-	port.KnowledgeDocument.ScheduleEnabled.Key: "schedule_enabled",
-	port.KnowledgeDocument.ScheduleCron.Key:    "schedule_cron",
-	port.KnowledgeDocument.ChunkStrategy.Key:   "chunk_strategy",
-	port.KnowledgeDocument.ChunkConfig.Key:     "chunk_config",
-	port.KnowledgeDocument.PipelineID.Key:      "pipeline_id",
-	port.KnowledgeDocument.UpdatedBy.Key:       "updated_by",
-	port.KnowledgeDocument.UpdatedAt.Key:       "update_time",
+	port.KnowledgeDocument.Name.Key:                "doc_name",
+	port.KnowledgeDocument.Enabled.Key:             "enabled",
+	port.KnowledgeDocument.ChunkCount.Key:          "chunk_count",
+	port.KnowledgeDocument.FileURL.Key:             "file_url",
+	port.KnowledgeDocument.FileType.Key:            "file_type",
+	port.KnowledgeDocument.FileSize.Key:            "file_size",
+	port.KnowledgeDocument.ProcessMode.Key:         "process_mode",
+	port.KnowledgeDocument.Status.Key:              "status",
+	port.KnowledgeDocument.SourceType.Key:          "source_type",
+	port.KnowledgeDocument.SourceLocation.Key:      "source_location",
+	port.KnowledgeDocument.ScheduleEnabled.Key:     "schedule_enabled",
+	port.KnowledgeDocument.ScheduleCron.Key:        "schedule_cron",
+	port.KnowledgeDocument.ChunkStrategy.Key:       "chunk_strategy",
+	port.KnowledgeDocument.ChunkConfig.Key:         "chunk_config",
+	port.KnowledgeDocument.PipelineID.Key:          "pipeline_id",
+	port.KnowledgeDocument.Summary.Key:             "summary",
+	port.KnowledgeDocument.SummaryStatus.Key:       "summary_status",
+	port.KnowledgeDocument.SummaryErrorMessage.Key: "summary_error_message",
+	port.KnowledgeDocument.UpdatedBy.Key:           "updated_by",
+	port.KnowledgeDocument.UpdatedAt.Key:           "update_time",
 }
