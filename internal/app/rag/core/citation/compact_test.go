@@ -48,3 +48,35 @@ func TestCompactPublicCitationsEmptyAndNil(t *testing.T) {
 		t.Fatalf("nil registry should pass through: %s", got)
 	}
 }
+
+func TestCompactPublicCitationsUnescapesAttributes(t *testing.T) {
+	r := NewRegistry()
+	got := r.CompactPublicCitations(`<kb doc="A &amp; B" chunk_id="kb&amp;1" />`)
+	if !strings.Contains(got, `<ref id="c1"/>`) {
+		t.Fatalf("kb tag not folded: %s", got)
+	}
+	ref, ok := r.ResolveChunk("c1")
+	if !ok || ref.DocumentTitle != "A & B" || ref.ChunkID != "kb&1" {
+		t.Fatalf("attributes not unescaped: %+v, %v", ref, ok)
+	}
+}
+
+func TestCompactPublicCitationsKeepsTagWithoutChunkID(t *testing.T) {
+	r := NewRegistry()
+	input := `a <kb doc="标题" /> b`
+	if got := r.CompactPublicCitations(input); got != input {
+		t.Fatalf("tag without chunk_id should stay as-is: %s", got)
+	}
+}
+
+func TestCompactPublicCitationsMultipleTags(t *testing.T) {
+	r := NewRegistry()
+	got := r.CompactPublicCitations(`<kb doc="A" chunk_id="chunk-a" /> x <kb doc="B" chunk_id="chunk-b" /> y <kb doc="A" chunk_id="chunk-a" />`)
+	if !strings.Contains(got, `<ref id="c1"/>`) || !strings.Contains(got, `<ref id="c2"/>`) {
+		t.Fatalf("tags not folded: %s", got)
+	}
+	// duplicate chunk reuses the same handle
+	if strings.Count(got, `<ref id="c1"/>`) != 2 {
+		t.Fatalf("duplicate chunk should reuse c1: %s", got)
+	}
+}
