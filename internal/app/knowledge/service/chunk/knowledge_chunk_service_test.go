@@ -3,11 +3,13 @@ package chunk
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
+	"local/rag-project/internal/framework/exception"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
@@ -216,6 +218,25 @@ func TestKnowledgeChunkServicePageUsesCountRepository(t *testing.T) {
 	}
 	if result.Total != 2 {
 		t.Fatalf("expected total from CountByDocumentID, got %d", result.Total)
+	}
+}
+
+func TestKnowledgeChunkServiceGetByIDReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	chunkRepo := &chunkServiceChunkRepoStub{}
+	service := NewKnowledgeChunkService(nil, nil, chunkRepo, nil, nil)
+
+	chunk, err := service.GetByID(context.Background(), "missing-1")
+	if err == nil {
+		t.Fatalf("GetByID() error = nil, want client exception, chunk=%+v", chunk)
+	}
+	var clientErr *exception.ClientException
+	if !errors.As(err, &clientErr) {
+		t.Fatalf("GetByID() error type = %T, want *exception.ClientException", err)
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("GetByID() error = %v, want containing 'not found'", err)
 	}
 }
 

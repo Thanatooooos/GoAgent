@@ -55,5 +55,8 @@ func (s *KnowledgeChunkService) GetByID(ctx context.Context, chunkID string) (do
 	if err != nil {
 		return domain.KnowledgeChunk{}, exception.NewServiceException("failed to get knowledge chunk", err)
 	}
+	if chunk.ID == "" {
+		return domain.KnowledgeChunk{}, exception.NewClientException("knowledge chunk not found", nil)
+	}
 	return chunk, nil
 }
