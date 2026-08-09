@@ -278,7 +278,10 @@ export function WikiBrowserPage() {
               ) : pageError ? (
                 <div className="py-8 text-center text-sm text-red-600">{pageError}</div>
               ) : selected ? (
-                <MarkdownRenderer content={convertWikiLinks(selected.content || "", kbId || "")} />
+                <MarkdownRenderer
+                  content={convertWikiLinks(selected.content || "", kbId || "")}
+                  openLinksInNewTab={false}
+                />
               ) : (
                 <div className="py-8 text-center text-muted-foreground">请选择左侧页面查看内容</div>
               )}

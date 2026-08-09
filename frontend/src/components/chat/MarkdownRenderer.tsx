@@ -17,9 +17,10 @@ import { useThemeStore } from "@/stores/themeStore";
 
 interface MarkdownRendererProps {
   content: string;
+  openLinksInNewTab?: boolean;
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, openLinksInNewTab = true }: MarkdownRendererProps) {
   const theme = useThemeStore((state) => state.theme);
 
   return (
@@ -105,8 +106,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           return (
             <a
               className="text-[#0969da] underline-offset-4 hover:underline dark:text-[#58a6ff]"
-              target="_blank"
-              rel="noreferrer"
+              target={openLinksInNewTab ? "_blank" : undefined}
+              rel={openLinksInNewTab ? "noreferrer" : undefined}
               {...props}
             >
               {children}
