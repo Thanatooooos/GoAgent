@@ -29,7 +29,10 @@ func NewRefValidator(candidates []string) *RefValidator {
 	return &RefValidator{allowed: allowed}
 }
 
-// Validate returns the canonical candidate id (ReasonOK) or a rejection reason.
+// Validate checks ref against the allowed candidate set. Matching is
+// exact-after-trim (case-sensitive) and deterministic. ReasonMalformed is
+// reserved for callers that need format-level checks (default Validate only
+// decides candidate-set membership).
 func (v *RefValidator) Validate(ref string) (string, RejectReason) {
 	if v == nil {
 		return "", ReasonMalformed
