@@ -3,18 +3,32 @@ package runner
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
+
+	"local/rag-project/internal/framework/llmgen"
 )
 
 type EnrichmentOptions struct {
 	QuestionCount     int
 	MaxQuestionLength int
 	SummaryMaxChars   int
+	SourceChunkID     string
+}
+
+type GeneratedQuestion struct {
+	Text          string
+	SourceChunkID string
+}
+
+type GenerateQuestionsResult struct {
+	Questions    []GeneratedQuestion
+	RejectedRefs int
 }
 
 type DocumentEnricher interface {
 	Summarize(context.Context, string, EnrichmentOptions) (string, error)
-	GenerateQuestions(context.Context, string, string, EnrichmentOptions) ([]string, error)
+	GenerateQuestions(context.Context, string, string, EnrichmentOptions) (GenerateQuestionsResult, error)
 }
 
 type PromptCompleter interface{ Chat(string) (string, error) }
@@ -32,16 +46,71 @@ func (e *llmDocumentEnricher) Summarize(_ context.Context, content string, _ Enr
 	return e.client.Chat("请只基于以下文档内容生成简洁摘要，不要添加输入之外的信息：\n\n" + content)
 }
 
-func (e *llmDocumentEnricher) GenerateQuestions(_ context.Context, title string, content string, options EnrichmentOptions) ([]string, error) {
+var questionRefRE = regexp.MustCompile(`(?i)\[\[(r[1-9][0-9]*)\]\]`)
+
+func (e *llmDocumentEnricher) GenerateQuestions(_ context.Context, title string, content string, options EnrichmentOptions) (GenerateQuestionsResult, error) {
 	if e == nil || e.client == nil {
-		return nil, fmt.Errorf("document enrichment chat client is required")
+		return GenerateQuestionsResult{}, fmt.Errorf("document enrichment chat client is required")
 	}
-	prompt := fmt.Sprintf("为下面内容生成最多 %d 个可由该段充分回答的用户问题，每行一个，不要编号。标题：%s\n\n内容：%s", options.QuestionCount, strings.TrimSpace(title), strings.TrimSpace(content))
+	sourceChunkID := strings.TrimSpace(options.SourceChunkID)
+	sourceHint := ""
+	var handles *llmgen.HandleSet
+	if sourceChunkID != "" {
+		handles = llmgen.NewHandleSet("r")
+		if sourceHandle, ok := handles.Encode(sourceChunkID); ok {
+			sourceHint = fmt.Sprintf("\n当前内容块句柄为 %s；若问题依赖本段内容，请在问题末尾追加 [[%s]]。", sourceHandle, sourceHandle)
+		}
+	}
+	prompt := fmt.Sprintf("为下面内容生成最多 %d 个可由该段充分回答的用户问题，每行一个，不要编号。标题：%s\n\n内容：%s%s", options.QuestionCount, strings.TrimSpace(title), strings.TrimSpace(content), sourceHint)
 	response, err := e.client.Chat(prompt)
 	if err != nil {
-		return nil, err
+		return GenerateQuestionsResult{}, err
 	}
-	return normalizeGeneratedQuestions(strings.Split(response, "\n"), options.QuestionCount, options.MaxQuestionLength), nil
+	raw := normalizeGeneratedQuestions(strings.Split(response, "\n"), options.QuestionCount, options.MaxQuestionLength)
+	return resolveGeneratedQuestions(raw, handles, sourceChunkID), nil
+}
+
+// resolveGeneratedQuestions 解析问题行尾的 [[rN]] 引用：命中句柄则记录来源并剥离标记；
+// 未命中句柄（幻觉引用）不落库并计入 RejectedRefs。无引用问题保持原样。
+func resolveGeneratedQuestions(values []string, handles *llmgen.HandleSet, sourceChunkID string) GenerateQuestionsResult {
+	validator := llmgen.NewRefValidator([]string{sourceChunkID})
+	result := GenerateQuestionsResult{Questions: make([]GeneratedQuestion, 0, len(values))}
+	for _, value := range values {
+		question := GeneratedQuestion{Text: strings.TrimSpace(value)}
+		if handles == nil {
+			result.Questions = append(result.Questions, question)
+			continue
+		}
+		rules := make([]llmgen.RewriteRule, 0)
+		for _, match := range questionRefRE.FindAllStringSubmatch(question.Text, -1) {
+			handle := strings.ToLower(match[1])
+			rules = append(rules, llmgen.RewriteRule{Find: "[[" + handle + "]]", Replace: ""})
+			if id, ok := handles.Resolve(handle); ok {
+				if _, reason := validator.Validate(id); reason == llmgen.ReasonOK {
+					question.SourceChunkID = id
+				} else {
+					result.RejectedRefs++
+				}
+			} else {
+				result.RejectedRefs++
+			}
+		}
+		if len(rules) > 0 {
+			cleaned, _ := llmgen.RewriteRefs(question.Text, rules, llmgen.RewriteOptions{SkipLinks: true, WordBoundary: true})
+			question.Text = strings.TrimSpace(cleaned)
+		}
+		result.Questions = append(result.Questions, question)
+	}
+	return result
+}
+
+// questionTexts 提取问题文本，供 runner 写回 Chunk.Questions。
+func questionTexts(questions []GeneratedQuestion) []string {
+	result := make([]string, 0, len(questions))
+	for _, question := range questions {
+		result = append(result, question.Text)
+	}
+	return result
 }
 
 func normalizeGeneratedQuestions(values []string, limit int, maxLength int) []string {

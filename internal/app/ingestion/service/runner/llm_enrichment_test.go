@@ -8,6 +8,7 @@ import (
 
 	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
 	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
+	"local/rag-project/internal/framework/llmgen"
 )
 
 type failingDocumentEnricher struct{}
@@ -16,15 +17,15 @@ type promptCompleterStub struct{ prompts []string }
 
 func (s *promptCompleterStub) Chat(prompt string) (string, error) {
 	s.prompts = append(s.prompts, prompt)
-	return "Question one?\nQuestion two?", nil
+	return "Question one? [[r1]]\nQuestion two?", nil
 }
 
 func (failingDocumentEnricher) Summarize(context.Context, string, EnrichmentOptions) (string, error) {
 	return "", errors.New("model unavailable")
 }
 
-func (failingDocumentEnricher) GenerateQuestions(context.Context, string, string, EnrichmentOptions) ([]string, error) {
-	return nil, errors.New("model unavailable")
+func (failingDocumentEnricher) GenerateQuestions(context.Context, string, string, EnrichmentOptions) (GenerateQuestionsResult, error) {
+	return GenerateQuestionsResult{}, errors.New("model unavailable")
 }
 
 func TestNormalizeGeneratedQuestionsRemovesDuplicatesAndInvalidValues(t *testing.T) {
@@ -42,15 +43,21 @@ func TestNormalizeGeneratedQuestionsRemovesDuplicatesAndInvalidValues(t *testing
 func TestLLMDocumentEnricherGeneratesQuestionsThroughPromptCompleter(t *testing.T) {
 	client := &promptCompleterStub{}
 	enricher := NewLLMDocumentEnricher(client)
-	questions, err := enricher.GenerateQuestions(context.Background(), "Guide", "Chunk content", EnrichmentOptions{QuestionCount: 2, MaxQuestionLength: 80})
+	res, err := enricher.GenerateQuestions(context.Background(), "Guide", "Chunk content", EnrichmentOptions{QuestionCount: 2, MaxQuestionLength: 80, SourceChunkID: "chunk-1"})
 	if err != nil {
 		t.Fatalf("generate questions: %v", err)
 	}
-	if len(questions) != 2 || questions[0] != "Question one?" {
-		t.Fatalf("unexpected questions: %#v", questions)
+	if len(res.Questions) != 2 || res.Questions[0].Text != "Question one?" {
+		t.Fatalf("unexpected questions: %#v", res.Questions)
+	}
+	if res.Questions[0].SourceChunkID != "chunk-1" {
+		t.Fatalf("source chunk not resolved: %#v", res.Questions[0])
 	}
 	if len(client.prompts) != 1 || !strings.Contains(client.prompts[0], "Chunk content") {
 		t.Fatalf("unexpected prompt: %#v", client.prompts)
+	}
+	if !strings.Contains(client.prompts[0], "r1") {
+		t.Fatalf("prompt should mention source handle r1: %#v", client.prompts[0])
 	}
 }
 
@@ -83,5 +90,48 @@ func TestSampleDocumentForSummaryKeepsHeadMiddleAndTail(t *testing.T) {
 		if !strings.Contains(got, marker) {
 			t.Fatalf("sample should contain %s: %q", marker, got)
 		}
+	}
+}
+
+func TestResolveGeneratedQuestionsStripsValidRef(t *testing.T) {
+	handles := llmgen.NewHandleSet("r")
+	handles.Encode("chunk-1")
+	res := resolveGeneratedQuestions([]string{"问题一 [[r1]]", "问题二"}, handles, "chunk-1")
+	if len(res.Questions) != 2 {
+		t.Fatalf("questions = %#v", res.Questions)
+	}
+	if res.Questions[0].Text != "问题一" || res.Questions[0].SourceChunkID != "chunk-1" {
+		t.Fatalf("valid ref not resolved: %+v", res.Questions[0])
+	}
+	if res.Questions[1].SourceChunkID != "" {
+		t.Fatalf("no-ref question should have empty source: %+v", res.Questions[1])
+	}
+	if res.RejectedRefs != 0 {
+		t.Fatalf("RejectedRefs = %d", res.RejectedRefs)
+	}
+}
+
+func TestResolveGeneratedQuestionsRejectsHallucinatedRef(t *testing.T) {
+	handles := llmgen.NewHandleSet("r")
+	handles.Encode("chunk-1")
+	res := resolveGeneratedQuestions([]string{"问题三 [[r2]]"}, handles, "chunk-1")
+	if len(res.Questions) != 1 {
+		t.Fatalf("questions = %#v", res.Questions)
+	}
+	if res.Questions[0].Text != "问题三" {
+		t.Fatalf("hallucinated ref should be stripped, got %q", res.Questions[0].Text)
+	}
+	if res.Questions[0].SourceChunkID != "" {
+		t.Fatalf("hallucinated ref must not set source: %+v", res.Questions[0])
+	}
+	if res.RejectedRefs != 1 {
+		t.Fatalf("RejectedRefs = %d, want 1", res.RejectedRefs)
+	}
+}
+
+func TestResolveGeneratedQuestionsWithoutSource(t *testing.T) {
+	res := resolveGeneratedQuestions([]string{"问题四 [[r1]]"}, nil, "")
+	if len(res.Questions) != 1 || res.Questions[0].Text != "问题四 [[r1]]" {
+		t.Fatalf("no-source mode should pass through: %#v", res.Questions)
 	}
 }
