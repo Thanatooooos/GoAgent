@@ -20,6 +20,13 @@ func (s *promptCompleterStub) Chat(prompt string) (string, error) {
 	return "Question one? [[r1]]\nQuestion two?", nil
 }
 
+type hallucinatingPromptCompleterStub struct{}
+
+func (hallucinatingPromptCompleterStub) Chat(prompt string) (string, error) {
+	// 每个 chunk 两条问题都携带幻觉引用 [[r9]] → 每 chunk 拒绝 2 个；两 chunk 共 4 个。
+	return "Q1? [[r9]]\nQ2? [[r9]]", nil
+}
+
 func (failingDocumentEnricher) Summarize(context.Context, string, EnrichmentOptions) (string, error) {
 	return "", errors.New("model unavailable")
 }
@@ -77,6 +84,33 @@ func TestEnhancerNodeRunnerLLMFailureDoesNotBlockChunks(t *testing.T) {
 	}
 	if len(next.Chunks[0].Questions) != 0 {
 		t.Fatalf("expected no questions after LLM failure, got %#v", next.Chunks[0].Questions)
+	}
+	if output["mode"] != "llm_degraded" {
+		t.Fatalf("expected degraded mode, got %#v", output["mode"])
+	}
+}
+
+func TestEnhancerNodeRunnerReportsRejectedQuestionRefs(t *testing.T) {
+	enricher := NewLLMDocumentEnricher(hallucinatingPromptCompleterStub{})
+	runner := NewEnhancerNodeRunner(enricher)
+	next, output, err := runner.Run(context.Background(), ingestionworkflow.ExecutionState{
+		Parsed: ingestionworkflow.ParsedDocument{Title: "Doc", Content: "A retrievable document."},
+		Chunks: []ingestionworkflow.ChunkPayload{
+			{Index: 0, Content: "first chunk."},
+			{Index: 1, Content: "second chunk."},
+		},
+	}, ingestiondomain.PipelineNode{Settings: map[string]any{
+		"tasks": []any{map[string]any{"type": "questions"}}, "questionCount": 2,
+	}})
+	if err != nil {
+		t.Fatalf("run enhancer: %v", err)
+	}
+	got, ok := next.Artifacts["enhancerRejectedQuestionRefs"].(int)
+	if !ok {
+		t.Fatalf("expected enhancerRejectedQuestionRefs artifact, got %#v", next.Artifacts)
+	}
+	if got != 4 {
+		t.Fatalf("RejectedRefs artifact = %d, want 4 (2 chunks x 2 hallucinated refs)", got)
 	}
 	if output["mode"] != "llm_degraded" {
 		t.Fatalf("expected degraded mode, got %#v", output["mode"])

@@ -2,8 +2,8 @@ package runner
 
 import (
 	"context"
-	"strconv"
 	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
+	"strconv"
 	"strings"
 
 	"local/rag-project/internal/app/ingestion/domain"
@@ -119,6 +119,8 @@ func (r *EnhancerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Ex
 		if includesEnrichmentTask(tasks, "questions") {
 			for index := range next.Chunks {
 				chunkOptions := options
+				// ChunkPayload 无 ID 字段；用 Index 作为本地句柄键（SourceChunkID 仅用于
+				// 句柄编码与校验，不落库；indexer 自行计算持久化 source_chunk_id）。
 				chunkOptions.SourceChunkID = strconv.Itoa(next.Chunks[index].Index)
 				result, err := r.documentEnricher.GenerateQuestions(ctx, next.Parsed.Title, next.Chunks[index].Content, chunkOptions)
 				if err != nil {
@@ -128,7 +130,8 @@ func (r *EnhancerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Ex
 				next.Chunks[index].Questions = questionTexts(result.Questions)
 				if result.RejectedRefs > 0 {
 					llmDegraded = true
-					next.Artifacts["enhancerRejectedQuestionRefs"] = result.RejectedRefs
+					current, _ := next.Artifacts["enhancerRejectedQuestionRefs"].(int)
+					next.Artifacts["enhancerRejectedQuestionRefs"] = current + result.RejectedRefs
 				}
 			}
 		}
