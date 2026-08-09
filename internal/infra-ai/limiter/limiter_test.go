@@ -77,3 +77,29 @@ func TestGovernorIsolatesKeys(t *testing.T) {
 	}
 	close(release)
 }
+
+func TestGovernorBlocksSecondCallUntilSlotFrees(t *testing.T) {
+	g := NewGovernor()
+	release := make(chan struct{})
+	firstDone := make(chan struct{})
+	go func() {
+		_ = g.Gate("k", 1, func() error { close(firstDone); <-release; return nil })
+	}()
+	<-firstDone // slot held by first call
+	secondRan := make(chan struct{})
+	go func() {
+		_ = g.Gate("k", 1, func() error { close(secondRan); return nil })
+	}()
+	select {
+	case <-secondRan:
+		t.Fatal("second call should block while the slot is held")
+	case <-time.After(100 * time.Millisecond):
+		// expected: blocked
+	}
+	close(release)
+	select {
+	case <-secondRan:
+	case <-time.After(time.Second):
+		t.Fatal("second call should run after slot is released")
+	}
+}
