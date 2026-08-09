@@ -11,17 +11,13 @@ interface CitationChipProps {
 }
 
 export function CitationChip({ node }: CitationChipProps) {
-  const { nextIndex } = useCitationNumber();
-  const indexRef = React.useRef<number | null>(null);
-  if (indexRef.current === null) {
-    indexRef.current = nextIndex();
-  }
-  const index = indexRef.current;
+  const { numberFor } = useCitationNumber();
 
   const properties = node?.properties ?? {};
   const doc = String(properties.doc ?? "");
   const chunkId = String(properties.chunk_id ?? properties.chunkId ?? "");
   const kbId = String(properties.kb_id ?? properties.kbId ?? "");
+  const index = chunkId ? numberFor(chunkId) : 0;
 
   const [detail, setDetail] = React.useState<ChunkDetail | null>(null);
   const [open, setOpen] = React.useState(false);
@@ -39,6 +35,11 @@ export function CitationChip({ node }: CitationChipProps) {
     }
   };
 
+  // 编号来自消息内容的确定性派生；缺失（数据不一致）时不渲染角标。
+  if (index <= 0) {
+    return null;
+  }
+
   return (
     <Popover.Root open={open} onOpenChange={handleOpenChange}>
       <Popover.Trigger asChild>
@@ -52,24 +53,26 @@ export function CitationChip({ node }: CitationChipProps) {
           {index}
         </button>
       </Popover.Trigger>
-      <Popover.Content
-        side="top"
-        className="z-50 w-80 rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800"
-      >
-        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-          {doc || (detail?.docId ? `文档 ${detail.docId}` : "来源文档")}
-        </div>
-        {kbId ? <div className="mt-1 text-xs text-gray-500">知识库：{kbId}</div> : null}
-        {detail ? (
-          <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs leading-5 text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-            {detail.content}
+      <Popover.Portal>
+        <Popover.Content
+          side="top"
+          className="z-50 w-80 rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+        >
+          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {doc || (detail?.docId ? `文档 ${detail.docId}` : "来源文档")}
           </div>
-        ) : loadFailed ? (
-          <div className="mt-2 text-xs text-gray-400">加载失败，请重新点击查看</div>
-        ) : (
-          <div className="mt-2 text-xs text-gray-400">加载中…</div>
-        )}
-      </Popover.Content>
+          {kbId ? <div className="mt-1 text-xs text-gray-500">知识库：{kbId}</div> : null}
+          {detail ? (
+            <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs leading-5 text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+              {detail.content}
+            </div>
+          ) : loadFailed ? (
+            <div className="mt-2 text-xs text-gray-400">加载失败，请重新点击查看</div>
+          ) : (
+            <div className="mt-2 text-xs text-gray-400">加载中…</div>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
     </Popover.Root>
   );
 }

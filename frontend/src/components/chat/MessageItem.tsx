@@ -303,7 +303,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
           ) : null}
 
           {hasContent ? (
-            <CitationNumberProvider>
+            <CitationNumberProvider content={message.content}>
               <MarkdownRenderer content={message.content} />
             </CitationNumberProvider>
           ) : null}
