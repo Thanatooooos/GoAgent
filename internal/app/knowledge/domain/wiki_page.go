@@ -29,6 +29,14 @@ type WikiPage struct {
 	UpdatedBy         string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	InLinks           int
+	OutLinks          int
+}
+
+// WikiLinkCounts 单页面的入链/出链统计。
+type WikiLinkCounts struct {
+	In  int
+	Out int
 }
 
 // NewWikiPage 构造默认已发布状态的页面。

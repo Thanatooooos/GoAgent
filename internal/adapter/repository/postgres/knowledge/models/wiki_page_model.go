@@ -19,6 +19,8 @@ type WikiPageModel struct {
 	SourceChunkIDs    []byte                `gorm:"column:source_chunk_ids;type:jsonb;not null"`
 	CreatedBy         string                `gorm:"column:created_by;type:varchar(20);not null"`
 	UpdatedBy         string                `gorm:"column:updated_by;type:varchar(20);not null"`
+	InLinks           int                   `gorm:"column:in_links;not null;default:0"`
+	OutLinks          int                   `gorm:"column:out_links;not null;default:0"`
 	CreateTime        time.Time             `gorm:"column:create_time;not null"`
 	UpdateTime        time.Time             `gorm:"column:update_time;not null"`
 	Deleted           soft_delete.DeletedAt `gorm:"column:deleted;softDelete:flag"`

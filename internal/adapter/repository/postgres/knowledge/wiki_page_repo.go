@@ -92,6 +92,37 @@ func (r *WikiPageRepository) ListByKB(ctx context.Context, kbID string, offset, 
 	return pages, int(total), nil
 }
 
+func (r *WikiPageRepository) ListBySlugs(ctx context.Context, kbID string, slugs []string) ([]domain.WikiPage, error) {
+	if len(slugs) == 0 {
+		return nil, nil
+	}
+	var rows []models.WikiPageModel
+	if err := r.db.WithContext(ctx).Where("kb_id = ? AND slug IN ?", kbID, slugs).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list wiki pages by slugs: %w", err)
+	}
+	pages := make([]domain.WikiPage, 0, len(rows))
+	for _, row := range rows {
+		pages = append(pages, toWikiPageDomain(row))
+	}
+	return pages, nil
+}
+
+func (r *WikiPageRepository) UpdateLinkCounts(ctx context.Context, kbID string, counts map[string]domain.WikiLinkCounts) error {
+	if len(counts) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for pageID, c := range counts {
+			if err := tx.Model(&models.WikiPageModel{}).
+				Where("kb_id = ? AND id = ?", kbID, pageID).
+				UpdateColumns(map[string]any{"in_links": c.In, "out_links": c.Out, "update_time": time.Now()}).Error; err != nil {
+				return fmt.Errorf("update wiki page link counts: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
 func (r *WikiPageRepository) DeleteByKB(ctx context.Context, kbID string) error {
 	return r.db.WithContext(ctx).Where("kb_id = ?", kbID).Delete(&models.WikiPageModel{}).Error
 }
@@ -110,6 +141,8 @@ func toWikiPageModel(page domain.WikiPage) models.WikiPageModel {
 		SourceChunkIDs:    mustJSONBytes(page.SourceChunkIDs),
 		CreatedBy:         page.CreatedBy,
 		UpdatedBy:         page.UpdatedBy,
+		InLinks:           page.InLinks,
+		OutLinks:          page.OutLinks,
 		CreateTime:        page.CreatedAt,
 		UpdateTime:        page.UpdatedAt,
 	}
@@ -129,6 +162,8 @@ func toWikiPageDomain(model models.WikiPageModel) domain.WikiPage {
 		SourceChunkIDs:    mustStringSlice(model.SourceChunkIDs),
 		CreatedBy:         model.CreatedBy,
 		UpdatedBy:         model.UpdatedBy,
+		InLinks:           model.InLinks,
+		OutLinks:          model.OutLinks,
 		CreatedAt:         model.CreateTime,
 		UpdatedAt:         model.UpdateTime,
 	}

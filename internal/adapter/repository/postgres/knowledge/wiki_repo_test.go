@@ -26,6 +26,8 @@ func TestWikiPageModelRoundTrip(t *testing.T) {
 		SourceChunkIDs:    []string{"c-1", "c-2"},
 		CreatedBy:         "u-1",
 		UpdatedBy:         "u-2",
+		InLinks:           3,
+		OutLinks:          5,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -47,6 +49,9 @@ func TestWikiPageModelRoundTrip(t *testing.T) {
 	}
 	if !roundTrip.CreatedAt.Equal(now) || !roundTrip.UpdatedAt.Equal(now) {
 		t.Fatalf("unexpected timestamps after round trip: %+v", roundTrip)
+	}
+	if roundTrip.InLinks != page.InLinks || roundTrip.OutLinks != page.OutLinks {
+		t.Fatalf("link counts = in:%d out:%d, want in:%d out:%d", roundTrip.InLinks, roundTrip.OutLinks, page.InLinks, page.OutLinks)
 	}
 }
 

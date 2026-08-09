@@ -10,6 +10,8 @@ type WikiPageRepository interface {
 	Upsert(ctx context.Context, page domain.WikiPage) (domain.WikiPage, error)
 	GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error)
 	ListByKB(ctx context.Context, kbID string, offset, limit int) ([]domain.WikiPage, int, error)
+	ListBySlugs(ctx context.Context, kbID string, slugs []string) ([]domain.WikiPage, error)
+	UpdateLinkCounts(ctx context.Context, kbID string, counts map[string]domain.WikiLinkCounts) error
 	DeleteByKB(ctx context.Context, kbID string) error
 }
 
@@ -17,4 +19,6 @@ type WikiLinkRepository interface {
 	CreateBatch(ctx context.Context, links []domain.WikiLink) error
 	ReplaceByKBAndFrom(ctx context.Context, kbID, fromPageID string, links []domain.WikiLink) error
 	ListByKB(ctx context.Context, kbID string) ([]domain.WikiLink, error)
+	DeleteMissingTargets(ctx context.Context, kbID string, validPageIDs []string) (int, error)
+	CountLinksByPage(ctx context.Context, kbID string) (in map[string]int, out map[string]int, err error)
 }

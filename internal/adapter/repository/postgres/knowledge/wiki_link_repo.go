@@ -82,6 +82,33 @@ func (r *WikiLinkRepository) resolveLinkID(linkID string) (string, error) {
 	return fmt.Sprintf("%d", id), nil
 }
 
+func (r *WikiLinkRepository) DeleteMissingTargets(ctx context.Context, kbID string, validPageIDs []string) (int, error) {
+	if len(validPageIDs) == 0 {
+		res := r.db.WithContext(ctx).Where("kb_id = ?", kbID).Delete(&models.WikiLinkModel{})
+		return int(res.RowsAffected), res.Error
+	}
+	res := r.db.WithContext(ctx).
+		Where("kb_id = ? AND target_type = ? AND to_page_id NOT IN ?", kbID, domain.WikiLinkTargetTypeWiki, validPageIDs).
+		Delete(&models.WikiLinkModel{})
+	return int(res.RowsAffected), res.Error
+}
+
+func (r *WikiLinkRepository) CountLinksByPage(ctx context.Context, kbID string) (map[string]int, map[string]int, error) {
+	var rows []models.WikiLinkModel
+	if err := r.db.WithContext(ctx).Where("kb_id = ? AND target_type = ?", kbID, domain.WikiLinkTargetTypeWiki).Find(&rows).Error; err != nil {
+		return nil, nil, fmt.Errorf("count wiki links: %w", err)
+	}
+	in := map[string]int{}
+	out := map[string]int{}
+	for _, row := range rows {
+		out[row.FromPageID]++
+		if row.ToPageID != "" {
+			in[row.ToPageID]++
+		}
+	}
+	return in, out, nil
+}
+
 func (r *WikiLinkRepository) ListByKB(ctx context.Context, kbID string) ([]domain.WikiLink, error) {
 	var rows []models.WikiLinkModel
 	if err := r.db.WithContext(ctx).Where("kb_id = ?", kbID).Find(&rows).Error; err != nil {
