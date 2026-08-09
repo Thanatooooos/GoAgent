@@ -9,6 +9,7 @@ import { DashboardPage } from "@/pages/admin/dashboard/DashboardPage";
 import { KnowledgeListPage } from "@/pages/admin/knowledge/KnowledgeListPage";
 import { KnowledgeDocumentsPage } from "@/pages/admin/knowledge/KnowledgeDocumentsPage";
 import { KnowledgeChunksPage } from "@/pages/admin/knowledge/KnowledgeChunksPage";
+import { WikiBrowserPage } from "@/pages/admin/knowledge/WikiBrowserPage";
 import { IntentTreePage } from "@/pages/admin/intent-tree/IntentTreePage";
 import { IntentListPage } from "@/pages/admin/intent-tree/IntentListPage";
 import { IntentEditPage } from "@/pages/admin/intent-tree/IntentEditPage";
@@ -121,6 +122,10 @@ export const router = createBrowserRouter([
       {
         path: "knowledge/:kbId/docs/:docId",
         element: <KnowledgeChunksPage />
+      },
+      {
+        path: "knowledge/:kbId/wiki",
+        element: <WikiBrowserPage />
       },
       {
         path: "intent-tree",
