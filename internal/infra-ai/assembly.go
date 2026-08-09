@@ -63,6 +63,7 @@ func NewRuntimeWithOptions(opts RuntimeOptions) *Runtime {
 		chat.WithStreamHTTPClient(streamClient),
 	)
 	embeddingClients := embedding.NewDefaultOpenAIStyleEmbeddingClients(httpClient)
+	embeddingClients = embedding.WithConcurrencyLimit(embeddingClients, defaultModelConcurrencyLimit())
 	rerankClients := rerank.NewDefaultRerankClients(httpClient)
 
 	chatService := chat.NewRoutingLLmService(selector, healthStore, executor, chatClients)
@@ -119,4 +120,12 @@ func httpTimeout() time.Duration {
 		return defaultHTTPTimeout
 	}
 	return time.Duration(cfg.AI.HTTP.TimeoutMs) * time.Millisecond
+}
+
+func defaultModelConcurrencyLimit() int {
+	cfg := config.Get()
+	if cfg == nil {
+		return 0
+	}
+	return cfg.AI.Concurrency.MaxPerModel
 }
