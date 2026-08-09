@@ -4,12 +4,14 @@ import (
 	"strings"
 	"time"
 
+	postgresknowledge "local/rag-project/internal/adapter/repository/postgres/knowledge"
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
+	wikiretrieval "local/rag-project/internal/app/rag/service/wikiretrieval"
 )
 
 type retrieveBundle struct {
@@ -43,6 +45,10 @@ func buildRetrieveServices(
 	promptService := ragprompt.NewService(nil)
 	retrieveService := ragretrieve.NewEngine(buildCtx.searcher, aiRuntime.Embedding, aiRuntime.Rerank)
 	retrieveService.SetFactMemoryRetriever(memory.explicitMemoryService.FactRetriever())
+	wikiPageRepo := postgresknowledge.NewWikiPageRepository(buildCtx.db)
+	wikiLinkRepo := postgresknowledge.NewWikiLinkRepository(buildCtx.db)
+	wikiRetriever := wikiretrieval.NewRetriever(wikiPageRepo, wikiLinkRepo)
+	retrieveService.SetWikiRetriever(wikiRetriever)
 	traceService := ragservice.NewTraceService(repos.traceRunRepo, repos.traceNodeRepo, repos.userRepo)
 	tracer := ragservice.NewChatTracer(repos.traceRunRepo, repos.traceNodeRepo)
 	sessionRecallService := buildSessionRecallService(buildCtx, repos, memory)

@@ -61,6 +61,12 @@ func (s *stubWikiPageRepo) DeleteByKB(_ context.Context, kbID string) error {
 	s.deleted = true
 	return nil
 }
+func (s *stubWikiPageRepo) Search(_ context.Context, kbID, query string, limit int) ([]domain.WikiPage, error) {
+	return nil, nil
+}
+func (s *stubWikiPageRepo) ListByIDs(_ context.Context, kbID string, ids []string) ([]domain.WikiPage, error) {
+	return nil, nil
+}
 
 type replacedLinks struct {
 	from  string
@@ -68,12 +74,12 @@ type replacedLinks struct {
 }
 
 type stubWikiLinkRepo struct {
-	created       [][]domain.WikiLink
-	replaced      []replacedLinks
-	inCounts      map[string]int
-	outCounts     map[string]int
-	deletedValid  []string
-	deletedCount  int
+	created      [][]domain.WikiLink
+	replaced     []replacedLinks
+	inCounts     map[string]int
+	outCounts    map[string]int
+	deletedValid []string
+	deletedCount int
 }
 
 func (s *stubWikiLinkRepo) CreateBatch(_ context.Context, links []domain.WikiLink) error {
