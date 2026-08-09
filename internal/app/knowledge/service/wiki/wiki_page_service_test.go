@@ -263,7 +263,7 @@ func TestLinkifyAndPersistWritesLinks(t *testing.T) {
 	pages := []domain.WikiPage{
 		{ID: "p1", Slug: "entity/go", Title: "Go", Content: "参考 并发。"},
 	}
-	n, err := svc.LinkifyAndPersist(context.Background(), "kb1", pages)
+	n, err := svc.LinkifyAndPersist(context.Background(), "kb1", pages, nil)
 	if err != nil {
 		t.Fatalf("LinkifyAndPersist: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestLinkifyAndPersistClearsStaleLinks(t *testing.T) {
 	pages := []domain.WikiPage{
 		{ID: "p1", Slug: "entity/go", Title: "Go", Content: "无关联内容。"},
 	}
-	n, err := svc.LinkifyAndPersist(context.Background(), "kb1", pages)
+	n, err := svc.LinkifyAndPersist(context.Background(), "kb1", pages, nil)
 	if err != nil {
 		t.Fatalf("LinkifyAndPersist: %v", err)
 	}
@@ -315,6 +315,54 @@ func TestLinkifyAndPersistClearsStaleLinks(t *testing.T) {
 	}
 	if len(entry.links) != 0 {
 		t.Fatalf("expected empty group to clear stale links, got %#v", entry.links)
+	}
+}
+
+func TestLinkifyAndPersistMergesExtraLinks(t *testing.T) {
+	pageRepo := &stubWikiPageRepo{list: []domain.WikiPage{
+		{ID: "p1", Slug: "entity/go", Title: "Go"},
+		{ID: "t1", Slug: "concept/并发", Title: "并发"},
+		{ID: "t2", Slug: "entity/fmt", Title: "fmt"},
+	}}
+	linkRepo := &stubWikiLinkRepo{}
+	svc := NewWikiPageService(pageRepo, linkRepo)
+
+	pages := []domain.WikiPage{
+		{ID: "p1", Slug: "entity/go", Title: "Go", Content: "参考 并发。"},
+	}
+	extraLinks := []domain.WikiLink{
+		{FromPageID: "entity/go", ToPageID: "entity/fmt"},
+		{FromPageID: "entity/go", ToPageID: "concept/并发"}, // 与派生重复，派生优先
+	}
+	n, err := svc.LinkifyAndPersist(context.Background(), "kb1", pages, extraLinks)
+	if err != nil {
+		t.Fatalf("LinkifyAndPersist: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("link count = %d, want 2 (1 derived + 1 extra, dedup)", n)
+	}
+	if len(linkRepo.replaced) != 1 {
+		t.Fatalf("replaced = %#v, want 1 entry", linkRepo.replaced)
+	}
+	entry := linkRepo.replaced[0]
+	if entry.from != "p1" {
+		t.Fatalf("replaced from = %q, want p1", entry.from)
+	}
+	if len(entry.links) != 2 {
+		t.Fatalf("links for p1 = %#v, want 2", entry.links)
+	}
+	byTo := map[string]domain.WikiLink{}
+	for _, link := range entry.links {
+		byTo[link.ToPageID] = link
+	}
+	if _, ok := byTo["t1"]; !ok {
+		t.Fatalf("missing derived link to t1: %#v", entry.links)
+	}
+	if _, ok := byTo["t2"]; !ok {
+		t.Fatalf("missing extra link to t2: %#v", entry.links)
+	}
+	if byTo["t1"].Anchor != "并发" {
+		t.Fatalf("derived link should win dedup and keep anchor, got %+v", byTo["t1"])
 	}
 }
 

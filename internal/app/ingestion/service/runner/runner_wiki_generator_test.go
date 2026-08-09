@@ -11,12 +11,13 @@ import (
 )
 
 type stubWikiServicePort struct {
-	upsertedPages int
-	called        bool
-	linkifyCalled bool
-	rebuiltCalled bool
-	cleanedCalled bool
-	deadLinks     int
+	upsertedPages    int
+	called           bool
+	linkifyCalled    bool
+	linkifyExtra     []knowledgedomain.WikiLink
+	rebuiltCalled    bool
+	cleanedCalled    bool
+	deadLinks        int
 }
 
 func (s *stubWikiServicePort) UpsertPagesFromDocument(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage, links []knowledgedomain.WikiLink) error {
@@ -25,8 +26,9 @@ func (s *stubWikiServicePort) UpsertPagesFromDocument(ctx context.Context, kbID 
 	return nil
 }
 
-func (s *stubWikiServicePort) LinkifyAndPersist(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage) (int, error) {
+func (s *stubWikiServicePort) LinkifyAndPersist(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage, extraLinks []knowledgedomain.WikiLink) (int, error) {
 	s.linkifyCalled = true
+	s.linkifyExtra = extraLinks
 	return len(pages), nil
 }
 
@@ -71,6 +73,9 @@ func TestWikiGeneratorNodeRunnerWritesPages(t *testing.T) {
 	}
 	if !svc.linkifyCalled || !svc.rebuiltCalled || !svc.cleanedCalled {
 		t.Fatalf("linkify=%v rebuild=%v clean=%v", svc.linkifyCalled, svc.rebuiltCalled, svc.cleanedCalled)
+	}
+	if len(svc.linkifyExtra) != 2 {
+		t.Fatalf("linkify extra links = %#v, want 2 (generator links passed)", svc.linkifyExtra)
 	}
 	if output["pageCount"] != 1 || output["linkCount"] != 1 || output["generatorLinks"] != 2 || output["deadLinksCleaned"] != 0 {
 		t.Fatalf("output = %+v", output)

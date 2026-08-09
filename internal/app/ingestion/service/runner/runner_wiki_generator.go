@@ -13,7 +13,7 @@ import (
 // WikiPageServicePort 是 runner 依赖的 wiki 持久化接口（最小化，便于测试注入）。
 type WikiPageServicePort interface {
 	UpsertPagesFromDocument(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage, links []knowledgedomain.WikiLink) error
-	LinkifyAndPersist(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage) (int, error)
+	LinkifyAndPersist(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage, extraLinks []knowledgedomain.WikiLink) (int, error)
 	RebuildLinkCounts(ctx context.Context, kbID string) error
 	CleanDeadLinks(ctx context.Context, kbID string) (int, error)
 }
@@ -51,7 +51,7 @@ func (r *WikiGeneratorNodeRunner) Run(ctx context.Context, state ingestionworkfl
 	if err := r.service.UpsertPagesFromDocument(ctx, kbID, result.Pages, result.Links); err != nil {
 		return state, map[string]any{"degraded": true, "error": err.Error()}, nil
 	}
-	linkCount, err := r.service.LinkifyAndPersist(ctx, kbID, result.Pages)
+	linkCount, err := r.service.LinkifyAndPersist(ctx, kbID, result.Pages, result.Links)
 	if err != nil {
 		return state, map[string]any{"degraded": true, "error": err.Error()}, nil
 	}

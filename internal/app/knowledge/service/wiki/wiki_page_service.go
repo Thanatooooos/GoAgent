@@ -121,10 +121,10 @@ func (s *WikiPageService) ListByKB(ctx context.Context, kbID string, page, pageS
 	return s.pageRepo.ListByKB(ctx, kbID, offset, pageSize)
 }
 
-// LinkifyAndPersist 对 batch 页面做交叉链接注入并持久化内容与派生链接；
-// 每个页面无条件 ReplaceByKBAndFrom（空组即清除该源旧链接，保证 re-ingest 收敛）。
-// 返回注入的链接数。
-func (s *WikiPageService) LinkifyAndPersist(ctx context.Context, kbID string, pages []domain.WikiPage) (int, error) {
+// LinkifyAndPersist 对 batch 页面做交叉链接注入，并把 extraLinks（generator 的 LLM
+// 语义链接，from/to 为 slug）并入每页出链；随后无条件 ReplaceByKBAndFrom（空组清除
+// 旧链接保证收敛）。返回实际持久化的链接数。
+func (s *WikiPageService) LinkifyAndPersist(ctx context.Context, kbID string, pages []domain.WikiPage, extraLinks []domain.WikiLink) (int, error) {
 	allPages, _, err := s.pageRepo.ListByKB(ctx, kbID, 0, 1000)
 	if err != nil {
 		return 0, err
@@ -134,13 +134,22 @@ func (s *WikiPageService) LinkifyAndPersist(ctx context.Context, kbID string, pa
 	for _, page := range allPages {
 		slugToID[page.Slug] = page.ID
 	}
+	extraByFrom := map[string][]domain.WikiLink{}
+	for _, link := range extraLinks {
+		from := strings.TrimSpace(link.FromPageID)
+		if from == "" {
+			continue
+		}
+		extraByFrom[from] = append(extraByFrom[from], link)
+	}
 	total := 0
 	for _, page := range pages {
 		page.KnowledgeBaseID = kbID
-		updated, links, linkErr := builder.LinkifyPage(ctx, kbID, page, allPages)
+		updated, derived, linkErr := builder.LinkifyPage(ctx, kbID, page, allPages)
 		if linkErr != nil {
 			return 0, linkErr
 		}
+		merged := mergeLinks(derived, extraByFrom[page.Slug])
 		persisted, err := s.pageRepo.Upsert(ctx, updated)
 		if err != nil {
 			return 0, err
@@ -149,7 +158,7 @@ func (s *WikiPageService) LinkifyAndPersist(ctx context.Context, kbID string, pa
 		if pageID == "" {
 			continue
 		}
-		resolved, err := s.resolveLinkIDs(ctx, kbID, links, slugToID)
+		resolved, err := s.resolveLinkIDs(ctx, kbID, merged, slugToID)
 		if err != nil {
 			return 0, err
 		}
@@ -160,6 +169,29 @@ func (s *WikiPageService) LinkifyAndPersist(ctx context.Context, kbID string, pa
 		total += len(resolved)
 	}
 	return total, nil
+}
+
+// mergeLinks 合并派生链接与 extra 链接，按目标 slug 去重（派生优先）。
+func mergeLinks(derived, extra []domain.WikiLink) []domain.WikiLink {
+	seen := map[string]bool{}
+	merged := make([]domain.WikiLink, 0, len(derived)+len(extra))
+	for _, link := range derived {
+		key := strings.TrimSpace(link.ToPageID)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		merged = append(merged, link)
+	}
+	for _, link := range extra {
+		key := strings.TrimSpace(link.ToPageID)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		merged = append(merged, link)
+	}
+	return merged
 }
 
 // RebuildLinkCounts 从 wiki_link 重算每页 in/out 计数并写回；无链接的页面写 0。

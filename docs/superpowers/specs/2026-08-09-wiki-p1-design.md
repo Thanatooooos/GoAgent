@@ -102,7 +102,9 @@ updated, links, err := wikiLinkBuilder.LinkifyPages(ctx, kbID, result.Pages, pag
 
 runner 依赖从 `WikiPageService` 扩展为"service + linkBuilder"（或把 linkify 作为 `WikiPageService` 方法，runner 只依赖 service）。
 
-**实现决策**：把 linkify 集成进 `WikiPageService`（新增 `LinkifyAndPersist(ctx, kbID, pages) (int, error)` 方法，内部用 `WikiLinkBuilder`），runner 在 `UpsertPagesFromDocument` 后调一次，再 `RebuildLinkCounts` + `CleanDeadLinks`。runner 只依赖 `WikiPageServicePort`（接口加 `LinkifyAndPersist`）。
+**实现决策**：把 linkify 集成进 `WikiPageService`（新增 `LinkifyAndPersist(ctx, kbID, pages, extraLinks) (int, error)` 方法，内部用 `WikiLinkBuilder`），runner 在 `UpsertPagesFromDocument` 后调一次（传入 `result.Links` 作 extraLinks），再 `RebuildLinkCounts` + `CleanDeadLinks`。runner 只依赖 `WikiPageServicePort`（接口加 `LinkifyAndPersist`）。
+
+**链接合并**：generator 的 LLM 语义链接（`result.Links`，可能引用正文未出现标题的页面）必须存活——`LinkifyAndPersist` 按 from slug 分组后与 linkify 派生链接做并集，按目标 slug 去重（派生优先，保留正文锚文本），再统一 `resolveLinkIDs` 并 `ReplaceByKBAndFrom`。每页仍无条件 replace：空组清除该源旧链接，保证 re-ingest 收敛。
 
 ## 五、测试策略
 
