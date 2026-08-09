@@ -256,6 +256,9 @@ ai:
   http:
     timeout-ms: 420000
 
+  concurrency:
+    max-per-model: 4
+
   chat:
     default-model: qwen3-32b
     deep-thinking-model: qwen3-32b

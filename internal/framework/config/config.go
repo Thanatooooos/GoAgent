@@ -387,13 +387,19 @@ type RagTraceConfig struct {
 
 // AI 配置（与 Java 的 AIModelProperties 对齐）
 type AIConfig struct {
-	Providers map[string]ProviderConfig `mapstructure:"providers"`
-	Chat      ModelGroup                `mapstructure:"chat"`
-	Embedding ModelGroup                `mapstructure:"embedding"`
-	Rerank    ModelGroup                `mapstructure:"rerank"`
-	Selection Selection                 `mapstructure:"selection"`
-	Stream    Stream                    `mapstructure:"stream"`
-	HTTP      AIHTTPConfig              `mapstructure:"http"`
+	Providers   map[string]ProviderConfig `mapstructure:"providers"`
+	Chat        ModelGroup                `mapstructure:"chat"`
+	Embedding   ModelGroup                `mapstructure:"embedding"`
+	Rerank      ModelGroup                `mapstructure:"rerank"`
+	Selection   Selection                 `mapstructure:"selection"`
+	Stream      Stream                    `mapstructure:"stream"`
+	HTTP        AIHTTPConfig              `mapstructure:"http"`
+	Concurrency AIConcurrencyConfig       `mapstructure:"concurrency"`
+}
+
+// AIConcurrencyConfig 配置模型调用并发门控的全局默认值。
+type AIConcurrencyConfig struct {
+	MaxPerModel int `mapstructure:"max-per-model"`
 }
 
 type AIHTTPConfig struct {
@@ -421,6 +427,7 @@ type ModelCandidate struct {
 	Priority         int    `mapstructure:"priority"`
 	Enabled          *bool  `mapstructure:"enabled"`
 	SupportsThinking *bool  `mapstructure:"supports-thinking"`
+	MaxConcurrency   int    `mapstructure:"max-concurrency"`
 }
 
 // DimensionInt 将可能为 string/int/float 的 Dimension 解析为 int，解析失败时返回默认值 def

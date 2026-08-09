@@ -66,6 +66,8 @@ rag:
       tavily:
         enabled: true
 ai:
+  concurrency:
+    max-per-model: 4
   chat:
     default-model: qwen3-32b
     deep-thinking-model: qwen3-32b
@@ -110,6 +112,9 @@ parser:
 	}
 	if cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency != 3 {
 		t.Fatalf("unexpected rag.agent.parallel-tool-calls.max-concurrency: %d", cfg.Rag.Agent.ParallelToolCalls.MaxConcurrency)
+	}
+	if cfg.AI.Concurrency.MaxPerModel != 4 {
+		t.Fatalf("unexpected ai.concurrency.max-per-model: %d", cfg.AI.Concurrency.MaxPerModel)
 	}
 	if cfg.Rag.Agent.Chat.Mode != "always" {
 		t.Fatalf("unexpected rag.agent.chat.mode: %q", cfg.Rag.Agent.Chat.Mode)
