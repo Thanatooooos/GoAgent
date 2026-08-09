@@ -84,7 +84,7 @@ func (r *WikiLinkRepository) resolveLinkID(linkID string) (string, error) {
 
 func (r *WikiLinkRepository) DeleteMissingTargets(ctx context.Context, kbID string, validPageIDs []string) (int, error) {
 	if len(validPageIDs) == 0 {
-		res := r.db.WithContext(ctx).Where("kb_id = ?", kbID).Delete(&models.WikiLinkModel{})
+		res := r.db.WithContext(ctx).Where("kb_id = ? AND target_type = ?", kbID, domain.WikiLinkTargetTypeWiki).Delete(&models.WikiLinkModel{})
 		return int(res.RowsAffected), res.Error
 	}
 	res := r.db.WithContext(ctx).

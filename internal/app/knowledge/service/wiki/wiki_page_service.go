@@ -18,35 +18,92 @@ func NewWikiPageService(pageRepo port.WikiPageRepository, linkRepo port.WikiLink
 	return &WikiPageService{pageRepo: pageRepo, linkRepo: linkRepo}
 }
 
-// UpsertPagesFromDocument 按 slug 逐页 upsert，并逐源页替换其出链；
-// 无链接的页面同样执行替换以清除该源的历史链接（re-ingest 收敛）。
-// P0 中链接的 from/to 直接使用页面 slug 持久化（slug 到 page id 的映射在 P1 补充）。
+// UpsertPagesFromDocument 按 slug 逐页 upsert，并把链接的 from/to slug 解析为
+// 真实页面 ID 后持久化（本批页面 ID 来自 upsert 返回；批外 slug 走 ListBySlugs）。
 func (s *WikiPageService) UpsertPagesFromDocument(ctx context.Context, kbID string, pages []domain.WikiPage, links []domain.WikiLink) error {
-	linksByFrom := map[string][]domain.WikiLink{}
-	for _, link := range links {
-		link.KnowledgeBaseID = kbID
-		from := strings.TrimSpace(link.FromPageID)
-		if from == "" {
-			continue
-		}
-		linksByFrom[from] = append(linksByFrom[from], link)
-	}
+	slugToID := make(map[string]string, len(pages))
 	for _, page := range pages {
 		page.KnowledgeBaseID = kbID
-		if _, err := s.pageRepo.Upsert(ctx, page); err != nil {
+		created, err := s.pageRepo.Upsert(ctx, page)
+		if err != nil {
 			return err
 		}
-		slug := strings.TrimSpace(page.Slug)
-		if slug == "" {
-			continue
-		}
-		// 每个页面替换自己的出链；空组即清除该源的旧链接（re-ingest 收敛）。
-		if err := s.linkRepo.ReplaceByKBAndFrom(ctx, kbID, slug, linksByFrom[slug]); err != nil {
+		slugToID[created.Slug] = created.ID
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	resolved, err := s.resolveLinkIDs(ctx, kbID, links, slugToID)
+	if err != nil {
+		return err
+	}
+	if len(resolved) == 0 {
+		return nil
+	}
+	byFrom := map[string][]domain.WikiLink{}
+	for _, link := range resolved {
+		byFrom[link.FromPageID] = append(byFrom[link.FromPageID], link)
+	}
+	for fromPageID, group := range byFrom {
+		if err := s.linkRepo.ReplaceByKBAndFrom(ctx, kbID, fromPageID, group); err != nil {
 			return err
 		}
-		delete(linksByFrom, slug)
 	}
 	return nil
+}
+
+// resolveLinkIDs 把 links 的 from/to（slug）解析为页面 ID；无法解析的丢弃。
+// 先收集批内未解析的 slug，用 ListBySlugs 一次补全，再统一解析。
+func (s *WikiPageService) resolveLinkIDs(ctx context.Context, kbID string, links []domain.WikiLink, slugToID map[string]string) ([]domain.WikiLink, error) {
+	var pending []string
+	for _, link := range links {
+		from := strings.TrimSpace(link.FromPageID)
+		to := strings.TrimSpace(link.ToPageID)
+		if from != "" && slugToID[from] == "" {
+			pending = append(pending, from)
+		}
+		if to != "" && slugToID[to] == "" {
+			pending = append(pending, to)
+		}
+	}
+	if len(pending) > 0 {
+		existing, err := s.pageRepo.ListBySlugs(ctx, kbID, uniqueStrings(pending))
+		if err != nil {
+			return nil, err
+		}
+		for _, page := range existing {
+			slugToID[page.Slug] = page.ID
+		}
+	}
+	result := make([]domain.WikiLink, 0, len(links))
+	for _, link := range links {
+		from := strings.TrimSpace(link.FromPageID)
+		to := strings.TrimSpace(link.ToPageID)
+		fromID := slugToID[from]
+		toID := slugToID[to]
+		if fromID == "" || toID == "" {
+			continue // 无法解析 → 丢弃
+		}
+		link.KnowledgeBaseID = kbID
+		link.FromPageID = fromID
+		link.ToPageID = toID
+		result = append(result, link)
+	}
+	return result, nil
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }
 
 func (s *WikiPageService) GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error) {

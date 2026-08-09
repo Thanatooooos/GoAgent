@@ -11,6 +11,7 @@ import (
 type stubWikiPageRepo struct {
 	upserted []domain.WikiPage
 	bySlug   map[string]domain.WikiPage
+	counts   map[string]domain.WikiLinkCounts
 	deleted  bool
 	offset   int
 	limit    int
@@ -35,6 +36,23 @@ func (s *stubWikiPageRepo) ListByKB(_ context.Context, kbID string, offset, limi
 	s.offset = offset
 	s.limit = limit
 	return nil, 0, nil
+}
+func (s *stubWikiPageRepo) ListBySlugs(_ context.Context, kbID string, slugs []string) ([]domain.WikiPage, error) {
+	requested := make(map[string]bool, len(slugs))
+	for _, slug := range slugs {
+		requested[slug] = true
+	}
+	var pages []domain.WikiPage
+	for slug, page := range s.bySlug {
+		if requested[slug] {
+			pages = append(pages, page)
+		}
+	}
+	return pages, nil
+}
+func (s *stubWikiPageRepo) UpdateLinkCounts(_ context.Context, kbID string, counts map[string]domain.WikiLinkCounts) error {
+	s.counts = counts
+	return nil
 }
 func (s *stubWikiPageRepo) DeleteByKB(_ context.Context, kbID string) error {
 	s.deleted = true
@@ -62,6 +80,12 @@ func (s *stubWikiLinkRepo) ReplaceByKBAndFrom(_ context.Context, kbID, fromPageI
 func (s *stubWikiLinkRepo) ListByKB(_ context.Context, kbID string) ([]domain.WikiLink, error) {
 	return nil, nil
 }
+func (s *stubWikiLinkRepo) DeleteMissingTargets(_ context.Context, kbID string, validPageIDs []string) (int, error) {
+	return 0, nil
+}
+func (s *stubWikiLinkRepo) CountLinksByPage(_ context.Context, kbID string) (map[string]int, map[string]int, error) {
+	return map[string]int{}, map[string]int{}, nil
+}
 
 func TestUpsertPagesFromDocumentPersistsPagesAndLinks(t *testing.T) {
 	pageRepo := &stubWikiPageRepo{}
@@ -88,27 +112,29 @@ func TestUpsertPagesFromDocumentPersistsPagesAndLinks(t *testing.T) {
 			t.Fatalf("upserted page %q has kbID=%q, want kb1", page.Slug, page.KnowledgeBaseID)
 		}
 	}
-	if len(linkRepo.replaced) != 2 {
-		t.Fatalf("replaced = %#v, want 2 entries", linkRepo.replaced)
+	if len(linkRepo.replaced) != 1 {
+		t.Fatalf("replaced = %#v, want 1 entry", linkRepo.replaced)
 	}
-	var goLinks []domain.WikiLink
-	for _, entry := range linkRepo.replaced {
-		if entry.from == "entity/go" {
-			goLinks = entry.links
-		}
+	entry := linkRepo.replaced[0]
+	if entry.from != "p1" {
+		t.Fatalf("replaced from = %q, want p1 (real page id, not slug)", entry.from)
 	}
-	if len(goLinks) != 1 {
-		t.Fatalf("links for entity/go = %#v, want 1", goLinks)
+	if len(entry.links) != 1 {
+		t.Fatalf("links for p1 = %#v, want 1", entry.links)
 	}
-	if goLinks[0].KnowledgeBaseID != "kb1" {
-		t.Fatalf("link for entity/go has kbID=%q, want kb1", goLinks[0].KnowledgeBaseID)
+	link := entry.links[0]
+	if link.FromPageID != "p1" || link.ToPageID != "p2" {
+		t.Fatalf("link from/to = %q/%q, want p1/p2 (real page ids)", link.FromPageID, link.ToPageID)
+	}
+	if link.KnowledgeBaseID != "kb1" {
+		t.Fatalf("link for p1 has kbID=%q, want kb1", link.KnowledgeBaseID)
 	}
 	if len(linkRepo.created) != 0 {
 		t.Fatalf("created = %#v, want empty", linkRepo.created)
 	}
 }
 
-func TestUpsertPagesFromDocumentClearsStaleLinks(t *testing.T) {
+func TestUpsertPagesFromDocumentWithoutLinksSkipsLinkReplacement(t *testing.T) {
 	pageRepo := &stubWikiPageRepo{}
 	linkRepo := &stubWikiLinkRepo{}
 	svc := NewWikiPageService(pageRepo, linkRepo)
@@ -120,11 +146,11 @@ func TestUpsertPagesFromDocumentClearsStaleLinks(t *testing.T) {
 	if err := svc.UpsertPagesFromDocument(context.Background(), "kb1", pages, nil); err != nil {
 		t.Fatalf("UpsertPagesFromDocument: %v", err)
 	}
-	if len(linkRepo.replaced) != 1 {
-		t.Fatalf("replaced = %#v, want 1 entry", linkRepo.replaced)
+	if len(pageRepo.upserted) != 1 {
+		t.Fatalf("upserted pages = %d, want 1", len(pageRepo.upserted))
 	}
-	if len(linkRepo.replaced[0].links) != 0 {
-		t.Fatalf("stale links should be cleared, got %#v", linkRepo.replaced[0].links)
+	if len(linkRepo.replaced) != 0 {
+		t.Fatalf("replaced = %#v, want none", linkRepo.replaced)
 	}
 }
 
@@ -143,11 +169,48 @@ func TestUpsertPagesFromDocumentIgnoresEmptyFrom(t *testing.T) {
 	if err := svc.UpsertPagesFromDocument(context.Background(), "kb1", pages, links); err != nil {
 		t.Fatalf("UpsertPagesFromDocument: %v", err)
 	}
+	if len(linkRepo.replaced) != 0 {
+		t.Fatalf("empty-from link should be dropped, got %#v", linkRepo.replaced)
+	}
+}
+
+func TestUpsertPagesFromDocumentResolvesExternalSlugViaRepo(t *testing.T) {
+	pageRepo := &stubWikiPageRepo{bySlug: map[string]domain.WikiPage{
+		"entity/kubernetes": {ID: "p9", Slug: "entity/kubernetes", Title: "Kubernetes"},
+	}}
+	linkRepo := &stubWikiLinkRepo{}
+	svc := NewWikiPageService(pageRepo, linkRepo)
+
+	pages := []domain.WikiPage{
+		{ID: "p1", KnowledgeBaseID: "kb1", Slug: "entity/go", Title: "Go", PageType: domain.WikiPageTypeEntity, Status: domain.WikiPageStatusPublished, Content: "content", CreatedBy: "u"},
+	}
+	links := []domain.WikiLink{
+		{ID: "l1", KnowledgeBaseID: "kb1", FromPageID: "entity/go", ToPageID: "entity/kubernetes", TargetType: domain.WikiLinkTargetTypeWiki},
+		{ID: "l2", KnowledgeBaseID: "kb1", FromPageID: "entity/go", ToPageID: "concept/nonexistent", TargetType: domain.WikiLinkTargetTypeWiki},
+	}
+
+	if err := svc.UpsertPagesFromDocument(context.Background(), "kb1", pages, links); err != nil {
+		t.Fatalf("UpsertPagesFromDocument: %v", err)
+	}
 	if len(linkRepo.replaced) != 1 {
 		t.Fatalf("replaced = %#v, want 1 entry", linkRepo.replaced)
 	}
-	if len(linkRepo.replaced[0].links) != 0 {
-		t.Fatalf("empty-from link should be skipped, got %#v", linkRepo.replaced[0].links)
+	entry := linkRepo.replaced[0]
+	if entry.from != "p1" {
+		t.Fatalf("replaced from = %q, want p1", entry.from)
+	}
+	if len(entry.links) != 1 {
+		t.Fatalf("links = %#v, want 1 (unresolvable link dropped)", entry.links)
+	}
+	link := entry.links[0]
+	if link.FromPageID != "p1" || link.ToPageID != "p9" {
+		t.Fatalf("link from/to = %q/%q, want p1/p9", link.FromPageID, link.ToPageID)
+	}
+	if link.ID != "l1" {
+		t.Fatalf("link id = %q, want l1", link.ID)
+	}
+	if link.KnowledgeBaseID != "kb1" {
+		t.Fatalf("link has kbID=%q, want kb1", link.KnowledgeBaseID)
 	}
 }
 
