@@ -57,5 +57,10 @@ func (r *WikiGeneratorNodeRunner) Run(ctx context.Context, state ingestionworkfl
 	}
 	_ = r.service.RebuildLinkCounts(ctx, kbID)
 	dead, _ := r.service.CleanDeadLinks(ctx, kbID)
-	return state, map[string]any{"pageCount": len(result.Pages), "linkCount": len(result.Links) + linkCount, "deadLinksCleaned": dead}, nil
+	return state, map[string]any{
+		"pageCount":        len(result.Pages),
+		"linkCount":        linkCount,
+		"generatorLinks":   len(result.Links),
+		"deadLinksCleaned": dead,
+	}, nil
 }

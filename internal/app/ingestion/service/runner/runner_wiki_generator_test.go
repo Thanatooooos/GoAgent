@@ -51,7 +51,13 @@ func (s *stubWikiGenerator) GenerateFromDocument(ctx context.Context, title, con
 
 func TestWikiGeneratorNodeRunnerWritesPages(t *testing.T) {
 	svc := &stubWikiServicePort{}
-	gen := &stubWikiGenerator{pages: []knowledgedomain.WikiPage{{Slug: "entity/go", Title: "Go"}}}
+	gen := &stubWikiGenerator{
+		pages: []knowledgedomain.WikiPage{{Slug: "entity/go", Title: "Go"}},
+		links: []knowledgedomain.WikiLink{
+			{FromPageID: "entity/go", ToPageID: "entity/fmt"},
+			{FromPageID: "entity/fmt", ToPageID: "entity/go"},
+		},
+	}
 	runner := NewWikiGeneratorNodeRunner(svc, gen)
 	_, output, err := runner.Run(context.Background(), ingestionworkflow.ExecutionState{
 		Parsed: ingestionworkflow.ParsedDocument{Title: "Go 指南", Content: "正文"},
@@ -66,7 +72,7 @@ func TestWikiGeneratorNodeRunnerWritesPages(t *testing.T) {
 	if !svc.linkifyCalled || !svc.rebuiltCalled || !svc.cleanedCalled {
 		t.Fatalf("linkify=%v rebuild=%v clean=%v", svc.linkifyCalled, svc.rebuiltCalled, svc.cleanedCalled)
 	}
-	if output["pageCount"] != 1 || output["linkCount"] != 1 || output["deadLinksCleaned"] != 0 {
+	if output["pageCount"] != 1 || output["linkCount"] != 1 || output["generatorLinks"] != 2 || output["deadLinksCleaned"] != 0 {
 		t.Fatalf("output = %+v", output)
 	}
 }
