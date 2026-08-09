@@ -3,12 +3,14 @@ package knowledge
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
 	"local/rag-project/internal/adapter/repository/postgres/knowledge/models"
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
+	"local/rag-project/internal/framework/distributedid"
 )
 
 type WikiLinkRepository struct {
@@ -25,6 +27,14 @@ func (r *WikiLinkRepository) CreateBatch(ctx context.Context, links []domain.Wik
 	}
 	rows := make([]models.WikiLinkModel, 0, len(links))
 	for _, link := range links {
+		if link.CreatedAt.IsZero() {
+			link.CreatedAt = time.Now()
+		}
+		id, err := r.resolveLinkID(link.ID)
+		if err != nil {
+			return err
+		}
+		link.ID = id
 		rows = append(rows, toWikiLinkModel(link))
 	}
 	if err := r.db.WithContext(ctx).Create(&rows).Error; err != nil {
@@ -43,6 +53,14 @@ func (r *WikiLinkRepository) ReplaceByKBAndFrom(ctx context.Context, kbID, fromP
 		}
 		rows := make([]models.WikiLinkModel, 0, len(links))
 		for _, link := range links {
+			if link.CreatedAt.IsZero() {
+				link.CreatedAt = time.Now()
+			}
+			id, err := r.resolveLinkID(link.ID)
+			if err != nil {
+				return err
+			}
+			link.ID = id
 			rows = append(rows, toWikiLinkModel(link))
 		}
 		if err := tx.Create(&rows).Error; err != nil {
@@ -50,6 +68,18 @@ func (r *WikiLinkRepository) ReplaceByKBAndFrom(ctx context.Context, kbID, fromP
 		}
 		return nil
 	})
+}
+
+// resolveLinkID 决定链接 ID：已提供则沿用，空 ID 生成新的分布式 ID。
+func (r *WikiLinkRepository) resolveLinkID(linkID string) (string, error) {
+	if linkID != "" {
+		return linkID, nil
+	}
+	id, err := distributedid.NextID()
+	if err != nil {
+		return "", fmt.Errorf("generate wiki link id: %w", err)
+	}
+	return fmt.Sprintf("%d", id), nil
 }
 
 func (r *WikiLinkRepository) ListByKB(ctx context.Context, kbID string) ([]domain.WikiLink, error) {

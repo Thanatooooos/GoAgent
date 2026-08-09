@@ -24,8 +24,8 @@ CREATE INDEX IF NOT EXISTS idx_wiki_page_kb ON t_wiki_page (kb_id);
 CREATE TABLE IF NOT EXISTS t_wiki_link (
     id              VARCHAR(20) PRIMARY KEY,
     kb_id           VARCHAR(20) NOT NULL,
-    from_page_id    VARCHAR(20) NOT NULL,
-    to_page_id      VARCHAR(20),
+    from_page_id    VARCHAR(256) NOT NULL,
+    to_page_id      VARCHAR(256),
     target_type     VARCHAR(16) NOT NULL DEFAULT 'wiki',
     anchor          VARCHAR(256) NOT NULL DEFAULT '',
     create_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
