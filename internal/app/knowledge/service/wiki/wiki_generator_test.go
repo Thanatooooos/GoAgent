@@ -104,3 +104,35 @@ func TestGenerateFromDocumentDegradesOnBadJSON(t *testing.T) {
 		t.Fatalf("expected empty pages, got %+v", result.Pages)
 	}
 }
+
+func TestGenerateFromDocumentStripsMarkdownCodeFence(t *testing.T) {
+	fenced := "```json\n" + validJSON() + "\n```"
+	client := &stubChatCompleter{response: fenced}
+	g := NewLLMWikiGenerator(client)
+	result, err := g.GenerateFromDocument(context.Background(), "Go 指南", "content", WikiGenerationOptions{MaxPages: 5})
+	if err != nil {
+		t.Fatalf("GenerateFromDocument: %v", err)
+	}
+	if len(result.Pages) != 2 {
+		t.Fatalf("pages = %d, want 2", len(result.Pages))
+	}
+	if result.Pages[0].Slug != "entity/go" {
+		t.Fatalf("page[0] = %+v", result.Pages[0])
+	}
+	if len(result.Links) != 1 || result.Links[0].ToPageID != "concept/并发" {
+		t.Fatalf("links = %#v", result.Links)
+	}
+}
+
+func TestGenerateFromDocumentStripsFenceWithLanguageTagAndPadding(t *testing.T) {
+	fenced := "\n\n```json\n" + validJSON() + "\n```\n"
+	client := &stubChatCompleter{response: fenced}
+	g := NewLLMWikiGenerator(client)
+	result, err := g.GenerateFromDocument(context.Background(), "t", "c", WikiGenerationOptions{MaxPages: 5})
+	if err != nil {
+		t.Fatalf("GenerateFromDocument: %v", err)
+	}
+	if len(result.Pages) != 2 {
+		t.Fatalf("pages = %d, want 2", len(result.Pages))
+	}
+}

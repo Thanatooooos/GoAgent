@@ -72,13 +72,28 @@ type wikiGenerationJSON struct {
 	} `json:"links"`
 }
 
+// stripCodeFence 剥离模型常添加的 markdown 代码围栏（```json ... ```）。
+func stripCodeFence(raw string) string {
+	s := strings.TrimSpace(raw)
+	if !strings.HasPrefix(s, "```") {
+		return s
+	}
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		s = s[idx+1:]
+	}
+	if idx := strings.LastIndex(s, "```"); idx >= 0 {
+		s = s[:idx]
+	}
+	return strings.TrimSpace(s)
+}
+
 // parseWikiGeneration 解析严格 JSON 并做确定性校验：
 // slug 非空且唯一、type 在 {entity, concept}、页面数量受 maxPages 限制、
 // 链接 from/to 必须命中最终保留的 slug。
 func parseWikiGeneration(raw, defaultType string, maxPages int) (WikiGenerationResult, error) {
 	empty := WikiGenerationResult{}
 	var parsed wikiGenerationJSON
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(stripCodeFence(raw)), &parsed); err != nil {
 		return empty, nil // 降级
 	}
 	seen := map[string]bool{}
