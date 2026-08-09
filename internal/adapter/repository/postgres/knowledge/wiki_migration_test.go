@@ -17,7 +17,7 @@ func TestWikiMigrationDefinesTablesAndUniqueSlug(t *testing.T) {
 	for _, token := range []string{
 		"CREATE TABLE IF NOT EXISTS t_wiki_page",
 		"CREATE TABLE IF NOT EXISTS t_wiki_link",
-		"uk_wiki_page_kb_slug UNIQUE (kb_id, slug)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uk_wiki_page_kb_slug_active",
 	} {
 		if !strings.Contains(sql, token) {
 			t.Fatalf("migration should contain %q", token)

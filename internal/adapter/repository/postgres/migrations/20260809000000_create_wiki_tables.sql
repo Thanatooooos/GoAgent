@@ -14,9 +14,10 @@ CREATE TABLE IF NOT EXISTS t_wiki_page (
     updated_by      VARCHAR(20) NOT NULL,
     create_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted         SMALLINT NOT NULL DEFAULT 0,
-    CONSTRAINT uk_wiki_page_kb_slug UNIQUE (kb_id, slug)
+    deleted         SMALLINT NOT NULL DEFAULT 0
 );
+-- 软删除场景下保证 (kb_id, slug) 唯一：仅对未删除行生效
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wiki_page_kb_slug_active ON t_wiki_page (kb_id, slug) WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_wiki_page_kb ON t_wiki_page (kb_id);
 
 -- Wiki 页面间链接表
