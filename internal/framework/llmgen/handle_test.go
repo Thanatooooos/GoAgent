@@ -48,3 +48,13 @@ func TestHandleSetResolveAll(t *testing.T) {
 		t.Fatalf("ResolveAll = (%v, %v)", resolved, unresolved)
 	}
 }
+
+func TestHandleSetNormalizesPrefixCase(t *testing.T) {
+	h := NewHandleSet(" R ")
+	if _, ok := h.Encode("chunk-a"); !ok {
+		t.Fatal("encode failed")
+	}
+	if id, ok := h.Resolve("R1"); !ok || id != "chunk-a" {
+		t.Fatalf("resolve R1 with normalized prefix = (%q,%v)", id, ok)
+	}
+}

@@ -16,6 +16,7 @@ type HandleSet struct {
 }
 
 func NewHandleSet(prefix string) *HandleSet {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
 	if prefix == "" {
 		prefix = "r"
 	}
