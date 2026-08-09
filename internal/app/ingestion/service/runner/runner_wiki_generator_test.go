@@ -13,12 +13,31 @@ import (
 type stubWikiServicePort struct {
 	upsertedPages int
 	called        bool
+	linkifyCalled bool
+	rebuiltCalled bool
+	cleanedCalled bool
+	deadLinks     int
 }
 
 func (s *stubWikiServicePort) UpsertPagesFromDocument(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage, links []knowledgedomain.WikiLink) error {
 	s.called = true
 	s.upsertedPages = len(pages)
 	return nil
+}
+
+func (s *stubWikiServicePort) LinkifyAndPersist(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage) (int, error) {
+	s.linkifyCalled = true
+	return len(pages), nil
+}
+
+func (s *stubWikiServicePort) RebuildLinkCounts(ctx context.Context, kbID string) error {
+	s.rebuiltCalled = true
+	return nil
+}
+
+func (s *stubWikiServicePort) CleanDeadLinks(ctx context.Context, kbID string) (int, error) {
+	s.cleanedCalled = true
+	return s.deadLinks, nil
 }
 
 type stubWikiGenerator struct {
@@ -44,7 +63,10 @@ func TestWikiGeneratorNodeRunnerWritesPages(t *testing.T) {
 	if !svc.called || svc.upsertedPages != 1 {
 		t.Fatalf("service called=%v pages=%d", svc.called, svc.upsertedPages)
 	}
-	if output["pageCount"] != 1 {
+	if !svc.linkifyCalled || !svc.rebuiltCalled || !svc.cleanedCalled {
+		t.Fatalf("linkify=%v rebuild=%v clean=%v", svc.linkifyCalled, svc.rebuiltCalled, svc.cleanedCalled)
+	}
+	if output["pageCount"] != 1 || output["linkCount"] != 1 || output["deadLinksCleaned"] != 0 {
 		t.Fatalf("output = %+v", output)
 	}
 }

@@ -13,6 +13,9 @@ import (
 // WikiPageServicePort 是 runner 依赖的 wiki 持久化接口（最小化，便于测试注入）。
 type WikiPageServicePort interface {
 	UpsertPagesFromDocument(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage, links []knowledgedomain.WikiLink) error
+	LinkifyAndPersist(ctx context.Context, kbID string, pages []knowledgedomain.WikiPage) (int, error)
+	RebuildLinkCounts(ctx context.Context, kbID string) error
+	CleanDeadLinks(ctx context.Context, kbID string) (int, error)
 }
 
 // WikiGeneratorNodeRunner 由 LLM 从解析出的文档生成 wiki 页面并持久化。
@@ -48,5 +51,11 @@ func (r *WikiGeneratorNodeRunner) Run(ctx context.Context, state ingestionworkfl
 	if err := r.service.UpsertPagesFromDocument(ctx, kbID, result.Pages, result.Links); err != nil {
 		return state, map[string]any{"degraded": true, "error": err.Error()}, nil
 	}
-	return state, map[string]any{"pageCount": len(result.Pages), "linkCount": len(result.Links)}, nil
+	linkCount, err := r.service.LinkifyAndPersist(ctx, kbID, result.Pages)
+	if err != nil {
+		return state, map[string]any{"degraded": true, "error": err.Error()}, nil
+	}
+	_ = r.service.RebuildLinkCounts(ctx, kbID)
+	dead, _ := r.service.CleanDeadLinks(ctx, kbID)
+	return state, map[string]any{"pageCount": len(result.Pages), "linkCount": len(result.Links) + linkCount, "deadLinksCleaned": dead}, nil
 }

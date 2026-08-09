@@ -141,10 +141,14 @@ func (s *WikiPageService) LinkifyAndPersist(ctx context.Context, kbID string, pa
 		if linkErr != nil {
 			return 0, linkErr
 		}
-		if _, err := s.pageRepo.Upsert(ctx, updated); err != nil {
+		persisted, err := s.pageRepo.Upsert(ctx, updated)
+		if err != nil {
 			return 0, err
 		}
-		pageID := slugToID[updated.Slug]
+		pageID := persisted.ID
+		if pageID == "" {
+			continue
+		}
 		resolved, err := s.resolveLinkIDs(ctx, kbID, links, slugToID)
 		if err != nil {
 			return 0, err
