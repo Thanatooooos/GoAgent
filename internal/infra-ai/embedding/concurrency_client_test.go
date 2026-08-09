@@ -1,6 +1,7 @@
 package embedding
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -124,5 +125,53 @@ func TestWithConcurrencyLimitPassthroughWhenDisabled(t *testing.T) {
 	clients := WithConcurrencyLimit([]EmbeddingClient{inner}, 0)
 	if len(clients) != 1 || clients[0] != inner {
 		t.Fatalf("zero default limit should pass through unchanged: %#v", clients)
+	}
+}
+
+func TestConcurrencyEmbeddingClientEmbedBatchPropagatesError(t *testing.T) {
+	inner := &recordingEmbeddingClient{
+		batchFn: func([]string, model.ModelTarget) ([][]float32, error) {
+			return nil, errors.New("upstream failure")
+		},
+	}
+	client := &concurrencyEmbeddingClient{inner: inner, gov: limiter.NewGovernor(), defaultLimit: 2}
+	if _, err := client.EmbedBatch([]string{"x"}, model.ModelTarget{Id: "m"}); err == nil {
+		t.Fatal("expected upstream error to propagate through the gate")
+	}
+}
+
+func TestConcurrencyEmbeddingClientFallbackKeyWhenTargetIDEmpty(t *testing.T) {
+	// target.Id empty → falls back to "embedding"; concurrent calls share one slot
+	inner := &recordingEmbeddingClient{}
+	client := &concurrencyEmbeddingClient{inner: inner, gov: limiter.NewGovernor(), defaultLimit: 1}
+	var mu sync.Mutex
+	inFlight := 0
+	maxInFlight := 0
+	inner.batchFn = func([]string, model.ModelTarget) ([][]float32, error) {
+		mu.Lock()
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return [][]float32{{1}}, nil
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := client.EmbedBatch([]string{"x"}, model.ModelTarget{}); err != nil {
+				t.Errorf("EmbedBatch err = %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if maxInFlight > 1 {
+		t.Fatalf("fallback key should serialize on one slot, got %d in-flight", maxInFlight)
 	}
 }

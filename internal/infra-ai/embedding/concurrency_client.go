@@ -30,7 +30,7 @@ func (c *concurrencyEmbeddingClient) gateEmbedBatch(fn func() ([][]float32, erro
 	if target.Candidate.MaxConcurrency > 0 {
 		limit = target.Candidate.MaxConcurrency
 	}
-	key := target.Candidate.Id
+	key := target.Id
 	if key == "" {
 		key = "embedding"
 	}
