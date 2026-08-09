@@ -3,6 +3,9 @@ package rag
 import (
 	"fmt"
 
+	postgresknowledge "local/rag-project/internal/adapter/repository/postgres/knowledge"
+	agentwikiwrite "local/rag-project/internal/app/agent/wiki_write"
+	wikiservice "local/rag-project/internal/app/knowledge/service/wiki"
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
 	"local/rag-project/internal/app/rag/service/longtermmemory/extraction"
@@ -10,6 +13,8 @@ import (
 	ragassembly "local/rag-project/internal/app/rag/tool/assembly"
 	"local/rag-project/internal/framework/config"
 	inframcp "local/rag-project/internal/infra-mcp"
+
+	"gorm.io/gorm"
 )
 
 type chatBundle struct {
@@ -29,7 +34,7 @@ func buildChatService(
 
 	mcpManager := buildMCPManager(cfg)
 	toolWorkflow := ragassembly.BuildLocalWorkflow(buildCtx.db, repos.traceRunRepo, repos.traceNodeRepo, cfg, mcpManager, aiRuntime.Chat)
-	agentRuntimeService, err := buildAgentRuntimeService(cfg, mcpManager, aiRuntime.Chat, memory.explicitMemoryService)
+	agentRuntimeService, err := buildAgentRuntimeService(cfg, mcpManager, aiRuntime.Chat, memory.explicitMemoryService, buildWikiWriteDeps(buildCtx.db))
 	if err != nil {
 		return chatBundle{}, fmt.Errorf("build agent runtime service: %w", err)
 	}
@@ -73,6 +78,20 @@ func buildChatService(
 		chatService: chatService,
 		mcpManager:  mcpManager,
 	}, nil
+}
+
+func buildWikiWriteDeps(db *gorm.DB) *agentwikiwrite.Deps {
+	if db == nil {
+		return nil
+	}
+	documentRepo := postgresknowledge.NewKnowledgeDocumentRepository(db, nil)
+	chunkRepo := postgresknowledge.NewKnowledgeChunkRepository(db)
+	wikiPageRepo := postgresknowledge.NewWikiPageRepository(db)
+	wikiLinkRepo := postgresknowledge.NewWikiLinkRepository(db)
+	return &agentwikiwrite.Deps{
+		ContentReader: agentwikiwrite.NewContentReader(documentRepo, chunkRepo),
+		WikiWriter:    wikiservice.NewWikiPageService(wikiPageRepo, wikiLinkRepo),
+	}
 }
 
 func buildLongTermMemoryWriteback(buildCtx *buildContext, memory memoryBundle) *ltmwriteback.Service {

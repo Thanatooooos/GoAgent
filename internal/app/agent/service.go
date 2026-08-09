@@ -19,6 +19,7 @@ import (
 	agentruntime "local/rag-project/internal/app/agent/runtime"
 	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	agentstate "local/rag-project/internal/app/agent/state"
+	agentwikiwrite "local/rag-project/internal/app/agent/wiki_write"
 	"local/rag-project/internal/framework/config"
 	aichat "local/rag-project/internal/infra-ai/chat"
 	inframcp "local/rag-project/internal/infra-mcp"
@@ -44,6 +45,7 @@ type ServiceOptions struct {
 	DocumentInvestigator     agentdocumentinvestigation.Investigator
 	KnowledgeDiscoverer      agentknowledgediscovery.KnowledgeDiscoverer
 	MemoryRecaller           agentmemoryrecall.MemoryRecaller
+	WikiWriteDeps            *agentwikiwrite.Deps
 }
 
 type Service struct {

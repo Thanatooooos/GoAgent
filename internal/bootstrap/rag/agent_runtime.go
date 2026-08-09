@@ -2,16 +2,18 @@ package rag
 
 import (
 	"fmt"
+	"strings"
+
 	agentapp "local/rag-project/internal/app/agent"
 	agentkernel "local/rag-project/internal/app/agent/kernel"
 	agentruntime "local/rag-project/internal/app/agent/runtime"
 	agentstate "local/rag-project/internal/app/agent/state"
+	agentwikiwrite "local/rag-project/internal/app/agent/wiki_write"
 	ragservice "local/rag-project/internal/app/rag/service"
 	longtermmemory "local/rag-project/internal/app/rag/service/longtermmemory"
 	"local/rag-project/internal/framework/config"
 	aichat "local/rag-project/internal/infra-ai/chat"
 	inframcp "local/rag-project/internal/infra-mcp"
-	"strings"
 )
 
 func buildAgentRuntimeService(
@@ -19,6 +21,7 @@ func buildAgentRuntimeService(
 	mcpManager *inframcp.Manager,
 	llmService aichat.LLMService,
 	memoryService *longtermmemory.MemoryService,
+	wikiWriteDeps *agentwikiwrite.Deps,
 ) (ragservice.AgentRuntimeService, error) {
 	options := agentapp.ServiceOptions{
 		Config:        cfg,
@@ -27,6 +30,7 @@ func buildAgentRuntimeService(
 		MaxIterations: cfg.Rag.Agent.MaxIterations,
 		OutputMode:    agentstate.OutputModeFinalAnswer,
 		Pattern:       agentapp.PatternPlanExecute,
+		WikiWriteDeps: wikiWriteDeps,
 	}
 	if memoryService != nil {
 		options.MemoryRecaller = memoryService

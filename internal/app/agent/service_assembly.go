@@ -26,6 +26,7 @@ import (
 	searchprovider "local/rag-project/internal/app/agent/search/provider"
 	agentstate "local/rag-project/internal/app/agent/state"
 	agentthink "local/rag-project/internal/app/agent/think"
+	agentwikiwrite "local/rag-project/internal/app/agent/wiki_write"
 	"local/rag-project/internal/framework/config"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
@@ -85,6 +86,7 @@ func NewService(opts ServiceOptions) (*Service, error) {
 		opts.LLMService,
 		opts.KnowledgeDiscoverer,
 		opts.MemoryRecaller,
+		opts.WikiWriteDeps,
 	)
 	if err != nil {
 		return nil, err
@@ -177,6 +179,7 @@ func assembleCapabilities(
 	llmService aichat.LLMService,
 	knowledgeDiscoverer agentknowledgediscovery.KnowledgeDiscoverer,
 	memoryRecaller agentmemoryrecall.MemoryRecaller,
+	wikiWriteDeps *agentwikiwrite.Deps,
 ) (*agentcapability.Registry, agentcapability.RoleBindings, error) {
 	registry := agentcapability.NewRegistry()
 	if err := registerExternalEvidenceCapabilities(registry, searchService, fetchService); err != nil {
@@ -192,6 +195,9 @@ func assembleCapabilities(
 		return nil, nil, err
 	}
 	if err := registerMemoryCapabilities(registry, memoryRecaller); err != nil {
+		return nil, nil, err
+	}
+	if err := registerWikiWriteCapabilities(registry, wikiWriteDeps, llmService); err != nil {
 		return nil, nil, err
 	}
 
@@ -265,6 +271,17 @@ func registerOptionalWorkflowCapabilities(registry *agentcapability.Registry, do
 		return fmt.Errorf("optional workflow capability %q construction failed: %w", agentcapability.NameDocumentInvestigation, err)
 	}
 	return registerCapabilityGroup(registry, "optional workflow", documentInvestigationCapability)
+}
+
+func registerWikiWriteCapabilities(registry *agentcapability.Registry, deps *agentwikiwrite.Deps, llmService aichat.LLMService) error {
+	if deps == nil || deps.ContentReader == nil || deps.WikiWriter == nil || llmService == nil {
+		return nil
+	}
+	wikiWriteCapability, err := agentwikiwrite.NewCapability(deps.ContentReader, deps.WikiWriter, llmService)
+	if err != nil {
+		return fmt.Errorf("wiki capability %q construction failed: %w", agentcapability.NameWikiWrite, err)
+	}
+	return registerCapabilityGroup(registry, "wiki", wikiWriteCapability)
 }
 
 func registerCapabilityGroup(registry *agentcapability.Registry, group string, handles ...agentcapability.Handle) error {

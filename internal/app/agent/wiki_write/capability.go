@@ -28,6 +28,12 @@ type PromptCompleter interface {
 	Chat(prompt string) (string, error)
 }
 
+// Deps bundles the application dependencies needed to assemble the wiki write capability.
+type Deps struct {
+	ContentReader DocumentContentReader
+	WikiWriter    WikiWriter
+}
+
 type CapabilityInput struct {
 	KnowledgeBaseID string `json:"knowledge_base_id"`
 	DocumentID      string `json:"document_id"`

@@ -30,7 +30,7 @@ func TestAssembleCapabilitiesRegistersWorkflowSample(t *testing.T) {
 		}
 	}
 
-	assembledRegistry, bindings, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil)
+	assembledRegistry, bindings, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
 	}
@@ -44,7 +44,7 @@ func TestAssembleCapabilitiesRegistersWorkflowSample(t *testing.T) {
 }
 
 func TestAssembleCapabilitiesRegistersDocumentInvestigationWhenProvided(t *testing.T) {
-	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, stubDocumentInvestigator{}, nil, nil, nil)
+	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, stubDocumentInvestigator{}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
 	}
@@ -58,7 +58,7 @@ func TestAssembleCapabilitiesRegistersDocumentInvestigationWhenProvided(t *testi
 }
 
 func TestAssembleCapabilitiesRegistersThinkByDefault(t *testing.T) {
-	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil)
+	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
 	}
@@ -74,6 +74,7 @@ func TestAssembleCapabilitiesRegistersDiscoveryWhenProvided(t *testing.T) {
 		nil,
 		nil,
 		&stubKnowledgeDiscoverer{},
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -92,6 +93,7 @@ func TestAssembleCapabilitiesRegistersMemoryRecallWhenProvided(t *testing.T) {
 		nil,
 		nil,
 		&stubMemoryRecaller{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
@@ -102,7 +104,7 @@ func TestAssembleCapabilitiesRegistersMemoryRecallWhenProvided(t *testing.T) {
 }
 
 func TestAssembleCapabilitiesSkipsOptionalWorkflowWithoutDependency(t *testing.T) {
-	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil)
+	assembledRegistry, _, err := assembleCapabilities(&agentsearch.Service{}, &agentfetch.Service{}, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("assembleCapabilities() error = %v", err)
 	}
