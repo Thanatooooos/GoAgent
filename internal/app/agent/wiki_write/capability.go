@@ -92,20 +92,7 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		return agentcapability.DependencyFailureResult(c.spec, "document content read failed", err), err
 	}
 	if strings.TrimSpace(content) == "" {
-		return agentcapability.InvocationResult{
-			Output: CapabilityOutput{DocumentID: input.DocumentID},
-			Action: agentcapability.ActionRecord{
-				Name:    c.spec.Name,
-				Summary: "no wiki generated: document content is empty",
-			},
-			Observation: agentcapability.ObservationRecord{
-				Summary: "no wiki generated: document content is empty",
-			},
-			Delta: agentstate.StateDelta{
-				Context: &agentstate.ContextDelta{Notes: []string{"no wiki generated: document content is empty"}},
-			},
-			Status: agentcapability.StatusSucceeded,
-		}, nil
+		return agentcapability.ExternalFailureResult(c.spec, "empty document content", nil), nil
 	}
 	generator := wikiservice.NewLLMWikiGenerator(c.completer)
 	result, err := generator.GenerateFromDocument(ctx, title, content, wikiservice.WikiGenerationOptions{

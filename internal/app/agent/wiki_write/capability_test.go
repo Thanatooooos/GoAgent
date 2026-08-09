@@ -81,7 +81,7 @@ func TestWikiWriteInvokeDegradesOnEmptyContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if result.Status != agentcapability.StatusSucceeded {
+	if result.Status != agentcapability.StatusDegraded {
 		t.Fatalf("status = %s", result.Status)
 	}
 }
@@ -94,5 +94,17 @@ func TestWikiWriteInvokeDegradesOnCompleterError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	_ = result
+	if result.Status != agentcapability.StatusDegraded {
+		t.Fatalf("status = %s", result.Status)
+	}
+}
+
+func TestWikiWriteInvokeRejectsEmptyDocumentID(t *testing.T) {
+	handle, _ := NewCapability(&stubReader{title: "Go 指南", content: "正文"}, &stubWriter{}, &stubCompleter{response: validWikiJSON()})
+	_, err := handle.Invoke(context.Background(), agentcapability.InvocationRequest{
+		Input: map[string]any{"knowledge_base_id": "kb1"},
+	})
+	if err == nil {
+		t.Fatalf("expected precondition error for missing document_id")
+	}
 }
