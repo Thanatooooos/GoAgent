@@ -22,6 +22,7 @@ import (
 	ingestionservice "local/rag-project/internal/app/ingestion/service"
 	ingestionqueue "local/rag-project/internal/app/ingestion/service/queue"
 	knowledgeport "local/rag-project/internal/app/knowledge/port"
+	wikiservice "local/rag-project/internal/app/knowledge/service/wiki"
 	"local/rag-project/internal/framework/config"
 	infraai "local/rag-project/internal/infra-ai"
 )
@@ -78,6 +79,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	baseRepo := postgresknowledge.NewKnowledgeBaseRepository(db)
 	chunkRepo := postgresknowledge.NewKnowledgeChunkRepository(db)
 	documentRepo := postgresknowledge.NewKnowledgeDocumentRepository(db, nil)
+	wikiPageRepo := postgresknowledge.NewWikiPageRepository(db)
+	wikiLinkRepo := postgresknowledge.NewWikiLinkRepository(db)
+	wikiService := wikiservice.NewWikiPageService(wikiPageRepo, wikiLinkRepo)
 	metricsService := ingestionservice.NewMetricsService(readIngestionMaxConcurrent(cfg))
 	taskObserver := ingestionservice.NewMultiTaskObserver(
 		ingestionservice.NewRepositoryTaskObserver(taskRepo, taskNodeRepo),
@@ -110,6 +114,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		ingestionservice.NewChunkerNodeRunner(corechunk.NewDefaultSelector()),
 		ingestionservice.NewEnricherNodeRunner(),
 		ingestionservice.NewIndexerNodeRunner(baseRepo, chunkRepo, vectorStore, aiRuntime.Embedding, documentRepo),
+		ingestionservice.NewWikiGeneratorNodeRunner(wikiService, wikiservice.NewLLMWikiGenerator(aiRuntime.Chat)),
 	)
 	executor := ingestionservice.NewExecutorService(ingestionservice.ExecutorServiceOptions{
 		TaskRepo:        taskRepo,

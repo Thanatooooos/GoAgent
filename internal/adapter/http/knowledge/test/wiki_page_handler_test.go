@@ -1,0 +1,101 @@
+package knowledge_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	knowledgehttp "local/rag-project/internal/adapter/http/knowledge"
+	"local/rag-project/internal/app/knowledge/domain"
+	"local/rag-project/internal/framework/contextx"
+	"local/rag-project/internal/middleware"
+)
+
+type wikiServiceStub struct {
+	pages []domain.WikiPage
+	total int
+	err   error
+}
+
+func (s *wikiServiceStub) GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error) {
+	if s.err != nil {
+		return domain.WikiPage{}, s.err
+	}
+	for _, p := range s.pages {
+		if p.Slug == slug {
+			return p, nil
+		}
+	}
+	return domain.WikiPage{}, nil
+}
+
+func (s *wikiServiceStub) ListByKB(ctx context.Context, kbID string, page, pageSize int) ([]domain.WikiPage, int, error) {
+	if s.err != nil {
+		return nil, 0, s.err
+	}
+	return s.pages, s.total, nil
+}
+
+func newWikiRouter(svc knowledgehttp.WikiPageService) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.RequestIDMiddleware())
+	router.Use(middleware.ErrorHandlerMiddleware())
+	router.Use(func(c *gin.Context) {
+		contextx.Set(c, &contextx.LoginUser{UserID: "1", Username: "u", Role: "admin"})
+		c.Next()
+	})
+	group := router.Group("/api/ragent")
+	knowledgehttp.RegisterWikiPageRoutes(group, svc)
+	return router
+}
+
+func TestWikiPageHandlerGetBySlug(t *testing.T) {
+	svc := &wikiServiceStub{pages: []domain.WikiPage{{ID: "p1", KnowledgeBaseID: "kb1", Slug: "entity/go", Title: "Go", Content: "content"}}}
+	router := newWikiRouter(svc)
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/knowledge-base/kb1/wiki/pages/entity/go", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Code string `json:"code"`
+		Data struct {
+			Slug string `json:"slug"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.Data.Slug != "entity/go" {
+		t.Fatalf("data = %+v", result.Data)
+	}
+}
+
+func TestWikiPageHandlerList(t *testing.T) {
+	svc := &wikiServiceStub{pages: []domain.WikiPage{{ID: "p1", Slug: "entity/go"}}, total: 1}
+	router := newWikiRouter(svc)
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/knowledge-base/kb1/wiki/pages?current=1&size=10", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Code string `json:"code"`
+		Data struct {
+			Total int `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.Data.Total != 1 {
+		t.Fatalf("data = %+v", result.Data)
+	}
+}

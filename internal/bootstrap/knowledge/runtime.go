@@ -20,6 +20,7 @@ import (
 	"local/rag-project/internal/app/knowledge/port"
 	knowledgeschedule "local/rag-project/internal/app/knowledge/schedule"
 	"local/rag-project/internal/app/knowledge/service"
+	wikiservice "local/rag-project/internal/app/knowledge/service/wiki"
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/log"
 	infraai "local/rag-project/internal/infra-ai"
@@ -39,6 +40,7 @@ type Runtime struct {
 	BaseService            *service.KnowledgeBaseService
 	DocumentService        *service.KnowledgeDocumentService
 	ChunkService           *service.KnowledgeChunkService
+	WikiPageService        *wikiservice.WikiPageService
 	DocumentProcessService *service.DocumentProcessService
 	ScheduleService        *service.KnowledgeDocumentScheduleService
 
@@ -84,6 +86,10 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	chunkLogRepo := postgresknowledge.NewKnowledgeDocumentChunkLogRepository(db)
 	scheduleRepo := postgresknowledge.NewKnowledgeDocumentScheduleRepository(db)
 	scheduleExecRepo := postgresknowledge.NewKnowledgeDocumentScheduleExecRepository(db)
+	wikiPageRepo := postgresknowledge.NewWikiPageRepository(db)
+	wikiLinkRepo := postgresknowledge.NewWikiLinkRepository(db)
+
+	runtime.WikiPageService = wikiservice.NewWikiPageService(wikiPageRepo, wikiLinkRepo)
 
 	runtime.BaseService = service.NewKnowledgeBaseService(baseRepo, documentRepo)
 	runtime.ScheduleService = service.NewKnowledgeDocumentScheduleService(

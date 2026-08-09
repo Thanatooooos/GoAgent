@@ -228,6 +228,7 @@ func registerKnowledgeRoutes(r *gin.Engine, cfg *config.Config, runtime *knowled
 	knowledgehttp.RegisterKnowledgeBaseRoutes(admin, runtime.BaseService)
 	knowledgehttp.RegisterKnowledgeDocumentRoutes(admin, runtime.DocumentService)
 	knowledgehttp.RegisterKnowledgeChunkRoutes(admin, runtime.ChunkService)
+	knowledgehttp.RegisterWikiPageRoutes(admin, runtime.WikiPageService)
 	settingshttp.RegisterRoutes(admin, cfg)
 }
 
