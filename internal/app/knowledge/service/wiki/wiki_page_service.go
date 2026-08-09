@@ -106,6 +106,31 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
+// GetGraph 从页面与链接组装图谱。
+func (s *WikiPageService) GetGraph(ctx context.Context, kbID string) (domain.WikiGraph, error) {
+	pages, _, err := s.pageRepo.ListByKB(ctx, kbID, 0, 1000)
+	if err != nil {
+		return domain.WikiGraph{}, err
+	}
+	links, err := s.linkRepo.ListByKB(ctx, kbID)
+	if err != nil {
+		return domain.WikiGraph{}, err
+	}
+	graph := domain.WikiGraph{Nodes: make([]domain.WikiGraphNode, 0, len(pages)), Edges: make([]domain.WikiGraphEdge, 0, len(links))}
+	for _, page := range pages {
+		graph.Nodes = append(graph.Nodes, domain.WikiGraphNode{
+			ID: page.ID, Slug: page.Slug, Title: page.Title, InLinks: page.InLinks, OutLinks: page.OutLinks,
+		})
+	}
+	for _, link := range links {
+		if link.TargetType != domain.WikiLinkTargetTypeWiki || link.FromPageID == "" || link.ToPageID == "" {
+			continue
+		}
+		graph.Edges = append(graph.Edges, domain.WikiGraphEdge{From: link.FromPageID, To: link.ToPageID, Anchor: link.Anchor})
+	}
+	return graph, nil
+}
+
 func (s *WikiPageService) GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error) {
 	return s.pageRepo.GetBySlug(ctx, kbID, slug)
 }

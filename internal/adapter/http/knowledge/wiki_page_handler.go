@@ -15,6 +15,7 @@ import (
 type WikiPageService interface {
 	GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error)
 	ListByKB(ctx context.Context, kbID string, page, pageSize int) ([]domain.WikiPage, int, error)
+	GetGraph(ctx context.Context, kbID string) (domain.WikiGraph, error)
 }
 
 type WikiPageHandler struct {
@@ -42,6 +43,7 @@ func RegisterWikiPageRoutes(r gin.IRoutes, service WikiPageService) {
 	handler := NewWikiPageHandler(service)
 	r.GET("/knowledge-base/:kb-id/wiki/pages", handler.List)
 	r.GET("/knowledge-base/:kb-id/wiki/pages/*slug", handler.Get)
+	r.GET("/knowledge-base/:kb-id/wiki/graph", handler.Graph)
 }
 
 func (h *WikiPageHandler) Get(c *gin.Context) {
@@ -56,6 +58,19 @@ func (h *WikiPageHandler) Get(c *gin.Context) {
 		return
 	}
 	writeSuccess(c, toWikiPageVO(page))
+}
+
+func (h *WikiPageHandler) Graph(c *gin.Context) {
+	if h == nil || h.service == nil {
+		_ = c.Error(exception.NewServiceException("wiki page service is required", nil))
+		return
+	}
+	graph, err := h.service.GetGraph(c.Request.Context(), c.Param("kb-id"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	writeSuccess(c, graph)
 }
 
 func (h *WikiPageHandler) List(c *gin.Context) {

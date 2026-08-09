@@ -80,6 +80,7 @@ type stubWikiLinkRepo struct {
 	outCounts    map[string]int
 	deletedValid []string
 	deletedCount int
+	links        []domain.WikiLink
 }
 
 func (s *stubWikiLinkRepo) CreateBatch(_ context.Context, links []domain.WikiLink) error {
@@ -91,7 +92,7 @@ func (s *stubWikiLinkRepo) ReplaceByKBAndFrom(_ context.Context, kbID, fromPageI
 	return nil
 }
 func (s *stubWikiLinkRepo) ListByKB(_ context.Context, kbID string) ([]domain.WikiLink, error) {
-	return nil, nil
+	return s.links, nil
 }
 func (s *stubWikiLinkRepo) DeleteMissingTargets(_ context.Context, kbID string, validPageIDs []string) (int, error) {
 	s.deletedValid = validPageIDs
@@ -419,5 +420,42 @@ func TestCleanDeadLinks(t *testing.T) {
 	want := []string{"a", "b"}
 	if !reflect.DeepEqual(linkRepo.deletedValid, want) {
 		t.Fatalf("validIDs = %#v, want %#v", linkRepo.deletedValid, want)
+	}
+}
+
+func TestGetGraph(t *testing.T) {
+	pageRepo := &stubWikiPageRepo{list: []domain.WikiPage{
+		{ID: "p1", Slug: "entity/go", Title: "Go", InLinks: 1, OutLinks: 1},
+		{ID: "p2", Slug: "concept/并发", Title: "并发", InLinks: 1, OutLinks: 0},
+	}}
+	linkRepo := &stubWikiLinkRepo{links: []domain.WikiLink{
+		{ID: "l1", FromPageID: "p1", ToPageID: "p2", TargetType: domain.WikiLinkTargetTypeWiki, Anchor: "并发"},
+		{ID: "l2", FromPageID: "p1", ToPageID: "", TargetType: domain.WikiLinkTargetTypeExternal, Anchor: "https://go.dev"},
+	}}
+	svc := NewWikiPageService(pageRepo, linkRepo)
+
+	graph, err := svc.GetGraph(context.Background(), "kb1")
+	if err != nil {
+		t.Fatalf("GetGraph: %v", err)
+	}
+	if len(graph.Nodes) != 2 {
+		t.Fatalf("nodes = %#v, want 2", graph.Nodes)
+	}
+	byID := map[string]domain.WikiGraphNode{}
+	for _, n := range graph.Nodes {
+		byID[n.ID] = n
+	}
+	if n := byID["p1"]; n.Slug != "entity/go" || n.Title != "Go" || n.InLinks != 1 || n.OutLinks != 1 {
+		t.Fatalf("node p1 = %+v", n)
+	}
+	if n := byID["p2"]; n.Slug != "concept/并发" || n.InLinks != 1 || n.OutLinks != 0 {
+		t.Fatalf("node p2 = %+v", n)
+	}
+	if len(graph.Edges) != 1 {
+		t.Fatalf("edges = %#v, want 1 (external filtered)", graph.Edges)
+	}
+	edge := graph.Edges[0]
+	if edge.From != "p1" || edge.To != "p2" || edge.Anchor != "并发" {
+		t.Fatalf("edge = %+v", edge)
 	}
 }

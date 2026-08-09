@@ -20,6 +20,7 @@ type wikiServiceStub struct {
 	total int
 	err   error
 	kbID  string
+	graph domain.WikiGraph
 }
 
 func (s *wikiServiceStub) GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error) {
@@ -41,6 +42,14 @@ func (s *wikiServiceStub) ListByKB(ctx context.Context, kbID string, page, pageS
 	}
 	s.kbID = kbID
 	return s.pages, s.total, nil
+}
+
+func (s *wikiServiceStub) GetGraph(ctx context.Context, kbID string) (domain.WikiGraph, error) {
+	if s.err != nil {
+		return domain.WikiGraph{}, s.err
+	}
+	s.kbID = kbID
+	return s.graph, nil
 }
 
 func newWikiRouter(svc knowledgehttp.WikiPageService) *gin.Engine {
@@ -113,6 +122,38 @@ func TestWikiPageHandlerList(t *testing.T) {
 	}
 	if result.Data.Total != 1 {
 		t.Fatalf("data = %+v", result.Data)
+	}
+	if svc.kbID != "kb1" {
+		t.Fatalf("kbID = %q, want kb1", svc.kbID)
+	}
+}
+
+func TestWikiPageHandlerGraph(t *testing.T) {
+	svc := &wikiServiceStub{graph: domain.WikiGraph{Nodes: []domain.WikiGraphNode{
+		{ID: "p1", Slug: "entity/go", Title: "Go"},
+		{ID: "p2", Slug: "concept/并发", Title: "并发"},
+	}}}
+	router := newWikiRouter(svc)
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/knowledge-base/kb1/wiki/graph", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Code string `json:"code"`
+		Data struct {
+			Nodes []domain.WikiGraphNode `json:"nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result.Data.Nodes) != 2 {
+		t.Fatalf("nodes = %+v, want 2", result.Data.Nodes)
+	}
+	if result.Data.Nodes[0].Slug != "entity/go" {
+		t.Fatalf("first node = %+v", result.Data.Nodes[0])
 	}
 	if svc.kbID != "kb1" {
 		t.Fatalf("kbID = %q, want kb1", svc.kbID)
