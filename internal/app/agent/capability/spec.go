@@ -18,6 +18,7 @@ const (
 	NameKnowledgeDiscovery      = "knowledge_discovery"
 	NameMemoryRecall            = "memory_recall"
 	NameContentSummarize        = "content_summarize"
+	NameWikiWrite               = "wiki_write"
 
 	FamilyExternalEvidence      = "external_evidence"
 	FamilyDocumentInvestigation = "document_investigation"
@@ -26,6 +27,7 @@ const (
 	FamilyMeta                  = "meta"
 	FamilyMemory                = "memory"
 	FamilyGeneration            = "generation"
+	FamilyWiki                  = "wiki"
 
 	RoleSearch                  = "search"
 	RoleFetch                   = "fetch"
@@ -36,6 +38,7 @@ const (
 	RoleThink                   = "think"
 	RoleRecall                  = "recall"
 	RoleSummarize               = "summarize"
+	RoleWriteWiki               = "write_wiki"
 
 	RiskLevelLow    = "low"
 	RiskLevelMedium = "medium"
@@ -111,6 +114,7 @@ var knownFamilies = map[string]string{
 	FamilyMeta:                  "reasoning",
 	FamilyMemory:                "memory",
 	FamilyGeneration:            "generation",
+	FamilyWiki:                  "generation",
 }
 
 var knownRoles = map[string]struct{}{
@@ -123,6 +127,7 @@ var knownRoles = map[string]struct{}{
 	RoleThink:                   {},
 	RoleRecall:                  {},
 	RoleSummarize:               {},
+	RoleWriteWiki:               {},
 }
 
 func isKnownFamily(family string) bool {
