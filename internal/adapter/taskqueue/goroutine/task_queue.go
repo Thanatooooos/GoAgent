@@ -76,7 +76,7 @@ func (q *TaskQueue) SubmitChunkDocument(ctx context.Context, task port.ChunkDocu
 			}
 		}()
 
-		if err := q.processor.ExecuteChunk(ctx, service.ExecuteChunkInput{
+		if err := q.processor.ExecuteChunk(q.ctx, service.ExecuteChunkInput{
 			DocumentID:  documentID,
 			TriggeredBy: strings.TrimSpace(task.TriggeredBy),
 		}); err != nil {
