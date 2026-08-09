@@ -161,7 +161,7 @@ type WikiGenerationOptions struct {
 
 type WikiGenerationResult struct {
 	Pages []domain.WikiPage // SourceDocumentIDs 已填文档 ID
-	Links []domain.WikiLink // from/to 为页面 slug（持久化时映射为 page id）
+	Links []domain.WikiLink // from/to 为页面 slug（P0 直接用 slug 持久化；slug→page id 映射在 P1）
 }
 
 type WikiGenerator interface {
