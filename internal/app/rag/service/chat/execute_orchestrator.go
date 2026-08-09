@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragcitation "local/rag-project/internal/app/rag/core/citation"
+	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/log"
@@ -53,10 +53,14 @@ func (s *RagChatService) runStreamingAnswer(
 	deepThinking bool,
 	expander *ragcitation.StreamExpander,
 	sink RagChatEventSink,
+	task *ragChatTask,
 ) (ragChatTaskResult, error) {
-	task := s.taskRegistry.New()
-	s.taskRegistry.Set(state.meta.TaskID, task, nil)
-	defer s.taskRegistry.Delete(state.meta.TaskID)
+	if task == nil {
+		return ragChatTaskResult{}, fmt.Errorf("rag chat task is required")
+	}
+	if task.Context().Err() != nil {
+		return ragChatTaskResult{cancelled: true}, nil
+	}
 
 	request := convention.ChatRequest{
 		Messages: messages,

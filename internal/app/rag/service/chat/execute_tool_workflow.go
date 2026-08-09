@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	agentapp "local/rag-project/internal/app/agent"
 	agentstate "local/rag-project/internal/app/agent/state"
 	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
@@ -78,7 +79,11 @@ func (s *RagChatService) runLegacyToolWorkflowStage(
 			NodeName: nodeName,
 		},
 		run: func(ctx context.Context) (ragChatToolStageResult, error) {
-			result, err := s.toolWorkflow.Run(ctx, ragtool.WorkflowInput{
+			resultCh := make(chan struct {
+				result ragtool.WorkflowResult
+				err    error
+			}, 1)
+			workflowInput := ragtool.WorkflowInput{
 				Question:           strings.TrimSpace(input.Question),
 				UserID:             strings.TrimSpace(input.UserID),
 				ConversationID:     strings.TrimSpace(input.ConversationID),
@@ -91,7 +96,22 @@ func (s *RagChatService) runLegacyToolWorkflowStage(
 				ContextTokenBudget: s.chatContextBudget.ToolTokens,
 				ContextEstimator:   s.chatContextBudget.Estimator,
 				EventSink:          ragChatWorkflowEventSink{sink: sink},
-			})
+			}
+			go func() {
+				result, err := s.toolWorkflow.Run(ctx, workflowInput)
+				resultCh <- struct {
+					result ragtool.WorkflowResult
+					err    error
+				}{result: result, err: err}
+			}()
+			var result ragtool.WorkflowResult
+			var err error
+			select {
+			case <-ctx.Done():
+				return ragChatToolStageResult{}, ctx.Err()
+			case completed := <-resultCh:
+				result, err = completed.result, completed.err
+			}
 			if err != nil {
 				return ragChatToolStageResult{}, err
 			}
@@ -199,7 +219,25 @@ func (s *RagChatService) runAgentToolWorkflowStage(
 		run: func(ctx context.Context) (ragChatToolStageResult, error) {
 			req := buildAgentToolStageRequest(input, traceID, history, memoryContext, sessionContext, rewriteResult, retrieveResult)
 			req.Options.OutputMode = agentstate.OutputModeFinalAnswer
-			run, err := s.agentRuntime.RunDetailed(ctx, req)
+			runCh := make(chan struct {
+				run agentapp.RunResponse
+				err error
+			}, 1)
+			go func() {
+				run, err := s.agentRuntime.RunDetailed(ctx, req)
+				runCh <- struct {
+					run agentapp.RunResponse
+					err error
+				}{run: run, err: err}
+			}()
+			var run agentapp.RunResponse
+			var err error
+			select {
+			case <-ctx.Done():
+				return ragChatToolStageResult{}, ctx.Err()
+			case completed := <-runCh:
+				run, err = completed.run, completed.err
+			}
 			if err != nil {
 				payload := newRagChatAgentServiceErrorPayload(err)
 				return ragChatToolStageResult{

@@ -46,6 +46,10 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		_ = sink.SendDone()
 		return err
 	}
+	task := s.taskRegistry.New(ctx)
+	s.taskRegistry.Set(prepared.state.meta.TaskID, task, nil)
+	defer s.taskRegistry.Delete(prepared.state.meta.TaskID)
+	ctx = task.Context()
 
 	if err := sink.SendMeta(prepared.state.meta); err != nil {
 		return err
@@ -86,6 +90,9 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		sink,
 	)
 	if err != nil {
+		if ctx.Err() != nil {
+			return s.handleChatCancellation(ctx, input, prepared.state, sink)
+		}
 		logRagChatTerminalError(ctx, "tool_stage", err)
 		toolStage = ragChatToolStageResult{
 			result: ragtool.WorkflowResult{
@@ -93,6 +100,9 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 				DegradeReason: err.Error(),
 			},
 		}
+	}
+	if ctx.Err() != nil {
+		return s.handleChatCancellation(ctx, input, prepared.state, sink)
 	}
 	toolStage = s.applyToolContextBudget(ctx, prepared.state.traceID, toolStage)
 	logRagChatToolStageResult(ctx, toolStage)
@@ -141,11 +151,17 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		prepared.state.traceID,
 	)
 	if err != nil {
+		if ctx.Err() != nil {
+			return s.handleChatCancellation(ctx, input, prepared.state, sink)
+		}
 		logRagChatTerminalError(ctx, "prompt_stage", err)
 		s.tracer.finishTraceRun(ctx, prepared.state.traceID, ragTraceStatusFailed, err)
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
 		return err
+	}
+	if ctx.Err() != nil {
+		return s.handleChatCancellation(ctx, input, prepared.state, sink)
 	}
 
 	result, err := s.runStreamingAnswer(
@@ -156,6 +172,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		input.DeepThinking,
 		expander,
 		sink,
+		task,
 	)
 	if err != nil {
 		logRagChatTerminalError(ctx, "streaming_answer", err)
@@ -166,12 +183,21 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	}
 
 	if result.cancelled {
-		return s.handleCancelledResult(ctx, input, prepared.state, result, sink)
+		return s.handleChatCancellation(ctx, input, prepared.state, sink)
 	}
 	if result.err != nil {
 		return s.handleFailedResult(ctx, prepared.state, result, sink)
 	}
 	return s.handleSucceededResult(ctx, input, prepared.state, result, sink)
+}
+
+func (s *RagChatService) handleChatCancellation(
+	ctx context.Context,
+	input RagChatInput,
+	state ragChatRuntimeState,
+	sink RagChatEventSink,
+) error {
+	return s.handleCancelledResult(context.WithoutCancel(ctx), input, state, ragChatTaskResult{cancelled: true}, sink)
 }
 
 func (s *RagChatService) CancelTask(taskID string) bool {

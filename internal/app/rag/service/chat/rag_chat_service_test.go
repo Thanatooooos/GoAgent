@@ -335,6 +335,17 @@ func (s *toolWorkflowStub) Run(ctx context.Context, input ragtool.WorkflowInput)
 	return s.result, s.err
 }
 
+type blockingToolWorkflowStub struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingToolWorkflowStub) Run(_ context.Context, _ ragtool.WorkflowInput) (ragtool.WorkflowResult, error) {
+	close(s.started)
+	<-s.release
+	return ragtool.WorkflowResult{}, nil
+}
+
 type streamHandleStub struct {
 	cancelled bool
 }
@@ -403,6 +414,17 @@ type fallbackSinkStub struct {
 	toolNames       []string
 	toolStarts      []ragtool.ToolCallEvent
 	toolResults     []ragtool.ToolCallEvent
+}
+
+type metaCaptureSink struct {
+	fallbackSinkStub
+	metaCh chan RagChatMeta
+}
+
+func (s *metaCaptureSink) SendMeta(meta RagChatMeta) error {
+	s.fallbackSinkStub.SendMeta(meta)
+	s.metaCh <- meta
+	return nil
 }
 
 func (s *fallbackSinkStub) SendMeta(meta RagChatMeta) error {
@@ -1344,6 +1366,64 @@ func newPrepareChatTestService(
 	}
 	service := mustNewTestRagChatService(t, deps, opts)
 	return service, &createdMessage
+}
+
+func TestChatRegistersTaskBeforePostMetaStages(t *testing.T) {
+	workflow := &blockingToolWorkflowStub{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	service, _ := newPrepareChatTestService(
+		t,
+		/*
+			rегrewrite.Result{RewrittenQuestion: "How do Go generics work", NeedRetrieval: true},
+		*/
+		ragrewrite.Result{RewrittenQuestion: "How do Go generics work", NeedRetrieval: true},
+		nil,
+		&retrieveServiceStub{},
+		func(_ *RagChatDeps, opts *RagChatOptions) {
+			opts.ToolWorkflow = workflow
+		},
+	)
+	sink := &metaCaptureSink{metaCh: make(chan RagChatMeta, 1)}
+	done := make(chan error, 1)
+	go func() {
+		done <- service.Chat(context.Background(), RagChatInput{
+			UserID:   "user-1",
+			Question: "How do Go generics work",
+		}, sink)
+	}()
+
+	var meta RagChatMeta
+	select {
+	case meta = <-sink.metaCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for chat meta")
+	}
+	select {
+	case <-workflow.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for tool workflow")
+	}
+
+	cancelled := service.CancelTask(meta.TaskID)
+	close(workflow.release)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("chat returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for cancelled chat")
+	}
+
+	if !cancelled {
+		t.Fatalf("expected task %q to be cancellable after meta, got false", meta.TaskID)
+	}
+	if sink.cancelCalls != 1 {
+		t.Fatalf("expected one cancel event, got %d", sink.cancelCalls)
+	}
 }
 
 func TestRunSessionRecallStageUsesRewrittenQuestion(t *testing.T) {

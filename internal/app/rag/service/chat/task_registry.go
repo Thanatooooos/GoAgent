@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"strings"
 	"sync"
 
@@ -8,7 +9,11 @@ import (
 )
 
 type ragChatTask struct {
-	handle aichat.StreamCancellationHandle
+	ctx       context.Context
+	cancelFn  context.CancelFunc
+	mu        sync.Mutex
+	handle    aichat.StreamCancellationHandle
+	cancelled bool
 
 	cancelOnce sync.Once
 	cancelCh   chan struct{}
@@ -35,20 +40,35 @@ func NewTaskRegistry() *TaskRegistry {
 	}
 }
 
-func (r *TaskRegistry) New() *ragChatTask {
+func (r *TaskRegistry) New(parent context.Context) *ragChatTask {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
 	return &ragChatTask{
+		ctx:      ctx,
+		cancelFn: cancel,
 		cancelCh: make(chan struct{}),
 		doneCh:   make(chan ragChatTaskResult, 1),
 	}
 }
 
 func (r *TaskRegistry) Set(taskID string, task *ragChatTask, handle aichat.StreamCancellationHandle) {
+	var cancelHandle aichat.StreamCancellationHandle
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if task != nil {
+		task.mu.Lock()
 		task.handle = handle
+		if task.cancelled {
+			cancelHandle = handle
+		}
+		task.mu.Unlock()
 	}
 	r.tasks[taskID] = task
+	r.mu.Unlock()
+	if cancelHandle != nil {
+		cancelHandle.Cancel()
+	}
 }
 
 func (r *TaskRegistry) Delete(taskID string) {
@@ -69,10 +89,24 @@ func (r *TaskRegistry) Cancel(taskID string) bool {
 		return false
 	}
 	task.cancelOnce.Do(func() {
+		task.mu.Lock()
+		task.cancelled = true
+		handle := task.handle
+		task.mu.Unlock()
 		close(task.cancelCh)
-		if task.handle != nil {
-			task.handle.Cancel()
+		if task.cancelFn != nil {
+			task.cancelFn()
+		}
+		if handle != nil {
+			handle.Cancel()
 		}
 	})
 	return true
+}
+
+func (t *ragChatTask) Context() context.Context {
+	if t == nil || t.ctx == nil {
+		return context.Background()
+	}
+	return t.ctx
 }
