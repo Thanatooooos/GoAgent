@@ -3,6 +3,8 @@ package wiki
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 
 	"local/rag-project/internal/app/knowledge/domain"
@@ -15,6 +17,7 @@ type stubWikiPageRepo struct {
 	deleted  bool
 	offset   int
 	limit    int
+	list     []domain.WikiPage
 }
 
 func (s *stubWikiPageRepo) Upsert(_ context.Context, page domain.WikiPage) (domain.WikiPage, error) {
@@ -35,7 +38,7 @@ func (s *stubWikiPageRepo) GetBySlug(_ context.Context, kbID, slug string) (doma
 func (s *stubWikiPageRepo) ListByKB(_ context.Context, kbID string, offset, limit int) ([]domain.WikiPage, int, error) {
 	s.offset = offset
 	s.limit = limit
-	return nil, 0, nil
+	return s.list, len(s.list), nil
 }
 func (s *stubWikiPageRepo) ListBySlugs(_ context.Context, kbID string, slugs []string) ([]domain.WikiPage, error) {
 	requested := make(map[string]bool, len(slugs))
@@ -65,8 +68,12 @@ type replacedLinks struct {
 }
 
 type stubWikiLinkRepo struct {
-	created  [][]domain.WikiLink
-	replaced []replacedLinks
+	created       [][]domain.WikiLink
+	replaced      []replacedLinks
+	inCounts      map[string]int
+	outCounts     map[string]int
+	deletedValid  []string
+	deletedCount  int
 }
 
 func (s *stubWikiLinkRepo) CreateBatch(_ context.Context, links []domain.WikiLink) error {
@@ -81,10 +88,11 @@ func (s *stubWikiLinkRepo) ListByKB(_ context.Context, kbID string) ([]domain.Wi
 	return nil, nil
 }
 func (s *stubWikiLinkRepo) DeleteMissingTargets(_ context.Context, kbID string, validPageIDs []string) (int, error) {
-	return 0, nil
+	s.deletedValid = validPageIDs
+	return s.deletedCount, nil
 }
 func (s *stubWikiLinkRepo) CountLinksByPage(_ context.Context, kbID string) (map[string]int, map[string]int, error) {
-	return map[string]int{}, map[string]int{}, nil
+	return s.inCounts, s.outCounts, nil
 }
 
 func TestUpsertPagesFromDocumentPersistsPagesAndLinks(t *testing.T) {
@@ -241,5 +249,121 @@ func TestListByKBNormalizesPagination(t *testing.T) {
 	}
 	if pageRepo.offset != 10 || pageRepo.limit != 5 {
 		t.Fatalf("page=3 size=5: offset=%d limit=%d, want 10/5", pageRepo.offset, pageRepo.limit)
+	}
+}
+
+func TestLinkifyAndPersistWritesLinks(t *testing.T) {
+	pageRepo := &stubWikiPageRepo{list: []domain.WikiPage{
+		{ID: "p1", Slug: "entity/go", Title: "Go"},
+		{ID: "t1", Slug: "concept/并发", Title: "并发"},
+	}}
+	linkRepo := &stubWikiLinkRepo{}
+	svc := NewWikiPageService(pageRepo, linkRepo)
+
+	pages := []domain.WikiPage{
+		{ID: "p1", Slug: "entity/go", Title: "Go", Content: "参考 并发。"},
+	}
+	n, err := svc.LinkifyAndPersist(context.Background(), "kb1", pages)
+	if err != nil {
+		t.Fatalf("LinkifyAndPersist: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("link count = %d, want 1", n)
+	}
+	if len(pageRepo.upserted) != 1 {
+		t.Fatalf("upserted = %d, want 1", len(pageRepo.upserted))
+	}
+	if content := pageRepo.upserted[0].Content; !strings.Contains(content, "[[concept/并发|并发]]") {
+		t.Fatalf("content missing link: %s", content)
+	}
+	if len(linkRepo.replaced) != 1 {
+		t.Fatalf("replaced = %#v, want 1 entry", linkRepo.replaced)
+	}
+	entry := linkRepo.replaced[0]
+	if entry.from != "p1" {
+		t.Fatalf("replaced from = %q, want p1 (real page id)", entry.from)
+	}
+	if len(entry.links) != 1 {
+		t.Fatalf("links for p1 = %#v, want 1", entry.links)
+	}
+}
+
+func TestLinkifyAndPersistClearsStaleLinks(t *testing.T) {
+	pageRepo := &stubWikiPageRepo{list: []domain.WikiPage{
+		{ID: "p1", Slug: "entity/go", Title: "Go"},
+		{ID: "t1", Slug: "concept/并发", Title: "并发"},
+	}}
+	linkRepo := &stubWikiLinkRepo{}
+	svc := NewWikiPageService(pageRepo, linkRepo)
+
+	pages := []domain.WikiPage{
+		{ID: "p1", Slug: "entity/go", Title: "Go", Content: "无关联内容。"},
+	}
+	n, err := svc.LinkifyAndPersist(context.Background(), "kb1", pages)
+	if err != nil {
+		t.Fatalf("LinkifyAndPersist: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("link count = %d, want 0", n)
+	}
+	if len(linkRepo.replaced) != 1 {
+		t.Fatalf("replaced = %#v, want 1 entry", linkRepo.replaced)
+	}
+	entry := linkRepo.replaced[0]
+	if entry.from != "p1" {
+		t.Fatalf("replaced from = %q, want p1", entry.from)
+	}
+	if len(entry.links) != 0 {
+		t.Fatalf("expected empty group to clear stale links, got %#v", entry.links)
+	}
+}
+
+func TestRebuildLinkCounts(t *testing.T) {
+	pageRepo := &stubWikiPageRepo{list: []domain.WikiPage{
+		{ID: "pageA", Slug: "a"},
+		{ID: "pageB", Slug: "b"},
+		{ID: "pageC", Slug: "c"},
+	}}
+	linkRepo := &stubWikiLinkRepo{
+		inCounts:  map[string]int{"pageA": 2},
+		outCounts: map[string]int{"pageB": 1},
+	}
+	svc := NewWikiPageService(pageRepo, linkRepo)
+
+	if err := svc.RebuildLinkCounts(context.Background(), "kb1"); err != nil {
+		t.Fatalf("RebuildLinkCounts: %v", err)
+	}
+	if pageRepo.counts == nil {
+		t.Fatalf("UpdateLinkCounts not called")
+	}
+	if c := pageRepo.counts["pageA"]; c.In != 2 || c.Out != 0 {
+		t.Fatalf("counts[pageA] = %+v, want {2 0}", c)
+	}
+	if c := pageRepo.counts["pageB"]; c.In != 0 || c.Out != 1 {
+		t.Fatalf("counts[pageB] = %+v, want {0 1}", c)
+	}
+	if c := pageRepo.counts["pageC"]; c.In != 0 || c.Out != 0 {
+		t.Fatalf("counts[pageC] = %+v, want {0 0} (zero-reset)", c)
+	}
+}
+
+func TestCleanDeadLinks(t *testing.T) {
+	pageRepo := &stubWikiPageRepo{list: []domain.WikiPage{
+		{ID: "a", Slug: "a"},
+		{ID: "b", Slug: "b"},
+	}}
+	linkRepo := &stubWikiLinkRepo{deletedCount: 2}
+	svc := NewWikiPageService(pageRepo, linkRepo)
+
+	n, err := svc.CleanDeadLinks(context.Background(), "kb1")
+	if err != nil {
+		t.Fatalf("CleanDeadLinks: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("cleaned = %d, want 2", n)
+	}
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(linkRepo.deletedValid, want) {
+		t.Fatalf("validIDs = %#v, want %#v", linkRepo.deletedValid, want)
 	}
 }

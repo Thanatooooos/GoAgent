@@ -120,3 +120,73 @@ func (s *WikiPageService) ListByKB(ctx context.Context, kbID string, page, pageS
 	offset := (page - 1) * pageSize
 	return s.pageRepo.ListByKB(ctx, kbID, offset, pageSize)
 }
+
+// LinkifyAndPersist 对 batch 页面做交叉链接注入并持久化内容与派生链接；
+// 每个页面无条件 ReplaceByKBAndFrom（空组即清除该源旧链接，保证 re-ingest 收敛）。
+// 返回注入的链接数。
+func (s *WikiPageService) LinkifyAndPersist(ctx context.Context, kbID string, pages []domain.WikiPage) (int, error) {
+	allPages, _, err := s.pageRepo.ListByKB(ctx, kbID, 0, 1000)
+	if err != nil {
+		return 0, err
+	}
+	builder := &WikiLinkBuilder{}
+	slugToID := make(map[string]string, len(allPages))
+	for _, page := range allPages {
+		slugToID[page.Slug] = page.ID
+	}
+	total := 0
+	for _, page := range pages {
+		page.KnowledgeBaseID = kbID
+		updated, links, linkErr := builder.LinkifyPage(ctx, kbID, page, allPages)
+		if linkErr != nil {
+			return 0, linkErr
+		}
+		if _, err := s.pageRepo.Upsert(ctx, updated); err != nil {
+			return 0, err
+		}
+		pageID := slugToID[updated.Slug]
+		resolved, err := s.resolveLinkIDs(ctx, kbID, links, slugToID)
+		if err != nil {
+			return 0, err
+		}
+		// 无条件 replace：空组清除该源旧链接（收敛）
+		if err := s.linkRepo.ReplaceByKBAndFrom(ctx, kbID, pageID, resolved); err != nil {
+			return 0, err
+		}
+		total += len(resolved)
+	}
+	return total, nil
+}
+
+// RebuildLinkCounts 从 wiki_link 重算每页 in/out 计数并写回；无链接的页面写 0。
+func (s *WikiPageService) RebuildLinkCounts(ctx context.Context, kbID string) error {
+	in, out, err := s.linkRepo.CountLinksByPage(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	pages, _, err := s.pageRepo.ListByKB(ctx, kbID, 0, 1000)
+	if err != nil {
+		return err
+	}
+	counts := make(map[string]domain.WikiLinkCounts, len(pages))
+	for _, page := range pages {
+		c := counts[page.ID]
+		c.In = in[page.ID]
+		c.Out = out[page.ID]
+		counts[page.ID] = c
+	}
+	return s.pageRepo.UpdateLinkCounts(ctx, kbID, counts)
+}
+
+// CleanDeadLinks 删除指向不存在页面的 wiki 链接，返回清理数。
+func (s *WikiPageService) CleanDeadLinks(ctx context.Context, kbID string) (int, error) {
+	pages, _, err := s.pageRepo.ListByKB(ctx, kbID, 0, 1000)
+	if err != nil {
+		return 0, err
+	}
+	validIDs := make([]string, 0, len(pages))
+	for _, page := range pages {
+		validIDs = append(validIDs, page.ID)
+	}
+	return s.linkRepo.DeleteMissingTargets(ctx, kbID, validIDs)
+}
