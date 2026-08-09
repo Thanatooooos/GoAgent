@@ -54,7 +54,7 @@ func (g *llmWikiGenerator) GenerateFromDocument(_ context.Context, title, conten
 	if err != nil {
 		return empty, nil // 降级
 	}
-	return parseWikiGeneration(response, pageType)
+	return parseWikiGeneration(response, pageType, options.MaxPages)
 }
 
 type wikiGenerationJSON struct {
@@ -73,14 +73,14 @@ type wikiGenerationJSON struct {
 }
 
 // parseWikiGeneration 解析严格 JSON 并做确定性校验：
-// slug 非空且唯一、type 在 {entity, concept}、链接 from/to 必须命中本批 slug。
-func parseWikiGeneration(raw, defaultType string) (WikiGenerationResult, error) {
+// slug 非空且唯一、type 在 {entity, concept}、页面数量受 maxPages 限制、
+// 链接 from/to 必须命中最终保留的 slug。
+func parseWikiGeneration(raw, defaultType string, maxPages int) (WikiGenerationResult, error) {
 	empty := WikiGenerationResult{}
 	var parsed wikiGenerationJSON
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return empty, nil // 降级
 	}
-	slugSet := make([]string, 0, len(parsed.Pages))
 	seen := map[string]bool{}
 	result := WikiGenerationResult{Pages: make([]domain.WikiPage, 0, len(parsed.Pages))}
 	for _, item := range parsed.Pages {
@@ -96,7 +96,6 @@ func parseWikiGeneration(raw, defaultType string) (WikiGenerationResult, error) 
 			continue
 		}
 		seen[slug] = true
-		slugSet = append(slugSet, slug)
 		title := strings.TrimSpace(item.Title)
 		if title == "" {
 			title = slug
@@ -109,8 +108,15 @@ func parseWikiGeneration(raw, defaultType string) (WikiGenerationResult, error) 
 			Summary:  strings.TrimSpace(item.Summary),
 		})
 	}
+	if maxPages > 0 && len(result.Pages) > maxPages {
+		result.Pages = result.Pages[:maxPages]
+	}
 	if len(result.Pages) == 0 {
 		return result, nil
+	}
+	slugSet := make([]string, 0, len(result.Pages))
+	for _, page := range result.Pages {
+		slugSet = append(slugSet, page.Slug)
 	}
 	validator := llmgen.NewRefValidator(slugSet)
 	for _, item := range parsed.Links {

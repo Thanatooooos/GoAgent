@@ -68,12 +68,13 @@ func TestUpsertPagesFromDocumentPersistsPagesAndLinks(t *testing.T) {
 	linkRepo := &stubWikiLinkRepo{}
 	svc := NewWikiPageService(pageRepo, linkRepo)
 
+	// fixtures 不带 KnowledgeBaseID：service 必须负责 stamp，否则会落到 kb_id=''。
 	pages := []domain.WikiPage{
-		{ID: "p1", KnowledgeBaseID: "kb1", Slug: "entity/go", Title: "Go", PageType: domain.WikiPageTypeEntity, Status: domain.WikiPageStatusPublished, Content: "content", CreatedBy: "u"},
-		{ID: "p2", KnowledgeBaseID: "kb1", Slug: "concept/并发", Title: "并发", PageType: domain.WikiPageTypeConcept, Status: domain.WikiPageStatusPublished, Content: "content", CreatedBy: "u"},
+		{ID: "p1", Slug: "entity/go", Title: "Go", PageType: domain.WikiPageTypeEntity, Status: domain.WikiPageStatusPublished, Content: "content", CreatedBy: "u"},
+		{ID: "p2", Slug: "concept/并发", Title: "并发", PageType: domain.WikiPageTypeConcept, Status: domain.WikiPageStatusPublished, Content: "content", CreatedBy: "u"},
 	}
 	links := []domain.WikiLink{
-		{ID: "l1", KnowledgeBaseID: "kb1", FromPageID: "entity/go", ToPageID: "concept/并发", TargetType: domain.WikiLinkTargetTypeWiki, Anchor: "并发"},
+		{ID: "l1", FromPageID: "entity/go", ToPageID: "concept/并发", TargetType: domain.WikiLinkTargetTypeWiki, Anchor: "并发"},
 	}
 
 	if err := svc.UpsertPagesFromDocument(context.Background(), "kb1", pages, links); err != nil {
@@ -81,6 +82,11 @@ func TestUpsertPagesFromDocumentPersistsPagesAndLinks(t *testing.T) {
 	}
 	if len(pageRepo.upserted) != 2 {
 		t.Fatalf("upserted pages = %d, want 2", len(pageRepo.upserted))
+	}
+	for _, page := range pageRepo.upserted {
+		if page.KnowledgeBaseID != "kb1" {
+			t.Fatalf("upserted page %q has kbID=%q, want kb1", page.Slug, page.KnowledgeBaseID)
+		}
 	}
 	if len(linkRepo.replaced) != 2 {
 		t.Fatalf("replaced = %#v, want 2 entries", linkRepo.replaced)
@@ -93,6 +99,9 @@ func TestUpsertPagesFromDocumentPersistsPagesAndLinks(t *testing.T) {
 	}
 	if len(goLinks) != 1 {
 		t.Fatalf("links for entity/go = %#v, want 1", goLinks)
+	}
+	if goLinks[0].KnowledgeBaseID != "kb1" {
+		t.Fatalf("link for entity/go has kbID=%q, want kb1", goLinks[0].KnowledgeBaseID)
 	}
 	if len(linkRepo.created) != 0 {
 		t.Fatalf("created = %#v, want empty", linkRepo.created)

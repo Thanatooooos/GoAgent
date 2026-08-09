@@ -34,7 +34,9 @@ func (r *WikiPageRepository) Upsert(ctx context.Context, page domain.WikiPage) (
 	if err != nil {
 		return domain.WikiPage{}, err
 	}
-	if page.CreatedAt.IsZero() {
+	if existing.ID != "" {
+		page.CreatedAt = existing.CreateTime
+	} else if page.CreatedAt.IsZero() {
 		page.CreatedAt = time.Now()
 	}
 	page.UpdatedAt = time.Now()

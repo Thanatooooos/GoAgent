@@ -24,6 +24,7 @@ func NewWikiPageService(pageRepo port.WikiPageRepository, linkRepo port.WikiLink
 func (s *WikiPageService) UpsertPagesFromDocument(ctx context.Context, kbID string, pages []domain.WikiPage, links []domain.WikiLink) error {
 	linksByFrom := map[string][]domain.WikiLink{}
 	for _, link := range links {
+		link.KnowledgeBaseID = kbID
 		from := strings.TrimSpace(link.FromPageID)
 		if from == "" {
 			continue
@@ -31,6 +32,7 @@ func (s *WikiPageService) UpsertPagesFromDocument(ctx context.Context, kbID stri
 		linksByFrom[from] = append(linksByFrom[from], link)
 	}
 	for _, page := range pages {
+		page.KnowledgeBaseID = kbID
 		if _, err := s.pageRepo.Upsert(ctx, page); err != nil {
 			return err
 		}

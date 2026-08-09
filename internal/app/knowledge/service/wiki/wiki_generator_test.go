@@ -61,6 +61,26 @@ func TestGenerateFromDocumentRejectsInvalidSlugsAndLinks(t *testing.T) {
 	}
 }
 
+func TestGenerateFromDocumentEnforcesMaxPages(t *testing.T) {
+	raw := `{"pages":[{"slug":"entity/a","title":"A","type":"entity"},{"slug":"entity/b","title":"B","type":"entity"},{"slug":"entity/c","title":"C","type":"entity"}],"links":[{"from":"entity/a","to":"entity/b","anchor":"ab"},{"from":"entity/a","to":"entity/c","anchor":"ac"}]}`
+	client := &stubChatCompleter{response: raw}
+	g := NewLLMWikiGenerator(client)
+	result, err := g.GenerateFromDocument(context.Background(), "t", "c", WikiGenerationOptions{MaxPages: 2})
+	if err != nil {
+		t.Fatalf("GenerateFromDocument: %v", err)
+	}
+	if len(result.Pages) != 2 {
+		t.Fatalf("pages = %d, want 2", len(result.Pages))
+	}
+	if result.Pages[0].Slug != "entity/a" || result.Pages[1].Slug != "entity/b" {
+		t.Fatalf("pages = %#v", result.Pages)
+	}
+	// 链接指向被截断的 entity/c → 拒绝；指向保留的 entity/b → 保留。
+	if len(result.Links) != 1 || result.Links[0].ToPageID != "entity/b" {
+		t.Fatalf("links = %#v, want only to entity/b", result.Links)
+	}
+}
+
 func TestGenerateFromDocumentDegradesOnLLMError(t *testing.T) {
 	client := &stubChatCompleter{err: context.DeadlineExceeded}
 	g := NewLLMWikiGenerator(client)
