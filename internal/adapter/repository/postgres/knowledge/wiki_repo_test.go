@@ -112,3 +112,22 @@ func TestWikiModelTableNames(t *testing.T) {
 		t.Fatalf("unexpected wiki link table name: %q", got)
 	}
 }
+
+func TestResolveWikiPageID(t *testing.T) {
+	t.Parallel()
+
+	r := &WikiPageRepository{}
+	id, err := r.resolvePageID("", "")
+	if err != nil || id == "" {
+		t.Fatalf("empty ids should generate a new id, got %q err=%v", id, err)
+	}
+	if got, _ := r.resolvePageID("existing-1", ""); got != "existing-1" {
+		t.Fatalf("existing id should be reused, got %q", got)
+	}
+	if got, _ := r.resolvePageID("existing-1", "new-1"); got != "existing-1" {
+		t.Fatalf("existing id wins over supplied, got %q", got)
+	}
+	if got, _ := r.resolvePageID("", "new-1"); got != "new-1" {
+		t.Fatalf("supplied id used when no existing, got %q", got)
+	}
+}

@@ -3,13 +3,16 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
 	"local/rag-project/internal/adapter/repository/postgres/knowledge/models"
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
+	"local/rag-project/internal/framework/distributedid"
 	"local/rag-project/internal/framework/exception"
 )
 
@@ -22,19 +25,47 @@ func NewWikiPageRepository(db *gorm.DB) port.WikiPageRepository {
 }
 
 func (r *WikiPageRepository) Upsert(ctx context.Context, page domain.WikiPage) (domain.WikiPage, error) {
-	model := toWikiPageModel(page)
-	err := r.db.WithContext(ctx).Where("kb_id = ? AND slug = ?", page.KnowledgeBaseID, page.Slug).Save(model).Error
+	var existing models.WikiPageModel
+	err := r.db.WithContext(ctx).Where("kb_id = ? AND slug = ?", page.KnowledgeBaseID, page.Slug).First(&existing).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.WikiPage{}, fmt.Errorf("find wiki page by slug for upsert: %w", err)
+	}
+	page.ID, err = r.resolvePageID(existing.ID, page.ID)
 	if err != nil {
+		return domain.WikiPage{}, err
+	}
+	if page.CreatedAt.IsZero() {
+		page.CreatedAt = time.Now()
+	}
+	page.UpdatedAt = time.Now()
+	model := toWikiPageModel(page)
+	if err := r.db.WithContext(ctx).Save(&model).Error; err != nil {
 		return domain.WikiPage{}, fmt.Errorf("upsert wiki page: %w", err)
 	}
-	return page, nil
+	return toWikiPageDomain(model), nil
+}
+
+// resolvePageID 决定 upsert 使用的页面 ID：已存在行优先，其次调用方传入，
+// 否则生成新的分布式 ID。
+func (r *WikiPageRepository) resolvePageID(existingID, pageID string) (string, error) {
+	if existingID != "" {
+		return existingID, nil
+	}
+	if pageID != "" {
+		return pageID, nil
+	}
+	id, err := distributedid.NextID()
+	if err != nil {
+		return "", fmt.Errorf("generate wiki page id: %w", err)
+	}
+	return fmt.Sprintf("%d", id), nil
 }
 
 func (r *WikiPageRepository) GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error) {
 	var model models.WikiPageModel
 	err := r.db.WithContext(ctx).Where("kb_id = ? AND slug = ?", kbID, slug).First(&model).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.WikiPage{}, exception.NewClientException("wiki page not found", nil)
 		}
 		return domain.WikiPage{}, fmt.Errorf("get wiki page by slug: %w", err)
