@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"strconv"
 	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	"strings"
 
@@ -117,12 +118,18 @@ func (r *EnhancerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Ex
 		}
 		if includesEnrichmentTask(tasks, "questions") {
 			for index := range next.Chunks {
-				questions, err := r.documentEnricher.GenerateQuestions(ctx, next.Parsed.Title, next.Chunks[index].Content, options)
+				chunkOptions := options
+				chunkOptions.SourceChunkID = strconv.Itoa(next.Chunks[index].Index)
+				result, err := r.documentEnricher.GenerateQuestions(ctx, next.Parsed.Title, next.Chunks[index].Content, chunkOptions)
 				if err != nil {
 					llmDegraded = true
 					continue
 				}
-				next.Chunks[index].Questions = normalizeGeneratedQuestions(questions, options.QuestionCount, options.MaxQuestionLength)
+				next.Chunks[index].Questions = questionTexts(result.Questions)
+				if result.RejectedRefs > 0 {
+					llmDegraded = true
+					next.Artifacts["enhancerRejectedQuestionRefs"] = result.RejectedRefs
+				}
 			}
 		}
 	}
