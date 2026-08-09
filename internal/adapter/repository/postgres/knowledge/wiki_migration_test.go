@@ -25,3 +25,17 @@ func TestWikiMigrationDefinesTablesAndUniqueSlug(t *testing.T) {
 		}
 	}
 }
+
+func TestWikiP1MigrationAddsLinkCountColumns(t *testing.T) {
+	path := filepath.Join("..", "migrations", "20260810000000_add_wiki_link_counts.sql")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(content)
+	for _, token := range []string{"in_links INT", "out_links INT"} {
+		if !strings.Contains(sql, token) {
+			t.Fatalf("migration should contain %q", token)
+		}
+	}
+}
