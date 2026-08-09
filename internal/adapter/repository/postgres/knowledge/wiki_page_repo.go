@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -99,6 +100,46 @@ func (r *WikiPageRepository) ListBySlugs(ctx context.Context, kbID string, slugs
 	var rows []models.WikiPageModel
 	if err := r.db.WithContext(ctx).Where("kb_id = ? AND slug IN ?", kbID, slugs).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list wiki pages by slugs: %w", err)
+	}
+	pages := make([]domain.WikiPage, 0, len(rows))
+	for _, row := range rows {
+		pages = append(pages, toWikiPageDomain(row))
+	}
+	return pages, nil
+}
+
+func (r *WikiPageRepository) Search(ctx context.Context, kbID, query string, limit int) ([]domain.WikiPage, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	like := "%" + query + "%"
+	var rows []models.WikiPageModel
+	err := r.db.WithContext(ctx).
+		Where("kb_id = ? AND (title ILIKE ? OR slug ILIKE ? OR summary ILIKE ? OR content ILIKE ?)", kbID, like, like, like, like).
+		Order(gorm.Expr("CASE WHEN title ILIKE ? THEN 0 WHEN slug ILIKE ? THEN 1 WHEN summary ILIKE ? THEN 2 ELSE 3 END ASC, update_time DESC", like, like, like)).
+		Limit(limit).
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("search wiki pages: %w", err)
+	}
+	pages := make([]domain.WikiPage, 0, len(rows))
+	for _, row := range rows {
+		pages = append(pages, toWikiPageDomain(row))
+	}
+	return pages, nil
+}
+
+func (r *WikiPageRepository) ListByIDs(ctx context.Context, kbID string, ids []string) ([]domain.WikiPage, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []models.WikiPageModel
+	if err := r.db.WithContext(ctx).Where("kb_id = ? AND id IN ?", kbID, ids).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list wiki pages by ids: %w", err)
 	}
 	pages := make([]domain.WikiPage, 0, len(rows))
 	for _, row := range rows {

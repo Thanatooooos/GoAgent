@@ -13,6 +13,10 @@ type WikiPageRepository interface {
 	ListBySlugs(ctx context.Context, kbID string, slugs []string) ([]domain.WikiPage, error)
 	UpdateLinkCounts(ctx context.Context, kbID string, counts map[string]domain.WikiLinkCounts) error
 	DeleteByKB(ctx context.Context, kbID string) error
+	// Search 按标题/slug/摘要/content 的 ILIKE 命中打分（title>slug>summary>content），返回 top limit。
+	Search(ctx context.Context, kbID, query string, limit int) ([]domain.WikiPage, error)
+	// ListByIDs 批量按 ID 取页面（图邻居回填）。
+	ListByIDs(ctx context.Context, kbID string, ids []string) ([]domain.WikiPage, error)
 }
 
 type WikiLinkRepository interface {
