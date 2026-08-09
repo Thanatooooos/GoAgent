@@ -60,3 +60,36 @@ func TestCleanDeadRefs(t *testing.T) {
 		t.Fatalf("valid ref removed: %q", got)
 	}
 }
+
+func TestRewriteRefsSkipsStraddlingMatch(t *testing.T) {
+	// match starts before the inline-code span opener and ends inside it
+	text := "ab`c`d"
+	got, _ := RewriteRefs(text, []RewriteRule{{Find: "b`c", Replace: "X"}}, RewriteOptions{SkipCodeBlocks: true})
+	if got != "ab`c`d" {
+		t.Fatalf("straddling match should not be rewritten: %q", got)
+	}
+}
+
+func TestRewriteRefsUnclosedFenceProtectsToEOF(t *testing.T) {
+	text := "```\n[[r1]] still code"
+	got, stats := RewriteRefs(text, []RewriteRule{{Find: "[[r1]]", Replace: "X"}}, RewriteOptions{SkipCodeBlocks: true})
+	if !strings.Contains(got, "[[r1]]") {
+		t.Fatalf("unclosed fence content should be preserved: %q", got)
+	}
+	if stats.Skipped != 1 {
+		t.Fatalf("Skipped = %d, want 1", stats.Skipped)
+	}
+}
+
+func TestCleanDeadRefsDegenerateInputs(t *testing.T) {
+	refRE := regexp.MustCompile(`\[\[(r[1-9][0-9]*)\]\]`)
+	if got, removed := CleanDeadRefs("", func(string) bool { return true }, refRE); removed != 0 || got != "" {
+		t.Fatalf("empty input = (%q,%d)", got, removed)
+	}
+	if got, removed := CleanDeadRefs("x [[r1]]", nil, refRE); removed != 1 || strings.Contains(got, "r1") {
+		t.Fatalf("nil keep removes all = (%q,%d)", got, removed)
+	}
+	if got, removed := CleanDeadRefs("x [[r1]]", func(string) bool { return true }, nil); removed != 0 || got != "x [[r1]]" {
+		t.Fatalf("nil pattern = (%q,%d)", got, removed)
+	}
+}

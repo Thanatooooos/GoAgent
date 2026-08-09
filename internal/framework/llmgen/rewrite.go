@@ -61,7 +61,7 @@ func RewriteRefs(text string, rules []RewriteRule, opts RewriteOptions) (string,
 					break
 				}
 				idx := searchFrom + rel
-				if insideSpan(forbidden, idx) {
+				if insideSpan(forbidden, idx, len(rule.Find)) {
 					stats.Skipped++
 					nextSearch[ri] = idx + 1
 					searchFrom = idx + 1
@@ -187,9 +187,9 @@ func linkSpans(text string) []span {
 	return spans
 }
 
-func insideSpan(spans []span, idx int) bool {
+func insideSpan(spans []span, idx, length int) bool {
 	for _, s := range spans {
-		if idx >= s.start && idx < s.end {
+		if idx < s.end && idx+length > s.start {
 			return true
 		}
 	}
