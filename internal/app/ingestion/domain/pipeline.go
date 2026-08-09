@@ -15,6 +15,8 @@ const (
 	PipelineNodeTypeEnricher = "enricher"
 	// PipelineNodeTypeIndexer 表示写入下游索引的节点。
 	PipelineNodeTypeIndexer = "indexer"
+	// PipelineNodeTypeWikiGenerator 表示由 LLM 生成 wiki 页面的节点。
+	PipelineNodeTypeWikiGenerator = "wiki_generator"
 )
 
 // Pipeline 描述一条可配置的数据处理流水线。

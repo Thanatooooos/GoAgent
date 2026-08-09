@@ -16,6 +16,7 @@ import (
 	ingestiontask "local/rag-project/internal/app/ingestion/service/task"
 	ingestionworkflow "local/rag-project/internal/app/ingestion/service/workflow"
 	knowledgeport "local/rag-project/internal/app/knowledge/port"
+	wikiservice "local/rag-project/internal/app/knowledge/service/wiki"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
 
@@ -47,16 +48,17 @@ type (
 	RepositoryTaskObserver   = ingestionobserver.RepositoryTaskObserver
 	MetricsObserver          = ingestionobserver.MetricsObserver
 
-	NodeRunnerRegistry = ingestionrunner.NodeRunnerRegistry
-	NodeRunner         = ingestionrunner.NodeRunner
-	FetcherNodeRunner  = ingestionrunner.FetcherNodeRunner
-	ParserNodeRunner   = ingestionrunner.ParserNodeRunner
-	EnhancerNodeRunner = ingestionrunner.EnhancerNodeRunner
-	ChunkerNodeRunner  = ingestionrunner.ChunkerNodeRunner
-	EnricherNodeRunner = ingestionrunner.EnricherNodeRunner
-	IndexerNodeRunner  = ingestionrunner.IndexerNodeRunner
-	DocumentEnricher   = ingestionrunner.DocumentEnricher
-	PromptCompleter    = ingestionrunner.PromptCompleter
+	NodeRunnerRegistry      = ingestionrunner.NodeRunnerRegistry
+	NodeRunner              = ingestionrunner.NodeRunner
+	FetcherNodeRunner       = ingestionrunner.FetcherNodeRunner
+	ParserNodeRunner        = ingestionrunner.ParserNodeRunner
+	EnhancerNodeRunner      = ingestionrunner.EnhancerNodeRunner
+	ChunkerNodeRunner       = ingestionrunner.ChunkerNodeRunner
+	EnricherNodeRunner      = ingestionrunner.EnricherNodeRunner
+	IndexerNodeRunner       = ingestionrunner.IndexerNodeRunner
+	WikiGeneratorNodeRunner = ingestionrunner.WikiGeneratorNodeRunner
+	DocumentEnricher        = ingestionrunner.DocumentEnricher
+	PromptCompleter         = ingestionrunner.PromptCompleter
 
 	WorkflowBuilder          = ingestionworkflow.WorkflowBuilder
 	EinoGraphWorkflowBuilder = ingestionworkflow.EinoGraphWorkflowBuilder
@@ -142,6 +144,10 @@ func NewIndexerNodeRunner(
 	documentRepos ...knowledgeport.KnowledgeDocumentRepository,
 ) *IndexerNodeRunner {
 	return ingestionrunner.NewIndexerNodeRunner(baseRepo, chunkRepo, vectorStore, embedding, documentRepos...)
+}
+
+func NewWikiGeneratorNodeRunner(service ingestionrunner.WikiPageServicePort, generator wikiservice.WikiGenerator) *WikiGeneratorNodeRunner {
+	return ingestionrunner.NewWikiGeneratorNodeRunner(service, generator)
 }
 
 func NewEinoGraphWorkflowBuilder() *EinoGraphWorkflowBuilder {
