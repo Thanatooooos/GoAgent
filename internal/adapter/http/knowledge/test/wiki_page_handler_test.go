@@ -19,12 +19,14 @@ type wikiServiceStub struct {
 	pages []domain.WikiPage
 	total int
 	err   error
+	kbID  string
 }
 
 func (s *wikiServiceStub) GetBySlug(ctx context.Context, kbID, slug string) (domain.WikiPage, error) {
 	if s.err != nil {
 		return domain.WikiPage{}, s.err
 	}
+	s.kbID = kbID
 	for _, p := range s.pages {
 		if p.Slug == slug {
 			return p, nil
@@ -37,6 +39,7 @@ func (s *wikiServiceStub) ListByKB(ctx context.Context, kbID string, page, pageS
 	if s.err != nil {
 		return nil, 0, s.err
 	}
+	s.kbID = kbID
 	return s.pages, s.total, nil
 }
 
@@ -52,6 +55,16 @@ func newWikiRouter(svc knowledgehttp.WikiPageService) *gin.Engine {
 	group := router.Group("/api/ragent")
 	knowledgehttp.RegisterWikiPageRoutes(group, svc)
 	return router
+}
+
+func TestAllKnowledgeRoutesRegisterWithoutConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	group := router.Group("/api/ragent")
+	knowledgehttp.RegisterKnowledgeBaseRoutes(group, nil)
+	knowledgehttp.RegisterKnowledgeDocumentRoutes(group, nil)
+	knowledgehttp.RegisterKnowledgeChunkRoutes(group, nil)
+	knowledgehttp.RegisterWikiPageRoutes(group, nil)
 }
 
 func TestWikiPageHandlerGetBySlug(t *testing.T) {
@@ -75,6 +88,9 @@ func TestWikiPageHandlerGetBySlug(t *testing.T) {
 	if result.Data.Slug != "entity/go" {
 		t.Fatalf("data = %+v", result.Data)
 	}
+	if svc.kbID != "kb1" {
+		t.Fatalf("kbID = %q, want kb1", svc.kbID)
+	}
 }
 
 func TestWikiPageHandlerList(t *testing.T) {
@@ -97,5 +113,8 @@ func TestWikiPageHandlerList(t *testing.T) {
 	}
 	if result.Data.Total != 1 {
 		t.Fatalf("data = %+v", result.Data)
+	}
+	if svc.kbID != "kb1" {
+		t.Fatalf("kbID = %q, want kb1", svc.kbID)
 	}
 }

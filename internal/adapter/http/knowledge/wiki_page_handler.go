@@ -40,8 +40,8 @@ func NewWikiPageHandler(service WikiPageService) *WikiPageHandler {
 
 func RegisterWikiPageRoutes(r gin.IRoutes, service WikiPageService) {
 	handler := NewWikiPageHandler(service)
-	r.GET("/knowledge-base/:kbId/wiki/pages", handler.List)
-	r.GET("/knowledge-base/:kbId/wiki/pages/*slug", handler.Get)
+	r.GET("/knowledge-base/:kb-id/wiki/pages", handler.List)
+	r.GET("/knowledge-base/:kb-id/wiki/pages/*slug", handler.Get)
 }
 
 func (h *WikiPageHandler) Get(c *gin.Context) {
@@ -50,7 +50,7 @@ func (h *WikiPageHandler) Get(c *gin.Context) {
 		return
 	}
 	slug := strings.TrimPrefix(c.Param("slug"), "/")
-	page, err := h.service.GetBySlug(c.Request.Context(), c.Param("kbId"), slug)
+	page, err := h.service.GetBySlug(c.Request.Context(), c.Param("kb-id"), slug)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -65,7 +65,7 @@ func (h *WikiPageHandler) List(c *gin.Context) {
 	}
 	page := parsePositiveInt(c.Query("current"), 1)
 	size := parsePositiveInt(c.Query("size"), 10)
-	pages, total, err := h.service.ListByKB(c.Request.Context(), c.Param("kbId"), page, size)
+	pages, total, err := h.service.ListByKB(c.Request.Context(), c.Param("kb-id"), page, size)
 	if err != nil {
 		_ = c.Error(err)
 		return
