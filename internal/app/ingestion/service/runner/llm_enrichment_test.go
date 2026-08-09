@@ -135,3 +135,21 @@ func TestResolveGeneratedQuestionsWithoutSource(t *testing.T) {
 		t.Fatalf("no-source mode should pass through: %#v", res.Questions)
 	}
 }
+
+func TestResolveGeneratedQuestionsHandlesUppercaseRef(t *testing.T) {
+	handles := llmgen.NewHandleSet("r")
+	handles.Encode("chunk-1")
+	res := resolveGeneratedQuestions([]string{"问题五 [[R1]]"}, handles, "chunk-1")
+	if len(res.Questions) != 1 {
+		t.Fatalf("questions = %#v", res.Questions)
+	}
+	if res.Questions[0].Text != "问题五" {
+		t.Fatalf("uppercase marker should be stripped, got %q", res.Questions[0].Text)
+	}
+	if res.Questions[0].SourceChunkID != "chunk-1" {
+		t.Fatalf("uppercase ref should resolve source: %+v", res.Questions[0])
+	}
+	if res.RejectedRefs != 0 {
+		t.Fatalf("RejectedRefs = %d, want 0", res.RejectedRefs)
+	}
+}

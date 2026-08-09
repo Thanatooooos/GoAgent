@@ -71,7 +71,7 @@ func (e *llmDocumentEnricher) GenerateQuestions(_ context.Context, title string,
 }
 
 // resolveGeneratedQuestions 解析问题行尾的 [[rN]] 引用：命中句柄则记录来源并剥离标记；
-// 未命中句柄（幻觉引用）不落库并计入 RejectedRefs。无引用问题保持原样。
+// 未命中句柄（幻觉引用）只剥除标记、不设置来源，并计入 RejectedRefs；问题本身保留。
 func resolveGeneratedQuestions(values []string, handles *llmgen.HandleSet, sourceChunkID string) GenerateQuestionsResult {
 	validator := llmgen.NewRefValidator([]string{sourceChunkID})
 	result := GenerateQuestionsResult{Questions: make([]GeneratedQuestion, 0, len(values))}
@@ -84,7 +84,7 @@ func resolveGeneratedQuestions(values []string, handles *llmgen.HandleSet, sourc
 		rules := make([]llmgen.RewriteRule, 0)
 		for _, match := range questionRefRE.FindAllStringSubmatch(question.Text, -1) {
 			handle := strings.ToLower(match[1])
-			rules = append(rules, llmgen.RewriteRule{Find: "[[" + handle + "]]", Replace: ""})
+			rules = append(rules, llmgen.RewriteRule{Find: match[0], Replace: ""})
 			if id, ok := handles.Resolve(handle); ok {
 				if _, reason := validator.Validate(id); reason == llmgen.ReasonOK {
 					question.SourceChunkID = id
