@@ -46,12 +46,13 @@ type Service interface {
 }
 
 type Engine struct {
-	searcher   corevector.Searcher
-	embedding  aiembedding.EmbeddingService
-	reranker   airerank.RerankService
-	factMemory FactMemoryRetriever
-	channels   []SearchChannel
-	processors []SearchResultPostProcessor
+	searcher      corevector.Searcher
+	embedding     aiembedding.EmbeddingService
+	reranker      airerank.RerankService
+	factMemory    FactMemoryRetriever
+	wikiRetriever WikiRetriever
+	channels      []SearchChannel
+	processors    []SearchResultPostProcessor
 }
 
 func NewEngine(searcher corevector.Searcher, embedding aiembedding.EmbeddingService, reranker airerank.RerankService) *Engine {
@@ -77,6 +78,14 @@ func (e *Engine) SetFactMemoryRetriever(retriever FactMemoryRetriever) {
 	e.rebuildChannels()
 }
 
+func (e *Engine) SetWikiRetriever(retriever WikiRetriever) {
+	if e == nil {
+		return
+	}
+	e.wikiRetriever = retriever
+	e.rebuildChannels()
+}
+
 func (e *Engine) rebuildChannels() {
 	if e == nil {
 		return
@@ -85,6 +94,7 @@ func (e *Engine) rebuildChannels() {
 		NewVectorGlobalChannel(e.searcher, e.embedding),
 		NewKeywordChannel(e.searcher),
 		NewMetadataTitleChannel(e.searcher),
+		NewWikiPageChannel(e.wikiRetriever),
 	}
 	if e.factMemory != nil {
 		channels = append(channels, NewFactMemoryChannel(e.factMemory))

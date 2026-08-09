@@ -237,6 +237,8 @@ func defaultChannelRRFWeight(channelName string) float32 {
 		return 0.85
 	case ChannelMetadataTitle:
 		return 0.8
+	case ChannelWikiPage:
+		return 0.75
 	default:
 		return 1.0
 	}
