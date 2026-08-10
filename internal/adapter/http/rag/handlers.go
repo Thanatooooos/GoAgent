@@ -5,6 +5,7 @@ import (
 
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/framework/stream"
 )
 
 type chatService interface {
@@ -22,6 +23,7 @@ type Handler struct {
 	feedbackService     *ragservice.MessageFeedbackService
 	chatService         chatService
 	preferenceCandidateService longtermmemory.PreferenceCandidateService
+	streamManager       stream.StreamManager
 }
 
 // NewHandler 创建 RAG HTTP 处理器。
@@ -32,7 +34,11 @@ func NewHandler(
 	feedbackService *ragservice.MessageFeedbackService,
 	chatService chatService,
 	preferenceCandidateService longtermmemory.PreferenceCandidateService,
+	streamManager stream.StreamManager,
 ) *Handler {
+	if streamManager == nil {
+		streamManager = stream.NewMemoryStreamManager()
+	}
 	return &Handler{
 		conversationService: conversationService,
 		messageService:      messageService,
@@ -40,5 +46,6 @@ func NewHandler(
 		feedbackService:     feedbackService,
 		chatService:         chatService,
 		preferenceCandidateService: preferenceCandidateService,
+		streamManager:       streamManager,
 	}
 }

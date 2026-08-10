@@ -186,6 +186,73 @@ func newChatRouter(chatService chatServiceStub) *gin.Engine {
 		c.Next()
 	})
 	group := router.Group("/api/ragent")
-	raghttp.RegisterRoutes(group, nil, nil, nil, nil, chatService, nil, nil, nil)
+	raghttp.RegisterRoutes(group, nil, nil, nil, nil, chatService, nil, nil, nil, nil)
 	return router
+}
+
+// taskIDFromMeta 从 SSE body 提取 meta 事件的 taskId。
+func taskIDFromMeta(t *testing.T, body string) string {
+	t.Helper()
+	idx := strings.Index(body, `"taskId":`)
+	if idx < 0 {
+		t.Fatalf("no taskId in body: %s", body)
+	}
+	rest := body[idx+len(`"taskId":`):]
+	start := strings.IndexByte(rest, '"') + 1
+	rest = rest[start:]
+	end := strings.IndexByte(rest, '"')
+	if end <= 0 {
+		t.Fatalf("cannot parse taskId from body: %s", body)
+	}
+	return rest[:end]
+}
+
+func TestChatHandlerStreamsAndContinueReplays(t *testing.T) {
+	router := newChatRouter(chatServiceStub{
+		chatFn: func(_ context.Context, input ragservice.RagChatInput, sink ragservice.RagChatEventSink) error {
+			if err := sink.SendMeta(ragservice.RagChatMeta{ConversationID: input.ConversationID, TaskID: input.TaskID}); err != nil {
+				return err
+			}
+			if err := sink.SendMessage("hello"); err != nil {
+				return err
+			}
+			return sink.SendDone()
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/rag/v3/chat?question=hi", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "event: message") || !strings.Contains(rec.Body.String(), "event: done") {
+		t.Fatalf("live chat stream incomplete: %s", rec.Body.String())
+	}
+	taskID := taskIDFromMeta(t, rec.Body.String())
+
+	// continue must replay the same events from the stream.
+	req2 := httptest.NewRequest(http.MethodGet, "/api/ragent/rag/v3/chat/continue?taskId="+taskID, nil)
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+	if !strings.Contains(rec2.Body.String(), "event: message") || !strings.Contains(rec2.Body.String(), `"delta":"hello"`) {
+		t.Fatalf("continue replay incomplete: %s", rec2.Body.String())
+	}
+}
+
+func TestChatHandlerStopIdempotentSuccess(t *testing.T) {
+	router := newChatRouter(chatServiceStub{})
+	req := httptest.NewRequest(http.MethodPost, "/api/ragent/rag/v3/stop?taskId=does-not-exist", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stop should be idempotent success, got %d", rec.Code)
+	}
+}
+
+func TestChatHandlerContinueWithUnknownTaskCompletesGracefully(t *testing.T) {
+	router := newChatRouter(chatServiceStub{})
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/rag/v3/chat/continue?taskId=missing", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("continue status = %d", rec.Code)
+	}
 }

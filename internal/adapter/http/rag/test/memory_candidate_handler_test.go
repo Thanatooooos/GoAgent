@@ -265,7 +265,7 @@ func newMemoryCandidateRouter(service longtermmemory.PreferenceCandidateService,
 		})
 	}
 
-	handler := raghttp.NewHandler(nil, nil, nil, nil, nil, service)
+	handler := raghttp.NewHandler(nil, nil, nil, nil, nil, service, nil)
 	group := router.Group("/api/ragent")
 	group.GET("/rag/v3/preferences/candidates/pending", handler.ListPendingPreferenceCandidates)
 	group.POST("/rag/v3/preferences/candidates/:candidateId/confirm", handler.ConfirmPreferenceCandidate)
