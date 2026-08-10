@@ -2,6 +2,8 @@ package stream
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -57,5 +59,73 @@ func TestMemoryStreamManagerPruneOlderThan(t *testing.T) {
 	}
 	if m.streams["fresh"] == nil {
 		t.Fatal("fresh stream should remain")
+	}
+}
+
+func TestMemoryStreamManagerConcurrentAppendAndGet(t *testing.T) {
+	m := NewMemoryStreamManager()
+	ctx := context.Background()
+	const (
+		appenders = 8
+		perApp    = 100
+		pollers   = 4
+		total     = appenders * perApp
+	)
+	const id = "concurrent"
+
+	var wg sync.WaitGroup
+	for a := 0; a < appenders; a++ {
+		wg.Add(1)
+		go func(a int) {
+			defer wg.Done()
+			for i := 0; i < perApp; i++ {
+				if err := m.AppendEvent(ctx, id, StreamEvent{Name: fmt.Sprintf("e%d-%d", a, i)}); err != nil {
+					t.Errorf("append: %v", err)
+					return
+				}
+			}
+		}(a)
+	}
+
+	var pollWG sync.WaitGroup
+	for p := 0; p < pollers; p++ {
+		pollWG.Add(1)
+		go func() {
+			defer pollWG.Done()
+			offset := 0
+			for i := 0; i < 1000; i++ {
+				_, next, err := m.GetEvents(ctx, id, offset)
+				if err != nil {
+					t.Errorf("get: %v", err)
+					return
+				}
+				if next < offset {
+					t.Errorf("next %d decreased below previous offset %d", next, offset)
+					return
+				}
+				offset = next
+				if offset >= total {
+					break
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	pollWG.Wait()
+
+	events, next, err := m.GetEvents(ctx, id, 0)
+	if err != nil {
+		t.Fatalf("final get: %v", err)
+	}
+	if len(events) != total || next != total {
+		t.Fatalf("final events = %d next = %d, want %d/%d", len(events), next, total, total)
+	}
+	seen := make(map[string]struct{}, len(events))
+	for _, ev := range events {
+		seen[ev.Name] = struct{}{}
+	}
+	if len(seen) != total {
+		t.Fatalf("unique names = %d, want %d", len(seen), total)
 	}
 }
