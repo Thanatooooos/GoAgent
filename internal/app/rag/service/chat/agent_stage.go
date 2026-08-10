@@ -222,7 +222,8 @@ func (s *RagChatService) newAgentRuntimeState(ctx context.Context, conversationI
 	if err != nil {
 		return ragChatRuntimeState{}, err
 	}
-	if strings.TrimSpace(taskID) == "" {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
 		taskID, err = nextRagTaskID()
 		if err != nil {
 			return ragChatRuntimeState{}, err
