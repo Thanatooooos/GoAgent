@@ -12,6 +12,7 @@ type RagChatInput struct {
 	DeepThinking     bool
 	UseAgentRuntime  bool
 	RequireApproval  bool
+	TaskID           string // 可选：由 HTTP 层预生成，运行时阶段优先采用
 }
 
 type RagChatMeta struct {

@@ -115,6 +115,7 @@ type RagConfig struct {
 	Search          RagSearchConfig       `mapstructure:"search"`
 	Trace           RagTraceConfig        `mapstructure:"trace"`
 	CitationEnabled bool                  `mapstructure:"citation-enabled"`
+	Stream          RagStreamConfig       `mapstructure:"stream"`
 }
 
 type RagVectorConfig struct {
@@ -126,6 +127,12 @@ type RagDefaultConfig struct {
 	Dimension      int    `mapstructure:"dimension"`
 	MetricType     string `mapstructure:"metric-type"`
 	SseTimeoutMs   int    `mapstructure:"sse-timeout-ms"`
+}
+
+type RagStreamConfig struct {
+	Type        string `mapstructure:"type"`         // memory | redis
+	TTLSeconds  int    `mapstructure:"ttl-seconds"`  // 流保留时长，默认 3600
+	RedisPrefix string `mapstructure:"redis-prefix"` // redis 模式 key 前缀，默认 stream:events
 }
 
 type RagAgentConfig struct {

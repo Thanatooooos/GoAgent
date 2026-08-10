@@ -6,6 +6,7 @@ import (
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
+	"local/rag-project/internal/framework/stream"
 	"local/rag-project/internal/middleware"
 )
 
@@ -20,8 +21,9 @@ func RegisterRoutes(
 	preferenceCandidateService longtermmemory.PreferenceCandidateService,
 	traceService *ragservice.TraceService,
 	cacheMetrics *ragcachemetrics.Service,
+	streamManager stream.StreamManager,
 ) {
-	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, chatService, preferenceCandidateService)
+	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, chatService, preferenceCandidateService, streamManager)
 	r.GET("/conversations", handler.ListConversations)
 	r.GET("/conversations/:conversationId/messages", handler.ListMessages)
 	r.PUT("/conversations/:conversationId", handler.RenameConversation)
@@ -35,6 +37,7 @@ func RegisterRoutes(
 	r.POST("/rag/v3/memories/:memoryId/expire", handler.ExpireMemory)
 	r.POST("/conversations/messages/:messageId/feedback", handler.SubmitFeedback)
 	r.GET("/rag/v3/chat", handler.Chat)
+	r.GET("/rag/v3/chat/continue", handler.ContinueChat)
 	r.GET("/rag/v3/chat/approval/pending", handler.GetPendingApproval)
 	r.POST("/rag/v3/chat/approval/resume", handler.ResumeAfterApproval)
 	r.POST("/rag/v3/stop", handler.StopChat)

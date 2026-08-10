@@ -255,7 +255,7 @@ func newMemoryRouter(memoryService *longtermmemory.MemoryService) *gin.Engine {
 		c.Next()
 	})
 
-	handler := raghttp.NewHandler(nil, nil, memoryService, nil, nil, nil)
+	handler := raghttp.NewHandler(nil, nil, memoryService, nil, nil, nil, nil)
 	group := router.Group("/api/ragent")
 	group.GET("/rag/v3/memories", handler.ListMemories)
 	group.POST("/rag/v3/remember", handler.Remember)

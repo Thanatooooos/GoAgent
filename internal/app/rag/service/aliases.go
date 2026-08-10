@@ -74,6 +74,9 @@ type (
 	RagChatAgentServiceErrorPayload = ragchat.RagChatAgentServiceErrorPayload
 )
 
+// NextTaskID re-exports the chat package task-id generator for HTTP layer use.
+var NextTaskID = ragchat.NextTaskID
+
 func NewConversationService(
 	conversationRepo port.ConversationRepository,
 	messageRepo port.ConversationMessageRepository,
