@@ -16,10 +16,14 @@ import (
 )
 
 // streamChatSink 把 RagChatEventSink 事件写入 StreamManager，由 SSE 轮询消费。
+// 只有 done 事件携带终止标志（Done=true）；error/cancel 是信息性事件，
+// 服务端保证其后面总是跟随一个 done 事件，从而让轮询器（pollLoop）在转发
+// error/cancel 后仍能把尾部的 done 透传给客户端。
 type streamChatSink struct {
-	manager  stream.StreamManager
-	streamID string
-	seq      int64
+	manager    stream.StreamManager
+	streamID   string
+	seq        int64
+	terminated bool
 }
 
 var _ ragservice.RagChatEventSink = (*streamChatSink)(nil)
@@ -43,7 +47,15 @@ func (s *streamChatSink) append(name string, payload interface{}, done bool) err
 		log.Printf("stream chat sink append %q: %v", s.streamID, err)
 		return err
 	}
+	if done {
+		s.terminated = true
+	}
 	return nil
+}
+
+// Terminated 报告是否已成功写入终止事件（done）。
+func (s *streamChatSink) Terminated() bool {
+	return s != nil && s.terminated
 }
 
 func (s *streamChatSink) SendMeta(meta ragservice.RagChatMeta) error {
@@ -119,14 +131,14 @@ func (s *streamChatSink) SendFinish(payload ragservice.RagChatFinishPayload) err
 }
 
 func (s *streamChatSink) SendCancel(payload ragservice.RagChatFinishPayload) error {
-	return s.append("cancel", gin.H{"messageId": payload.MessageID, "title": payload.Title}, true)
+	return s.append("cancel", gin.H{"messageId": payload.MessageID, "title": payload.Title}, false)
 }
 
 func (s *streamChatSink) SendError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return s.append("error", gin.H{"error": err.Error()}, true)
+	return s.append("error", gin.H{"error": err.Error()}, false)
 }
 
 func (s *streamChatSink) SendDone() error {

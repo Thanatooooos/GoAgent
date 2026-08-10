@@ -84,19 +84,33 @@ data: {}
 	}
 }
 
-func TestStreamChatSinkMarksTerminalDone(t *testing.T) {
+func TestStreamChatSinkTerminalSemantics(t *testing.T) {
 	m := stream.NewMemoryStreamManager()
 	s := &streamChatSink{manager: m, streamID: "s1"}
+	_ = s.SendError(assertError("boom"))
 	_ = s.SendDone()
 	events, _, _ := m.GetEvents(context.Background(), "s1", 0)
-	if len(events) != 1 || !events[0].Done || events[0].Name != "done" {
+	if len(events) != 2 {
 		t.Fatalf("events = %+v", events)
 	}
-	_ = s.SendError(nil)
-	_ = s.SendError(assertError("boom"))
-	events, _, _ = m.GetEvents(context.Background(), "s1", 1)
-	if len(events) != 1 || !events[0].Done || events[0].Name != "error" || string(events[0].Data) != `{"error":"boom"}` {
-		t.Fatalf("error events = %+v", events)
+	if events[0].Name != "error" || events[0].Done {
+		t.Fatalf("error event must be non-terminal, got %+v", events[0])
+	}
+	if events[1].Name != "done" || !events[1].Done {
+		t.Fatalf("done event must be terminal, got %+v", events[1])
+	}
+	if string(events[0].Data) != `{"error":"boom"}` {
+		t.Fatalf("error payload = %s", events[0].Data)
+	}
+	s2 := &streamChatSink{manager: m, streamID: "s2"}
+	_ = s2.SendCancel(ragServiceFinishForTest())
+	_ = s2.SendDone()
+	events2, _, _ := m.GetEvents(context.Background(), "s2", 0)
+	if len(events2) != 2 || events2[0].Name != "cancel" || events2[0].Done {
+		t.Fatalf("cancel event must be non-terminal, got %+v", events2)
+	}
+	if events2[1].Name != "done" || !events2[1].Done {
+		t.Fatalf("done event must be terminal, got %+v", events2[1])
 	}
 }
 
