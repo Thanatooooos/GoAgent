@@ -21,6 +21,7 @@ type RagChatApprovalResumeInput struct {
 	CheckpointID   string
 	Decision       string
 	DecisionNote   string
+	TaskID         string
 }
 
 type RagChatApprovalPendingQueryInput struct {

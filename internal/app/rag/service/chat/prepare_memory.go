@@ -25,9 +25,12 @@ func (s *RagChatService) runRuntimeStage(
 	if err != nil {
 		return ragChatRuntimeStageResult{}, err
 	}
-	taskID, err := nextRagTaskID()
-	if err != nil {
-		return ragChatRuntimeStageResult{}, err
+	taskID := strings.TrimSpace(input.TaskID)
+	if taskID == "" {
+		taskID, err = nextRagTaskID()
+		if err != nil {
+			return ragChatRuntimeStageResult{}, err
+		}
 	}
 
 	state := ragChatRuntimeState{

@@ -26,6 +26,11 @@ func nextRagTaskID() (string, error) {
 	return fmt.Sprintf("%d", id), nil
 }
 
+// NextTaskID 供 HTTP 层预生成 task id（流 key），与内部生成器共享实现。
+func NextTaskID() (string, error) {
+	return nextRagTaskID()
+}
+
 func nextRagTraceID() (string, error) {
 	id, err := distributedid.NextID()
 	if err != nil {

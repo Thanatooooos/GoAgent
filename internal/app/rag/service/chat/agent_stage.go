@@ -31,7 +31,7 @@ func (s *RagChatService) ResumeAfterApproval(ctx context.Context, input RagChatA
 		return exception.NewClientException("checkpoint id is required", nil)
 	}
 
-	state, err := s.newAgentRuntimeState(ctx, strings.TrimSpace(input.ConversationID), userID)
+	state, err := s.newAgentRuntimeState(ctx, strings.TrimSpace(input.ConversationID), userID, strings.TrimSpace(input.TaskID))
 	if err != nil {
 		_ = sink.SendError(err)
 		_ = sink.SendDone()
@@ -217,14 +217,16 @@ func (s *RagChatService) handleAgentRuntimeError(
 	return err
 }
 
-func (s *RagChatService) newAgentRuntimeState(ctx context.Context, conversationID string, userID string) (ragChatRuntimeState, error) {
+func (s *RagChatService) newAgentRuntimeState(ctx context.Context, conversationID string, userID string, taskID string) (ragChatRuntimeState, error) {
 	traceID, err := nextRagTraceID()
 	if err != nil {
 		return ragChatRuntimeState{}, err
 	}
-	taskID, err := nextRagTaskID()
-	if err != nil {
-		return ragChatRuntimeState{}, err
+	if strings.TrimSpace(taskID) == "" {
+		taskID, err = nextRagTaskID()
+		if err != nil {
+			return ragChatRuntimeState{}, err
+		}
 	}
 	state := ragChatRuntimeState{
 		meta: RagChatMeta{
