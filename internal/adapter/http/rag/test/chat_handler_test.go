@@ -47,6 +47,10 @@ func (s chatServiceStub) CancelTask(string) bool {
 	return true
 }
 
+type assertError string
+
+func (e assertError) Error() string { return string(e) }
+
 func TestChatHandlerForwardsChatInputAndStreamsOutcome(t *testing.T) {
 	var captured ragservice.RagChatInput
 	router := newChatRouter(chatServiceStub{
@@ -254,5 +258,22 @@ func TestChatHandlerContinueWithUnknownTaskCompletesGracefully(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("continue status = %d", rec.Code)
+	}
+}
+
+func TestChatHandlerErrorBeforeTerminalStillStreams(t *testing.T) {
+	router := newChatRouter(chatServiceStub{
+		chatFn: func(_ context.Context, _ ragservice.RagChatInput, _ ragservice.RagChatEventSink) error {
+			return assertError("validation failed")
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/rag/v3/chat?question=", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "event: error") || !strings.Contains(rec.Body.String(), "event: done") {
+		t.Fatalf("expected error + done events, got: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "validation failed") == false {
+		t.Fatalf("expected error payload in stream: %s", rec.Body.String())
 	}
 }

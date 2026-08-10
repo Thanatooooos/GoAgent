@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/framework/exception"
-	fwweb "local/rag-project/internal/framework/web"
 	"local/rag-project/internal/framework/stream"
+	fwweb "local/rag-project/internal/framework/web"
 )
 
 type resumeApprovalRequest struct {
@@ -37,7 +38,7 @@ func (h *Handler) Chat(c *gin.Context) {
 	sink := &streamChatSink{manager: h.streamManager, streamID: taskID}
 	baseCtx := context.WithoutCancel(c.Request.Context())
 	go func() {
-		_ = h.chatService.Chat(baseCtx, ragservice.RagChatInput{
+		if err := h.chatService.Chat(baseCtx, ragservice.RagChatInput{
 			ConversationID:   strings.TrimSpace(c.Query("conversationId")),
 			UserID:           user.UserID,
 			Question:         strings.TrimSpace(c.Query("question")),
@@ -45,7 +46,13 @@ func (h *Handler) Chat(c *gin.Context) {
 			DeepThinking:     parseBool(c.Query("deepThinking")),
 			RequireApproval:  parseBool(c.Query("requireApproval")),
 			TaskID:           taskID,
-		}, sink)
+		}, sink); err != nil {
+			if !sink.Terminated() {
+				_ = sink.SendError(err)
+				_ = sink.SendDone()
+			}
+			log.Printf("rag chat stream error: %v", err)
+		}
 	}()
 	go stopWatcher(baseCtx, h.streamManager, taskID, func() bool { return h.chatService.CancelTask(taskID) }, defaultStopWatcherInterval, 0)
 	pollLoop(c.Request.Context(), sender, h.streamManager, taskID, 0, defaultStreamPollInterval, 0)
@@ -71,7 +78,7 @@ func (h *Handler) ResumeAfterApproval(c *gin.Context) {
 	sink := &streamChatSink{manager: h.streamManager, streamID: taskID}
 	baseCtx := context.WithoutCancel(c.Request.Context())
 	go func() {
-		_ = h.chatService.ResumeAfterApproval(baseCtx, ragservice.RagChatApprovalResumeInput{
+		if err := h.chatService.ResumeAfterApproval(baseCtx, ragservice.RagChatApprovalResumeInput{
 			ConversationID: strings.TrimSpace(req.ConversationID),
 			UserID:         user.UserID,
 			Question:       strings.TrimSpace(req.Question),
@@ -79,7 +86,13 @@ func (h *Handler) ResumeAfterApproval(c *gin.Context) {
 			Decision:       strings.TrimSpace(req.Decision),
 			DecisionNote:   strings.TrimSpace(req.DecisionNote),
 			TaskID:         taskID,
-		}, sink)
+		}, sink); err != nil {
+			if !sink.Terminated() {
+				_ = sink.SendError(err)
+				_ = sink.SendDone()
+			}
+			log.Printf("rag chat stream error: %v", err)
+		}
 	}()
 	go stopWatcher(baseCtx, h.streamManager, taskID, func() bool { return h.chatService.CancelTask(taskID) }, defaultStopWatcherInterval, 0)
 	pollLoop(c.Request.Context(), sender, h.streamManager, taskID, 0, defaultStreamPollInterval, 0)
@@ -98,7 +111,12 @@ func (h *Handler) ContinueChat(c *gin.Context) {
 	}
 	sender := fwweb.NewSseEmitterSender(c)
 	events, _, err := h.streamManager.GetEvents(c.Request.Context(), taskID, 0)
-	if err != nil || len(events) == 0 {
+	if err != nil {
+		log.Printf("rag chat continue read %q: %v", taskID, err)
+		sender.Complete()
+		return
+	}
+	if len(events) == 0 {
 		sender.Complete()
 		return
 	}
@@ -114,11 +132,13 @@ func (h *Handler) StopChat(c *gin.Context) {
 	}
 	_ = h.chatService.CancelTask(taskID)
 	stopData, _ := json.Marshal(gin.H{})
-	_ = h.streamManager.AppendEvent(c.Request.Context(), taskID, stream.StreamEvent{
+	if err := h.streamManager.AppendEvent(c.Request.Context(), taskID, stream.StreamEvent{
 		Name:      internalStopEventName,
 		Data:      stopData,
 		Done:      true,
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		log.Printf("rag chat stop event %q: %v", taskID, err)
+	}
 	writeSuccess[any](c, nil)
 }
