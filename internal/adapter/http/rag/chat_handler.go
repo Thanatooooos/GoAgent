@@ -34,19 +34,20 @@ func (h *Handler) Chat(c *gin.Context) {
 		_ = c.Error(err)
 		return
 	}
+	input := ragservice.RagChatInput{
+		ConversationID:   strings.TrimSpace(c.Query("conversationId")),
+		UserID:           user.UserID,
+		Question:         strings.TrimSpace(c.Query("question")),
+		KnowledgeBaseIDs: splitCommaValues(c.Query("knowledgeBaseId")),
+		DeepThinking:     parseBool(c.Query("deepThinking")),
+		RequireApproval:  parseBool(c.Query("requireApproval")),
+		TaskID:           taskID,
+	}
 	sender := fwweb.NewSseEmitterSender(c)
 	sink := &streamChatSink{manager: h.streamManager, streamID: taskID}
 	baseCtx := context.WithoutCancel(c.Request.Context())
 	go func() {
-		if err := h.chatService.Chat(baseCtx, ragservice.RagChatInput{
-			ConversationID:   strings.TrimSpace(c.Query("conversationId")),
-			UserID:           user.UserID,
-			Question:         strings.TrimSpace(c.Query("question")),
-			KnowledgeBaseIDs: splitCommaValues(c.Query("knowledgeBaseId")),
-			DeepThinking:     parseBool(c.Query("deepThinking")),
-			RequireApproval:  parseBool(c.Query("requireApproval")),
-			TaskID:           taskID,
-		}, sink); err != nil {
+		if err := h.chatService.Chat(baseCtx, input, sink); err != nil {
 			if !sink.Terminated() {
 				_ = sink.SendError(err)
 				_ = sink.SendDone()
