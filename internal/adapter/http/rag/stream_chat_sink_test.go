@@ -1,0 +1,101 @@
+package rag
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	ragservice "local/rag-project/internal/app/rag/service"
+	"local/rag-project/internal/framework/stream"
+)
+
+type assertError string
+
+func (e assertError) Error() string { return string(e) }
+
+func streamSinkSSEBody(t *testing.T, fn func(s *streamChatSink)) string {
+	t.Helper()
+	m := stream.NewMemoryStreamManager()
+	s := &streamChatSink{manager: m, streamID: "s1"}
+	fn(s)
+	events, _, err := m.GetEvents(context.Background(), "s1", 0)
+	if err != nil {
+		t.Fatalf("get events: %v", err)
+	}
+	var sb strings.Builder
+	for _, e := range events {
+		sb.WriteString("event: " + e.Name + "\n")
+		sb.WriteString("data: " + string(e.Data) + "\n\n")
+	}
+	return sb.String()
+}
+
+func ragServiceRagChatMetaForTest() ragservice.RagChatMeta {
+	return ragservice.RagChatMeta{ConversationID: "c1", TaskID: "t1"}
+}
+
+func ragServiceFinishForTest() ragservice.RagChatFinishPayload {
+	return ragservice.RagChatFinishPayload{MessageID: "m1", Title: "t"}
+}
+
+func TestStreamChatSinkWireFormatParity(t *testing.T) {
+	body := streamSinkSSEBody(t, func(s *streamChatSink) {
+		if err := s.SendMeta(ragServiceRagChatMetaForTest()); err != nil {
+			t.Fatalf("meta: %v", err)
+		}
+		if err := s.SendThinking("ok"); err != nil {
+			t.Fatalf("thinking: %v", err)
+		}
+		if err := s.SendMessage("hi"); err != nil {
+			t.Fatalf("message: %v", err)
+		}
+		if err := s.SendTitle("t"); err != nil {
+			t.Fatalf("title: %v", err)
+		}
+		if err := s.SendFinish(ragServiceFinishForTest()); err != nil {
+			t.Fatalf("finish: %v", err)
+		}
+		if err := s.SendDone(); err != nil {
+			t.Fatalf("done: %v", err)
+		}
+	})
+
+	want := `event: meta
+data: {"conversationId":"c1","taskId":"t1"}
+
+event: message
+data: {"delta":"ok","type":"think"}
+
+event: message
+data: {"delta":"hi","type":"response"}
+
+event: title
+data: {"title":"t"}
+
+event: finish
+data: {"messageId":"m1","title":"t"}
+
+event: done
+data: {}
+
+`
+	if body != want {
+		t.Fatalf("wire mismatch:\n--- got ---\n%s--- want ---\n%s", body, want)
+	}
+}
+
+func TestStreamChatSinkMarksTerminalDone(t *testing.T) {
+	m := stream.NewMemoryStreamManager()
+	s := &streamChatSink{manager: m, streamID: "s1"}
+	_ = s.SendDone()
+	events, _, _ := m.GetEvents(context.Background(), "s1", 0)
+	if len(events) != 1 || !events[0].Done || events[0].Name != "done" {
+		t.Fatalf("events = %+v", events)
+	}
+	_ = s.SendError(nil)
+	_ = s.SendError(assertError("boom"))
+	events, _, _ = m.GetEvents(context.Background(), "s1", 1)
+	if len(events) != 1 || !events[0].Done || events[0].Name != "error" || string(events[0].Data) != `{"error":"boom"}` {
+		t.Fatalf("error events = %+v", events)
+	}
+}
