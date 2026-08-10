@@ -22,6 +22,7 @@ import (
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
 	"local/rag-project/internal/framework/config"
+	"local/rag-project/internal/framework/stream"
 	"local/rag-project/internal/framework/log"
 	infraai "local/rag-project/internal/infra-ai"
 	aichat "local/rag-project/internal/infra-ai/chat"
@@ -59,6 +60,9 @@ type Runtime struct {
 	Feedback                    *ragservice.MessageFeedbackService
 	Trace                       *ragservice.TraceService
 	Chat                        *ragservice.RagChatService
+	StreamManager               stream.StreamManager
+	streamSweepCancel           context.CancelFunc
+	streamSweepWG               sync.WaitGroup
 }
 
 // NewRuntime 创建 RAG 最小运行时。
@@ -101,6 +105,8 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		Trace:            retrieve.traceService,
 		Chat:             chat.chatService,
 	}
+	runtime.StreamManager = buildStreamManager(buildCtx.cfg)
+	startStreamSweep(runtime, buildCtx.cfg)
 	runtime.startMemoryMaintenanceLoop(buildCtx.cfg)
 	return runtime, nil
 }
@@ -119,6 +125,10 @@ func (r *Runtime) Close() error {
 	}
 	if r.summaryJobWorker != nil {
 		r.summaryJobWorker.Stop()
+	}
+	stopStreamSweep(r)
+	if sm, ok := r.StreamManager.(interface{ Close() error }); ok {
+		_ = sm.Close()
 	}
 	r.stopMemoryMaintenanceLoop()
 	if r.DB == nil || !r.ownsDB {
