@@ -128,7 +128,7 @@ func (r *Runtime) Close() error {
 	}
 	stopStreamSweep(r)
 	if sm, ok := r.StreamManager.(interface{ Close() error }); ok {
-		_ = sm.Close()
+		err = errors.Join(err, sm.Close())
 	}
 	r.stopMemoryMaintenanceLoop()
 	if r.DB == nil || !r.ownsDB {
