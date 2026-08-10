@@ -24,6 +24,8 @@ type streamEventSender interface {
 
 // pollLoop 从 startOffset 增量读流并写 SSE，读到 Done=true 事件或 ctx 结束。
 // stop 是内部控制事件，不转发给客户端。
+// maxTimer 是空闲超时而非硬性总时长：有新事件成功读流时重置，
+// 流持续产出就不会被切断，仅当流静默（无新事件）超过 maxDuration 时兜底关闭。
 func pollLoop(ctx context.Context, sender streamEventSender, manager stream.StreamManager, streamID string, startOffset int, interval time.Duration, maxDuration time.Duration) {
 	if interval <= 0 {
 		interval = defaultStreamPollInterval
@@ -39,6 +41,17 @@ func pollLoop(ctx context.Context, sender streamEventSender, manager stream.Stre
 	for {
 		events, next, err := manager.GetEvents(ctx, streamID, offset)
 		if err == nil {
+			// 空闲超时只在新事件到达时重置：持续产出的流不会被切断，
+			// 而静默流（无新事件）仍会在 maxDuration 后兜底关闭。
+			if len(events) > 0 {
+				if !maxTimer.Stop() {
+					select {
+					case <-maxTimer.C:
+					default:
+					}
+				}
+				maxTimer.Reset(maxDuration)
+			}
 			for _, e := range events {
 				if e.Name == internalStopEventName {
 					continue
@@ -66,6 +79,7 @@ func pollLoop(ctx context.Context, sender streamEventSender, manager stream.Stre
 
 // stopWatcher 在执行节点监听 stop 控制事件，触发 cancelTask。
 // 反复调用 cancelTask 直到成功或任务结束，规避任务尚未注册的竞态。
+// cancelTask 返回 true 表示任务已找到并取消（成功）；false 表示任务尚未注册，继续重试。
 func stopWatcher(ctx context.Context, manager stream.StreamManager, streamID string, cancelTask func() bool, interval time.Duration, maxDuration time.Duration) {
 	if interval <= 0 {
 		interval = defaultStopWatcherInterval
