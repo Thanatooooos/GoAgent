@@ -41,11 +41,16 @@ func (m *RedisStreamManager) AppendEvent(ctx context.Context, streamID string, e
 	}
 	key := m.key(streamID)
 	if err := m.client.RPush(ctx, key, raw).Err(); err != nil {
-		return err
+		return fmt.Errorf("stream append %q: %w", key, err)
 	}
-	return m.client.Expire(ctx, key, m.ttl).Err()
+	if err := m.client.Expire(ctx, key, m.ttl).Err(); err != nil {
+		return fmt.Errorf("stream expire %q: %w", key, err)
+	}
+	return nil
 }
 
+// GetEvents 从 fromOffset 增量读取事件。任一事件解码失败时中止整批读取并返回错误，
+// 不返回部分解码结果，避免静默丢事件或偏移错位。
 func (m *RedisStreamManager) GetEvents(ctx context.Context, streamID string, fromOffset int) ([]StreamEvent, int, error) {
 	if m == nil || m.client == nil {
 		return nil, fromOffset, nil
@@ -53,15 +58,16 @@ func (m *RedisStreamManager) GetEvents(ctx context.Context, streamID string, fro
 	if fromOffset < 0 {
 		fromOffset = 0
 	}
-	values, err := m.client.LRange(ctx, m.key(streamID), int64(fromOffset), -1).Result()
+	key := m.key(streamID)
+	values, err := m.client.LRange(ctx, key, int64(fromOffset), -1).Result()
 	if err != nil {
-		return nil, fromOffset, err
+		return nil, fromOffset, fmt.Errorf("stream read %q: %w", key, err)
 	}
 	out := make([]StreamEvent, 0, len(values))
 	for _, v := range values {
 		var e StreamEvent
 		if err := json.Unmarshal([]byte(v), &e); err != nil {
-			continue
+			return nil, fromOffset, fmt.Errorf("stream decode %q: %w", key, err)
 		}
 		out = append(out, e)
 	}
