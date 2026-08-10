@@ -37,6 +37,9 @@ milvus:
 
 rag:
   citation-enabled: true
+  stream:
+    type: memory
+    ttl-seconds: 3600
   vector:
     type: pg  # optional: milvus / pg
 
