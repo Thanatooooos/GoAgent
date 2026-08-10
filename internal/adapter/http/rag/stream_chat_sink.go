@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,8 @@ type streamChatSink struct {
 	seq      int64
 }
 
+var _ ragservice.RagChatEventSink = (*streamChatSink)(nil)
+
 func (s *streamChatSink) append(name string, payload interface{}, done bool) error {
 	if s == nil || s.manager == nil {
 		return nil
@@ -30,13 +33,17 @@ func (s *streamChatSink) append(name string, payload interface{}, done bool) err
 		return err
 	}
 	s.seq++
-	return s.manager.AppendEvent(context.Background(), s.streamID, stream.StreamEvent{
+	if err := s.manager.AppendEvent(context.Background(), s.streamID, stream.StreamEvent{
 		ID:        strconv.FormatInt(s.seq, 10),
 		Name:      name,
 		Data:      data,
 		Done:      done,
 		Timestamp: time.Now(),
-	})
+	}); err != nil {
+		log.Printf("stream chat sink append %q: %v", s.streamID, err)
+		return err
+	}
+	return nil
 }
 
 func (s *streamChatSink) SendMeta(meta ragservice.RagChatMeta) error {

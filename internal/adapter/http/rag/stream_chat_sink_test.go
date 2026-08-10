@@ -99,3 +99,24 @@ func TestStreamChatSinkMarksTerminalDone(t *testing.T) {
 		t.Fatalf("error events = %+v", events)
 	}
 }
+
+func TestStreamChatSinkAgentOutcomeEmitsTwoEvents(t *testing.T) {
+	body := streamSinkSSEBody(t, func(s *streamChatSink) {
+		if err := s.SendAgentOutcome(ragservice.RagChatAgentOutcomePayload{
+			Status:       "awaiting_approval",
+			Interrupted:  true,
+			CheckpointID: "cp-1",
+		}); err != nil {
+			t.Fatalf("outcome: %v", err)
+		}
+	})
+	if !strings.Contains(body, "event: agent_outcome\n") || !strings.Contains(body, "event: agent_status\n") {
+		t.Fatalf("expected agent_outcome + agent_status events, got: %s", body)
+	}
+	if !strings.Contains(body, `"status":"awaiting_approval"`) || !strings.Contains(body, `"checkpointId":"cp-1"`) {
+		t.Fatalf("outcome payload missing fields: %s", body)
+	}
+	if !strings.Contains(body, `"type":"outcome"`) {
+		t.Fatalf("agent_status projection missing type: %s", body)
+	}
+}
