@@ -47,28 +47,51 @@ func (s *DocumentProcessService) processDocumentChunks(ctx context.Context, docu
 	}
 
 	chunkStartedAt := s.now()
-	chunks, err := s.chunker.Chunk(text, buildChunkOptions(document))
-	result.ChunkDuration = elapsedMillis(chunkStartedAt, s.now())
-	if err != nil {
-		result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
-		return result, exception.NewServiceException("failed to chunk knowledge document", err)
+	plan := buildChunkPlan(document)
+	var domainChunks []domain.KnowledgeChunk
+	var vectorChunks []port.ChunkVector
+	if plan.useParentChild {
+		pc, err := corechunk.SplitParentChild(text, plan.parentOptions, plan.childOptions)
+		if err != nil {
+			result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
+			return result, exception.NewServiceException("failed to split parent child chunks", err)
+		}
+		childChunks := make([]corechunk.Chunk, 0, len(pc.Children))
+		for _, child := range pc.Children {
+			childChunks = append(childChunks, child.Chunk)
+		}
+		embedStartedAt := s.now()
+		embedded, err := corechunk.NewEmbedder(s.embedding).AttachEmbeddingsWithModel(childChunks, knowledgeBase.EmbeddingModel)
+		result.EmbedDuration = elapsedMillis(embedStartedAt, s.now())
+		if err != nil {
+			result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
+			return result, exception.NewServiceException("failed to embed knowledge document child chunks", err)
+		}
+		domainChunks = buildParentChildChunks(document, pc, embedded, operatorID)
+		vectorChunks = buildParentChildVectors(document, pc, embedded)
+		result.ChunkCount = len(pc.Children)
+	} else {
+		chunks, err := s.chunker.Chunk(text, plan.flatOptions)
+		result.ChunkDuration = elapsedMillis(chunkStartedAt, s.now())
+		if err != nil {
+			result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
+			return result, exception.NewServiceException("failed to chunk knowledge document", err)
+		}
+		if len(chunks) == 0 {
+			result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
+			return result, exception.NewClientException("knowledge document chunks are empty", nil)
+		}
+		embedStartedAt := s.now()
+		embedded, err := corechunk.NewEmbedder(s.embedding).AttachEmbeddingsWithModel(chunks, knowledgeBase.EmbeddingModel)
+		result.EmbedDuration = elapsedMillis(embedStartedAt, s.now())
+		if err != nil {
+			result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
+			return result, exception.NewServiceException("failed to embed knowledge document chunks", err)
+		}
+		domainChunks = buildKnowledgeChunks(document, embedded, operatorID)
+		vectorChunks = buildChunkVectors(document, embedded)
+		result.ChunkCount = len(domainChunks)
 	}
-	if len(chunks) == 0 {
-		result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
-		return result, exception.NewClientException("knowledge document chunks are empty", nil)
-	}
-
-	embedStartedAt := s.now()
-	embedded, err := corechunk.NewEmbedder(s.embedding).AttachEmbeddingsWithModel(chunks, knowledgeBase.EmbeddingModel)
-	result.EmbedDuration = elapsedMillis(embedStartedAt, s.now())
-	if err != nil {
-		result.TotalDuration = elapsedMillis(totalStartedAt, s.now())
-		return result, exception.NewServiceException("failed to embed knowledge document chunks", err)
-	}
-
-	domainChunks := buildKnowledgeChunks(document, embedded, operatorID)
-	vectorChunks := buildChunkVectors(document, embedded)
-	result.ChunkCount = len(domainChunks)
 
 	persistStartedAt := s.now()
 	if err := s.persistDocumentChunks(ctx, document.ID, domainChunks, vectorChunks, operatorID); err != nil {
@@ -108,34 +131,122 @@ func (s *DocumentProcessService) extractDocumentText(ctx context.Context, docume
 	return result.Text, nil
 }
 
-func buildChunkOptions(document domain.KnowledgeDocument) corechunk.Options {
-	options := corechunk.Options{
-		Strategy: corechunk.Strategy(strings.TrimSpace(document.ChunkStrategy)),
-	}
-	if len(document.ChunkConfig) == 0 {
-		options.OverlapSize = 120
-		return options.Normalize()
-	}
+type documentChunkPlan struct {
+	useParentChild bool
+	flatOptions    corechunk.Options
+	parentOptions  corechunk.Options
+	childOptions   corechunk.Options
+}
 
-	var raw struct {
-		ChunkSize    int `json:"chunkSize"`
-		OverlapSize  int `json:"overlapSize"`
-		MinChunkSize int `json:"minChunkSize"`
-		TargetChars  int `json:"targetChars"`
-		OverlapChars int `json:"overlapChars"`
-		MinChars     int `json:"minChars"`
+func buildChunkPlan(document domain.KnowledgeDocument) documentChunkPlan {
+	strategy := corechunk.Strategy(strings.TrimSpace(document.ChunkStrategy))
+	plan := documentChunkPlan{useParentChild: true}
+	var flatChunkSize, flatOverlapSize, flatMinChunkSize int
+	hasConfig := len(document.ChunkConfig) > 0
+	if hasConfig {
+		var raw struct {
+			ChunkSize         int  `json:"chunkSize"`
+			OverlapSize       int  `json:"overlapSize"`
+			MinChunkSize      int  `json:"minChunkSize"`
+			TargetChars       int  `json:"targetChars"`
+			OverlapChars      int  `json:"overlapChars"`
+			MinChars          int  `json:"minChars"`
+			EnableParentChild *bool `json:"enableParentChild"`
+			ParentChunkSize   int  `json:"parentChunkSize"`
+			ParentOverlapSize int  `json:"parentOverlapSize"`
+			ChildChunkSize    int  `json:"childChunkSize"`
+			ChildOverlapSize  int  `json:"childOverlapSize"`
+		}
+		if err := json.Unmarshal(document.ChunkConfig, &raw); err == nil {
+			if raw.EnableParentChild != nil {
+				plan.useParentChild = *raw.EnableParentChild
+			}
+			plan.parentOptions, plan.childOptions = corechunk.ParentChildOptions(
+				strategy,
+				firstPositive(raw.ParentChunkSize, raw.ChunkSize, raw.TargetChars),
+				firstPositive(raw.ParentOverlapSize, raw.OverlapSize, raw.OverlapChars),
+				firstPositive(raw.ChildChunkSize, 0),
+				firstPositive(raw.ChildOverlapSize, 0),
+			)
+			flatChunkSize = firstPositive(raw.ChunkSize, raw.TargetChars)
+			flatOverlapSize = firstPositive(raw.OverlapSize, raw.OverlapChars)
+			flatMinChunkSize = firstPositive(raw.MinChunkSize, raw.MinChars)
+		}
 	}
-	if err := json.Unmarshal(document.ChunkConfig, &raw); err != nil {
-		return options.Normalize()
+	if plan.useParentChild {
+		if !hasConfig {
+			plan.parentOptions, plan.childOptions = corechunk.ParentChildOptions(strategy, 0, 0, 0, 0)
+		}
+		return plan
 	}
+	plan.flatOptions = corechunk.Options{
+		Strategy:     strategy,
+		ChunkSize:    flatChunkSize,
+		OverlapSize:  flatOverlapSize,
+		MinChunkSize: flatMinChunkSize,
+	}
+	if !hasConfig || (flatOverlapSize == 0 && flatChunkSize == 0) {
+		plan.flatOptions.OverlapSize = 120
+	}
+	plan.flatOptions = plan.flatOptions.Normalize()
+	return plan
+}
 
-	options.ChunkSize = firstPositive(raw.ChunkSize, raw.TargetChars)
-	options.OverlapSize = firstPositive(raw.OverlapSize, raw.OverlapChars)
-	options.MinChunkSize = firstPositive(raw.MinChunkSize, raw.MinChars)
-	if options.OverlapSize == 0 && raw.OverlapSize == 0 && raw.OverlapChars == 0 {
-		options.OverlapSize = 120
+func buildParentChildChunks(
+	document domain.KnowledgeDocument,
+	result corechunk.ParentChildResult,
+	embedded []corechunk.Chunk,
+	operatorID string,
+) []domain.KnowledgeChunk {
+	chunks := make([]domain.KnowledgeChunk, 0, len(result.Parents)+len(embedded))
+	for index, parent := range result.Parents {
+		parentID := fmt.Sprintf("%s-p-%d", document.ID, index)
+		chunk := domain.NewKnowledgeChunk(parentID, document.KnowledgeBaseID, document.ID, parent.Index, parent.Text, operatorID)
+		chunk.RecordType = "parent"
+		chunk.ContentHash = contentHash(parent.Text)
+		chunk.CharCount = utf8.RuneCountInString(parent.Text)
+		chunk.TokenCount = len(strings.Fields(parent.Text))
+		chunks = append(chunks, chunk)
 	}
-	return options.Normalize()
+	for index, item := range embedded {
+		chunkID := fmt.Sprintf("%s-%d", document.ID, item.Index)
+		chunk := domain.NewKnowledgeChunk(chunkID, document.KnowledgeBaseID, document.ID, item.Index, item.Text, operatorID)
+		chunk.RecordType = "child"
+		chunk.ParentChunkID = fmt.Sprintf("%s-p-%d", document.ID, result.Children[index].ParentIndex)
+		chunk.ContentHash = contentHash(item.Text)
+		chunk.CharCount = utf8.RuneCountInString(item.Text)
+		chunk.TokenCount = len(strings.Fields(item.Text))
+		chunks = append(chunks, chunk)
+	}
+	return chunks
+}
+
+func buildParentChildVectors(
+	document domain.KnowledgeDocument,
+	result corechunk.ParentChildResult,
+	embedded []corechunk.Chunk,
+) []port.ChunkVector {
+	vectors := make([]port.ChunkVector, 0, len(embedded))
+	for index, item := range embedded {
+		parentIndex := result.Children[index].ParentIndex
+		chunkID := fmt.Sprintf("%s-%d", document.ID, item.Index)
+		metadata := knowledgechunk.BuildKnowledgeVectorMetadata(document, item.Index, item.Metadata)
+		metadata["record_type"] = "child"
+		metadata["parent_chunk_id"] = fmt.Sprintf("%s-p-%d", document.ID, parentIndex)
+		if parentIndex >= 0 && parentIndex < len(result.Parents) {
+			metadata["parent_content"] = result.Parents[parentIndex].Text
+		}
+		vectors = append(vectors, port.ChunkVector{
+			ChunkID:         chunkID,
+			DocumentID:      document.ID,
+			KnowledgeBaseID: document.KnowledgeBaseID,
+			Index:           item.Index,
+			Text:            item.Text,
+			Embedding:       item.Embedding,
+			Metadata:        metadata,
+		})
+	}
+	return vectors
 }
 
 func buildKnowledgeChunks(document domain.KnowledgeDocument, chunks []corechunk.Chunk, operatorID string) []domain.KnowledgeChunk {

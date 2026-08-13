@@ -186,6 +186,9 @@ func (r *einoTaskRuntime) Commit(node ingestionworkflow.WorkflowNodeSpec, nextSt
 	if nextState.Chunks != nil {
 		r.state.Chunks = nextState.Chunks
 	}
+	if nextState.ParentChunks != nil {
+		r.state.ParentChunks = nextState.ParentChunks
+	}
 	if nextState.IndexResult.Target != "" || nextState.IndexResult.ChunkCount > 0 || len(nextState.IndexResult.Metadata) > 0 {
 		r.state.IndexResult = nextState.IndexResult
 	}

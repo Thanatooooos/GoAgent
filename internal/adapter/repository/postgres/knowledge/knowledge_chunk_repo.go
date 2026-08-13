@@ -80,7 +80,8 @@ func (r *KnowledgeChunkRepository) Delete(ctx context.Context, id string) error 
 }
 
 func (r *KnowledgeChunkRepository) DeleteByDocumentID(ctx context.Context, documentID string) error {
-	if err := r.db.WithContext(ctx).Delete(&models.KnowledgeChunkModel{}, "doc_id = ?", documentID).Error; err != nil {
+	// 重处理/删除文档时会用相同 chunk ID 重建，软删除会留下旧行导致主键冲突，因此硬删。
+	if err := r.db.WithContext(ctx).Unscoped().Delete(&models.KnowledgeChunkModel{}, "doc_id = ?", documentID).Error; err != nil {
 		return fmt.Errorf("delete knowledge chunks by document id: %w", err)
 	}
 	return nil

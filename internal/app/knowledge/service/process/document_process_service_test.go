@@ -253,8 +253,20 @@ func TestDocumentProcessServiceExecuteChunkProcessesDocument(t *testing.T) {
 	if len(chunkRepo.created) == 0 {
 		t.Fatal("expected chunks to be created")
 	}
-	if len(vectorStore.upserted) != len(chunkRepo.created) {
-		t.Fatalf("expected vector count to match chunk count")
+	// 默认父子分块：父记录无向量，子记录带向量。
+	var parentCount, childCount int
+	for _, c := range chunkRepo.created {
+		if c.RecordType == "parent" {
+			parentCount++
+		} else if c.RecordType == "child" {
+			childCount++
+		}
+	}
+	if parentCount == 0 || childCount == 0 {
+		t.Fatalf("expected parent and child records, parents=%d children=%d", parentCount, childCount)
+	}
+	if len(vectorStore.upserted) != childCount {
+		t.Fatalf("expected vectors only for children, vectors=%d children=%d", len(vectorStore.upserted), childCount)
 	}
 	if got := vectorStore.upserted[0].Metadata["document_name"]; got != "doc.md" {
 		t.Fatalf("expected document_name metadata, got %v", got)
@@ -270,6 +282,57 @@ func TestDocumentProcessServiceExecuteChunkProcessesDocument(t *testing.T) {
 	}
 	if !chunkLogUpdated(chunkLogRepo.updated, domain.KnowledgeDocumentChunkLogStatusSuccess) {
 		t.Fatal("expected chunk log to be marked success")
+	}
+}
+
+func TestDocumentProcessServiceExecuteChunkDefaultsToParentChild(t *testing.T) {
+	document := processDocument()
+	document.Name = "doc.txt"
+	document.FileType = "txt"
+	documentRepo := &processDocumentRepositoryStub{document: document}
+	chunkRepo := &processChunkRepositoryStub{}
+	vectorStore := &processVectorStoreStub{}
+	svc := NewDocumentProcessService(DocumentProcessServiceOptions{
+		BaseRepo:     processBaseRepositoryStub{base: domain.KnowledgeBase{ID: "kb-1", EmbeddingModel: "embed-model"}},
+		DocumentRepo: documentRepo,
+		ChunkRepo:    chunkRepo,
+		ChunkLogRepo: &processChunkLogRepositoryStub{},
+		Storage:      processStorageStub{body: strings.Repeat("abc", 1000)},
+		VectorStore:  vectorStore,
+		Embedding:    processEmbeddingStub{},
+	})
+
+	if err := svc.ExecuteChunk(context.Background(), ExecuteChunkInput{DocumentID: "doc-1", TriggeredBy: "u-1"}); err != nil {
+		t.Fatalf("ExecuteChunk() error = %v", err)
+	}
+	var parents, children []domain.KnowledgeChunk
+	for _, c := range chunkRepo.created {
+		if c.RecordType == "parent" {
+			parents = append(parents, c)
+		} else if c.RecordType == "child" {
+			children = append(children, c)
+		}
+	}
+	if len(parents) == 0 || len(children) == 0 {
+		t.Fatalf("expected parent and child records, parents=%d children=%d", len(parents), len(children))
+	}
+	if len(children) <= len(parents) {
+		t.Fatalf("expected more children than parents for large doc, parents=%d children=%d", len(parents), len(children))
+	}
+	if len(vectorStore.upserted) != len(children) {
+		t.Fatalf("expected vectors only for children, vectors=%d children=%d", len(vectorStore.upserted), len(children))
+	}
+	if children[0].ParentChunkID == "" {
+		t.Fatalf("expected child parent chunk id, got %+v", children[0])
+	}
+	if got := vectorStore.upserted[0].Metadata["record_type"]; got != "child" {
+		t.Fatalf("expected child vector record_type, got %v", got)
+	}
+	if got := vectorStore.upserted[0].Metadata["parent_chunk_id"]; got == "" {
+		t.Fatalf("expected parent_chunk_id in vector metadata, got %v", got)
+	}
+	if got := vectorStore.upserted[0].Metadata["parent_content"]; got == "" {
+		t.Fatalf("expected parent_content in vector metadata")
 	}
 }
 
@@ -352,6 +415,45 @@ func TestDocumentProcessServiceExecuteChunkUsesDefaultOverlapWhenChunkConfigMiss
 	head := string(second[:120])
 	if tail != head {
 		t.Fatalf("expected default overlap of 120 chars to be applied")
+	}
+}
+
+func TestDocumentProcessServiceExecuteChunkUsesChunkConfigAsParentSize(t *testing.T) {
+	document := processDocument()
+	document.Name = "doc.txt"
+	document.FileType = "txt"
+	document.ChunkStrategy = "fixed_size"
+	document.ChunkConfig = []byte(`{"chunkSize": 400, "overlapSize": 100}`)
+	documentRepo := &processDocumentRepositoryStub{document: document}
+	chunkRepo := &processChunkRepositoryStub{}
+	svc := NewDocumentProcessService(DocumentProcessServiceOptions{
+		BaseRepo:     processBaseRepositoryStub{base: domain.KnowledgeBase{ID: "kb-1", EmbeddingModel: "embed-model"}},
+		DocumentRepo: documentRepo,
+		ChunkRepo:    chunkRepo,
+		ChunkLogRepo: &processChunkLogRepositoryStub{},
+		Storage:      processStorageStub{body: strings.Repeat("x", 1500)},
+		VectorStore:  &processVectorStoreStub{},
+		Embedding:    processEmbeddingStub{},
+	})
+
+	if err := svc.ExecuteChunk(context.Background(), ExecuteChunkInput{DocumentID: "doc-1", TriggeredBy: "u-1"}); err != nil {
+		t.Fatalf("ExecuteChunk() error = %v", err)
+	}
+	var parentCount int
+	var firstParentChars int
+	for _, c := range chunkRepo.created {
+		if c.RecordType == "parent" {
+			if parentCount == 0 {
+				firstParentChars = c.CharCount
+			}
+			parentCount++
+		}
+	}
+	if parentCount < 3 {
+		t.Fatalf("expected multiple parents from 400-char chunk config, got %d", parentCount)
+	}
+	if firstParentChars <= 0 || firstParentChars > 500 {
+		t.Fatalf("expected parent size derived from chunkConfig 400, got first parent charCount=%d", firstParentChars)
 	}
 }
 
