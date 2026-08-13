@@ -7,7 +7,7 @@ import (
 )
 
 type KnowledgeChunkModel struct {
-	ID              string                `gorm:"column:id;type:varchar(20);primaryKey"`
+	ID              string                `gorm:"column:id;type:varchar(64);primaryKey"`
 	KnowledgeBaseID string                `gorm:"column:kb_id;type:varchar(20);not null;index"`
 	DocumentID      string                `gorm:"column:doc_id;type:varchar(20);not null;index"`
 	ChunkIndex      int                   `gorm:"column:chunk_index;not null"`

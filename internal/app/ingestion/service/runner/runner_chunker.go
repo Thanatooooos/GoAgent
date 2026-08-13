@@ -57,10 +57,18 @@ func (r *ChunkerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Exe
 	}
 	chunkMode := "flat"
 	if parentChildEnabled {
+		parentChunkSize := readIntSetting(node.Settings, "parentChunkSize")
+		if parentChunkSize <= 0 {
+			parentChunkSize = readIntSetting(node.Settings, "chunkSize")
+		}
+		parentOverlapSize := readIntSetting(node.Settings, "parentOverlapSize")
+		if parentOverlapSize <= 0 {
+			parentOverlapSize = readIntSetting(node.Settings, "overlapSize")
+		}
 		parentOptions, childOptions := corechunk.ParentChildOptions(
 			options.Strategy,
-			readIntSetting(node.Settings, "parentChunkSize"),
-			readIntSetting(node.Settings, "parentOverlapSize"),
+			parentChunkSize,
+			parentOverlapSize,
 			readIntSetting(node.Settings, "childChunkSize"),
 			readIntSetting(node.Settings, "childOverlapSize"),
 		)

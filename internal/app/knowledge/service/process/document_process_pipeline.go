@@ -163,10 +163,10 @@ func buildChunkPlan(document domain.KnowledgeDocument) documentChunkPlan {
 			}
 			plan.parentOptions, plan.childOptions = corechunk.ParentChildOptions(
 				strategy,
-				firstPositive(raw.ParentChunkSize, 0),
-				raw.ParentOverlapSize,
+				firstPositive(raw.ParentChunkSize, raw.ChunkSize, raw.TargetChars),
+				firstPositive(raw.ParentOverlapSize, raw.OverlapSize, raw.OverlapChars),
 				firstPositive(raw.ChildChunkSize, 0),
-				raw.ChildOverlapSize,
+				firstPositive(raw.ChildOverlapSize, 0),
 			)
 			flatChunkSize = firstPositive(raw.ChunkSize, raw.TargetChars)
 			flatOverlapSize = firstPositive(raw.OverlapSize, raw.OverlapChars)
