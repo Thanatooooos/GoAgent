@@ -51,17 +51,19 @@ func (r *ChunkerNodeRunner) Run(ctx context.Context, state ingestionworkflow.Exe
 	}.Normalize()
 
 	next := state.Clone()
-	parentChildEnabled := readBoolSetting(node.Settings, "enableParentChild")
+	parentChildEnabled := true
+	if raw, ok := node.Settings["enableParentChild"]; ok && raw != nil {
+		parentChildEnabled = readBoolSetting(node.Settings, "enableParentChild")
+	}
 	chunkMode := "flat"
 	if parentChildEnabled {
-		parentOptions := options
-		parentOptions.ChunkSize = readIntSetting(node.Settings, "parentChunkSize")
-		parentOptions.OverlapSize = readIntSetting(node.Settings, "parentOverlapSize")
-		parentOptions = parentOptions.Normalize()
-		childOptions := options
-		childOptions.ChunkSize = readIntSetting(node.Settings, "childChunkSize")
-		childOptions.OverlapSize = readIntSetting(node.Settings, "childOverlapSize")
-		childOptions = childOptions.Normalize()
+		parentOptions, childOptions := corechunk.ParentChildOptions(
+			options.Strategy,
+			readIntSetting(node.Settings, "parentChunkSize"),
+			readIntSetting(node.Settings, "parentOverlapSize"),
+			readIntSetting(node.Settings, "childChunkSize"),
+			readIntSetting(node.Settings, "childOverlapSize"),
+		)
 
 		result, err := corechunk.SplitParentChild(state.Parsed.Content, parentOptions, childOptions)
 		if err != nil {
