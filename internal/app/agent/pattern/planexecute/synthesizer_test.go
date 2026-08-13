@@ -118,6 +118,140 @@ func TestDefaultPlanSynthesizer_SynthesizeSelectorPlan(t *testing.T) {
 	}
 }
 
+func TestDefaultPlanSynthesizer_BackfillsExplicitWikiIDs(t *testing.T) {
+	registry := registerHandles(t, stubPlanCapabilityHandle{spec: agentcapability.Spec{
+		Name:             agentcapability.NameWikiWrite,
+		Kind:             agentcapability.KindWorkflow,
+		Family:           agentcapability.FamilyWiki,
+		Roles:            []string{agentcapability.RoleWriteWiki},
+		Description:      "Generates wiki pages from a knowledge document and persists them as a linked wiki.",
+		InputSchema:      agentcapability.NewSchema(struct{}{}),
+		OutputSchema:     agentcapability.NewSchema(struct{}{}),
+		RiskLevel:        agentcapability.RiskLevelMedium,
+		Idempotency:      agentcapability.IdempotencyBestEffort,
+	}})
+	synthesizer := newDefaultPlanSynthesizer(
+		registry,
+		agentcapability.Spec{},
+		agentcapability.Spec{},
+		agentcatalog.NewBuilder(),
+		stubSelector{
+			selectFn: func(context.Context, selectcapability.SelectionInput) (selectcapability.SelectionOutput, error) {
+				return selectcapability.SelectionOutput{Selections: []selectcapability.CapabilitySelection{{
+					Name: agentcapability.NameWikiWrite,
+				}}}, nil
+			},
+		},
+		agentresolve.NewRegistryResolver(registry),
+	)
+
+	result, err := synthesizer.Synthesize(context.Background(), PlanSynthesisInput{Session: newSession(
+		"sess-synth-wiki-input",
+		"请调用 wiki_write，knowledge_base_id=kb_demo_01，document_id=doc_ok_01。",
+		agentstate.OutputModeFinalAnswer,
+	)})
+	if err != nil {
+		t.Fatalf("Synthesize() error = %v", err)
+	}
+	if got := result.Plan.Steps[0].CapabilityInput["knowledge_base_id"]; got != "kb_demo_01" {
+		t.Fatalf("expected knowledge base id to be backfilled, got %#v", got)
+	}
+	if got := result.Plan.Steps[0].CapabilityInput["document_id"]; got != "doc_ok_01" {
+		t.Fatalf("expected document id to be backfilled, got %#v", got)
+	}
+}
+
+func TestDefaultPlanSynthesizer_UsesExplicitWikiRequestWhenSelectorReturnsEmpty(t *testing.T) {
+	registry := registerHandles(t, stubPlanCapabilityHandle{spec: agentcapability.Spec{
+		Name:             agentcapability.NameWikiWrite,
+		Kind:             agentcapability.KindWorkflow,
+		Family:           agentcapability.FamilyWiki,
+		Roles:            []string{agentcapability.RoleWriteWiki},
+		Description:      "Generates wiki pages from a knowledge document and persists them as a linked wiki.",
+		InputSchema:      agentcapability.NewSchema(struct{}{}),
+		OutputSchema:     agentcapability.NewSchema(struct{}{}),
+		RiskLevel:        agentcapability.RiskLevelMedium,
+		Idempotency:      agentcapability.IdempotencyBestEffort,
+	}})
+	synthesizer := newDefaultPlanSynthesizer(
+		registry,
+		agentcapability.Spec{},
+		agentcapability.Spec{},
+		agentcatalog.NewBuilder(),
+		stubSelector{selectFn: func(context.Context, selectcapability.SelectionInput) (selectcapability.SelectionOutput, error) {
+			return selectcapability.SelectionOutput{}, nil
+		}},
+		agentresolve.NewRegistryResolver(registry),
+	)
+
+	result, err := synthesizer.Synthesize(context.Background(), PlanSynthesisInput{Session: newSession(
+		"sess-synth-wiki-explicit",
+		"请直接调用 wiki_write，knowledge_base_id=kb_demo_01，document_id=doc_ok_01，生成并写入 Wiki 页面。",
+		agentstate.OutputModeFinalAnswer,
+	)})
+	if err != nil {
+		t.Fatalf("Synthesize() error = %v", err)
+	}
+	if len(result.Plan.Steps) != 1 || result.Plan.Steps[0].CapabilityName != agentcapability.NameWikiWrite {
+		t.Fatalf("expected explicit wiki plan, got %+v", result.Plan.Steps)
+	}
+}
+
+func TestDefaultPlanSynthesizer_ExplicitWikiRequestWinsOverSelector(t *testing.T) {
+	wikiSpec := agentcapability.Spec{
+		Name:             agentcapability.NameWikiWrite,
+		Kind:             agentcapability.KindWorkflow,
+		Family:           agentcapability.FamilyWiki,
+		Roles:            []string{agentcapability.RoleWriteWiki},
+		Description:      "Generates wiki pages from a knowledge document and persists them as a linked wiki.",
+		InputSchema:      agentcapability.NewSchema(struct{}{}),
+		OutputSchema:     agentcapability.NewSchema(struct{}{}),
+		RiskLevel:        agentcapability.RiskLevelMedium,
+		Idempotency:      agentcapability.IdempotencyBestEffort,
+	}
+	fetchHandle, err := agentfetch.NewCapability(stubFetchInvoker{
+		fetch: func(context.Context, []string) (agentfetch.Output, error) {
+			return agentfetch.Output{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("fetch capability: %v", err)
+	}
+	registry := registerHandles(t, stubPlanCapabilityHandle{spec: wikiSpec}, fetchHandle)
+	synthesizer := newDefaultPlanSynthesizer(
+		registry,
+		agentcapability.Spec{},
+		agentcapability.Spec{},
+		agentcatalog.NewBuilder(),
+		// The selector would pick web_fetch, but the question explicitly
+		// requests wiki_write with concrete IDs — the explicit request must win.
+		stubSelector{selectFn: func(context.Context, selectcapability.SelectionInput) (selectcapability.SelectionOutput, error) {
+			return selectcapability.SelectionOutput{Selections: []selectcapability.CapabilitySelection{{
+				Name: agentcapability.NameWebFetch,
+				Input: map[string]any{
+					"urls": []string{"https://example.com/ignored"},
+				},
+			}}}, nil
+		}},
+		agentresolve.NewRegistryResolver(registry),
+	)
+
+	result, err := synthesizer.Synthesize(context.Background(), PlanSynthesisInput{Session: newSession(
+		"sess-synth-wiki-priority",
+		"请调用 wiki_write，knowledge_base_id=31794389852418305，document_id=31794655553188097，生成 wiki 页面。",
+		agentstate.OutputModeFinalAnswer,
+	)})
+	if err != nil {
+		t.Fatalf("Synthesize() error = %v", err)
+	}
+	if len(result.Plan.Steps) != 1 || result.Plan.Steps[0].CapabilityName != agentcapability.NameWikiWrite {
+		t.Fatalf("expected explicit wiki_write plan to win over selector, got %+v", result.Plan.Steps)
+	}
+	if got := result.Plan.Steps[0].CapabilityInput["document_id"]; got != "31794655553188097" {
+		t.Fatalf("expected document id carried through, got %#v", got)
+	}
+}
+
 func TestDefaultPlanSynthesizer_SynthesizeMixedPlan(t *testing.T) {
 	searchHandle, err := agentsearch.NewCapability(stubSearchInvoker{
 		search: func(context.Context, string) (agentsearch.SearchOutput, error) {

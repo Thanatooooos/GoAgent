@@ -3,6 +3,7 @@ package planexecute
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	agentcapability "local/rag-project/internal/app/agent/capability"
@@ -63,20 +64,29 @@ func (s defaultPlanSynthesizer) synthesizeFromSelection(ctx context.Context, ses
 	if err != nil || len(cards) == 0 {
 		return PlanSynthesisResult{}, false
 	}
-	selectionOutput, err := s.selector.Select(ctx, selectcapability.SelectionInput{
-		UserRequest:   normalizeQuery(session),
-		ContextNotes:  contextNotes,
-		Capabilities:  cards,
-		MaxSelections: 1,
-	})
-	if err != nil || len(selectionOutput.Selections) == 0 {
-		return PlanSynthesisResult{}, false
+	// 显式 wiki_write 请求（问题中含 wiki_write 且给出 knowledge_base_id/document_id）优先于 LLM 选择器，
+	// 避免选择器把显式请求误解为 web 搜索。
+	var selectionOutput selectcapability.SelectionOutput
+	if explicit, ok := explicitWikiSelection(session, s.registry); ok {
+		selectionOutput = selectcapability.SelectionOutput{Selections: []selectcapability.CapabilitySelection{explicit}}
+	} else {
+		selectionOutput, err = s.selector.Select(ctx, selectcapability.SelectionInput{
+			UserRequest:   normalizeQuery(session),
+			ContextNotes:  contextNotes,
+			Capabilities:  cards,
+			MaxSelections: 1,
+		})
+		if err != nil || len(selectionOutput.Selections) == 0 {
+			return PlanSynthesisResult{}, false
+		}
 	}
 	matched, err := s.resolver.Match(selectionOutput.Selections[0])
 	if err != nil {
 		return PlanSynthesisResult{}, false
 	}
-	if mixedPlan, ok := s.buildMixedPlanFromSelection(session, matched, selectionOutput.Selections[0]); ok {
+	selection := selectionOutput.Selections[0]
+	backfillExplicitCapabilityInput(session, matched, &selection)
+	if mixedPlan, ok := s.buildMixedPlanFromSelection(session, matched, selection); ok {
 		return PlanSynthesisResult{
 			Plan:      mixedPlan,
 			Reasoning: "built mixed-capability plan around " + matched.Name + " and " + agentcapability.NameExternalEvidenceCollect,
@@ -84,10 +94,77 @@ func (s defaultPlanSynthesizer) synthesizeFromSelection(ctx context.Context, ses
 		}, true
 	}
 	return PlanSynthesisResult{
-		Plan:      buildPlanFromSelection(session, matched, selectionOutput.Selections[0]),
+		Plan:      buildPlanFromSelection(session, matched, selection),
 		Reasoning: "built selector-driven plan around " + matched.Name,
 		Notes:     []string{"built selector-driven plan around capability " + matched.Name},
 	}, true
+}
+
+func explicitWikiSelection(session *agentruntime.RuntimeSession, registry *agentcapability.Registry) (selectcapability.CapabilitySelection, bool) {
+	if session == nil || registry == nil {
+		return selectcapability.CapabilitySelection{}, false
+	}
+	if _, ok := registry.Spec(agentcapability.NameWikiWrite); !ok {
+		return selectcapability.CapabilitySelection{}, false
+	}
+	question := strings.ToLower(strings.TrimSpace(session.Request.Question))
+	if question == "" {
+		question = strings.ToLower(strings.TrimSpace(session.Snapshot.Request.Question))
+	}
+	if !strings.Contains(question, agentcapability.NameWikiWrite) {
+		return selectcapability.CapabilitySelection{}, false
+	}
+	knowledgeBaseID := explicitCapabilityInputValue(question, "knowledge_base_id")
+	documentID := explicitCapabilityInputValue(question, "document_id")
+	if knowledgeBaseID == "" || documentID == "" {
+		return selectcapability.CapabilitySelection{}, false
+	}
+	return selectcapability.CapabilitySelection{
+		Name: agentcapability.NameWikiWrite,
+		Input: map[string]any{
+			"knowledge_base_id": knowledgeBaseID,
+			"document_id":       documentID,
+		},
+		Reason: "explicit wiki_write request",
+	}, true
+}
+
+var explicitCapabilityInputPattern = regexp.MustCompile(`(?i)["']?([a-z_]+)["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]+)`)
+
+func backfillExplicitCapabilityInput(session *agentruntime.RuntimeSession, matched agentresolve.MatchedCapability, selection *selectcapability.CapabilitySelection) {
+	if session == nil || selection == nil || matched.Name != agentcapability.NameWikiWrite {
+		return
+	}
+	question := strings.TrimSpace(session.Request.Question)
+	if question == "" {
+		question = strings.TrimSpace(session.Snapshot.Request.Question)
+	}
+	if question == "" {
+		return
+	}
+	if selection.Input == nil {
+		selection.Input = make(map[string]any)
+	}
+	for _, field := range []string{"knowledge_base_id", "document_id"} {
+		if value, ok := selection.Input[field].(string); ok && strings.TrimSpace(value) != "" {
+			continue
+		}
+		if value := explicitCapabilityInputValue(question, field); value != "" {
+			selection.Input[field] = value
+		}
+	}
+	if len(selection.Input) == 0 {
+		selection.Input = nil
+	}
+}
+
+func explicitCapabilityInputValue(question, field string) string {
+	for _, match := range explicitCapabilityInputPattern.FindAllStringSubmatch(question, -1) {
+		if len(match) == 3 && strings.EqualFold(strings.TrimSpace(match[1]), field) {
+			return strings.TrimSpace(match[2])
+		}
+	}
+	return ""
 }
 
 func buildPlan(session *agentruntime.RuntimeSession) agentstate.PlanState {
