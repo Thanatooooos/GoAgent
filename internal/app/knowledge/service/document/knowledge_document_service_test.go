@@ -11,6 +11,7 @@ import (
 	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
+	knowledgeschedule "local/rag-project/internal/app/knowledge/schedule"
 )
 
 type knowledgeDocumentServiceDocumentRepoStub struct {
@@ -19,6 +20,45 @@ type knowledgeDocumentServiceDocumentRepoStub struct {
 	updateFn       func(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error)
 	updateFieldsFn func(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error)
 	deleteFn       func(ctx context.Context, id string) error
+}
+
+type knowledgeDocumentServiceBaseRepoStub struct {
+	getByIDFn func(ctx context.Context, id string) (domain.KnowledgeBase, error)
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) Create(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error) {
+	return knowledgeBase, nil
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) Update(ctx context.Context, knowledgeBase domain.KnowledgeBase) (domain.KnowledgeBase, error) {
+	return knowledgeBase, nil
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) UpdateWhere(ctx context.Context, cond port.KnowledgeBaseConditions, patch port.KnowledgeBasePatch) (int64, error) {
+	return 0, nil
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) Delete(ctx context.Context, id string) error {
+	return nil
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) GetByID(ctx context.Context, id string) (domain.KnowledgeBase, error) {
+	if s.getByIDFn != nil {
+		return s.getByIDFn(ctx, id)
+	}
+	return domain.KnowledgeBase{}, nil
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) GetByName(ctx context.Context, name string) (int, error) {
+	return 0, nil
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) Count(ctx context.Context, filter port.KnowledgeBaseListFilter) (int, error) {
+	return 0, nil
+}
+
+func (s knowledgeDocumentServiceBaseRepoStub) List(ctx context.Context, filter port.KnowledgeBaseListFilter) ([]domain.KnowledgeBase, error) {
+	return nil, nil
 }
 
 func (s knowledgeDocumentServiceDocumentRepoStub) Create(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocument, error) {
@@ -261,6 +301,17 @@ type knowledgeDocumentServiceStorageStub struct {
 	deleteFn func(ctx context.Context, key string) error
 }
 
+type knowledgeDocumentServiceRemoteFetcherStub struct {
+	fetchAndStoreFn func(ctx context.Context, rawURL string, storageKey string, fallbackFileName string) (knowledgeschedule.StoredFileDTO, error)
+}
+
+func (s knowledgeDocumentServiceRemoteFetcherStub) FetchAndStore(ctx context.Context, rawURL string, storageKey string, fallbackFileName string) (knowledgeschedule.StoredFileDTO, error) {
+	if s.fetchAndStoreFn != nil {
+		return s.fetchAndStoreFn(ctx, rawURL, storageKey, fallbackFileName)
+	}
+	return knowledgeschedule.StoredFileDTO{}, nil
+}
+
 func (s knowledgeDocumentServiceStorageStub) Upload(ctx context.Context, file port.FileUpload) (port.StoredFile, error) {
 	return port.StoredFile{}, nil
 }
@@ -274,6 +325,51 @@ func (s knowledgeDocumentServiceStorageStub) Delete(ctx context.Context, key str
 
 func (s knowledgeDocumentServiceStorageStub) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	return nil, nil
+}
+
+func TestKnowledgeDocumentServiceUploadURLWithoutFileName(t *testing.T) {
+	t.Parallel()
+
+	svc := NewKnowledgeDocumentService(
+		knowledgeDocumentServiceBaseRepoStub{
+			getByIDFn: func(ctx context.Context, id string) (domain.KnowledgeBase, error) {
+				return domain.NewKnowledgeBase("kb-1", "Docs", "qwen-emb-8b", "docs", "tester"), nil
+			},
+		},
+		knowledgeDocumentServiceDocumentRepoStub{},
+		nil,
+		nil,
+		nil,
+		knowledgeDocumentServiceStorageStub{},
+		nil,
+		nil,
+		knowledgeDocumentServiceRemoteFetcherStub{
+			fetchAndStoreFn: func(ctx context.Context, rawURL string, storageKey string, fallbackFileName string) (knowledgeschedule.StoredFileDTO, error) {
+				return knowledgeschedule.StoredFileDTO{
+					Url:            storageKey,
+					DetectedType:   "text/markdown",
+					Size:           12,
+					OriginFileName: "from-response.md",
+				}, nil
+			},
+		},
+	)
+
+	got, err := svc.Upload(context.Background(), UploadKnowledgeDocumentInput{
+		KnowledgeBaseID: "kb-1",
+		SourceType:      domain.KnowledgeDocumentSourceURL,
+		SourceLocation:  "https://example.com/docs/readme.md",
+		OperatorID:      "tester",
+	})
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	if got.Name != "from-response.md" {
+		t.Fatalf("expected remote file name, got %q", got.Name)
+	}
+	if got.SourceLocation != "https://example.com/docs/readme.md" {
+		t.Fatalf("unexpected source location %q", got.SourceLocation)
+	}
 }
 
 type knowledgeDocumentServiceChunkLogRepoStub struct {

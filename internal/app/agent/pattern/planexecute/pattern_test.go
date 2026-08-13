@@ -673,6 +673,16 @@ type stubSelector struct {
 	selectFn func(ctx context.Context, input selectcapability.SelectionInput) (selectcapability.SelectionOutput, error)
 }
 
+type stubPlanCapabilityHandle struct {
+	spec agentcapability.Spec
+}
+
+func (s stubPlanCapabilityHandle) Spec() agentcapability.Spec { return s.spec }
+
+func (s stubPlanCapabilityHandle) Invoke(context.Context, agentcapability.InvocationRequest) (agentcapability.InvocationResult, error) {
+	return agentcapability.InvocationResult{Status: agentcapability.StatusSucceeded}, nil
+}
+
 func (s stubSelector) Select(ctx context.Context, input selectcapability.SelectionInput) (selectcapability.SelectionOutput, error) {
 	return s.selectFn(ctx, input)
 }

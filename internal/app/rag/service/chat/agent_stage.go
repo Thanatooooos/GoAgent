@@ -273,6 +273,18 @@ func buildAgentAssistantContent(result agentapp.RunResponse) string {
 	}
 }
 
+func directAgentToolStageAnswer(result agentapp.RunResponse) string {
+	if result.Outcome.Status != agentapp.RunStatusCompleted {
+		return ""
+	}
+	summary := strings.TrimSpace(result.Response.Summary)
+	index := strings.Index(strings.ToLower(summary), "wiki generated ")
+	if index < 0 {
+		return ""
+	}
+	return strings.TrimSpace(summary[index:])
+}
+
 func workflowResultFromAgentRun(result agentapp.RunResponse) ragtool.WorkflowResult {
 	control := defaultAgentWorkflowControl()
 	traceMeta := defaultAgentWorkflowTraceMeta()

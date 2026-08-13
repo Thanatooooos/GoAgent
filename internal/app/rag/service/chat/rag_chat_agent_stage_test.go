@@ -145,6 +145,17 @@ func TestRagChatServiceSelectsAgentRuntimeInToolStageDiagnosticMode(t *testing.T
 	}
 }
 
+func TestAgentRuntimeToolStageUsesCompletedWikiSummaryDirectly(t *testing.T) {
+	result := agentapp.RunResponse{
+		Response: agentapp.Response{Summary: "Based on plan-execute evidence: wiki generated 5 pages / 1 links"},
+		Outcome:  agentapp.RunOutcome{Status: agentapp.RunStatusCompleted},
+	}
+
+	if got := directAgentToolStageAnswer(result); got != "wiki generated 5 pages / 1 links" {
+		t.Fatalf("directAgentToolStageAnswer() = %q, want completed wiki summary", got)
+	}
+}
+
 func TestRagChatServiceRunAgentToolWorkflowStage_ProjectsToolStageContext(t *testing.T) {
 	service, _ := newPrepareChatTestService(t, ragrewrite.Result{NeedRetrieval: true}, nil, nil, func(deps *RagChatDeps, opts *RagChatOptions) {
 		deps.AgentRuntime = agentRuntimeServiceStub{

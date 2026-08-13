@@ -33,25 +33,26 @@ func (s *KnowledgeDocumentService) Upload(ctx context.Context, input UploadKnowl
 		return domain.KnowledgeDocument{}, exception.NewClientException("knowledge base id is required", nil)
 	}
 
-	fileName := sanitizeDocumentFileName(input.FileName)
-	if fileName == "" {
-		return domain.KnowledgeDocument{}, exception.NewClientException("file name is required", nil)
+	sourceType := normalizeKnowledgeDocumentSourceType(input.SourceType)
+	if sourceType == "" {
+		sourceType = domain.KnowledgeDocumentSourceFile
 	}
-	if input.Body == nil {
-		return domain.KnowledgeDocument{}, exception.NewClientException("file body is required", nil)
-	}
-	if input.Size < 0 {
-		return domain.KnowledgeDocument{}, exception.NewClientException("file size is invalid", nil)
+	if sourceType == domain.KnowledgeDocumentSourceFile {
+		fileName := sanitizeDocumentFileName(input.FileName)
+		if fileName == "" {
+			return domain.KnowledgeDocument{}, exception.NewClientException("file name is required", nil)
+		}
+		if input.Body == nil {
+			return domain.KnowledgeDocument{}, exception.NewClientException("file body is required", nil)
+		}
+		if input.Size < 0 {
+			return domain.KnowledgeDocument{}, exception.NewClientException("file size is invalid", nil)
+		}
 	}
 
 	operatorID := strings.TrimSpace(input.OperatorID)
 	if operatorID == "" {
 		return domain.KnowledgeDocument{}, exception.NewClientException("operator id is required", nil)
-	}
-
-	sourceType := normalizeKnowledgeDocumentSourceType(input.SourceType)
-	if sourceType == "" {
-		sourceType = domain.KnowledgeDocumentSourceFile
 	}
 
 	processMode, err := normalizeKnowledgeDocumentProcessMode(input.ProcessMode)

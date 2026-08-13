@@ -71,6 +71,12 @@ func TestWikiWriteInvokeGeneratesAndPersists(t *testing.T) {
 	if output.PageCount != 1 {
 		t.Fatalf("output = %+v", output)
 	}
+	if result.Delta.Evidence == nil || len(result.Delta.Evidence.AddItems) != 1 {
+		t.Fatalf("expected wiki write evidence, got %+v", result.Delta.Evidence)
+	}
+	if result.Delta.Evidence.AddItems[0].Content != "wiki generated 1 pages / 1 links" {
+		t.Fatalf("unexpected wiki write evidence: %+v", result.Delta.Evidence.AddItems[0])
+	}
 }
 
 func TestWikiWriteInvokeDegradesOnEmptyContent(t *testing.T) {

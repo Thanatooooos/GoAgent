@@ -120,15 +120,23 @@ func (c capabilityAdapter) Invoke(ctx context.Context, req agentcapability.Invoc
 		PageCount:  len(result.Pages),
 		LinkCount:  linkCount,
 	}
+	summary := fmt.Sprintf("wiki generated %d pages / %d links", output.PageCount, output.LinkCount)
 	return agentcapability.InvocationResult{
 		Output: output,
 		Action: agentcapability.ActionRecord{
 			Name:    c.spec.Name,
 			Summary: fmt.Sprintf("generate wiki from document %q: %d pages, %d links", output.DocumentID, output.PageCount, output.LinkCount),
 		},
-		Observation: agentcapability.ObservationRecord{Summary: fmt.Sprintf("wiki generated %d pages / %d links", output.PageCount, output.LinkCount)},
+		Observation: agentcapability.ObservationRecord{Summary: summary},
 		Delta: agentstate.StateDelta{
 			Context: &agentstate.ContextDelta{Notes: []string{fmt.Sprintf("wiki pages generated from document %s", output.DocumentID)}},
+			Evidence: &agentstate.EvidenceDelta{AddItems: []agentstate.EvidenceItem{{
+				ID:        "wiki_write:" + output.DocumentID,
+				Source:    c.spec.Name,
+				Content:   summary,
+				Level:     "high",
+				SourceRef: output.DocumentID,
+			}}},
 		},
 		Status: agentcapability.StatusSucceeded,
 	}, nil

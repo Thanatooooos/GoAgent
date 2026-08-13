@@ -135,6 +135,9 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		},
 	})
 	s.tracer.recordAgentWorkflowTraceNodes(ctx, prepared.state.traceID, toolStage.result)
+	if toolStage.agentRun != nil && directAgentToolStageAnswer(*toolStage.agentRun) != "" {
+		return s.handleAgentRuntimeResult(ctx, prepared.state, input, *toolStage.agentRun, sink)
+	}
 
 	promptStage, err := s.runPromptStage(
 		ctx,
