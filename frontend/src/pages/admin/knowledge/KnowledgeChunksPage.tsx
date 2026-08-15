@@ -190,7 +190,7 @@ export function KnowledgeChunksPage() {
           onChange={() => toggleSelect(String(chunk.id))}
         />
       </TableCell>
-      <TableCell>{nested ? `↳ ${chunk.chunkIndex ?? "-"}` : chunk.chunkIndex ?? "-"}</TableCell>
+      <TableCell>{chunk.chunkIndex ?? "-"}</TableCell>
       <TableCell className="max-w-[360px] text-sm text-muted-foreground break-all">
         <div className={nested ? "ml-6 border-l-2 border-muted-foreground/30 pl-3" : "font-medium"}>
           <div className="mb-1 text-xs text-muted-foreground">
