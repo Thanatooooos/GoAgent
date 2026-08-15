@@ -42,6 +42,29 @@ func TestServiceBuildMessages(t *testing.T) {
 	}
 }
 
+func TestServiceDefaultSystemPromptRequiresStructuredLineBreaks(t *testing.T) {
+	service := NewService(nil)
+
+	messages, err := service.BuildMessages(Context{Question: "请列出三个景点"})
+	if err != nil {
+		t.Fatalf("BuildMessages returned error: %v", err)
+	}
+	if len(messages) == 0 {
+		t.Fatal("expected a system prompt message")
+	}
+
+	systemPrompt := messages[0].Content
+	for _, requirement := range []string{
+		"使用 Markdown",
+		"必须每项单独一行",
+		"不同主题之间空一行",
+	} {
+		if !strings.Contains(systemPrompt, requirement) {
+			t.Fatalf("default system prompt missing formatting requirement %q: %q", requirement, systemPrompt)
+		}
+	}
+}
+
 func TestBuildMessagesAppendsCitationProtocol(t *testing.T) {
 	service := NewService(nil)
 	messages, err := service.BuildMessages(Context{
