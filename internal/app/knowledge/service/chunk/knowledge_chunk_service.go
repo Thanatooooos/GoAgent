@@ -55,10 +55,17 @@ type PageKnowledgeChunkInput struct {
 }
 
 type KnowledgeChunkPageResult struct {
-	Items    []domain.KnowledgeChunk
-	Total    int
-	Page     int
-	PageSize int
+	Items       []domain.KnowledgeChunk
+	Groups      []KnowledgeChunkGroup
+	Total       int
+	RecordTotal int
+	Page        int
+	PageSize    int
+}
+
+type KnowledgeChunkGroup struct {
+	Parent   domain.KnowledgeChunk
+	Children []domain.KnowledgeChunk
 }
 
 type KnowledgeChunkService struct {

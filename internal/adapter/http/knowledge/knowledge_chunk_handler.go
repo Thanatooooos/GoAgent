@@ -41,17 +41,29 @@ type batchToggleKnowledgeChunkRequest struct {
 }
 
 type knowledgeChunkVO struct {
-	ID              string     `json:"id"`
-	KnowledgeBaseID string     `json:"kbId"`
-	DocumentID      string     `json:"docId"`
-	ChunkIndex      int        `json:"chunkIndex"`
-	Content         string     `json:"content"`
-	ContentHash     string     `json:"contentHash"`
-	CharCount       int        `json:"charCount"`
-	TokenCount      int        `json:"tokenCount"`
-	Enabled         bool       `json:"enabled"`
-	CreateTime      *time.Time `json:"createTime,omitempty"`
-	UpdateTime      *time.Time `json:"updateTime,omitempty"`
+	ID              string             `json:"id"`
+	KnowledgeBaseID string             `json:"kbId"`
+	DocumentID      string             `json:"docId"`
+	ChunkIndex      int                `json:"chunkIndex"`
+	Content         string             `json:"content"`
+	ContentHash     string             `json:"contentHash"`
+	CharCount       int                `json:"charCount"`
+	TokenCount      int                `json:"tokenCount"`
+	RecordType      string             `json:"recordType,omitempty"`
+	ParentChunkID   string             `json:"parentChunkId,omitempty"`
+	Children        []knowledgeChunkVO `json:"children,omitempty"`
+	Enabled         bool               `json:"enabled"`
+	CreateTime      *time.Time         `json:"createTime,omitempty"`
+	UpdateTime      *time.Time         `json:"updateTime,omitempty"`
+}
+
+type knowledgeChunkPageResultVO struct {
+	Records     []knowledgeChunkVO `json:"records"`
+	Total       int                `json:"total"`
+	RecordTotal int                `json:"recordTotal"`
+	Size        int                `json:"size"`
+	Current     int                `json:"current"`
+	Pages       int                `json:"pages"`
 }
 
 func NewKnowledgeChunkHandler(service KnowledgeChunkService) *KnowledgeChunkHandler {
@@ -89,20 +101,32 @@ func (h *KnowledgeChunkHandler) Page(c *gin.Context) {
 		_ = c.Error(err)
 		return
 	}
-	records := make([]knowledgeChunkVO, 0, len(result.Items))
-	for _, item := range result.Items {
-		records = append(records, toKnowledgeChunkVO(item))
+	records := make([]knowledgeChunkVO, 0, len(result.Groups))
+	if len(result.Groups) > 0 {
+		for _, group := range result.Groups {
+			parent := toKnowledgeChunkVO(group.Parent)
+			parent.Children = make([]knowledgeChunkVO, 0, len(group.Children))
+			for _, child := range group.Children {
+				parent.Children = append(parent.Children, toKnowledgeChunkVO(child))
+			}
+			records = append(records, parent)
+		}
+	} else {
+		for _, item := range result.Items {
+			records = append(records, toKnowledgeChunkVO(item))
+		}
 	}
 	pages := 0
 	if result.PageSize > 0 {
 		pages = int(math.Ceil(float64(result.Total) / float64(result.PageSize)))
 	}
-	writeSuccess(c, pageResult[knowledgeChunkVO]{
-		Records: records,
-		Total:   result.Total,
-		Size:    result.PageSize,
-		Current: result.Page,
-		Pages:   pages,
+	writeSuccess(c, knowledgeChunkPageResultVO{
+		Records:     records,
+		Total:       result.Total,
+		RecordTotal: result.RecordTotal,
+		Size:        result.PageSize,
+		Current:     result.Page,
+		Pages:       pages,
 	})
 }
 
@@ -215,6 +239,8 @@ func toKnowledgeChunkVO(item domain.KnowledgeChunk) knowledgeChunkVO {
 		ContentHash:     item.ContentHash,
 		CharCount:       item.CharCount,
 		TokenCount:      item.TokenCount,
+		RecordType:      item.RecordType,
+		ParentChunkID:   item.ParentChunkID,
 		Enabled:         item.Enabled,
 		CreateTime:      timePointer(item.CreatedAt),
 		UpdateTime:      timePointer(item.UpdatedAt),

@@ -28,6 +28,9 @@ import { getErrorMessage } from "@/utils/error";
 
 const PAGE_SIZE = 10;
 
+const flattenChunkGroups = (groups: KnowledgeChunk[]) =>
+  groups.flatMap((group) => [group, ...(group.children || [])]);
+
 const truncateText = (value?: string | null, max = 120) => {
   if (!value) return "-";
   if (value.length <= max) return value;
@@ -59,6 +62,7 @@ export function KnowledgeChunksPage() {
   });
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeChunk | null>(null);
   const chunks = pageData?.records || [];
+  const visibleChunks = useMemo(() => flattenChunkGroups(chunks), [chunks]);
 
   const selectedList = useMemo(() => Array.from(selectedIds), [selectedIds]);
 
@@ -103,7 +107,7 @@ export function KnowledgeChunksPage() {
     setSelectedIds(new Set());
   }, [docId, enabledFilter]);
 
-  const allSelected = chunks.length > 0 && chunks.every((chunk) => selectedIds.has(String(chunk.id)));
+  const allSelected = visibleChunks.length > 0 && visibleChunks.every((chunk) => selectedIds.has(String(chunk.id)));
 
   const toggleSelectAll = () => {
     if (allSelected) {
@@ -111,7 +115,7 @@ export function KnowledgeChunksPage() {
       return;
     }
     const next = new Set(selectedIds);
-    chunks.forEach((chunk) => next.add(String(chunk.id)));
+    visibleChunks.forEach((chunk) => next.add(String(chunk.id)));
     setSelectedIds(next);
   };
 
@@ -134,7 +138,7 @@ export function KnowledgeChunksPage() {
       return;
     }
     const targetValue = enabled ? 1 : 0;
-    const selectedChunks = chunks.filter((c) => selectedList.includes(String(c.id)));
+    const selectedChunks = visibleChunks.filter((c) => selectedList.includes(String(c.id)));
     const needChange = selectedChunks.some((c) => c.enabled !== targetValue);
     if (!needChange) {
       toast.info(enabled ? "所选分块已全部启用" : "所选分块已全部禁用");
@@ -176,6 +180,55 @@ export function KnowledgeChunksPage() {
       console.error(error);
     }
   };
+
+  const renderChunkRow = (chunk: KnowledgeChunk, nested: boolean) => (
+    <TableRow key={chunk.id} className={nested ? "bg-muted/20" : "bg-muted/5"}>
+      <TableCell>
+        <input
+          type="checkbox"
+          checked={selectedIds.has(String(chunk.id))}
+          onChange={() => toggleSelect(String(chunk.id))}
+        />
+      </TableCell>
+      <TableCell>{nested ? `↳ ${chunk.chunkIndex ?? "-"}` : chunk.chunkIndex ?? "-"}</TableCell>
+      <TableCell className="max-w-[360px] text-sm text-muted-foreground break-all">
+        <div className={nested ? "ml-6 border-l-2 border-muted-foreground/30 pl-3" : "font-medium"}>
+          <div className="mb-1 text-xs text-muted-foreground">
+            {nested ? "子块" : chunk.children?.length ? `父块 (${chunk.children.length})` : "块"}
+          </div>
+          {truncateText(chunk.content)}
+        </div>
+      </TableCell>
+      <TableCell>
+        <Badge variant={chunk.enabled === 1 ? "default" : "outline"}>
+          {enabledLabel(chunk.enabled)}
+        </Badge>
+      </TableCell>
+      <TableCell>{chunk.charCount ?? "-"}</TableCell>
+      <TableCell>{chunk.tokenCount ?? "-"}</TableCell>
+      <TableCell>{formatDate(chunk.updateTime)}</TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={() => setEditDialog({ open: true, chunk })}>
+            <PenSquare className="mr-0.1 h-4 w-4" />
+            编辑
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => handleToggleEnabled(chunk)}>
+            {chunk.enabled === 1 ? "禁用" : "启用"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setDeleteTarget(chunk)}
+          >
+            <Trash2 className="mr-0.1 h-4 w-4" />
+            删除
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
 
   return (
     <div className="admin-page">
@@ -255,7 +308,7 @@ export function KnowledgeChunksPage() {
                     <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
                   </TableHead>
                   <TableHead className="w-[70px]">序号</TableHead>
-                  <TableHead>内容</TableHead>
+                  <TableHead>层级 / 内容</TableHead>
                   <TableHead className="w-[90px]">状态</TableHead>
                   <TableHead className="w-[90px]">字符数</TableHead>
                   <TableHead className="w-[90px]">
@@ -278,56 +331,19 @@ export function KnowledgeChunksPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {chunks.map((chunk) => (
-                  <TableRow key={chunk.id}>
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(String(chunk.id))}
-                        onChange={() => toggleSelect(String(chunk.id))}
-                      />
-                    </TableCell>
-                    <TableCell>{chunk.chunkIndex ?? "-"}</TableCell>
-                    <TableCell className="max-w-[360px] text-sm text-muted-foreground break-all">
-                      {truncateText(chunk.content)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={chunk.enabled === 1 ? "default" : "outline"}>
-                        {enabledLabel(chunk.enabled)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{chunk.charCount ?? "-"}</TableCell>
-                    <TableCell>{chunk.tokenCount ?? "-"}</TableCell>
-                    <TableCell>{formatDate(chunk.updateTime)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setEditDialog({ open: true, chunk })}>
-                          <PenSquare className="mr-0.1 h-4 w-4" />
-                          编辑
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleToggleEnabled(chunk)}>
-                          {chunk.enabled === 1 ? "禁用" : "启用"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setDeleteTarget(chunk)}
-                        >
-                          <Trash2 className="mr-0.1 h-4 w-4" />
-                          删除
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {chunks.flatMap((chunk) => [
+                  renderChunkRow(chunk, false),
+                  ...(chunk.children || []).map((child) => renderChunkRow(child, true))
+                ])}
               </TableBody>
             </Table>
           )}
 
           {pageData ? (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
-              <span>共 {pageData.total} 条</span>
+              <span>
+                共 {pageData.recordTotal ?? pageData.total} 条记录，{pageData.total} 个父组
+              </span>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setPageNo((prev) => Math.max(1, prev - 1))} disabled={pageData.current <= 1}>
                   上一页

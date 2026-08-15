@@ -44,6 +44,9 @@ export interface KnowledgeChunk {
   contentHash?: string | null;
   charCount?: number | null;
   tokenCount?: number | null;
+  recordType?: "parent" | "child" | string | null;
+  parentChunkId?: string | null;
+  children?: KnowledgeChunk[];
   enabled?: number | null;
   createTime?: string | null;
   updateTime?: string | null;
@@ -109,6 +112,7 @@ export interface KnowledgeDocumentChunkLog {
 export interface PageResult<T> {
   records: T[];
   total: number;
+  recordTotal?: number;
   size: number;
   current: number;
   pages: number;

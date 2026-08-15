@@ -27,20 +27,63 @@ func (s *KnowledgeChunkService) Page(ctx context.Context, input PageKnowledgeChu
 	items, err := s.chunkRepo.List(ctx, port.KnowledgeChunkListFilter{
 		DocumentID: documentID,
 		Enabled:    input.Enabled,
-		ListOptions: port.ListOptions{
-			Offset: (page - 1) * pageSize,
-			Limit:  pageSize,
-		},
 	})
 	if err != nil {
 		return KnowledgeChunkPageResult{}, exception.NewServiceException("failed to page knowledge chunks", err)
 	}
+	groups := groupKnowledgeChunks(items)
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > len(groups) {
+		start = len(groups)
+	}
+	if end > len(groups) {
+		end = len(groups)
+	}
+	pageGroups := groups[start:end]
+	pageItems := flattenKnowledgeChunkGroups(pageGroups)
 	return KnowledgeChunkPageResult{
-		Items:    items,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
+		Items:       pageItems,
+		Groups:      pageGroups,
+		Total:       len(groups),
+		RecordTotal: total,
+		Page:        page,
+		PageSize:    pageSize,
 	}, nil
+}
+
+func groupKnowledgeChunks(items []domain.KnowledgeChunk) []KnowledgeChunkGroup {
+	groups := make([]KnowledgeChunkGroup, 0, len(items))
+	parentGroupIndex := make(map[string]int)
+
+	for _, item := range items {
+		if item.RecordType != "parent" {
+			continue
+		}
+		parentGroupIndex[item.ID] = len(groups)
+		groups = append(groups, KnowledgeChunkGroup{Parent: item})
+	}
+
+	for _, item := range items {
+		if item.RecordType == "parent" {
+			continue
+		}
+		if index, ok := parentGroupIndex[item.ParentChunkID]; ok {
+			groups[index].Children = append(groups[index].Children, item)
+			continue
+		}
+		groups = append(groups, KnowledgeChunkGroup{Parent: item})
+	}
+	return groups
+}
+
+func flattenKnowledgeChunkGroups(groups []KnowledgeChunkGroup) []domain.KnowledgeChunk {
+	items := make([]domain.KnowledgeChunk, 0)
+	for _, group := range groups {
+		items = append(items, group.Parent)
+		items = append(items, group.Children...)
+	}
+	return items
 }
 
 func (s *KnowledgeChunkService) GetByID(ctx context.Context, chunkID string) (domain.KnowledgeChunk, error) {
