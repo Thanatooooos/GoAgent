@@ -12,6 +12,7 @@ import (
 	"time"
 
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
+	ragcitation "local/rag-project/internal/app/rag/core/citation"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	ragrewrite "local/rag-project/internal/app/rag/core/rewrite"
 	corevector "local/rag-project/internal/app/rag/core/vector"
@@ -2402,13 +2403,24 @@ func TestHandleSucceededResultWritebackRecoversPanicsAndDetachesContext(t *testi
 }
 
 func TestHandleFailedResultSendsErrorAndDone(t *testing.T) {
-	service := &RagChatService{tracer: NewChatTracer(nil, nil)}
+	service, createdMessage := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{RewrittenQuestion: "question", NeedRetrieval: false},
+		nil,
+		&retrieveServiceStub{},
+	)
 	sink := &fallbackSinkStub{}
 	expectedErr := errors.New("stream failed")
 
 	err := service.handleFailedResult(
 		context.Background(),
-		ragChatRuntimeState{traceID: "trace-1"},
+		RagChatInput{ConversationID: "conv-1", UserID: "user-1", Question: "question"},
+		ragChatRuntimeState{
+			meta:          RagChatMeta{ConversationID: "conv-1", TaskID: "task-1"},
+			title:         "title",
+			userMessageID: "msg-user-1",
+			traceID:       "trace-1",
+		},
 		ragChatTaskResult{err: expectedErr},
 		sink,
 	)
@@ -2417,5 +2429,143 @@ func TestHandleFailedResultSendsErrorAndDone(t *testing.T) {
 	}
 	if sink.errorCalls != 1 || sink.doneCalls != 1 {
 		t.Fatalf("expected error/done once, got error=%d done=%d", sink.errorCalls, sink.doneCalls)
+	}
+	if sink.finishCalls != 1 {
+		t.Fatalf("expected finish once after persisting failed message, got %d", sink.finishCalls)
+	}
+	if createdMessage == nil || createdMessage.Content == "" {
+		t.Fatal("expected failed assistant message to be persisted")
+	}
+	if !strings.Contains(createdMessage.Content, "stream failed") {
+		t.Fatalf("expected persisted message to include error text, got %q", createdMessage.Content)
+	}
+	if createdMessage.ConversationID != "conv-1" || createdMessage.UserID != "user-1" {
+		t.Fatalf("unexpected persisted message identity: %+v", createdMessage)
+	}
+}
+
+func TestHandleFailedResultPersistsPartialContent(t *testing.T) {
+	service, createdMessage := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{RewrittenQuestion: "question", NeedRetrieval: false},
+		nil,
+		&retrieveServiceStub{},
+	)
+	sink := &fallbackSinkStub{}
+	expectedErr := errors.New("stream failed")
+
+	err := service.handleFailedResult(
+		context.Background(),
+		RagChatInput{ConversationID: "conv-1", UserID: "user-1", Question: "question"},
+		ragChatRuntimeState{
+			meta:          RagChatMeta{ConversationID: "conv-1", TaskID: "task-1"},
+			title:         "title",
+			userMessageID: "msg-user-1",
+			traceID:       "trace-1",
+		},
+		ragChatTaskResult{content: "partial answer", err: expectedErr},
+		sink,
+	)
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected %v, got %v", expectedErr, err)
+	}
+	if createdMessage == nil || !strings.Contains(createdMessage.Content, "partial answer") {
+		t.Fatalf("expected persisted message to keep partial content, got %q", createdMessage.Content)
+	}
+	if !strings.Contains(createdMessage.Content, "stream failed") {
+		t.Fatalf("expected persisted message to include error text, got %q", createdMessage.Content)
+	}
+}
+
+func TestRunStreamingAnswerRetriesOnceOnEmptyFailure(t *testing.T) {
+	llm := &llmServiceStub{}
+	calls := 0
+	llm.streamFn = func(_ convention.ChatRequest, callback aichat.StreamCallback) {
+		calls++
+		if calls == 1 {
+			callback.OnError(errors.New("transient stream failure"))
+			return
+		}
+		callback.OnContent("answer")
+		callback.OnComplete()
+	}
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{RewrittenQuestion: "question", NeedRetrieval: false},
+		nil,
+		&retrieveServiceStub{},
+		func(_ *RagChatDeps, opts *RagChatOptions) {
+			opts.ChatContextBudget = ChatContextBudgetOptions{
+				Enabled: true,
+			}
+		},
+	)
+	service.chatService = llm
+
+	task := service.taskRegistry.New(context.Background())
+	sink := &fallbackSinkStub{}
+	result, err := service.runStreamingAnswer(
+		context.Background(),
+		ragChatRuntimeState{meta: RagChatMeta{ConversationID: "conv-1", TaskID: "task-1"}, traceID: "trace-1"},
+		[]convention.ChatMessage{convention.UserMessage("question")},
+		10,
+		false,
+		ragcitation.NewStreamExpander(&ragcitation.Registry{}, false),
+		sink,
+		task,
+	)
+	if err != nil {
+		t.Fatalf("runStreamingAnswer returned error: %v", err)
+	}
+	if result.err != nil {
+		t.Fatalf("expected retry to succeed, got result err: %v", result.err)
+	}
+	if len(llm.requests) != 2 {
+		t.Fatalf("expected 2 stream attempts, got %d", len(llm.requests))
+	}
+	if strings.TrimSpace(result.content) != "answer" {
+		t.Fatalf("expected retried content, got %q", result.content)
+	}
+}
+
+func TestRunStreamingAnswerDoesNotRetryAfterPartialContent(t *testing.T) {
+	llm := &llmServiceStub{}
+	calls := 0
+	llm.streamFn = func(_ convention.ChatRequest, callback aichat.StreamCallback) {
+		calls++
+		callback.OnContent("partial")
+		callback.OnError(errors.New("stream failed after content"))
+	}
+	service, _ := newPrepareChatTestService(
+		t,
+		ragrewrite.Result{RewrittenQuestion: "question", NeedRetrieval: false},
+		nil,
+		&retrieveServiceStub{},
+	)
+	service.chatService = llm
+
+	task := service.taskRegistry.New(context.Background())
+	sink := &fallbackSinkStub{}
+	result, err := service.runStreamingAnswer(
+		context.Background(),
+		ragChatRuntimeState{meta: RagChatMeta{ConversationID: "conv-1", TaskID: "task-1"}, traceID: "trace-1"},
+		[]convention.ChatMessage{convention.UserMessage("question")},
+		10,
+		false,
+		ragcitation.NewStreamExpander(&ragcitation.Registry{}, false),
+		sink,
+		task,
+	)
+	if err != nil {
+		t.Fatalf("runStreamingAnswer returned error: %v", err)
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("expected single stream attempt when content already emitted, got %d", len(llm.requests))
+	}
+	if result.err == nil {
+		t.Fatal("expected the original stream error to surface")
+	}
+	if strings.TrimSpace(result.content) != "partial" {
+		t.Fatalf("expected partial content to be preserved, got %q", result.content)
 	}
 }
