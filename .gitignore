@@ -70,3 +70,5 @@ tmp_*
 tmp
 
 .gotelemetry
+
+.worktrees/
