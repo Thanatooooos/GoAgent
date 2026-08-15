@@ -126,7 +126,7 @@ func (s *DocumentProcessService) ExecuteChunk(ctx context.Context, input Execute
 	result, err := s.processDocumentChunks(ctx, document, operatorID)
 	if err != nil {
 		_ = s.markDocumentFailed(ctx, document.ID, operatorID)
-		_ = s.finishChunkLog(ctx, chunkLog, domain.KnowledgeDocumentChunkLogStatusFailed, result, err.Error())
+		_ = s.finishChunkLog(ctx, chunkLog, domain.KnowledgeDocumentChunkLogStatusFailed, result, chunkLogError(err))
 		return err
 	}
 
@@ -154,7 +154,7 @@ func (s *DocumentProcessService) ProcessRefreshedDocument(ctx context.Context, d
 	}
 	result, err := s.processDocumentChunks(ctx, document, "system")
 	if err != nil {
-		_ = s.finishChunkLog(ctx, chunkLog, domain.KnowledgeDocumentChunkLogStatusFailed, result, err.Error())
+		_ = s.finishChunkLog(ctx, chunkLog, domain.KnowledgeDocumentChunkLogStatusFailed, result, chunkLogError(err))
 		return err
 	}
 	return s.finishChunkLog(ctx, chunkLog, domain.KnowledgeDocumentChunkLogStatusSuccess, result, "")

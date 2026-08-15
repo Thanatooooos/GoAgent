@@ -205,7 +205,9 @@ func (s *processVectorStoreStub) UpdateChunk(ctx context.Context, chunk port.Chu
 	return nil
 }
 
-type processEmbeddingStub struct{}
+type processEmbeddingStub struct {
+	err error
+}
 
 func (s processEmbeddingStub) Embed(text string) ([]float32, error) {
 	return []float32{1}, nil
@@ -224,11 +226,37 @@ func (s processEmbeddingStub) EmbedBatch(texts []string) ([][]float32, error) {
 }
 
 func (s processEmbeddingStub) EmbedBatchWithModel(texts []string, modelID string) ([][]float32, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return s.EmbedBatch(texts)
 }
 
 func (s processEmbeddingStub) Dimension() int {
 	return 1
+}
+
+func TestDocumentProcessServicePreservesEmbeddingCauseInChunkLog(t *testing.T) {
+	chunkLogRepo := &processChunkLogRepositoryStub{}
+	svc := NewDocumentProcessService(DocumentProcessServiceOptions{
+		BaseRepo:     processBaseRepositoryStub{base: domain.KnowledgeBase{ID: "kb-1", EmbeddingModel: "embed-model"}},
+		DocumentRepo: &processDocumentRepositoryStub{document: processDocument()},
+		ChunkRepo:    &processChunkRepositoryStub{},
+		ChunkLogRepo: chunkLogRepo,
+		Storage:      processStorageStub{body: "# title\n\nhello world"},
+		VectorStore:  &processVectorStoreStub{},
+		Embedding:    processEmbeddingStub{err: errors.New("upstream embedding request too large")},
+	})
+
+	if err := svc.ExecuteChunk(context.Background(), ExecuteChunkInput{DocumentID: "doc-1", TriggeredBy: "u-1"}); err == nil {
+		t.Fatal("ExecuteChunk() should return error")
+	}
+	if len(chunkLogRepo.updated) == 0 {
+		t.Fatal("expected failed chunk log update")
+	}
+	if !strings.Contains(chunkLogRepo.updated[len(chunkLogRepo.updated)-1].ErrorMessage, "upstream embedding request too large") {
+		t.Fatalf("chunk log error = %q, want embedding cause", chunkLogRepo.updated[len(chunkLogRepo.updated)-1].ErrorMessage)
+	}
 }
 
 func TestDocumentProcessServiceExecuteChunkProcessesDocument(t *testing.T) {
