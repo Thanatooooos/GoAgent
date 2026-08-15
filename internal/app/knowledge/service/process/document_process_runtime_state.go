@@ -2,6 +2,7 @@ package process
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,22 @@ import (
 	"local/rag-project/internal/framework/distributedid"
 	"local/rag-project/internal/framework/exception"
 )
+
+func chunkLogError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	parts := make([]string, 0, 3)
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		message := strings.TrimSpace(current.Error())
+		if message == "" || (len(parts) > 0 && parts[len(parts)-1] == message) {
+			continue
+		}
+		parts = append(parts, message)
+	}
+	return strings.Join(parts, ": ")
+}
 
 func (s *DocumentProcessService) ensureDocumentRunning(ctx context.Context, document domain.KnowledgeDocument, operatorID string) error {
 	if document.Status == domain.KnowledgeDocumentStatusRunning {

@@ -24,6 +24,8 @@ type OpenAIStyleEmbeddingClient struct {
 	customizeBody func(body map[string]any, target model.ModelTarget)
 }
 
+const defaultEmbeddingBatchSize = 32
+
 type openAIStyleEmbeddingResponse struct {
 	Error *openAIStyleEmbeddingError `json:"error"`
 	Data  []openAIStyleEmbeddingData `json:"data"`
@@ -50,7 +52,7 @@ func NewOpenAIStyleEmbeddingClient(provider string, httpClient *http.Client) *Op
 		requireAPIKey: true,
 		buildHeaders:  defaultOpenAIStyleEmbeddingHeaders,
 		customizeBody: defaultOpenAIStyleEmbeddingBodyCustomizer,
-		maxBatchSize:  0,
+		maxBatchSize:  defaultEmbeddingBatchSize,
 	}
 }
 
