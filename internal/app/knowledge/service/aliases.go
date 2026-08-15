@@ -32,6 +32,7 @@ type (
 	BatchToggleKnowledgeChunksInput  = knowledgechunk.BatchToggleKnowledgeChunksInput
 	PageKnowledgeChunkInput          = knowledgechunk.PageKnowledgeChunkInput
 	KnowledgeChunkPageResult         = knowledgechunk.KnowledgeChunkPageResult
+	KnowledgeChunkGroup              = knowledgechunk.KnowledgeChunkGroup
 	KnowledgeChunkMutationTransaction = knowledgechunk.KnowledgeChunkMutationTransaction
 
 	KnowledgeDocumentService                    = knowledgedocument.KnowledgeDocumentService

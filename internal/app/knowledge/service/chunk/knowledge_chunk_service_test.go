@@ -221,6 +221,40 @@ func TestKnowledgeChunkServicePageUsesCountRepository(t *testing.T) {
 	}
 }
 
+func TestKnowledgeChunkServicePageGroupsChildrenAndPaginatesByParent(t *testing.T) {
+	t.Parallel()
+
+	chunkRepo := &chunkServiceChunkRepoStub{
+		countValue: 5,
+		chunks: []domain.KnowledgeChunk{
+			{ID: "parent-1", DocumentID: "doc-1", ChunkIndex: 0, RecordType: "parent"},
+			{ID: "child-1", DocumentID: "doc-1", ChunkIndex: 0, RecordType: "child", ParentChunkID: "parent-1"},
+			{ID: "child-2", DocumentID: "doc-1", ChunkIndex: 1, RecordType: "child", ParentChunkID: "parent-1"},
+			{ID: "parent-2", DocumentID: "doc-1", ChunkIndex: 1, RecordType: "parent"},
+			{ID: "child-3", DocumentID: "doc-1", ChunkIndex: 2, RecordType: "child", ParentChunkID: "parent-2"},
+		},
+	}
+	service := NewKnowledgeChunkService(nil, nil, chunkRepo, nil, nil)
+
+	result, err := service.Page(context.Background(), PageKnowledgeChunkInput{
+		DocumentID: "doc-1",
+		Page:       1,
+		PageSize:   1,
+	})
+	if err != nil {
+		t.Fatalf("Page() error = %v", err)
+	}
+	if result.Total != 2 || result.RecordTotal != 5 {
+		t.Fatalf("expected 2 groups and 5 records, got groups=%d records=%d", result.Total, result.RecordTotal)
+	}
+	if len(result.Groups) != 1 || result.Groups[0].Parent.ID != "parent-1" {
+		t.Fatalf("expected first parent group, got %+v", result.Groups)
+	}
+	if len(result.Groups[0].Children) != 2 {
+		t.Fatalf("expected two children under parent-1, got %+v", result.Groups[0].Children)
+	}
+}
+
 func TestKnowledgeChunkServiceGetByIDReturnsNotFound(t *testing.T) {
 	t.Parallel()
 

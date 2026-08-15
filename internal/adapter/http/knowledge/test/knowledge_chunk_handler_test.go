@@ -130,6 +130,57 @@ func TestKnowledgeChunkHandlerPageMatchesRagentIPageShape(t *testing.T) {
 	}
 }
 
+func TestKnowledgeChunkHandlerPageReturnsNestedChunkGroups(t *testing.T) {
+	router := newKnowledgeChunkRouter(knowledgeChunkServiceStub{
+		pageFn: func(ctx context.Context, input service.PageKnowledgeChunkInput) (service.KnowledgeChunkPageResult, error) {
+			return service.KnowledgeChunkPageResult{
+				Groups: []service.KnowledgeChunkGroup{{
+					Parent: domain.KnowledgeChunk{ID: "parent-1", DocumentID: "doc-1", RecordType: "parent", Content: "parent"},
+					Children: []domain.KnowledgeChunk{{
+						ID: "child-1", DocumentID: "doc-1", RecordType: "child", ParentChunkID: "parent-1", Content: "child",
+					}},
+				}},
+				Total:       1,
+				RecordTotal: 2,
+				Page:        1,
+				PageSize:    10,
+			}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ragent/knowledge-base/docs/doc-1/chunks", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Data struct {
+			Records []struct {
+				ID       string `json:"id"`
+				Children []struct {
+					ID            string `json:"id"`
+					ParentChunkID string `json:"parentChunkId"`
+				} `json:"children"`
+			} `json:"records"`
+			RecordTotal int `json:"recordTotal"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(result.Data.Records) != 1 || result.Data.Records[0].ID != "parent-1" {
+		t.Fatalf("unexpected parent records: %+v", result.Data.Records)
+	}
+	if len(result.Data.Records[0].Children) != 1 || result.Data.Records[0].Children[0].ID != "child-1" || result.Data.Records[0].Children[0].ParentChunkID != "parent-1" {
+		t.Fatalf("unexpected nested children: %+v", result.Data.Records[0].Children)
+	}
+	if result.Data.RecordTotal != 2 {
+		t.Fatalf("expected recordTotal=2, got %d", result.Data.RecordTotal)
+	}
+}
+
 func TestKnowledgeChunkHandlerCreate(t *testing.T) {
 	router := newKnowledgeChunkRouter(knowledgeChunkServiceStub{
 		createFn: func(ctx context.Context, input service.CreateKnowledgeChunkInput) (domain.KnowledgeChunk, error) {
