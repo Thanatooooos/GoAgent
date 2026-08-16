@@ -29,6 +29,7 @@ type RagChatService struct {
 	parallelSubquestions    bool
 	subquestionConcurrency  int
 	confidenceThreshold     float64
+	retrieveRerankTopN      int
 	requestCacheMaxEntries  int
 	taskRegistry            *TaskRegistry
 	agentRuntime            AgentRuntimeService
@@ -65,6 +66,7 @@ type RagChatDeps struct {
 // RagChatOptions configures optional RagChatService behavior at construction time.
 type RagChatOptions struct {
 	ConfidenceThreshold     float64
+	RetrieveRerankTopN      int
 	ParallelSubquestions    bool
 	SubquestionConcurrency  int
 	RequestCacheMaxEntries  int
@@ -112,6 +114,7 @@ func NewRagChatServiceWithDeps(deps RagChatDeps, opts RagChatOptions) (*RagChatS
 		deps.Tracer,
 	)
 	service.confidenceThreshold = opts.ConfidenceThreshold
+	service.retrieveRerankTopN = opts.RetrieveRerankTopN
 	service.parallelSubquestions = opts.ParallelSubquestions
 	service.subquestionConcurrency = opts.SubquestionConcurrency
 	service.requestCacheMaxEntries = opts.RequestCacheMaxEntries

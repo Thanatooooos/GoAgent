@@ -220,6 +220,7 @@ func (s *RagChatService) executeSingleSubQuestionRetrieve(ctx context.Context, i
 		Query:            question,
 		KnowledgeBaseIDs: input.KnowledgeBaseIDs,
 		SearchMode:       ragretrieve.SearchModeHybrid,
+		RerankTopN:       s.retrieveRerankTopN,
 	})
 	durationMs := time.Since(startedAt).Milliseconds()
 	if err != nil {
@@ -305,6 +306,7 @@ func (s *RagChatService) retrieveOriginalQuestionFallback(ctx context.Context, i
 		Query:            strings.TrimSpace(input.Question),
 		KnowledgeBaseIDs: input.KnowledgeBaseIDs,
 		SearchMode:       ragretrieve.SearchModeHybrid,
+		RerankTopN:       s.retrieveRerankTopN,
 	})
 }
 

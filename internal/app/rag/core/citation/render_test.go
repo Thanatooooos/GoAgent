@@ -11,17 +11,32 @@ import (
 func TestRenderKnowledgeContextCarriesHandles(t *testing.T) {
 	r := NewRegistry()
 	chunks := []convention.RetrievedChunk{
-		{ID: "chunk-a", DocumentID: "doc-a", KnowledgeBaseID: "kb-a", ChunkIndex: 3, Text: "内容A", Metadata: map[string]any{"section": "背景"}},
+		{ID: "chunk-a", DocumentID: "doc-a", KnowledgeBaseID: "kb-a", ChunkIndex: 3, Text: "内容A", Metadata: map[string]any{"section": "背景", "document_name": "MySQL.docx"}},
 		{ID: "chunk-b", DocumentID: "doc-b", KnowledgeBaseID: "kb-b", Text: "内容B"},
 	}
 	rendered := RenderKnowledgeContext(r, chunks)
-	for _, want := range []string{`<retrieval type="knowledge">`, `id="c1"`, `id="c2"`, "内容A", "内容B", `section="背景"`, `index="3"`} {
+	for _, want := range []string{`<retrieval type="knowledge">`, `id="c1"`, `id="c2"`, "内容A", "内容B", `section="背景"`, `index="3"`, `title="MySQL.docx"`} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered missing %q:\n%s", want, rendered)
 		}
 	}
 	if _, ok := r.ResolveChunk("c1"); !ok {
 		t.Fatal("render should register chunks so they are resolvable")
+	}
+}
+
+func TestReadDocumentTitlePrefersDocumentName(t *testing.T) {
+	if got := readDocumentTitle(map[string]any{"document_name": "MySQL.docx", "document_title": "old"}); got != "MySQL.docx" {
+		t.Fatalf("expected document_name to win, got %q", got)
+	}
+	if got := readDocumentTitle(map[string]any{"document_title": "legacy.md"}); got != "legacy.md" {
+		t.Fatalf("expected document_title fallback, got %q", got)
+	}
+	if got := readDocumentTitle(map[string]any{"other": "x"}); got != "" {
+		t.Fatalf("expected empty title, got %q", got)
+	}
+	if got := readDocumentTitle(nil); got != "" {
+		t.Fatalf("expected empty title for nil metadata, got %q", got)
 	}
 }
 
@@ -47,7 +62,7 @@ func TestRenderKnowledgeContextWithBudgetTruncates(t *testing.T) {
 		{ID: "chunk-a", Text: strings.Repeat("x", 200)},
 		{ID: "chunk-b", Text: "短"},
 	}
-	const budget = 100
+	const budget = 160
 	rendered, stats := RenderKnowledgeContextWithBudget(r, chunks, budget, tokenbudget.RuneEstimator{})
 	if stats.CandidateChunks != 2 {
 		t.Fatalf("candidate chunks = %d, want 2", stats.CandidateChunks)

@@ -30,6 +30,11 @@ func (s *RagChatService) runToolWorkflowStage(
 	if s == nil || !shouldRunToolWorkflow(input, rewriteResult, retrievalUsed) {
 		return ragChatToolStageResult{}, nil
 	}
+	if retrievalUsed && !ragtool.KnowledgeBaseInsufficient(retrieveResult) {
+		// Retrieved knowledge already provides sufficient evidence; skip the
+		// tool stage so tool guidance cannot override the citation protocol.
+		return ragChatToolStageResult{}, nil
+	}
 	if s.shouldUseAgentRuntimeForToolStage(input, rewriteResult, retrievalUsed) {
 		agentResult, err := s.runAgentToolWorkflowStage(ctx, input, history, memoryContext, sessionContext, rewriteResult, retrieveResult, traceID, sink)
 		if err != nil {

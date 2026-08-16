@@ -58,6 +58,7 @@ func buildChatService(
 		},
 		ragservice.RagChatOptions{
 			ConfidenceThreshold:     confidenceThreshold,
+			RetrieveRerankTopN:      cfg.Rag.Retrieve.RerankTopN,
 			ParallelSubquestions:    cfg.Rag.Retrieve.ParallelSubquestions.Enabled,
 			SubquestionConcurrency:  cfg.Rag.Retrieve.ParallelSubquestions.MaxConcurrency,
 			RequestCacheMaxEntries:  readRequestCacheMaxEntries(cfg),

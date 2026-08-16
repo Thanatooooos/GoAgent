@@ -85,7 +85,10 @@ func (p *rerankPostProcessor) Process(_ context.Context, input SearchProcessInpu
 		input.Trace.RerankModel = resolveConfiguredRerankModel()
 	}
 	topN := input.Context.RerankTopN
-	if topN <= 0 || topN > len(chunks) {
+	if topN <= 0 {
+		return chunks, nil
+	}
+	if topN > len(chunks) {
 		topN = len(chunks)
 	}
 	reranked, err := p.reranker.Rerank(strings.TrimSpace(input.Context.Query), chunks, topN)
@@ -113,6 +116,14 @@ func resolveConfiguredRerankModel() string {
 }
 
 func rrfFuseChannelResults(results []SearchChannelResult) []convention.RetrievedChunk {
+	return rrfFuse(results, true)
+}
+
+// rrfFuse merges channel results by reciprocal rank. When overwriteScore is
+// true the chunk score is replaced by the RRF score (fusion stage); when false
+// the original score (e.g. a rerank relevance score from a sub-question) is
+// preserved and RRF is used for ordering only.
+func rrfFuse(results []SearchChannelResult, overwriteScore bool) []convention.RetrievedChunk {
 	if len(results) == 0 {
 		return []convention.RetrievedChunk{}
 	}
@@ -151,7 +162,9 @@ func rrfFuseChannelResults(results []SearchChannelResult) []convention.Retrieved
 	fused := make([]convention.RetrievedChunk, 0, len(entries))
 	for _, entry := range entries {
 		chunk := entry.chunk
-		chunk.Score = entry.rrfScore
+		if overwriteScore {
+			chunk.Score = entry.rrfScore
+		}
 		fused = append(fused, chunk)
 	}
 	return fused

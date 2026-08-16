@@ -51,8 +51,11 @@ func (b *BaiLianRerankClient) Rerank(query string, candidates []convention.Retri
 	}
 
 	dedup := dedupChunks(candidates)
-	if topN <= 0 || len(dedup) <= topN {
+	if topN <= 0 {
 		return dedup, nil
+	}
+	if topN > len(dedup) {
+		topN = len(dedup)
 	}
 
 	if err := b.respHelper.RequireAPIKey(target.Provider.ApiKey, b.Provider()); err != nil {

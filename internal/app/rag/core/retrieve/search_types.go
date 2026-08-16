@@ -285,7 +285,7 @@ func MergeResults(results []Result, topK int) Result {
 				},
 			}
 		}
-		fused := rrfFuseChannelResults(channelResults)
+		fused := rrfFuse(channelResults, false)
 		trace = &PipelineTrace{
 			PreRerankChunkIDs: chunkIDs(fused),
 			SubQuestionMerge:  true,
