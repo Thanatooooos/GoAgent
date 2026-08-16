@@ -70,13 +70,6 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	retrieveResult, fallbackPrompt := s.applyFallbackGuard(ctx, prepared, question, sink)
 	retrieveResult = s.applyRetrieveContextBudget(ctx, prepared.state.traceID, retrieveResult, prepared.state.citation)
 
-	runtimeEnabled := s.citationEnabled && prepared.retrievalUsed && strings.TrimSpace(retrieveResult.KnowledgeContext) != ""
-	citationProtocol := ""
-	if s.citationEnabled {
-		citationProtocol = ragcitation.ProtocolPrompt(runtimeEnabled)
-	}
-	expander := ragcitation.NewStreamExpander(prepared.state.citation, runtimeEnabled)
-
 	toolStage, err := s.runToolWorkflowStage(
 		ctx,
 		input,
@@ -104,6 +97,19 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	if ctx.Err() != nil {
 		return s.handleChatCancellation(ctx, input, prepared.state, sink)
 	}
+	if prepared.state.citation != nil && toolStage.agentRun != nil {
+		if webSources := registerAgentWebSources(prepared.state.citation, *toolStage.agentRun); webSources != "" {
+			toolStage.result.Context = strings.TrimSpace(webSources + "\n\n" + toolStage.result.Context)
+		}
+	}
+	hasWebCitations := prepared.state.citation != nil && prepared.state.citation.HasWebSources()
+	runtimeEnabled := s.citationEnabled && (strings.TrimSpace(retrieveResult.KnowledgeContext) != "" || hasWebCitations)
+	citationProtocol := ""
+	if s.citationEnabled {
+		citationProtocol = ragcitation.ProtocolPrompt(runtimeEnabled)
+	}
+	expander := ragcitation.NewStreamExpander(prepared.state.citation, runtimeEnabled)
+
 	toolStage = s.applyToolContextBudget(ctx, prepared.state.traceID, toolStage)
 	logRagChatToolStageResult(ctx, toolStage)
 	s.tracer.appendTraceRunExtra(ctx, prepared.state.traceID, buildRuntimePathTraceExtra(chatPath, resolveToolBackend(toolStage), input, s.agentRuntimeMode))

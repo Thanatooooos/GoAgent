@@ -45,6 +45,14 @@ func (t *handleTable[M]) has(handle string) bool {
 	return ok
 }
 
+// size returns the number of registered entries.
+func (t *handleTable[M]) size() int {
+	if t == nil {
+		return 0
+	}
+	return len(t.byKey)
+}
+
 // resolve returns (durableKey, value, ok). Handle matching is case-insensitive.
 func (t *handleTable[M]) resolve(handle string) (string, M, bool) {
 	entry, ok := t.byHandle[strings.ToLower(strings.TrimSpace(handle))]

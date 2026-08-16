@@ -17,6 +17,13 @@ type ChunkReference struct {
 	DocumentTitle   string
 }
 
+// WebReference carries the durable identity and display metadata for a
+// registered external web source. It is expanded into public <web/> tags.
+type WebReference struct {
+	URL   string
+	Title string
+}
+
 var shortHandleRE = regexp.MustCompile(`(?i)^[cdb][1-9][0-9]*$`)
 
 // Registry maps durable identifiers to request-local handles for one chat
@@ -25,6 +32,7 @@ type Registry struct {
 	chunks *handleTable[ChunkReference]
 	docs   *handleTable[struct{}]
 	kbs    *handleTable[struct{}]
+	webs   *handleTable[WebReference]
 }
 
 func NewRegistry() *Registry {
@@ -32,6 +40,7 @@ func NewRegistry() *Registry {
 		chunks: newHandleTable[ChunkReference]("c"),
 		docs:   newHandleTable[struct{}]("d"),
 		kbs:    newHandleTable[struct{}]("b"),
+		webs:   newHandleTable[WebReference]("w"),
 	}
 }
 
@@ -49,6 +58,66 @@ func (r *Registry) RegisterChunk(ref ChunkReference) string {
 		return r.knownChunk(ref.ChunkID)
 	}
 	return r.chunks.register(ref.ChunkID, ref)
+}
+
+// RegisterWeb returns the wN handle for an external web source.
+func (r *Registry) RegisterWeb(ref WebReference) string {
+	if r == nil {
+		return ""
+	}
+	ref.URL = strings.TrimSpace(ref.URL)
+	if ref.URL == "" {
+		return ""
+	}
+	return r.webs.register(ref.URL, ref)
+}
+
+// RegisterWebs registers external web sources from tool results.
+func (r *Registry) RegisterWebs(refs []WebReference) []string {
+	if r == nil || len(refs) == 0 {
+		return nil
+	}
+	handles := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if handle := r.RegisterWeb(ref); handle != "" {
+			handles = append(handles, handle)
+		}
+	}
+	return handles
+}
+
+// ResolveWeb returns the durable web source for a wN handle.
+func (r *Registry) ResolveWeb(handle string) (WebReference, bool) {
+	if r == nil {
+		return WebReference{}, false
+	}
+	key, value, ok := r.webs.resolve(handle)
+	if !ok {
+		return WebReference{}, false
+	}
+	value.URL = key
+	return value, true
+}
+
+// ResolveHandle routes a model-emitted handle to either a chunk or a web
+// source based on its prefix (cN vs wN).
+func (r *Registry) ResolveHandle(handle string) (ChunkReference, WebReference, string) {
+	handle = strings.TrimSpace(handle)
+	if strings.HasPrefix(strings.ToLower(handle), "w") {
+		if web, ok := r.ResolveWeb(handle); ok {
+			return ChunkReference{}, web, "web"
+		}
+		return ChunkReference{}, WebReference{}, ""
+	}
+	if chunk, ok := r.ResolveChunk(handle); ok {
+		return chunk, WebReference{}, "chunk"
+	}
+	return ChunkReference{}, WebReference{}, ""
+}
+
+// HasWebSources reports whether any external web source has been registered.
+func (r *Registry) HasWebSources() bool {
+	return r != nil && r.webs != nil && r.webs.size() > 0
 }
 
 func (r *Registry) knownChunk(handle string) string {

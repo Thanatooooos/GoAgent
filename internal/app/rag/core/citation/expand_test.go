@@ -27,6 +27,53 @@ func TestExpandTextDropsUnknownRef(t *testing.T) {
 	}
 }
 
+func TestExpandTextExpandsWebRef(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterWeb(WebReference{URL: "https://example.com/a", Title: "示例博客"})
+	got := r.ExpandText("根据 <ref id=\"w1\"/> 说明。", true)
+	want := `<web url="https://example.com/a" title="示例博客" />`
+	if !strings.Contains(got, want) {
+		t.Fatalf("expanded output missing %q: %s", want, got)
+	}
+	if strings.Contains(got, "w1") {
+		t.Fatalf("handle leaked in output: %s", got)
+	}
+}
+
+func TestExpandTextDropsUnknownWebRef(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterChunk(ChunkReference{ChunkID: "chunk-a"})
+	got := r.ExpandText("x <ref id=\"w9\"/> y", true)
+	if strings.Contains(got, "ref") || strings.Contains(got, "w9") || strings.Contains(got, "<web") {
+		t.Fatalf("unknown web ref not dropped: %s", got)
+	}
+}
+
+func TestExpandTextStripsModelWebTag(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterWeb(WebReference{URL: "https://example.com/a"})
+	got := r.ExpandText("a <web url=\"https://example.com/a\"/> b", true)
+	if strings.Contains(got, "<web") {
+		t.Fatalf("model-written <web> not stripped: %s", got)
+	}
+}
+
+func TestStreamExpanderExpandsWebRef(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterWeb(WebReference{URL: "https://example.com/a", Title: "示例博客"})
+	d := NewStreamExpander(r, true)
+	var out strings.Builder
+	out.WriteString(d.Feed("前文 <re"))
+	out.WriteString(d.Feed("f id=\"w1\"/> 后文"))
+	out.WriteString(d.Flush())
+	if !strings.Contains(out.String(), `<web url="https://example.com/a" title="示例博客" />`) {
+		t.Fatalf("split web ref not expanded: %s", out.String())
+	}
+	if strings.Contains(out.String(), "w1") {
+		t.Fatalf("handle leaked: %s", out.String())
+	}
+}
+
 func TestExpandTextStripsModelKBAndDisabledRefs(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterChunk(ChunkReference{ChunkID: "chunk-a"})
