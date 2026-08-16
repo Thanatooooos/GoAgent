@@ -9,7 +9,7 @@ import (
 var (
 	refTagRE       = regexp.MustCompile(`(?i)<ref\s+id\s*=\s*"([^"]+)"\s*/?>`)
 	refCandidateRE = regexp.MustCompile(`(?is)<ref\b[^>]*>`)
-	modelKBTagRE   = regexp.MustCompile(`(?is)<kb\b[^>]*>`)
+	modelKBTagRE   = regexp.MustCompile(`(?is)<(?:kb|web)\b[^>]*>`)
 )
 
 // stripCitationMarkup removes private <ref> and output-only <kb> tags.
@@ -34,12 +34,24 @@ func (r *Registry) ExpandText(text string, enabled bool) string {
 		if len(match) != 2 {
 			return ""
 		}
-		ref, ok := r.ResolveChunk(match[1])
-		if !ok {
+		chunk, web, kind := r.ResolveHandle(match[1])
+		switch kind {
+		case "web":
+			return renderWebTag(web)
+		case "chunk":
+			return renderKBTag(chunk)
+		default:
 			return ""
 		}
-		return renderKBTag(ref)
 	})
+}
+
+func renderWebTag(ref WebReference) string {
+	attrs := fmt.Sprintf(`url="%s"`, escapeAttr(ref.URL))
+	if strings.TrimSpace(ref.Title) != "" {
+		attrs += fmt.Sprintf(` title="%s"`, escapeAttr(ref.Title))
+	}
+	return "<web " + attrs + " />"
 }
 
 func renderKBTag(ref ChunkReference) string {
@@ -100,7 +112,7 @@ func (d *StreamExpander) Feed(chunk string) string {
 			data = data[end+1:]
 			continue
 		}
-		if isNamedTagStart(lower, "kb") {
+		if isNamedTagStart(lower, "kb") || isNamedTagStart(lower, "web") {
 			end := strings.IndexByte(data, '>')
 			if end < 0 {
 				d.pending = data
@@ -144,7 +156,7 @@ func isNamedTagStart(value, name string) bool {
 }
 
 func isSourceTagPending(value string) bool {
-	for _, name := range []string{"ref", "kb"} {
+	for _, name := range []string{"ref", "kb", "web"} {
 		prefix := "<" + name
 		if (len(value) <= len(prefix) && strings.HasPrefix(prefix, value)) || isNamedTagStart(value, name) {
 			return true
