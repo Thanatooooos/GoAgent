@@ -189,7 +189,7 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 		return s.handleChatCancellation(ctx, input, prepared.state, sink)
 	}
 	if result.err != nil {
-		return s.handleFailedResult(ctx, prepared.state, result, sink)
+		return s.handleFailedResult(ctx, input, prepared.state, result, sink)
 	}
 	return s.handleSucceededResult(ctx, input, prepared.state, result, sink)
 }

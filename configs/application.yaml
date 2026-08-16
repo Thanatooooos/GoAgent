@@ -64,6 +64,7 @@ rag:
     parallel-subquestions:
       enabled: true
       max-concurrency: 2
+    rerank-top-n: 5
 
   query-rewrite:
     enabled: true

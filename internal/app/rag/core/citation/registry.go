@@ -110,7 +110,7 @@ func (r *Registry) RegisterChunks(chunks []convention.RetrievedChunk) {
 			ChunkID:         chunk.ID,
 			DocumentID:      chunk.DocumentID,
 			KnowledgeBaseID: chunk.KnowledgeBaseID,
-			DocumentTitle:   readMetadataString(chunk.Metadata, "document_title"),
+			DocumentTitle:   readDocumentTitle(chunk.Metadata),
 		})
 	}
 }

@@ -76,8 +76,11 @@ func (op *OpenAIStyleRerankClient) Rerank(query string, candidates []convention.
 	if len(dedup) == 0 {
 		return []convention.RetrievedChunk{}, nil
 	}
-	if topN <= 0 || len(dedup) <= topN {
+	if topN <= 0 {
 		return dedup, nil
+	}
+	if topN > len(dedup) {
+		topN = len(dedup)
 	}
 	if err := op.validateTarget(target); err != nil {
 		return nil, err

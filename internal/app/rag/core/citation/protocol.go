@@ -6,7 +6,7 @@ const citationEnabledProtocol = `
 - 回答时如需引用知识块，输出且仅输出 <ref id="cN"/>。
 - 只允许使用上下文中出现过的 cN 句柄，禁止捏造句柄。
 - 禁止在回答中暴露真实 chunk ID、文档 ID、知识库 ID 或句柄本身。
-- 禁止自行输出 <kb> 或 <web> 标签；系统会在生成后自动展开合法的 <ref/>。
+- 禁止输出任何其他形式的来源标签、标记或引用格式；系统会在生成后自动展开合法的 <ref/>。
 - <ref/> 必须内联在它所支撑的论断所在行，不要集中放在回答末尾。`
 
 const citationDisabledProtocol = `

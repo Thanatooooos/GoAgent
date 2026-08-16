@@ -9,7 +9,8 @@ import (
 	"local/rag-project/internal/framework/convention"
 )
 
-const retrievalHeader = "<retrieval type=\"knowledge\">"
+const retrievalHeader = `<retrieval type="knowledge">
+引用：仅输出 <ref id="cN"/>，N 为下方句柄。`
 const retrievalFooter = "</retrieval>"
 
 // RenderStats reports how a budget-aware render behaved.
@@ -99,7 +100,7 @@ func renderChunkPrefix(registry *Registry, chunk convention.RetrievedChunk) stri
 		ChunkID:         chunk.ID,
 		DocumentID:      chunk.DocumentID,
 		KnowledgeBaseID: chunk.KnowledgeBaseID,
-		DocumentTitle:   readMetadataString(chunk.Metadata, "document_title"),
+		DocumentTitle:   readDocumentTitle(chunk.Metadata),
 	})
 	var b strings.Builder
 	b.WriteString("<chunk id=\"")
@@ -113,13 +114,23 @@ func renderChunkPrefix(registry *Registry, chunk convention.RetrievedChunk) stri
 		b.WriteString(escapeAttr(section))
 		b.WriteString("\"")
 	}
-	if title := readMetadataString(chunk.Metadata, "document_title"); title != "" {
+	if title := readDocumentTitle(chunk.Metadata); title != "" {
 		b.WriteString(" title=\"")
 		b.WriteString(escapeAttr(title))
 		b.WriteString("\"")
 	}
 	b.WriteString(">")
 	return b.String()
+}
+
+// readDocumentTitle resolves the document title from chunk metadata, preferring
+// document_name (the key written by the ingestion pipeline) and falling back
+// to document_title for older data.
+func readDocumentTitle(metadata map[string]any) string {
+	if title := readMetadataString(metadata, "document_name"); title != "" {
+		return title
+	}
+	return readMetadataString(metadata, "document_title")
 }
 
 func escapeText(value string) string {

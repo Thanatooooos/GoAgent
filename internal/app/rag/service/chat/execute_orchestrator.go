@@ -69,20 +69,36 @@ func (s *RagChatService) runStreamingAnswer(
 		request.Thinking = boolPointer(true)
 	}
 
-	callback := newRagChatStreamCallback(
-		task,
-		sink,
-		s.chatContextBudget.normalized().Estimator,
-		promptTokensEstimate,
-		expander,
-	)
-	handle, err := s.chatService.StreamChatWithRequest(request, callback)
-	if err != nil {
-		return ragChatTaskResult{}, err
-	}
-	s.taskRegistry.Set(state.meta.TaskID, task, handle)
+	const maxStreamAttempts = 2
+	var lastErr error
+	for attempt := 1; attempt <= maxStreamAttempts; attempt++ {
+		callback := newRagChatStreamCallback(
+			task,
+			sink,
+			s.chatContextBudget.normalized().Estimator,
+			promptTokensEstimate,
+			expander,
+		)
+		handle, err := s.chatService.StreamChatWithRequest(request, callback)
+		if err != nil {
+			lastErr = err
+			if task.Context().Err() != nil {
+				return ragChatTaskResult{cancelled: true}, nil
+			}
+			continue
+		}
+		s.taskRegistry.Set(state.meta.TaskID, task, handle)
 
-	return <-task.doneCh, nil
+		result := <-task.doneCh
+		if result.err == nil || result.cancelled {
+			return result, nil
+		}
+		if strings.TrimSpace(result.content) != "" || strings.TrimSpace(result.thinking) != "" {
+			return result, nil
+		}
+		lastErr = result.err
+	}
+	return ragChatTaskResult{}, lastErr
 }
 
 func (s *RagChatService) persistAssistantMessage(
@@ -173,18 +189,52 @@ func (s *RagChatService) handleCancelledResult(
 
 func (s *RagChatService) handleFailedResult(
 	ctx context.Context,
+	input RagChatInput,
 	state ragChatRuntimeState,
 	result ragChatTaskResult,
 	sink RagChatEventSink,
 ) error {
 	s.tracer.recordChatTraceNode(ctx, state.traceID, ragTraceStatusFailed, result)
-	ctx = enrichRagChatLogContext(ctx, state.traceID, state.meta.ConversationID, "", state.meta.TaskID)
+	ctx = enrichRagChatLogContext(ctx, state.traceID, state.meta.ConversationID, input.UserID, state.meta.TaskID)
 	logRagChatCompletion(ctx, result)
 	logRagChatTerminalError(ctx, "stream_result", result.err)
 	s.tracer.finishTraceRun(ctx, state.traceID, ragTraceStatusFailed, result.err)
+
+	if persistErr := s.persistFailedAssistantMessage(ctx, state, input, result); persistErr != nil {
+		logRagChatTerminalError(ctx, "persist_failed_result", persistErr)
+	} else {
+		_ = sink.SendFinish(RagChatFinishPayload{Title: state.title})
+	}
 	_ = sink.SendError(result.err)
 	_ = sink.SendDone()
 	return result.err
+}
+
+// persistFailedAssistantMessage persists a best-effort assistant message on
+// failure so the conversation history stays complete and the partial answer
+// is not lost when streaming breaks mid-generation.
+func (s *RagChatService) persistFailedAssistantMessage(
+	ctx context.Context,
+	state ragChatRuntimeState,
+	input RagChatInput,
+	result ragChatTaskResult,
+) error {
+	content := strings.TrimSpace(result.content)
+	if errText := strings.TrimSpace(errorMessageOf(result.err)); errText != "" {
+		if content != "" {
+			content += "\n\n"
+		}
+		content += "(answer generation failed: " + errText + ")"
+	}
+	_, err := s.persistAssistantMessage(ctx, state, input, content, result.thinking)
+	return err
+}
+
+func errorMessageOf(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (s *RagChatService) triggerLongTermMemoryWriteback(

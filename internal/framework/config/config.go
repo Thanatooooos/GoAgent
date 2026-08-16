@@ -158,6 +158,7 @@ type RagAgentRuntimePersistenceConfig struct {
 
 type RagRetrieveConfig struct {
 	ParallelSubquestions RagRetrieveParallelSubquestionConfig `mapstructure:"parallel-subquestions"`
+	RerankTopN           int                                  `mapstructure:"rerank-top-n"`
 }
 
 type RagRetrieveParallelSubquestionConfig struct {

@@ -96,6 +96,60 @@ func TestRRFFusionBothEmpty(t *testing.T) {
 	}
 }
 
+func TestMergeResultsPreservesRerankScoreAcrossSubQuestions(t *testing.T) {
+	results := []Result{
+		{
+			Chunks: []convention.RetrievedChunk{
+				{ID: "c1", Score: 0.81},
+				{ID: "c2", Score: 0.72},
+			},
+		},
+		{
+			Chunks: []convention.RetrievedChunk{
+				{ID: "c2", Score: 0.9},
+				{ID: "c3", Score: 0.65},
+			},
+		},
+	}
+
+	merged := MergeResults(results, 3)
+
+	if len(merged.Chunks) != 3 {
+		t.Fatalf("expected 3 merged chunks, got %d", len(merged.Chunks))
+	}
+	byID := map[string]float32{}
+	for _, c := range merged.Chunks {
+		byID[c.ID] = c.Score
+	}
+	// RRF orders c2 first (both sub-questions), but scores must stay on the
+	// rerank scale, not be replaced by RRF fractions (~0.03).
+	if byID["c2"] != 0.9 {
+		t.Fatalf("expected c2 to keep its highest rerank score 0.9, got %v", byID)
+	}
+	if byID["c1"] != 0.81 || byID["c3"] != 0.65 {
+		t.Fatalf("unexpected preserved scores: %+v", byID)
+	}
+	if merged.Chunks[0].ID != "c2" {
+		t.Fatalf("expected c2 first by RRF order, got %s", merged.Chunks[0].ID)
+	}
+}
+
+func TestMergeResultsSingleResultPreservesScores(t *testing.T) {
+	results := []Result{
+		{
+			Chunks: []convention.RetrievedChunk{
+				{ID: "c1", Score: 0.84},
+			},
+		},
+	}
+
+	merged := MergeResults(results, 5)
+
+	if len(merged.Chunks) != 1 || merged.Chunks[0].Score != 0.84 {
+		t.Fatalf("expected single result to keep score, got %+v", merged.Chunks)
+	}
+}
+
 func TestRRFFusionDefaultK(t *testing.T) {
 	vectorHits := []corevector.SearchHit{makeHit("a", 0.5)}
 	keywordHits := []corevector.SearchHit{makeHit("b", 0.5)}

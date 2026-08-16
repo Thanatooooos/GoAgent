@@ -52,7 +52,7 @@ func TestExecuteProcessorsRecordsPipelineTrace(t *testing.T) {
 		},
 	}
 
-	chunks, trace, err := engine.executeProcessors(context.Background(), SearchContext{TopK: 2, Query: "test"}, channelResults)
+	chunks, trace, err := engine.executeProcessors(context.Background(), SearchContext{TopK: 2, RerankTopN: 2, Query: "test"}, channelResults)
 	if err != nil {
 		t.Fatalf("executeProcessors() error = %v", err)
 	}
@@ -86,7 +86,7 @@ func TestRerankFailureLeavesPreRerankOrder(t *testing.T) {
 		},
 	}
 
-	_, trace, err := engine.executeProcessors(context.Background(), SearchContext{TopK: 1, Query: "test"}, channelResults)
+	_, trace, err := engine.executeProcessors(context.Background(), SearchContext{TopK: 1, RerankTopN: 1, Query: "test"}, channelResults)
 	if err != nil {
 		t.Fatalf("executeProcessors() error = %v", err)
 	}
@@ -95,5 +95,61 @@ func TestRerankFailureLeavesPreRerankOrder(t *testing.T) {
 	}
 	if trace.RerankError == "" {
 		t.Fatal("expected rerank error recorded")
+	}
+}
+
+func TestRerankProcessorSkipsWhenRerankTopNZero(t *testing.T) {
+	engine := &Engine{
+		processors: []SearchResultPostProcessor{
+			NewFusionPostProcessor(),
+			NewDedupPostProcessor(),
+			NewRerankPostProcessor(&stubReranker{applied: true}),
+		},
+	}
+	channelResults := []SearchChannelResult{
+		{
+			ChannelName: ChannelVectorGlobal,
+			Chunks:      []convention.RetrievedChunk{{ID: "a", Score: 1}, {ID: "b", Score: 0.9}},
+			Metadata:    map[string]any{"rrfWeight": float32(1.0)},
+		},
+	}
+
+	chunks, trace, err := engine.executeProcessors(context.Background(), SearchContext{TopK: 2, RerankTopN: 0, Query: "test"}, channelResults)
+	if err != nil {
+		t.Fatalf("executeProcessors() error = %v", err)
+	}
+	if trace.RerankApplied {
+		t.Fatal("expected rerank skipped when RerankTopN is zero")
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("expected unchanged chunks, got %d", len(chunks))
+	}
+}
+
+func TestRerankProcessorReranksWhenTopNEqualsCandidateCount(t *testing.T) {
+	engine := &Engine{
+		processors: []SearchResultPostProcessor{
+			NewFusionPostProcessor(),
+			NewDedupPostProcessor(),
+			NewRerankPostProcessor(&stubReranker{applied: true}),
+		},
+	}
+	channelResults := []SearchChannelResult{
+		{
+			ChannelName: ChannelVectorGlobal,
+			Chunks:      []convention.RetrievedChunk{{ID: "a", Score: 1}, {ID: "b", Score: 0.9}},
+			Metadata:    map[string]any{"rrfWeight": float32(1.0)},
+		},
+	}
+
+	chunks, trace, err := engine.executeProcessors(context.Background(), SearchContext{TopK: 2, RerankTopN: 2, Query: "test"}, channelResults)
+	if err != nil {
+		t.Fatalf("executeProcessors() error = %v", err)
+	}
+	if !trace.RerankApplied {
+		t.Fatal("expected rerank applied when RerankTopN equals candidate count")
+	}
+	if len(chunks) != 2 || chunks[0].ID != "b" {
+		t.Fatalf("expected rerank to reorder chunks, got %+v", chunkIDs(chunks))
 	}
 }
