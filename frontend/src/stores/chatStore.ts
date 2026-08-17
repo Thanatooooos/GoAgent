@@ -477,6 +477,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       onFinish: (payload: CompletionPayload) => {
         if (get().streamingMessageId !== assistantId) return;
         if (!payload) return;
+        set({ cancelRequested: false });
         logChatDebug("sendMessage:onFinish", {
           payloadMessageId: payload.messageId,
           payloadTitle: payload.title,
@@ -533,6 +534,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onCancel: (payload: CompletionPayload) => {
         if (get().streamingMessageId !== assistantId) return;
+        const explicitlyCancelled = get().cancelRequested;
         logChatDebug("sendMessage:onCancel", {
           payloadMessageId: payload?.messageId,
           payloadTitle: payload?.title,
@@ -545,13 +547,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set((state) => ({
           messages: state.messages.map((message) => {
             if (message.id !== state.streamingMessageId) return message;
-            const suffix = message.content.includes("（已停止生成）") ? "" : "\n\n（已停止生成）";
+            const suffix = explicitlyCancelled && !message.content.includes("（已停止生成）") ? "\n\n（已停止生成）" : "";
             const nextId = payload?.messageId ? String(payload.messageId) : message.id;
             return {
               ...message,
               id: nextId,
               content: message.content + suffix,
-              status: "cancelled",
+              status: explicitlyCancelled ? "cancelled" : "done",
               isThinking: false,
               thinkingDuration:
                 message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)

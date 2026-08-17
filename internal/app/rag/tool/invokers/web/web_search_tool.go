@@ -52,11 +52,16 @@ func (t *WebSearchTool) Invoke(_ context.Context, call ragtool.Call) (ragtool.Re
 
 	results, err := t.provider.Search(query)
 	if err != nil {
+		providerName := searchProviderName(t.provider)
 		return ragtool.Result{
 			Name:         "web_search",
 			Status:       ragtool.CallStatusFailed,
 			Summary:      fmt.Sprintf("web search failed: %v", err),
 			ErrorMessage: err.Error(),
+			Data: map[string]any{
+				"query":    query,
+				"provider": providerName,
+			},
 		}, nil
 	}
 

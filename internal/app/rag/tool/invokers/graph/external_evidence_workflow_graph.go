@@ -29,9 +29,11 @@ type externalEvidenceState struct {
 	Question     string
 	SearchQuery  string
 	SearchResult ragtool.Result
+	SearchError  string
 	SelectedURLs []string
 	SourceReview externalSourceReview
 	FetchResult  ragtool.Result
+	FetchError   string
 	Quality      externalEvidenceQualityAssessment
 	Readiness    externalReadinessAssessment
 	Results      []ragtool.Result
@@ -110,15 +112,23 @@ func NewExternalEvidenceWorkflowTool(executor *ragruntime.Executor, chatService 
 				Name:      "web_search",
 				Arguments: map[string]any{"query": query},
 			})
+			if strings.TrimSpace(result.Name) == "" && err != nil {
+				result = ragtool.Result{Name: "web_search", Status: ragtool.CallStatusFailed, ErrorMessage: err.Error()}
+			}
+			if result.Name != "" {
+				state.SearchResult = result
+				state.Results = append(state.Results, result)
+				if !result.Successful() && state.LastError == "" {
+					state.LastError = strings.TrimSpace(result.ErrorMessage)
+				}
+			}
 			if err != nil {
-				state.LastError = err.Error()
+				state.SearchError = err.Error()
+				if state.LastError == "" {
+					state.LastError = err.Error()
+				}
 				log.Warnf("[external_evidence] search failed: %s", ragtool.TruncateForLog(err.Error()))
 				return state, nil
-			}
-			state.SearchResult = result
-			state.Results = append(state.Results, result)
-			if !result.Successful() && state.LastError == "" {
-				state.LastError = strings.TrimSpace(result.ErrorMessage)
 			}
 			searchView, _ := ragtool.ViewWebSearchResult(result)
 			log.Infof(
@@ -165,15 +175,23 @@ func NewExternalEvidenceWorkflowTool(executor *ragruntime.Executor, chatService 
 				Name:      "web_fetch",
 				Arguments: map[string]any{"urls": state.SelectedURLs},
 			})
+			if strings.TrimSpace(result.Name) == "" && err != nil {
+				result = ragtool.Result{Name: "web_fetch", Status: ragtool.CallStatusFailed, ErrorMessage: err.Error()}
+			}
+			if result.Name != "" {
+				state.FetchResult = result
+				state.Results = append(state.Results, result)
+				if !result.Successful() && state.LastError == "" {
+					state.LastError = strings.TrimSpace(result.ErrorMessage)
+				}
+			}
 			if err != nil {
-				state.LastError = err.Error()
+				state.FetchError = err.Error()
+				if state.LastError == "" {
+					state.LastError = err.Error()
+				}
 				log.Warnf("[external_evidence] fetch failed: %s", ragtool.TruncateForLog(err.Error()))
 				return state, nil
-			}
-			state.FetchResult = result
-			state.Results = append(state.Results, result)
-			if !result.Successful() && state.LastError == "" {
-				state.LastError = strings.TrimSpace(result.ErrorMessage)
 			}
 			fetchView, _ := ragtool.ViewWebFetchResult(result)
 			log.Infof(
@@ -260,15 +278,6 @@ func (t *ExternalEvidenceWorkflowTool) Invoke(ctx context.Context, call ragtool.
 			ErrorMessage: err.Error(),
 		}, nil
 	}
-	if final.LastError != "" && len(final.Results) == 0 {
-		log.Warnf("[external_evidence] workflow failed without results: %s", ragtool.TruncateForLog(final.LastError))
-		return ragtool.Result{
-			Name:         "external_evidence_workflow",
-			Status:       ragtool.CallStatusFailed,
-			ErrorMessage: final.LastError,
-		}, nil
-	}
-
 	data := map[string]any{
 		"question":             final.Question,
 		"searchQuery":          final.SearchQuery,
@@ -289,6 +298,8 @@ func (t *ExternalEvidenceWorkflowTool) Invoke(ctx context.Context, call ragtool.
 		"citedUrls":            final.Readiness.CitedURLs,
 		"workflowName":         "external_evidence_workflow",
 		"searchWorkflowStatus": buildExternalEvidenceStatus(final),
+		"searchError":          final.SearchError,
+		"fetchError":           final.FetchError,
 		"sourceReview":         buildSourceReviewData(final.SourceReview),
 		"qualityAssessment":    buildQualityAssessmentData(final.Quality),
 	}
@@ -308,11 +319,31 @@ func (t *ExternalEvidenceWorkflowTool) Invoke(ctx context.Context, call ragtool.
 		data["failCount"] = final.FetchResult.GetInt("failCount")
 	}
 
+	status := ragtool.CallStatusSuccess
+	errorMessage := ""
+	if final.LastError != "" {
+		status = ragtool.CallStatusFailed
+		errorMessage = final.LastError
+	}
+	if final.SearchResult.Name != "" && !final.SearchResult.Successful() {
+		status = ragtool.CallStatusFailed
+		if errorMessage == "" {
+			errorMessage = strings.TrimSpace(final.SearchResult.ErrorMessage)
+		}
+	}
+	if final.FetchResult.Name != "" && !final.FetchResult.Successful() {
+		status = ragtool.CallStatusFailed
+		if errorMessage == "" {
+			errorMessage = strings.TrimSpace(final.FetchResult.ErrorMessage)
+		}
+	}
+
 	result := ragtool.Result{
-		Name:    "external_evidence_workflow",
-		Status:  ragtool.CallStatusSuccess,
-		Summary: buildExternalEvidenceSummary(final),
-		Data:    data,
+		Name:         "external_evidence_workflow",
+		Status:       status,
+		Summary:      buildExternalEvidenceSummary(final),
+		ErrorMessage: errorMessage,
+		Data:         data,
 	}
 	log.Infof(
 		"[external_evidence] workflow done: %s",
@@ -326,13 +357,13 @@ func buildExternalEvidenceSummary(state *externalEvidenceState) string {
 	fetchView, _ := ragtool.ViewWebFetchResult(state.FetchResult)
 	return fmt.Sprintf(
 		"external evidence workflow: web_search=%s(%d results, allow=%d, neutral=%d, deny=%d) -> selected=%d -> web_fetch=%s(%d ok, %d failed) -> quality=%s(%.2f) -> readiness=%s(%.2f)",
-		renderStatus(state.SearchResult.Status),
+		renderWorkflowStageStatus(state.SearchResult, state.SearchError),
 		searchView.ResultCount,
 		searchView.AllowedCount,
 		searchView.NeutralCount,
 		searchView.DeniedCount,
 		len(state.SelectedURLs),
-		renderStatus(state.FetchResult.Status),
+		renderWorkflowStageStatus(state.FetchResult, state.FetchError),
 		fetchView.SuccessCount,
 		fetchView.FailCount,
 		state.Quality.Quality,
@@ -344,14 +375,14 @@ func buildExternalEvidenceSummary(state *externalEvidenceState) string {
 
 func buildExternalEvidenceStatus(state *externalEvidenceState) string {
 	parts := make([]string, 0, 5)
-	if state.SearchResult.Name != "" {
-		parts = append(parts, fmt.Sprintf("web_search=%s", renderStatus(state.SearchResult.Status)))
+	if state.SearchResult.Name != "" || state.SearchError != "" {
+		parts = append(parts, fmt.Sprintf("web_search=%s", renderWorkflowStageStatus(state.SearchResult, state.SearchError)))
 	}
 	if len(state.SelectedURLs) > 0 {
 		parts = append(parts, fmt.Sprintf("selected=%d", len(state.SelectedURLs)))
 	}
-	if state.FetchResult.Name != "" {
-		parts = append(parts, fmt.Sprintf("web_fetch=%s", renderStatus(state.FetchResult.Status)))
+	if state.FetchResult.Name != "" || state.FetchError != "" {
+		parts = append(parts, fmt.Sprintf("web_fetch=%s", renderWorkflowStageStatus(state.FetchResult, state.FetchError)))
 	}
 	if state.Quality.Quality != "" {
 		parts = append(parts, fmt.Sprintf("quality=%s", state.Quality.Quality))
@@ -368,6 +399,16 @@ func renderStatus(status string) string {
 		return "skipped"
 	}
 	return status
+}
+
+func renderWorkflowStageStatus(result ragtool.Result, stageError string) string {
+	if strings.TrimSpace(stageError) != "" {
+		return ragtool.CallStatusFailed
+	}
+	if strings.TrimSpace(result.Status) != "" {
+		return renderStatus(result.Status)
+	}
+	return "skipped"
 }
 
 func selectFetchURLs(view ragtool.WebSearchResultView, maxURLs int) []string {
@@ -489,6 +530,7 @@ func assessExternalReadiness(ctx context.Context, state *externalEvidenceState, 
 
 func assessExternalEvidenceQuality(state *externalEvidenceState) externalEvidenceQualityAssessment {
 	fetchView, _ := ragtool.ViewWebFetchResult(state.FetchResult)
+	searchView, _ := ragtool.ViewWebSearchResult(state.SearchResult)
 	quality := externalEvidenceQualityAssessment{
 		SuccessfulPages: fetchView.SuccessCount,
 		FailedPages:     fetchView.FailCount,
@@ -527,6 +569,11 @@ func assessExternalEvidenceQuality(state *externalEvidenceState) externalEvidenc
 	}
 
 	switch {
+	case searchView.ResultCount == 0:
+		quality.Quality = "limited"
+		quality.Confidence = 0.1
+		quality.Reasoning = "No usable external search results were returned."
+		quality.Notes = append(quality.Notes, "External search returned no results.")
 	case pagesWithText == 0:
 		quality.Quality = "limited"
 		quality.Confidence = 0.38

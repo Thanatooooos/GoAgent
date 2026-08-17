@@ -373,7 +373,7 @@ func buildAgentSourceAnswerInstruction(result agentapp.RunResponse) string {
 	if len(sources) == 0 {
 		return ""
 	}
-	return "When you rely on external evidence, explicitly include a `来源` section at the end of the answer and list the source titles or URLs you used. Do not invent sources that are not present in the tool context."
+	return "When you rely on external evidence, explicitly include a `来源` section at the end of the answer and list the source titles or URLs you used. Do not invent sources that are not present in the tool context. Format the answer as Markdown: put a blank line before and after every heading, write each bullet or numbered item on its own line, and use a space after heading markers such as `### `. Do not output internal citation tags or empty citation parentheses."
 }
 
 func collectAgentToolSources(result agentapp.RunResponse) []string {

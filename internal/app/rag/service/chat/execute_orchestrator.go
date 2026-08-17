@@ -108,7 +108,7 @@ func (s *RagChatService) persistAssistantMessage(
 	content string,
 	thinking string,
 ) (RagChatFinishPayload, error) {
-	content = strings.TrimSpace(content)
+	content = normalizeAssistantMarkdown(content)
 	thinking = strings.TrimSpace(thinking)
 	if content == "" && thinking == "" {
 		return RagChatFinishPayload{Title: state.title}, nil

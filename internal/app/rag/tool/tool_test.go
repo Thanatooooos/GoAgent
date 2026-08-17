@@ -934,6 +934,9 @@ func TestBuildAnswerGuidanceFromExternalEvidenceWorkflowIncludesQualityAndSource
 	if !strings.Contains(guidance, "Additional corroborating source for ecosystem examples") {
 		t.Fatalf("expected missing information hint, got %q", guidance)
 	}
+	if !strings.Contains(guidance, "输出格式要求") || !strings.Contains(guidance, "空的引用括号") {
+		t.Fatalf("expected markdown formatting constraints in guidance, got %q", guidance)
+	}
 }
 
 func TestBuildWorkflowTraceMetaDetectsSearchCapabilityAndEvidenceSources(t *testing.T) {
