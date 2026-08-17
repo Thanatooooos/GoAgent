@@ -97,8 +97,14 @@ func (s *RagChatService) Chat(ctx context.Context, input RagChatInput, sink RagC
 	if ctx.Err() != nil {
 		return s.handleChatCancellation(ctx, input, prepared.state, sink)
 	}
-	if prepared.state.citation != nil && toolStage.agentRun != nil {
-		if webSources := registerAgentWebSources(prepared.state.citation, *toolStage.agentRun); webSources != "" {
+	webSources := ""
+	if prepared.state.citation != nil {
+		if toolStage.agentRun != nil {
+			webSources = registerAgentWebSources(prepared.state.citation, *toolStage.agentRun)
+		} else {
+			webSources = registerLegacyWebSources(prepared.state.citation, toolStage.result)
+		}
+		if webSources != "" {
 			toolStage.result.Context = strings.TrimSpace(webSources + "\n\n" + toolStage.result.Context)
 		}
 	}
