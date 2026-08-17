@@ -11,6 +11,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { CitationChip } from "@/components/chat/CitationChip";
+import { normalizeAssistantMarkdown } from "@/components/chat/normalizeMarkdown";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content, openLinksInNewTab = true }: MarkdownRendererProps) {
   const theme = useThemeStore((state) => state.theme);
+  const normalizedContent = normalizeAssistantMarkdown(content);
 
   return (
     <ReactMarkdown
@@ -172,7 +174,7 @@ export function MarkdownRenderer({ content, openLinksInNewTab = true }: Markdown
       }}
       className="prose prose-gray max-w-none dark:prose-invert prose-headings:font-semibold prose-headings:text-[#1A1A1A] dark:prose-headings:text-[#EEEEEE] prose-p:text-[#333333] dark:prose-p:text-[#CCCCCC] prose-p:leading-relaxed prose-li:text-[#333333] dark:prose-li:text-[#CCCCCC] prose-strong:text-[#1A1A1A] dark:prose-strong:text-[#EEEEEE]"
     >
-      {content}
+      {normalizedContent}
     </ReactMarkdown>
   );
 }

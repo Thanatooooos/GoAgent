@@ -105,7 +105,7 @@ func formatWorkflowPolicy(policy string) string {
 }
 
 func formatAnswerGuidance(guidance string) string {
-	return "## Answer Guidance\n" + strings.TrimSpace(guidance)
+	return "## Answer Guidance\n" + strings.TrimSpace(guidance) + "\n\nOutput formatting: use Markdown; put a blank line before and after headings; write every bullet or numbered item on its own line; use a space after heading markers such as `### `; do not output internal citation tags or empty citation parentheses."
 }
 
 func formatCitationProtocol(protocol string) string {

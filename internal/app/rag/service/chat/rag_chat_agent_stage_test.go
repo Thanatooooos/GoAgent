@@ -389,6 +389,9 @@ func TestWorkflowResultFromAgentRunRequestsExternalSourceDisclosure(t *testing.T
 	if !strings.Contains(result.Context, "https://go.dev/blog/context") || !strings.Contains(result.Context, "https://pkg.go.dev/context") {
 		t.Fatalf("expected source urls in tool context, got %q", result.Context)
 	}
+	if !strings.Contains(result.AnswerGuidance, "blank line") || !strings.Contains(result.AnswerGuidance, "empty citation parentheses") {
+		t.Fatalf("expected markdown and citation formatting constraints, got %q", result.AnswerGuidance)
+	}
 }
 
 func TestRagChatServiceDoesNotSelectAgentRuntimeWhenModeOff(t *testing.T) {

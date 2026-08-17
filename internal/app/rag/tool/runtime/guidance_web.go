@@ -8,6 +8,8 @@ import (
 	webmod "local/rag-project/internal/app/rag/tool/modules/web"
 )
 
+const markdownAnswerFormattingGuidance = "\n\n输出格式要求：使用 Markdown；每个标题前后空一行，并使用 `### 标题` 格式；每个项目符号或编号项目单独占一行；不要输出 `<ref>`、`<kb>`、`<web>` 等内部引用标记，也不要输出空的引用括号。"
+
 func buildExternalEvidenceGuidance(allResults []Result, result Result) string {
 	view, ok := webmod.ViewExternalEvidenceWorkflowResult(result)
 	if !ok {
@@ -98,6 +100,7 @@ func buildExternalEvidenceGuidance(allResults []Result, result Result) string {
 	}
 
 	builder.WriteString("\n不要只复述工具执行过程；重点是把最终结论、来源质量和剩余不确定性讲清楚。")
+	builder.WriteString(markdownAnswerFormattingGuidance)
 	return builder.String()
 }
 
@@ -138,6 +141,7 @@ func buildWebSearchGuidance(allResults []Result, webResults []Result) string {
 			builder.WriteString(fmt.Sprintf("\n- %s (%s)", src.title, src.url))
 		}
 	}
+	builder.WriteString(markdownAnswerFormattingGuidance)
 
 	return builder.String()
 }

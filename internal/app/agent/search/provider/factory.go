@@ -65,8 +65,8 @@ func fallbackProviderByName(name string, tavilyAPIKey string) SearchProvider {
 		return NewDuckDuckGoProvider()
 	case "tavily":
 		if strings.TrimSpace(tavilyAPIKey) == "" {
-			log.Warnf("rag.search.web-search.fallback-provider=tavily but api-key is empty, skipping Tavily fallback")
-			return nil
+			log.Warnf("rag.search.web-search.fallback-provider=tavily but api-key is empty, using duckduckgo fallback")
+			return NewDuckDuckGoProvider()
 		}
 		return NewTavilyProvider(tavilyAPIKey)
 	default:

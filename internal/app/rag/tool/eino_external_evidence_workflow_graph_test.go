@@ -2,6 +2,7 @@ package tool_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -134,5 +135,54 @@ func TestExternalEvidenceWorkflowGraphBuildsSourceReviewAndQuality(t *testing.T)
 		if blocked == "https://spam.example.com/go-generics" {
 			t.Fatalf("deny-listed source should not be cited: %+v", view.CitedURLs)
 		}
+	}
+}
+
+func TestExternalEvidenceWorkflowPropagatesSearchFailure(t *testing.T) {
+	registry := NewRegistry()
+	registry.MustRegister(staticTool{
+		definition: Definition{
+			Name:       "web_search",
+			ReadOnly:   true,
+			Parameters: []ParameterDefinition{{Name: "query", Type: ParamTypeString, Required: true}},
+		},
+		result: Result{
+			Name:    "web_search",
+			Status:  CallStatusSuccess,
+			Summary: "search provider returned an invalid response",
+			Data: map[string]any{
+				"query":    "OpenAI 2026 models",
+				"provider": "tavily-mcp",
+			},
+		},
+		err: errors.New("transport failure"),
+	})
+
+	tool, err := raggraph.NewExternalEvidenceWorkflowTool(ragruntime.NewExecutor(registry), nil)
+	if err != nil {
+		t.Fatalf("create external evidence workflow tool: %v", err)
+	}
+
+	result, err := tool.Invoke(context.Background(), Call{
+		Name:      "external_evidence_workflow",
+		Arguments: map[string]any{"question": "OpenAI 2026 models"},
+	})
+	if err != nil {
+		t.Fatalf("invoke workflow: %v", err)
+	}
+	if result.Status != CallStatusFailed {
+		t.Fatalf("expected workflow failure to be propagated, got %q", result.Status)
+	}
+	if result.ErrorMessage != "transport failure" {
+		t.Fatalf("expected provider error, got %q", result.ErrorMessage)
+	}
+	if result.GetString("provider") != "tavily-mcp" {
+		t.Fatalf("expected provider diagnostics to be preserved, got %#v", result.Data)
+	}
+	if result.GetString("searchError") != "transport failure" {
+		t.Fatalf("expected executor error diagnostics to be preserved, got %#v", result.Data)
+	}
+	if !strings.Contains(result.Summary, "web_search=failed") {
+		t.Fatalf("expected failed search in workflow summary, got %q", result.Summary)
 	}
 }
