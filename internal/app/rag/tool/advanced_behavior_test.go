@@ -212,6 +212,7 @@ func TestGraphBehaviorsProvideGuidanceAndCompletion(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
+		RetrieveResult: sufficientRetrieveResult(),
 		Question: "doc-1 涓轰粈涔堝け璐ヤ簡",
 	})
 	if err != nil {

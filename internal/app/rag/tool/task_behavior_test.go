@@ -178,6 +178,7 @@ func TestAgentLoopTaskModulesUseBehaviorDrivenContinuation(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
+		RetrieveResult: sufficientRetrieveResult(),
 		Question: "task-1 当前运行到哪里了",
 	})
 	if err != nil {

@@ -1049,6 +1049,33 @@ func TestShouldRunToolWorkflow(t *testing.T) {
 	}
 }
 
+func TestShouldRunToolWorkflowEvidenceSeekingFallback(t *testing.T) {
+	// rewrite says no retrieval needed, but the question clearly seeks
+	// evidence: the tool stage must still run instead of falling back to
+	// stale model knowledge.
+	cases := []string{
+		"2026年8月最新发布的人工智能模型有哪些",
+		"OpenAI 在 2026 年发布了哪些新模型，各自有什么特点",
+		"最近一周全球科技行业有什么重要新闻",
+		"GPT-5 相比 GPT-4 在哪些方面有明显改进",
+		"今天上证指数是多少",
+		"Which new models did OpenAI release in 2026",
+		"What is the latest news about AI",
+	}
+	for _, question := range cases {
+		if !shouldRunToolWorkflow(RagChatInput{Question: question}, ragrewrite.Result{NeedRetrieval: false}, false) {
+			t.Fatalf("expected tool workflow for evidence-seeking question %q", question)
+		}
+	}
+	// greetings / thanks must still skip.
+	skip := []string{"hello", "你好", "谢谢", "再见", "ok", "好的"}
+	for _, question := range skip {
+		if shouldRunToolWorkflow(RagChatInput{Question: question}, ragrewrite.Result{NeedRetrieval: false}, false) {
+			t.Fatalf("expected no tool workflow for %q", question)
+		}
+	}
+}
+
 func TestRunToolWorkflowStageSkipsWhenWorkflowUnset(t *testing.T) {
 	svc := newRagChatService(nil, nil, nil, nil, nil, nil, nil, nil)
 	result, err := svc.runToolWorkflowStage(

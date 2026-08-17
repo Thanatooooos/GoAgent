@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+	"local/rag-project/internal/framework/convention"
 	graphmod "local/rag-project/internal/app/rag/tool/modules/graph"
 	metamod "local/rag-project/internal/app/rag/tool/modules/meta"
 	systemmod "local/rag-project/internal/app/rag/tool/modules/system"
@@ -15,6 +17,15 @@ import (
 	webmod "local/rag-project/internal/app/rag/tool/modules/web"
 	ragruntime "local/rag-project/internal/app/rag/tool/runtime"
 )
+
+// sufficientRetrieveResult marks the knowledge base as sufficient so the
+// agent loop exercises its LLM-planner path instead of the deterministic
+// external-evidence rule for insufficient retrieval.
+func sufficientRetrieveResult() ragretrieve.Result {
+	return ragretrieve.Result{
+		Chunks: []convention.RetrievedChunk{{ID: "c1", Score: 0.9}},
+	}
+}
 
 // testInvoker is a minimal ToolInvoker for tests that never calls Invoke.
 type testInvoker struct{}
@@ -284,8 +295,9 @@ func TestAgentLoopRunsMultipleRounds(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
-		Question:  "doc-1 为什么失败了？",
-		EventSink: sink,
+		Question:      "doc-1 为什么失败了？",
+		EventSink:     sink,
+		RetrieveResult: sufficientRetrieveResult(),
 	})
 	if err != nil {
 		t.Fatalf("run agent loop: %v", err)
@@ -1003,6 +1015,7 @@ func TestAgentLoopThinkToolCapturesReasoningInTrace(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
+		RetrieveResult: sufficientRetrieveResult(),
 		Question:  "doc-1 现在什么状态？",
 		EventSink: sink,
 	})
@@ -1120,6 +1133,7 @@ func TestAgentLoopRejectsPlannerCallWithInventedNodeID(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
+		RetrieveResult: sufficientRetrieveResult(),
 		Question: "task-1 why failed?",
 	})
 	if err != nil {
@@ -1389,6 +1403,7 @@ func TestAgentLoopDependencyLevelsOrdering(t *testing.T) {
 	loop.SetParallelToolCalls(true, 2)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
+		RetrieveResult: sufficientRetrieveResult(),
 		Question: "search and fetch about error X",
 		TraceID:  "trace-1",
 	})

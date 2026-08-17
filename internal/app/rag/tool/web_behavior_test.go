@@ -271,6 +271,7 @@ func TestAgentLoopWebModulesUseBehaviorDrivenContinuation(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
+		RetrieveResult: sufficientRetrieveResult(),
 		Question: "golang generics 鏄粈涔?",
 	})
 	if err != nil {

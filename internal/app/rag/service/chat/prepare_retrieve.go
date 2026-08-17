@@ -347,5 +347,36 @@ func shouldRunToolWorkflow(input RagChatInput, rewriteResult ragrewrite.Result, 
 	if ragtool.FirstMatchedID(ragtool.TraceIDPattern, question) != "" {
 		return true
 	}
+	if isEvidenceSeekingQuestion(question) {
+		return true
+	}
 	return rewriteResult.NeedRetrieval
+}
+
+// isEvidenceSeekingQuestion reports whether the question structurally asks
+// for facts, updates or comparisons that are likely to need retrieval or
+// external evidence. This guards against a rewrite model occasionally
+// answering need_retrieval=false for such questions, which would otherwise
+// skip the whole retrieval and tool pipeline and fall back to stale model
+// knowledge.
+func isEvidenceSeekingQuestion(question string) bool {
+	lower := strings.ToLower(strings.TrimSpace(question))
+	if lower == "" {
+		return false
+	}
+	if strings.HasSuffix(lower, "?") || strings.HasSuffix(lower, "？") {
+		return true
+	}
+	markers := []string{
+		"哪些", "什么", "怎么", "如何", "为什么", "哪个", "是什么", "多少", "是否", "有没有",
+		"介绍一下", "介绍", "对比", "区别", "最新", "发布", "推出", "上线", "进展", "情况", "新闻", "动态",
+		"what", "which", "how", "why", "latest", "recent", "new", "released", "launch",
+		"introduce", "compare", "list", "update",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
