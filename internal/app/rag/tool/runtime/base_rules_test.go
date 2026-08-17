@@ -3,6 +3,8 @@ package runtime
 import (
 	"testing"
 
+	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
+
 	. "local/rag-project/internal/app/rag/tool/core"
 )
 
@@ -30,5 +32,18 @@ func TestPlanWithBaseRulesRoutesOpenEndedTaskList(t *testing.T) {
 	}
 	if calls[0].Arguments["status"] != "running" {
 		t.Fatalf("expected status=running, got %#v", calls[0].Arguments["status"])
+	}
+}
+
+func TestPlanWithBaseRulesPrefersExternalEvidenceWhenKBInsufficient(t *testing.T) {
+	calls := PlanWithBaseRules(WorkflowInput{
+		Question:       "2026年8月最新发布的人工智能模型有哪些",
+		RetrieveResult: ragretrieve.Result{},
+	}, DefaultMaxIterations)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "external_evidence_workflow" {
+		t.Fatalf("expected external_evidence_workflow when kb is insufficient, got %q", calls[0].Name)
 	}
 }

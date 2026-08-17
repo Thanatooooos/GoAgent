@@ -313,6 +313,16 @@ func (w *AgentLoop) planCalls(ctx context.Context, round int, input WorkflowInpu
 		return fallback
 	}
 
+	// When knowledge base evidence is insufficient, prefer the deterministic
+	// rule plan (external_evidence_workflow for open questions) over the LLM
+	// planner. The planner tends to pick a bare web_search, which often yields
+	// too little content for a stable answer.
+	if KnowledgeBaseInsufficient(input.RetrieveResult) {
+		if fallback := w.planWithRules(input, previousResults, executed); len(fallback.Calls) > 0 {
+			return fallback
+		}
+	}
+
 	if w.planner != nil {
 		if calls := w.planWithLLM(ctx, input, normalizedState, previousResults, executed); len(calls) > 0 {
 			return planningDecision{Calls: calls, Source: planningSourceLLM}

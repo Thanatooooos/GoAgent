@@ -176,6 +176,7 @@ func TestAgentLoopDocumentModulesUseBehaviorDrivenContinuation(t *testing.T) {
 	loop.SetPlanner(planner)
 
 	result, err := loop.Run(context.Background(), WorkflowInput{
+		RetrieveResult: sufficientRetrieveResult(),
 		Question: "doc-1 为什么失败了",
 	})
 	if err != nil {
