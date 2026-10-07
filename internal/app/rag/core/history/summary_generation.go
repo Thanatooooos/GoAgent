@@ -55,7 +55,7 @@ func GenerateStructuredSummary(
 				input.SourceMessages,
 				NormalizeStructuredSummaryPromptVariant(input.PromptVariant),
 			)),
-			convention.UserMessage("现在请直接返回结构化工作记忆 JSON。"),
+			convention.UserMessage(structuredMemorySummaryRequest),
 		},
 		JSONMode: &jsonMode,
 	}

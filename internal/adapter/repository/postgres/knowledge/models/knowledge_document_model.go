@@ -12,6 +12,9 @@ type KnowledgeDocumentModel struct {
 	DocName             string                `gorm:"column:doc_name;type:varchar(256);not null"`
 	Enabled             int16                 `gorm:"column:enabled;not null;default:1"`
 	ChunkCount          int                   `gorm:"column:chunk_count;default:0"`
+	ImageCount          int                   `gorm:"column:image_count;default:0"`
+	ImageCompletedCount int                   `gorm:"column:image_completed_count;default:0"`
+	ImageFailedCount    int                   `gorm:"column:image_failed_count;default:0"`
 	FileURL             string                `gorm:"column:file_url;type:varchar(1024);not null"`
 	FileType            string                `gorm:"column:file_type;type:varchar(16);not null"`
 	FileSize            int64                 `gorm:"column:file_size"`
@@ -23,7 +26,6 @@ type KnowledgeDocumentModel struct {
 	ScheduleCron        string                `gorm:"column:schedule_cron;type:varchar(64)"`
 	ChunkStrategy       string                `gorm:"column:chunk_strategy;type:varchar(32)"`
 	ChunkConfig         []byte                `gorm:"column:chunk_config;type:jsonb"`
-	PipelineID          string                `gorm:"column:pipeline_id;type:varchar(20)"`
 	Summary             string                `gorm:"column:summary;type:text"`
 	SummaryStatus       string                `gorm:"column:summary_status;type:varchar(16);not null;default:none"`
 	SummaryErrorMessage string                `gorm:"column:summary_error_message;type:varchar(512)"`

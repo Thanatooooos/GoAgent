@@ -153,3 +153,52 @@ func TestRerankProcessorReranksWhenTopNEqualsCandidateCount(t *testing.T) {
 		t.Fatalf("expected rerank to reorder chunks, got %+v", chunkIDs(chunks))
 	}
 }
+
+func TestStagedBudgetsKeepCandidatesAndLimitFinalResults(t *testing.T) {
+	request := Request{Query: "test", TopK: 3, RecallBudget: 4, CandidateLimit: 6}
+	searchCtx := buildSearchContext(request)
+	if searchCtx.RerankTopN != 3 {
+		t.Fatalf("rerank top N = %d, want 3", searchCtx.RerankTopN)
+	}
+	engine := &Engine{processors: []SearchResultPostProcessor{
+		NewFusionPostProcessor(),
+		NewDedupPostProcessor(),
+		NewRerankPostProcessor(&stubReranker{applied: true}),
+	}}
+	channelResults := []SearchChannelResult{{ChannelName: ChannelKeyword, Chunks: []convention.RetrievedChunk{
+		{ID: "a", Score: 8}, {ID: "b", Score: 7}, {ID: "c", Score: 6},
+		{ID: "d", Score: 5}, {ID: "e", Score: 4}, {ID: "f", Score: 3}, {ID: "g", Score: 2},
+	}}}
+	chunks, trace, err := engine.executeProcessors(context.Background(), searchCtx, channelResults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trace.PreRerankChunkIDs) != 6 || len(chunks) != 3 || chunks[0].ID != "b" {
+		t.Fatalf("pre=%v final=%v", trace.PreRerankChunkIDs, chunkIDs(chunks))
+	}
+	if trace.RecallBudget != 4 || trace.CandidateLimit != 6 || trace.ContextTopK != 3 {
+		t.Fatalf("unexpected budgets: %+v", trace)
+	}
+}
+
+func TestStagedBudgetsFallBackToFusionOrderOnRerankFailure(t *testing.T) {
+	searchCtx := buildSearchContext(Request{Query: "test", TopK: 2, CandidateLimit: 3})
+	engine := &Engine{processors: []SearchResultPostProcessor{
+		NewFusionPostProcessor(),
+		NewDedupPostProcessor(),
+		NewRerankPostProcessor(&stubReranker{err: errors.New("rerank down")}),
+	}}
+	results := []SearchChannelResult{{ChannelName: ChannelKeyword, Chunks: []convention.RetrievedChunk{
+		{ID: "a", Score: 3}, {ID: "b", Score: 2}, {ID: "c", Score: 1},
+	}}}
+	chunks, trace, err := engine.executeProcessors(context.Background(), searchCtx, results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trace.PreRerankChunkIDs) != 3 || len(chunks) != 2 || chunks[0].ID != "a" || chunks[1].ID != "b" {
+		t.Fatalf("pre=%v final=%v", trace.PreRerankChunkIDs, chunkIDs(chunks))
+	}
+	if trace.RerankApplied || trace.RerankError == "" {
+		t.Fatalf("expected recorded rerank failure: %+v", trace)
+	}
+}

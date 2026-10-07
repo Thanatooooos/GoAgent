@@ -15,9 +15,20 @@ type OpenAIStyleSseParser struct {
 }
 
 type ParsedEvent struct {
-	Content   string
-	Reasoning string
-	Completed bool
+	Content      string
+	Reasoning    string
+	ToolCalls    []ToolCallDelta
+	Completed    bool
+	FinishReason string
+}
+
+// ToolCallDelta is one OpenAI-compatible function-call fragment. Arguments
+// are intentionally left fragmented; the runtime adapter accumulates by Index.
+type ToolCallDelta struct {
+	Index     int
+	ID        string
+	Name      string
+	Arguments string
 }
 
 type openAIStyleSsePayload struct {
@@ -31,8 +42,18 @@ type openAIStyleChoice struct {
 }
 
 type openAIStyleMessage struct {
-	Content          *string `json:"content"`
-	ReasoningContent *string `json:"reasoning_content"`
+	Content          *string               `json:"content"`
+	ReasoningContent *string               `json:"reasoning_content"`
+	ToolCalls        []openAIStyleToolCall `json:"tool_calls"`
+}
+
+type openAIStyleToolCall struct {
+	Index    *int   `json:"index"`
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 func NewOpenAIStyleSseParser(reasoningEnabled bool) *OpenAIStyleSseParser {
@@ -66,14 +87,31 @@ func (p *OpenAIStyleSseParser) ParseLine(line string) (ParsedEvent, error) {
 
 	choice := parsed.Choices[0]
 	event := ParsedEvent{
-		Content:   extractOpenAIStyleText(choice, func(m *openAIStyleMessage) *string { return m.Content }),
-		Completed: choice.FinishReason != nil,
+		Content:      extractOpenAIStyleText(choice, func(m *openAIStyleMessage) *string { return m.Content }),
+		Completed:    choice.FinishReason != nil,
+		FinishReason: openAIStyleFinishReason(choice.FinishReason),
 	}
 	if p != nil && p.reasoningEnabled {
 		event.Reasoning = extractOpenAIStyleText(choice, func(m *openAIStyleMessage) *string { return m.ReasoningContent })
 	}
+	for _, message := range []*openAIStyleMessage{choice.Delta, choice.Message} {
+		if message == nil {
+			continue
+		}
+		for _, call := range message.ToolCalls {
+			if call.Index == nil {
+				continue
+			}
+			event.ToolCalls = append(event.ToolCalls, ToolCallDelta{Index: *call.Index, ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments})
+		}
+	}
 
 	return event, nil
+}
+
+func openAIStyleFinishReason(value any) string {
+	reason, _ := value.(string)
+	return reason
 }
 
 func (e ParsedEvent) HasContent() bool {

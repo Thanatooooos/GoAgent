@@ -1,42 +1,45 @@
 import { api } from "@/services/api";
 
 export interface RagTraceRun {
+  runtimeSessionId: string;
   traceId: string;
-  traceName?: string | null;
-  entryMethod?: string | null;
-  conversationId?: string | null;
-  taskId?: string | null;
-  userName?: string | null;
-  username?: string | null;
-  userId?: string | null;
-  status?: string | null;
-  errorMessage?: string | null;
-  durationMs?: number | null;
-  startTime?: string | null;
-  endTime?: string | null;
-  extraData?: string | null;
+  conversationId: string;
+  userMessageId: string;
+  userId: string;
+  status: string;
+  startTime: string;
+  endTime?: string;
+  durationMs?: number;
+  turnCount: number;
+  toolCallCount: number;
+  firstThinkingAt?: string;
+  firstContentAt?: string;
+  errorMessage?: string;
 }
 
-export interface RagTraceNode {
-  traceId: string;
-  nodeId: string;
-  parentNodeId?: string | null;
-  depth?: number | null;
-  nodeType?: string | null;
-  nodeName?: string | null;
-  className?: string | null;
-  methodName?: string | null;
-  status?: string | null;
-  errorMessage?: string | null;
-  durationMs?: number | null;
-  startTime?: string | null;
-  endTime?: string | null;
-  extraData?: string | null;
+export interface RagTraceSpan {
+  id: string;
+  parentId?: string;
+  kind: "model_turn" | "tool_call" | "history_compression" | string;
+  name: string;
+  status: string;
+  startTime: string;
+  endTime?: string;
+  durationMs?: number;
+  turn?: number;
+  finishReason?: string;
+  toolCallId?: string;
+  toolName?: string;
+  evidenceCount?: number;
+  errorClass?: string;
+  inputSummary?: string;
+  resultSummary?: string;
+  errorMessage?: string;
 }
 
 export interface RagTraceDetail {
   run: RagTraceRun;
-  nodes: RagTraceNode[];
+  spans: RagTraceSpan[];
 }
 
 export interface PageResult<T> {
@@ -52,29 +55,21 @@ export interface RagTraceRunQuery {
   size?: number;
   traceId?: string;
   conversationId?: string;
-  taskId?: string;
   status?: string;
 }
 
-export async function getRagTraceRuns(
-  query: RagTraceRunQuery = {}
-): Promise<PageResult<RagTraceRun>> {
+export function getRagTraceRuns(query: RagTraceRunQuery = {}): Promise<PageResult<RagTraceRun>> {
   return api.get<PageResult<RagTraceRun>, PageResult<RagTraceRun>>("/rag/traces/runs", {
     params: {
       current: query.current ?? 1,
       size: query.size ?? 10,
       traceId: query.traceId || undefined,
       conversationId: query.conversationId || undefined,
-      taskId: query.taskId || undefined,
       status: query.status || undefined
     }
   });
 }
 
-export async function getRagTraceDetail(traceId: string): Promise<RagTraceDetail> {
+export function getRagTraceDetail(traceId: string): Promise<RagTraceDetail> {
   return api.get<RagTraceDetail, RagTraceDetail>(`/rag/traces/runs/${traceId}`);
-}
-
-export async function getRagTraceNodes(traceId: string): Promise<RagTraceNode[]> {
-  return api.get<RagTraceNode[], RagTraceNode[]>(`/rag/traces/runs/${traceId}/nodes`);
 }

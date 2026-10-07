@@ -16,7 +16,6 @@ type updateKnowledgeDocumentRequest struct {
 	ProcessMode     string `json:"processMode"`
 	ChunkStrategy   string `json:"chunkStrategy"`
 	ChunkConfig     string `json:"chunkConfig"`
-	PipelineID      string `json:"pipelineId"`
 	SourceLocation  string `json:"sourceLocation"`
 	ScheduleEnabled *bool  `json:"scheduleEnabled"`
 	ScheduleCron    string `json:"scheduleCron"`
@@ -53,7 +52,6 @@ func (h *KnowledgeDocumentHandler) Upload(c *gin.Context) {
 		ProcessMode:     c.PostForm("processMode"),
 		ChunkStrategy:   c.PostForm("chunkStrategy"),
 		ChunkConfig:     c.PostForm("chunkConfig"),
-		PipelineID:      c.PostForm("pipelineId"),
 		OperatorID:      operatorID(c),
 	})
 	if err != nil {
@@ -105,7 +103,6 @@ func (h *KnowledgeDocumentHandler) Update(c *gin.Context) {
 		ProcessMode:     req.ProcessMode,
 		ChunkStrategy:   req.ChunkStrategy,
 		ChunkConfig:     req.ChunkConfig,
-		PipelineID:      req.PipelineID,
 		SourceLocation:  req.SourceLocation,
 		ScheduleEnabled: req.ScheduleEnabled,
 		ScheduleCron:    req.ScheduleCron,
@@ -136,26 +133,28 @@ func toKnowledgeDocumentVO(item domain.KnowledgeDocument) knowledgeDocumentVO {
 		chunkConfig = string(item.ChunkConfig)
 	}
 	return knowledgeDocumentVO{
-		ID:              item.ID,
-		KnowledgeBaseID: item.KnowledgeBaseID,
-		Name:            item.Name,
-		SourceType:      item.SourceType,
-		SourceLocation:  item.SourceLocation,
-		ScheduleEnabled: boolToInt(item.ScheduleEnabled),
-		ScheduleCron:    item.ScheduleCron,
-		Enabled:         item.Enabled,
-		ChunkCount:      item.ChunkCount,
-		FileURL:         item.FileURL,
-		FileType:        item.FileType,
-		FileSize:        item.FileSize,
-		ProcessMode:     item.ProcessMode,
-		ChunkStrategy:   item.ChunkStrategy,
-		ChunkConfig:     chunkConfig,
-		PipelineID:      item.PipelineID,
-		Status:          item.Status,
-		CreatedBy:       item.CreatedBy,
-		UpdatedBy:       item.UpdatedBy,
-		CreateTime:      timePointer(item.CreatedAt),
-		UpdateTime:      timePointer(item.UpdatedAt),
+		ID:                  item.ID,
+		KnowledgeBaseID:     item.KnowledgeBaseID,
+		Name:                item.Name,
+		SourceType:          item.SourceType,
+		SourceLocation:      item.SourceLocation,
+		ScheduleEnabled:     boolToInt(item.ScheduleEnabled),
+		ScheduleCron:        item.ScheduleCron,
+		Enabled:             item.Enabled,
+		ChunkCount:          item.ChunkCount,
+		ImageCount:          item.ImageCount,
+		ImageCompletedCount: item.ImageCompletedCount,
+		ImageFailedCount:    item.ImageFailedCount,
+		FileURL:             item.FileURL,
+		FileType:            item.FileType,
+		FileSize:            item.FileSize,
+		ProcessMode:         item.ProcessMode,
+		ChunkStrategy:       item.ChunkStrategy,
+		ChunkConfig:         chunkConfig,
+		Status:              item.Status,
+		CreatedBy:           item.CreatedBy,
+		UpdatedBy:           item.UpdatedBy,
+		CreateTime:          timePointer(item.CreatedAt),
+		UpdateTime:          timePointer(item.UpdatedAt),
 	}
 }

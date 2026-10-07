@@ -161,6 +161,14 @@ func (s *VectorStore) SearchByKeyword(ctx context.Context, query string, knowled
 	if query == "" {
 		return []corevector.SearchHit{}, nil
 	}
+	ids, err := s.defaultPublicScope(ctx, knowledgeBaseIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []corevector.SearchHit{}, nil
+	}
+	knowledgeBaseIDs = ids
 	if topK <= 0 {
 		topK = 5
 	}
@@ -175,6 +183,14 @@ func (s *VectorStore) SearchByMetadata(ctx context.Context, query string, knowle
 	if query == "" {
 		return []corevector.SearchHit{}, nil
 	}
+	ids, scopeErr := s.defaultPublicScope(ctx, knowledgeBaseIDs)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	if len(ids) == 0 {
+		return []corevector.SearchHit{}, nil
+	}
+	knowledgeBaseIDs = ids
 	if topK <= 0 {
 		topK = 5
 	}
@@ -216,6 +232,14 @@ func (s *VectorStore) Search(ctx context.Context, request corevector.SearchReque
 	if len(request.Vector) == 0 {
 		return []corevector.SearchHit{}, nil
 	}
+	ids, scopeErr := s.defaultPublicScope(ctx, request.KnowledgeBaseIDs)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	if len(ids) == 0 {
+		return []corevector.SearchHit{}, nil
+	}
+	request.KnowledgeBaseIDs = ids
 
 	topK := request.TopK
 	if topK <= 0 {
@@ -228,11 +252,10 @@ func (s *VectorStore) Search(ctx context.Context, request corevector.SearchReque
 	SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata, 1 - (embedding <=> CAST(? AS vector)) AS score
 	FROM t_knowledge_chunk_vector
 	`)
-	args := []any{vectorLiteral}
-	if len(request.KnowledgeBaseIDs) > 0 {
-		sqlBuilder.WriteString("WHERE kb_id IN ?\n")
-		args = append(args, request.KnowledgeBaseIDs)
-	}
+	// Knowledge bases can use embedding models with different dimensions.
+	// Distance is only defined for vectors of the query's dimension.
+	sqlBuilder.WriteString("WHERE kb_id IN ? AND vector_dims(embedding) = ?\n")
+	args := []any{vectorLiteral, request.KnowledgeBaseIDs, len(request.Vector)}
 	sqlBuilder.WriteString("ORDER BY embedding <=> CAST(? AS vector)\nLIMIT ?")
 	args = append(args, vectorLiteral, topK)
 
@@ -274,6 +297,7 @@ func (s *VectorStore) Search(ctx context.Context, request corevector.SearchReque
 }
 
 func (s *VectorStore) searchByKeywordBM25(ctx context.Context, rawQuery string, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
+	bm25Query := buildBM25Query(rawQuery)
 	var sqlStr string
 	var args []any
 	if len(knowledgeBaseIDs) > 0 {
@@ -285,7 +309,7 @@ func (s *VectorStore) searchByKeywordBM25(ctx context.Context, rawQuery string, 
 		  AND kb_id IN ?
 		ORDER BY score DESC
 		LIMIT ?`
-		args = []any{rawQuery, knowledgeBaseIDs, topK}
+		args = []any{bm25Query, knowledgeBaseIDs, topK}
 	} else {
 		sqlStr = `
 		SELECT chunk_id, doc_id, kb_id, chunk_index, content, metadata,
@@ -294,7 +318,7 @@ func (s *VectorStore) searchByKeywordBM25(ctx context.Context, rawQuery string, 
 		WHERE content @@@ ?
 		ORDER BY score DESC
 		LIMIT ?`
-		args = []any{rawQuery, topK}
+		args = []any{bm25Query, topK}
 	}
 
 	rows, err := s.db.WithContext(ctx).Raw(sqlStr, args...).Rows()
@@ -305,7 +329,6 @@ func (s *VectorStore) searchByKeywordBM25(ctx context.Context, rawQuery string, 
 
 	return collectSearchHits(rows, topK, "scan keyword bm25 search hit")
 }
-
 
 func (s *VectorStore) searchByMetadataLexical(ctx context.Context, query lexicalQuery, knowledgeBaseIDs []string, topK int) ([]corevector.SearchHit, error) {
 	sectionWeight, documentNameWeight, sourceFileNameWeight := metadataTitleWeights()

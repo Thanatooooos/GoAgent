@@ -6,6 +6,7 @@ import (
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
+	runtimetrace "local/rag-project/internal/app/runtime/trace"
 	"local/rag-project/internal/framework/stream"
 	"local/rag-project/internal/middleware"
 )
@@ -17,13 +18,19 @@ func RegisterRoutes(
 	messageService *ragservice.ConversationMessageService,
 	memoryService *longtermmemory.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
-	chatService chatService,
 	preferenceCandidateService longtermmemory.PreferenceCandidateService,
-	traceService *ragservice.TraceService,
+	traceService *runtimetrace.Service,
 	cacheMetrics *ragcachemetrics.Service,
 	streamManager stream.StreamManager,
+	runtimeChats ...runtimeChatService,
 ) {
-	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, chatService, preferenceCandidateService, streamManager)
+	handler := NewHandler(conversationService, messageService, memoryService, feedbackService, preferenceCandidateService, streamManager)
+	if len(runtimeChats) > 0 {
+		handler.SetRuntimeChat(runtimeChats[0])
+		if replay, ok := runtimeChats[0].(runtimeReplayService); ok {
+			handler.SetRuntimeReplay(replay)
+		}
+	}
 	r.GET("/conversations", handler.ListConversations)
 	r.GET("/conversations/:conversationId/messages", handler.ListMessages)
 	r.PUT("/conversations/:conversationId", handler.RenameConversation)
@@ -37,9 +44,8 @@ func RegisterRoutes(
 	r.POST("/rag/v3/memories/:memoryId/expire", handler.ExpireMemory)
 	r.POST("/conversations/messages/:messageId/feedback", handler.SubmitFeedback)
 	r.GET("/rag/v3/chat", handler.Chat)
+	r.POST("/rag/v3/chat", handler.Chat)
 	r.GET("/rag/v3/chat/continue", handler.ContinueChat)
-	r.GET("/rag/v3/chat/approval/pending", handler.GetPendingApproval)
-	r.POST("/rag/v3/chat/approval/resume", handler.ResumeAfterApproval)
 	r.POST("/rag/v3/stop", handler.StopChat)
 
 	admin := r.Group("/")

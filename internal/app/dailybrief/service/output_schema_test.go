@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"local/rag-project/internal/app/dailybrief/domain"
@@ -125,6 +126,139 @@ func TestAlignBriefArtifactWithCandidatesFixesSourceAndTopic(t *testing.T) {
 	}
 	if item.Topic != domain.TopicKeyTechStartups {
 		t.Fatalf("expected topic correction, got %q", item.Topic)
+	}
+}
+
+func TestAlignBriefArtifactRepairsMissingSummaryAndWhyItMattersFromCandidate(t *testing.T) {
+	t.Parallel()
+
+	artifact := domain.BriefArtifact{
+		Headline:   "Brief",
+		TopSummary: "Summary",
+		Sections: []domain.BriefSection{
+			{
+				Key:   domain.TopicKeyTechAIModels,
+				Title: "Models",
+				Items: []domain.BriefItemDraft{
+					{
+						Title: "Story",
+						URL:   "https://openai.com/blog/example",
+					},
+				},
+			},
+		},
+	}
+	candidates := []domain.Candidate{
+		{
+			Title:          "Story",
+			URL:            "https://openai.com/blog/example",
+			Source:         domain.SourceKeyOpenAIBlog,
+			Topic:          domain.TopicKeyTechAIModels,
+			SummarySnippet: "A short snippet about the story",
+		},
+	}
+
+	aligned := AlignBriefArtifactWithCandidates(artifact, candidates)
+	item := aligned.Sections[0].Items[0]
+	if item.Summary != "A short snippet about the story" {
+		t.Fatalf("expected summary to be repaired from candidate snippet, got %q", item.Summary)
+	}
+	if strings.TrimSpace(item.WhyItMatters) == "" {
+		t.Fatalf("expected whyItMatters to be filled with fallback, got %q", item.WhyItMatters)
+	}
+	if item.Source != domain.SourceKeyOpenAIBlog {
+		t.Fatalf("expected source repaired, got %q", item.Source)
+	}
+	if item.Topic != domain.TopicKeyTechAIModels {
+		t.Fatalf("expected topic repaired, got %q", item.Topic)
+	}
+}
+
+func TestAlignBriefArtifactMatchesCandidateByTitleWhenURLMissing(t *testing.T) {
+	t.Parallel()
+
+	artifact := domain.BriefArtifact{
+		Headline:   "Brief",
+		TopSummary: "Summary",
+		Sections: []domain.BriefSection{
+			{
+				Key:   domain.TopicKeyTechDev,
+				Title: "Dev",
+				Items: []domain.BriefItemDraft{
+					{
+						Title:   "Hacker News Story",
+						Summary: "existing summary",
+					},
+				},
+			},
+		},
+	}
+	candidates := []domain.Candidate{
+		{
+			Title:          "Hacker News Story",
+			URL:            "https://news.ycombinator.com/item?id=1",
+			Source:         domain.SourceKeyHackerNews,
+			Topic:          domain.TopicKeyTechDev,
+			SummarySnippet: "snippet",
+		},
+	}
+
+	aligned := AlignBriefArtifactWithCandidates(artifact, candidates)
+	item := aligned.Sections[0].Items[0]
+	if item.URL != "https://news.ycombinator.com/item?id=1" {
+		t.Fatalf("expected url repaired by title match, got %q", item.URL)
+	}
+	if item.Source != domain.SourceKeyHackerNews {
+		t.Fatalf("expected source repaired, got %q", item.Source)
+	}
+	if item.Topic != domain.TopicKeyTechDev {
+		t.Fatalf("expected topic repaired, got %q", item.Topic)
+	}
+	if item.Summary != "existing summary" {
+		t.Fatalf("expected existing summary preserved, got %q", item.Summary)
+	}
+}
+
+func TestAlignBriefArtifactKeepsCompleteItemUntouched(t *testing.T) {
+	t.Parallel()
+
+	artifact := domain.BriefArtifact{
+		Headline:   "Brief",
+		TopSummary: "Summary",
+		Sections: []domain.BriefSection{
+			{
+				Key:   domain.TopicKeyTechAIModels,
+				Title: "Models",
+				Items: []domain.BriefItemDraft{
+					{
+						Title:        "Story",
+						Summary:      "Full summary",
+						WhyItMatters: "Impact",
+						URL:          "https://openai.com/blog/example",
+						Source:       domain.SourceKeyOpenAIBlog,
+						Topic:        domain.TopicKeyTechAIModels,
+					},
+				},
+			},
+		},
+	}
+	candidates := []domain.Candidate{
+		{
+			Title:          "Story",
+			URL:            "https://openai.com/blog/example",
+			Source:         domain.SourceKeyOpenAIBlog,
+			Topic:          domain.TopicKeyTechAIModels,
+			SummarySnippet: "snippet",
+		},
+	}
+
+	aligned := AlignBriefArtifactWithCandidates(artifact, candidates)
+	item := aligned.Sections[0].Items[0]
+	if item.Summary != "Full summary" || item.WhyItMatters != "Impact" {
+		t.Fatalf("expected complete item unchanged, got %+v", item)
+	}
+	if item.Source != domain.SourceKeyOpenAIBlog || item.Topic != domain.TopicKeyTechAIModels {
+		t.Fatalf("expected unchanged source/topic, got %+v", item)
 	}
 }
 

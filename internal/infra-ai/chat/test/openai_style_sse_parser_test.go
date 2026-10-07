@@ -87,6 +87,9 @@ func TestParseOpenAIStyleSseLine_FinishReasonMarksCompleted(t *testing.T) {
 	if !event.Completed {
 		t.Fatalf("expected completed event, got %+v", event)
 	}
+	if event.FinishReason != "stop" {
+		t.Fatalf("finish reason = %q, want stop", event.FinishReason)
+	}
 }
 
 func TestParseOpenAIStyleSseLine_InvalidJSON(t *testing.T) {

@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "description": "Cross-document evidence probe for the kb_eval corpus. Each answer requires evidence from two named documents. Gold IDs were checked against testdata/corpus/manifest.json. This is a retrieval baseline, not a graph retrieval result.",
+    "knowledgeBaseId": "23848386738319617"
+  },
+  "samples": [
+    {
+      "name": "go_memory_leak_linux_profiling",
+      "query": "Go 服务内存持续上涨，Linux 上先用什么命令定位进程，再用 Go 的哪些线索判断 goroutine 或 channel 泄漏？",
+      "tags": ["cross_document", "diagnosis"],
+      "target": "chunk",
+      "expectedIds": ["23848392107094273", "23848386822926593"],
+      "knowledgeBaseIds": ["23848386738319617"],
+      "searchMode": "keyword",
+      "topK": 5
+    },
+    {
+      "name": "go_sse_leak_linux_triage",
+      "query": "线上 Go SSE 连接断开后 goroutine 还在，怎样结合 Linux 的排查命令和 Go 的退出机制定位并修复？",
+      "tags": ["cross_document", "diagnosis"],
+      "target": "chunk",
+      "expectedIds": ["23848392107421953", "23848386822861057"],
+      "knowledgeBaseIds": ["23848386738319617"],
+      "searchMode": "keyword",
+      "topK": 5
+    },
+    {
+      "name": "https_concept_linux_verification",
+      "query": "HTTP 改 HTTPS 后，证书和加密解决了什么问题，Linux 上用什么命令查看 HTTPS 响应头？",
+      "tags": ["cross_document", "procedure"],
+      "target": "chunk",
+      "expectedIds": ["23848392828514561", "23848392107225345"],
+      "knowledgeBaseIds": ["23848386738319617"],
+      "searchMode": "keyword",
+      "topK": 5
+    },
+    {
+      "name": "redis_transaction_and_execution_model",
+      "query": "Redis 的主线程命令执行模型与 MULTI EXEC 事务的命令序列化是什么关系？事务命令出错后会回滚吗？",
+      "tags": ["cross_document", "concept"],
+      "target": "chunk",
+      "expectedIds": ["23848389070418177", "23848391335342337"],
+      "knowledgeBaseIds": ["23848386738319617"],
+      "searchMode": "keyword",
+      "topK": 5
+    }
+  ]
+}

@@ -10,23 +10,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	ragservice "local/rag-project/internal/app/rag/service"
-	ragtool "local/rag-project/internal/app/rag/tool/core"
+	"local/rag-project/internal/app/rag/domain"
 	"local/rag-project/internal/framework/stream"
 )
 
-// streamChatSink 把 RagChatEventSink 事件写入 StreamManager，由 SSE 轮询消费。
-// 只有 done 事件携带终止标志（Done=true）；error/cancel 是信息性事件，
-// 服务端保证其后面总是跟随一个 done 事件，从而让轮询器（pollLoop）在转发
-// error/cancel 后仍能把尾部的 done 透传给客户端。
+type chatStreamMeta struct {
+	ConversationID string `json:"conversationId"`
+	TaskID         string `json:"taskId"`
+}
+
+type chatFinishPayload struct {
+	MessageID string                 `json:"messageId"`
+	Title     string                 `json:"title"`
+	Content   *string                `json:"content,omitempty"`
+	Sources   []domain.MessageSource `json:"sources,omitempty"`
+}
+
+// streamChatSink writes runtime facts to the durable SSE stream buffer.
 type streamChatSink struct {
 	manager    stream.StreamManager
 	streamID   string
 	seq        int64
 	terminated bool
 }
-
-var _ ragservice.RagChatEventSink = (*streamChatSink)(nil)
 
 func (s *streamChatSink) append(name string, payload interface{}, done bool) error {
 	if s == nil || s.manager == nil {
@@ -38,11 +44,7 @@ func (s *streamChatSink) append(name string, payload interface{}, done bool) err
 	}
 	s.seq++
 	if err := s.manager.AppendEvent(context.Background(), s.streamID, stream.StreamEvent{
-		ID:        strconv.FormatInt(s.seq, 10),
-		Name:      name,
-		Data:      data,
-		Done:      done,
-		Timestamp: time.Now(),
+		ID: strconv.FormatInt(s.seq, 10), Name: name, Data: data, Done: done, Timestamp: time.Now(),
 	}); err != nil {
 		log.Printf("stream chat sink append %q: %v", s.streamID, err)
 		return err
@@ -53,51 +55,9 @@ func (s *streamChatSink) append(name string, payload interface{}, done bool) err
 	return nil
 }
 
-// Terminated 报告是否已成功写入终止事件（done）。
-func (s *streamChatSink) Terminated() bool {
-	return s != nil && s.terminated
-}
+func (s *streamChatSink) Terminated() bool { return s != nil && s.terminated }
 
-func (s *streamChatSink) SendMeta(meta ragservice.RagChatMeta) error {
-	return s.append("meta", meta, false)
-}
-
-func (s *streamChatSink) SendFallback(reason string) error {
-	return s.append("fallback", gin.H{"reason": reason}, false)
-}
-
-func (s *streamChatSink) SendAgentThink(message string) error {
-	return s.append("agent_think", gin.H{"message": message}, false)
-}
-
-func (s *streamChatSink) SendAgentOutcome(payload ragservice.RagChatAgentOutcomePayload) error {
-	if err := s.append("agent_outcome", payload, false); err != nil {
-		return err
-	}
-	return s.append("agent_status", newAgentOutcomeStatusEventPayload(payload), false)
-}
-
-func (s *streamChatSink) SendApprovalPending(payload ragservice.RagChatApprovalPendingPayload) error {
-	if err := s.append("approval_pending", payload, false); err != nil {
-		return err
-	}
-	return s.append("agent_status", newAgentApprovalStatusEventPayload(payload), false)
-}
-
-func (s *streamChatSink) SendAgentServiceError(payload ragservice.RagChatAgentServiceErrorPayload) error {
-	if err := s.append("agent_service_error", payload, false); err != nil {
-		return err
-	}
-	return s.append("agent_status", newAgentServiceErrorStatusEventPayload(payload), false)
-}
-
-func (s *streamChatSink) SendMemoryStored(payload ragservice.RagChatMemoryStoredPayload) error {
-	return s.append("memory_stored", payload, false)
-}
-
-func (s *streamChatSink) SendSessionRecall(payload ragservice.RagChatSessionRecallPayload) error {
-	return s.append("session_recall", payload, false)
-}
+func (s *streamChatSink) SendMeta(meta chatStreamMeta) error { return s.append("meta", meta, false) }
 
 func (s *streamChatSink) SendThinking(delta string) error {
 	return s.append("message", gin.H{"type": "think", "delta": delta}, false)
@@ -107,31 +67,76 @@ func (s *streamChatSink) SendMessage(delta string) error {
 	return s.append("message", gin.H{"type": "response", "delta": delta}, false)
 }
 
-func (s *streamChatSink) SendToolStart(payload ragtool.ToolCallEvent) error {
-	return s.append("tool_start", payload, false)
+// chatToolCall is the wire shape of one "tool" SSE event. CallID lets the
+// client merge pending, running, and settled into a single row, and Data
+// carries the structured result of a settled tool so the UI can render it.
+type chatToolCall struct {
+	CallID  string
+	Name    string
+	Status  string
+	Summary string
+	Data    json.RawMessage
 }
 
-func (s *streamChatSink) SendToolResult(payload ragtool.ToolCallEvent) error {
-	return s.append("tool_result", payload, false)
-}
+// toolSummaryLimit keeps a settled result's encoded JSON from flooding the
+// collapsed tool row; the structured data field still carries the full value.
+const toolSummaryLimit = 400
 
-func (s *streamChatSink) SendTool(name string, status string, summary string) error {
-	return s.append("tool", gin.H{"name": name, "status": status, "summary": summary}, false)
-}
-
-func (s *streamChatSink) SendTitle(title string) error {
-	if strings.TrimSpace(title) == "" {
-		return nil
+func (s *streamChatSink) SendTool(call chatToolCall) error {
+	originalName := strings.TrimSpace(call.Name)
+	friendlyName := friendlyToolDisplayName(originalName)
+	payload := gin.H{"name": friendlyName, "status": call.Status}
+	if callID := strings.TrimSpace(call.CallID); callID != "" {
+		payload["callId"] = callID
 	}
-	return s.append("title", gin.H{"title": title}, false)
+	if friendlyName != originalName {
+		payload["originalName"] = originalName
+	}
+	if summary := strings.TrimSpace(call.Summary); summary != "" {
+		payload["summary"] = truncateToolSummary(summary, toolSummaryLimit)
+	}
+	if len(call.Data) > 0 {
+		payload["data"] = call.Data
+	}
+	return s.append("tool", payload, false)
 }
 
-func (s *streamChatSink) SendFinish(payload ragservice.RagChatFinishPayload) error {
-	return s.append("finish", gin.H{"messageId": payload.MessageID, "title": payload.Title}, false)
+func truncateToolSummary(summary string, limit int) string {
+	runes := []rune(summary)
+	if limit <= 0 || len(runes) <= limit {
+		return summary
+	}
+	return string(runes[:limit]) + "…"
 }
 
-func (s *streamChatSink) SendCancel(payload ragservice.RagChatFinishPayload) error {
-	return s.append("cancel", gin.H{"messageId": payload.MessageID, "title": payload.Title}, false)
+func friendlyToolDisplayName(name string) string {
+	switch strings.TrimSpace(name) {
+	case "retrieve_knowledge":
+		return "知识库检索"
+	case "web_search":
+		return "联网搜索"
+	case "web_fetch":
+		return "网页内容抓取"
+	case "create_scheduled_task":
+		return "创建定时任务"
+	case "list_scheduled_tasks":
+		return "查询定时任务"
+	case "pause_scheduled_task":
+		return "暂停定时任务"
+	default:
+		return name
+	}
+}
+
+func (s *streamChatSink) SendFinish(payload chatFinishPayload) error {
+	finish := gin.H{"messageId": payload.MessageID, "title": payload.Title}
+	if payload.Content != nil {
+		finish["content"] = *payload.Content
+	}
+	if len(payload.Sources) > 0 {
+		finish["sources"] = payload.Sources
+	}
+	return s.append("finish", finish, false)
 }
 
 func (s *streamChatSink) SendError(err error) error {
@@ -141,6 +146,4 @@ func (s *streamChatSink) SendError(err error) error {
 	return s.append("error", gin.H{"error": err.Error()}, false)
 }
 
-func (s *streamChatSink) SendDone() error {
-	return s.append("done", gin.H{}, true)
-}
+func (s *streamChatSink) SendDone() error { return s.append("done", gin.H{}, true) }

@@ -2,6 +2,7 @@ package rag
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,14 @@ import (
 	"local/rag-project/internal/framework/exception"
 	"local/rag-project/internal/middleware"
 )
+
+func parsePositiveInt(value string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
 
 // requireLoginUser 提取当前登录用户。
 func requireLoginUser(c *gin.Context) *contextx.LoginUser {

@@ -10,6 +10,7 @@ var (
 	chunkAttrRE   = regexp.MustCompile(`(?i)\bchunk_id\s*=\s*"([^"]+)"`)
 	kbAttrRE      = regexp.MustCompile(`(?i)\bkb_id\s*=\s*"([^"]*)"`)
 	docAttrRE     = regexp.MustCompile(`(?i)\bdoc\s*=\s*"([^"]*)"`)
+	kindAttrRE    = regexp.MustCompile(`(?i)\bkind\s*=\s*"([^"]*)"`)
 )
 
 // CompactPublicCitations folds canonical <kb/> tags from prior assistant
@@ -28,6 +29,7 @@ func (r *Registry) CompactPublicCitations(text string) string {
 			ChunkID:         chunkID,
 			KnowledgeBaseID: attr(kbAttrRE, tag),
 			DocumentTitle:   attr(docAttrRE, tag),
+			Kind:            attr(kindAttrRE, tag),
 		})
 		if handle == "" {
 			return tag

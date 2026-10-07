@@ -54,6 +54,7 @@ type ConversationMessageView struct {
 	IsSummarized     bool
 	ThinkingContent  string
 	ThinkingDuration *int
+	Sources          []domain.MessageSource
 	Vote             *int
 	CreateTime       time.Time
 }
@@ -120,31 +121,40 @@ func (s *MessageService) SetCreateTransaction(tx port.ConversationMessageCreateT
 
 // AddMessage 新增一条会话消息记录。
 func (s *MessageService) AddMessage(ctx context.Context, input AddConversationMessageInput) (domain.ConversationMessage, error) {
+	message, chunks, err := s.PrepareMessage(ctx, input)
+	if err != nil {
+		return domain.ConversationMessage{}, err
+	}
+	return s.createMessageWithChunks(ctx, message, chunks)
+}
+
+// PrepareMessage performs content processing without holding a publication lock.
+func (s *MessageService) PrepareMessage(ctx context.Context, input AddConversationMessageInput) (domain.ConversationMessage, []port.ProcessedConversationMessageChunk, error) {
 	conversationID := strings.TrimSpace(input.ConversationID)
 	userID := strings.TrimSpace(input.UserID)
 	if conversationID == "" {
-		return domain.ConversationMessage{}, exception.NewClientException("conversation id is required", nil)
+		return domain.ConversationMessage{}, nil, exception.NewClientException("conversation id is required", nil)
 	}
 	if userID == "" {
-		return domain.ConversationMessage{}, exception.NewClientException("user id is required", nil)
+		return domain.ConversationMessage{}, nil, exception.NewClientException("user id is required", nil)
 	}
 	if s.messageRepo == nil {
-		return domain.ConversationMessage{}, exception.NewServiceException("conversation message repository is required", nil)
+		return domain.ConversationMessage{}, nil, exception.NewServiceException("conversation message repository is required", nil)
 	}
 
 	processed, err := s.processMessageContent(ctx, input)
 	if err != nil {
-		return domain.ConversationMessage{}, exception.NewServiceException("failed to process conversation message content", err)
+		return domain.ConversationMessage{}, nil, exception.NewServiceException("failed to process conversation message content", err)
 	}
 	content := strings.TrimSpace(processed.Content)
 	if content == "" {
-		return domain.ConversationMessage{}, exception.NewClientException("message content is required", nil)
+		return domain.ConversationMessage{}, nil, exception.NewClientException("message content is required", nil)
 	}
 
 	// 生成独立消息主键，并补齐创建时间与更新时间。
 	id, err := nextConversationMessageID()
 	if err != nil {
-		return domain.ConversationMessage{}, err
+		return domain.ConversationMessage{}, nil, err
 	}
 	now := s.now()
 	message := domain.ConversationMessage{
@@ -161,11 +171,8 @@ func (s *MessageService) AddMessage(ctx context.Context, input AddConversationMe
 		CreateTime:       now,
 		UpdateTime:       now,
 	}
-	created, err := s.createMessageWithChunks(ctx, message, processed.SessionChunks)
-	if err != nil {
-		return domain.ConversationMessage{}, err
-	}
-	return created, nil
+	message.Sources = messageSources(message.Role, message.DisplayContent())
+	return message, processed.SessionChunks, nil
 }
 
 func (s *MessageService) processMessageContent(ctx context.Context, input AddConversationMessageInput) (ProcessedConversationMessageContent, error) {
@@ -368,6 +375,7 @@ func (s *MessageService) ListMessages(ctx context.Context, input ListConversatio
 			IsSummarized:     message.IsSummarized,
 			ThinkingContent:  message.ThinkingContent,
 			ThinkingDuration: message.ThinkingDuration,
+			Sources:          message.Sources,
 			Vote:             votesByMessageID[message.ID],
 			CreateTime:       message.CreateTime,
 		})
@@ -400,17 +408,17 @@ func (s *MessageService) AddMessageSummary(ctx context.Context, input AddConvers
 	now := s.now()
 	lastMessageID := strings.TrimSpace(input.LastMessageID)
 	summary := domain.ConversationSummary{
-		ID:                   id,
-		ConversationID:       conversationID,
-		UserID:               userID,
-		Content:              content,
-		LastMessageID:        lastMessageID,
-		SummaryVersion:       domain.SummaryVersionV1,
-		CoveredToMessageID:   lastMessageID,
-		QualityStatus:        domain.SummaryQualityUnchecked,
-		LastRebuildReason:    "manual",
-		CreateTime:           now,
-		UpdateTime:           now,
+		ID:                 id,
+		ConversationID:     conversationID,
+		UserID:             userID,
+		Content:            content,
+		LastMessageID:      lastMessageID,
+		SummaryVersion:     domain.SummaryVersionV1,
+		CoveredToMessageID: lastMessageID,
+		QualityStatus:      domain.SummaryQualityUnchecked,
+		LastRebuildReason:  "manual",
+		CreateTime:         now,
+		UpdateTime:         now,
 	}
 	created, err := s.summaryRepo.Create(ctx, summary)
 	if err != nil {

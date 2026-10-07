@@ -1,5 +1,7 @@
 # Wiki P1：链接建立
 
+> 2026-10-01 适用范围：历史设计保留：wiki 链接规则仍可参考；基于旧 ingestion runner 的自动编排不再适用，当前文档入库不自动运行 wiki 生成。
+
 日期：2026-08-09
 状态：待审
 来源借鉴：WeKnora `wiki_linkify.go`、`wiki_lint.go`（W5 链接完整性与纯文本后处理）

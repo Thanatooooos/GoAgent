@@ -27,7 +27,6 @@ CREATE TABLE t_knowledge_document (
     schedule_cron    VARCHAR(64),
     chunk_strategy   VARCHAR(32),
     chunk_config     JSONB,
-    pipeline_id      VARCHAR(20),
     created_by       VARCHAR(20)   NOT NULL,
     updated_by       VARCHAR(20),
     create_time      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -143,7 +143,9 @@ func executeRewriteRetrievalCandidate(
 		Query:            strings.TrimSpace(sample.Query),
 		KnowledgeBaseIDs: append([]string(nil), knowledgeBaseIDs...),
 		SearchMode:       strings.TrimSpace(sample.RetrievalExpectation.SearchMode),
-		TopK:             prerankTopK,
+		TopK:             topK,
+		RecallBudget:     prerankTopK,
+		CandidateLimit:   prerankTopK,
 		RerankTopN:       rerankTopN,
 	}
 

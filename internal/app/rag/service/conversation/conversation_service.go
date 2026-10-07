@@ -216,7 +216,7 @@ func (s *ConversationService) Delete(ctx context.Context, input DeleteConversati
 		return exception.NewClientException("conversation not found", nil)
 	}
 
-	return s.deleteTx(ctx, func(
+	return s.deleteTx(ctx, userID, conversationID, func(
 		txCtx context.Context,
 		conversationRepo port.ConversationRepository,
 		messageRepo port.ConversationMessageRepository,
@@ -245,8 +245,8 @@ func (s *ConversationService) generateTitle(ctx context.Context, question string
 		return fallback
 	}
 
-	systemPrompt := "请根据用户问题生成一个简短的中文会话标题，只输出标题本身，不要加引号、序号或解释。"
-	userPrompt := fmt.Sprintf("请为下面的问题生成一个不超过%d个中文字符的标题：\n%s", s.titleMaxLength, question)
+	systemPrompt := conversationTitleSystemPrompt
+	userPrompt := fmt.Sprintf(conversationTitleRequestTemplate, s.titleMaxLength, question)
 	// 使用一个很小的中文提示词生成标题，避免把标题逻辑散落到上层。
 	request := convention.ChatRequest{
 		Messages: []convention.ChatMessage{

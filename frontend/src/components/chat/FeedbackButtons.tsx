@@ -40,7 +40,7 @@ export function FeedbackButtons({
   return (
     <div
       className={cn(
-        "flex items-center gap-1 transition-opacity",
+        "chat-feedback flex items-center gap-1 transition-opacity",
         alwaysVisible ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         className
       )}

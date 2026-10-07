@@ -41,16 +41,32 @@ type RedisConfig struct {
 }
 
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Spring     SpringConfig     `mapstructure:"spring"`
-	Rag        RagConfig        `mapstructure:"rag"`
-	AI         AIConfig         `mapstructure:"ai"`
-	Parser     ParserConfig     `mapstructure:"parser"`
-	RustFS     RustFSConfig     `mapstructure:"rustfs"`
-	Feishu     FeishuConfig     `mapstructure:"feishu"`
-	SaToken    SaTokenConfig    `mapstructure:"sa-token"`
-	DailyBrief DailyBriefConfig `mapstructure:"daily-brief"`
-	App        AppConfig        `mapstructure:"app"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Spring        SpringConfig        `mapstructure:"spring"`
+	Rag           RagConfig           `mapstructure:"rag"`
+	AI            AIConfig            `mapstructure:"ai"`
+	Parser        ParserConfig        `mapstructure:"parser"`
+	RustFS        RustFSConfig        `mapstructure:"rustfs"`
+	Feishu        FeishuConfig        `mapstructure:"feishu"`
+	SaToken       SaTokenConfig       `mapstructure:"sa-token"`
+	DailyBrief    DailyBriefConfig    `mapstructure:"daily-brief"`
+	ScheduledTask ScheduledTaskConfig `mapstructure:"scheduled-task"`
+	App           AppConfig           `mapstructure:"app"`
+}
+
+type ScheduledTaskConfig struct {
+	ScanIntervalSeconds      int `mapstructure:"scan-interval-seconds"`
+	ClaimBatchSize           int `mapstructure:"claim-batch-size"`
+	MaxConcurrentRuns        int `mapstructure:"max-concurrent-runs"`
+	LeaseSeconds             int `mapstructure:"lease-seconds"`
+	OnceDeadlineSeconds      int `mapstructure:"once-deadline-seconds"`
+	RecurringDeadlineSeconds int `mapstructure:"recurring-deadline-seconds"`
+	RetryMaxAttempts         int `mapstructure:"retry-max-attempts"`
+	RetryDelaySeconds        int `mapstructure:"retry-delay-seconds"`
+	DailyFeedbackDays        int `mapstructure:"daily-feedback-days"`
+	WeeklyFeedbackDays       int `mapstructure:"weekly-feedback-days"`
+	MonthlyFeedbackDays      int `mapstructure:"monthly-feedback-days"`
+	FailureThreshold         int `mapstructure:"failure-threshold"`
 }
 
 // FeishuConfig 飞书开放平台配置。
@@ -113,7 +129,6 @@ type RagConfig struct {
 	Knowledge       RagKnowledgeConfig    `mapstructure:"knowledge"`
 	MCP             RagMCPConfig          `mapstructure:"mcp"`
 	Search          RagSearchConfig       `mapstructure:"search"`
-	Trace           RagTraceConfig        `mapstructure:"trace"`
 	CitationEnabled bool                  `mapstructure:"citation-enabled"`
 	Stream          RagStreamConfig       `mapstructure:"stream"`
 }
@@ -159,6 +174,8 @@ type RagAgentRuntimePersistenceConfig struct {
 type RagRetrieveConfig struct {
 	ParallelSubquestions RagRetrieveParallelSubquestionConfig `mapstructure:"parallel-subquestions"`
 	RerankTopN           int                                  `mapstructure:"rerank-top-n"`
+	RecallBudget         int                                  `mapstructure:"recall-budget"`
+	CandidateLimit       int                                  `mapstructure:"candidate-limit"`
 }
 
 type RagRetrieveParallelSubquestionConfig struct {
@@ -302,8 +319,12 @@ type RagExplicitRecallConfig struct {
 }
 
 type RagKnowledgeConfig struct {
-	Schedule  RagKnowledgeSchedule  `mapstructure:"schedule"`
-	Ingestion RagKnowledgeIngestion `mapstructure:"ingestion"`
+	Schedule   RagKnowledgeSchedule   `mapstructure:"schedule"`
+	Enrichment RagKnowledgeEnrichment `mapstructure:"enrichment"`
+}
+
+type RagKnowledgeEnrichment struct {
+	Enabled bool `mapstructure:"enabled"`
 }
 
 type RagKnowledgeSchedule struct {
@@ -312,12 +333,6 @@ type RagKnowledgeSchedule struct {
 	LockSeconds        int `mapstructure:"lock-seconds"`
 	BatchSize          int `mapstructure:"batch-size"`
 	MinIntervalSeconds int `mapstructure:"min-interval-seconds"`
-}
-
-type RagKnowledgeIngestion struct {
-	MaxConcurrent  int `mapstructure:"max-concurrent"`
-	MaxRetries     int `mapstructure:"max-retries"`
-	RetryBackoffMs int `mapstructure:"retry-backoff-ms"`
 }
 
 type RagSearchConfig struct {
@@ -373,8 +388,9 @@ type RagSearchChannel struct {
 }
 
 type RagKeywordSearchChannelConfig struct {
-	EnabledFallbackTrgm *bool  `mapstructure:"enabled-fallback-trgm"`
-	Backend             string `mapstructure:"backend"`
+	EnabledFallbackTrgm *bool   `mapstructure:"enabled-fallback-trgm"`
+	Backend             string  `mapstructure:"backend"`
+	RRFWeight           float64 `mapstructure:"rrf-weight"`
 }
 
 const KeywordBackendBM25 = "bm25"
@@ -386,11 +402,6 @@ type RagMetadataTitleSearchChannelConfig struct {
 	SectionWeight        float64 `mapstructure:"section-weight"`
 	DocumentNameWeight   float64 `mapstructure:"document-name-weight"`
 	SourceFileNameWeight float64 `mapstructure:"source-file-name-weight"`
-}
-
-type RagTraceConfig struct {
-	Enabled        bool `mapstructure:"enabled"`
-	MaxErrorLength int  `mapstructure:"max-error-length"`
 }
 
 // AI 配置（与 Java 的 AIModelProperties 对齐）
@@ -482,7 +493,27 @@ type Stream struct {
 }
 
 type ParserConfig struct {
-	Tika ParserTikaConfig `mapstructure:"tika"`
+	Tika      ParserTikaConfig      `mapstructure:"tika"`
+	DocReader ParserDocReaderConfig `mapstructure:"docreader"`
+	OCR       ParserOCRConfig       `mapstructure:"ocr"`
+	Vision    ParserVisionConfig    `mapstructure:"vision"`
+}
+
+type ParserVisionConfig struct {
+	URL       string `mapstructure:"url"`
+	APIKey    string `mapstructure:"api-key"`
+	TimeoutMs int    `mapstructure:"timeout-ms"`
+	MaxTokens int    `mapstructure:"max-tokens"`
+}
+
+type ParserOCRConfig struct {
+	URL       string `mapstructure:"url"`
+	TimeoutMs int    `mapstructure:"timeout-ms"`
+}
+
+type ParserDocReaderConfig struct {
+	Address   string `mapstructure:"address"`
+	TimeoutMs int    `mapstructure:"timeout-ms"`
 }
 
 type ParserTikaConfig struct {
@@ -530,11 +561,11 @@ type DailyBriefRetryConfig struct {
 }
 
 type DailyBriefGenerationConfig struct {
-	MaxCandidates     int    `mapstructure:"max-candidates"`
-	MaxItems          int    `mapstructure:"max-items"`
-	MaxItemsPerTopic  int    `mapstructure:"max-items-per-topic"`
-	PromptVersion     string `mapstructure:"prompt-version"`
-	Model             string `mapstructure:"model"`
+	MaxCandidates    int    `mapstructure:"max-candidates"`
+	MaxItems         int    `mapstructure:"max-items"`
+	MaxItemsPerTopic int    `mapstructure:"max-items-per-topic"`
+	PromptVersion    string `mapstructure:"prompt-version"`
+	Model            string `mapstructure:"model"`
 }
 
 var cfg *Config
@@ -548,6 +579,8 @@ func LoadConfig(dir string) error {
 	v.AddConfigPath(dir)
 	v.SetConfigName("application")
 	v.SetConfigType("yaml")
+	v.SetDefault("rag.knowledge.enrichment.enabled", true)
+	_ = v.BindEnv("rag.knowledge.enrichment.enabled")
 
 	// 支持环境变量替换，使用下划线形式
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))

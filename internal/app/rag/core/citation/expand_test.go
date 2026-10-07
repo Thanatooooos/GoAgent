@@ -18,6 +18,17 @@ func TestExpandTextExpandsKnownRef(t *testing.T) {
 	}
 }
 
+func TestExpandTextKeepsImageEvidenceIdentity(t *testing.T) {
+	r := NewRegistry()
+	r.RegisterChunk(ChunkReference{ChunkID: "evidence-version-1", DocumentID: "doc-a",
+		KnowledgeBaseID: "kb-a", DocumentTitle: "Source", Kind: "image"})
+	got := r.ExpandText(`See <ref id="c1"/> <kb chunk_id="forged" kind="image"/>`, true)
+	if !strings.Contains(got, `<kb doc="Source" chunk_id="evidence-version-1" kb_id="kb-a" kind="image" />`) ||
+		strings.Contains(got, "forged") {
+		t.Fatalf("image citation was not resolved through the registry: %s", got)
+	}
+}
+
 func TestExpandTextDropsUnknownRef(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterChunk(ChunkReference{ChunkID: "chunk-a"})

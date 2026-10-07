@@ -31,23 +31,23 @@ func BuildBriefGenerationSystemPrompt(maxItemsPerTopic int) string {
 		return briefGenerationSystemPrompt
 	}
 	return briefGenerationSystemPrompt + fmt.Sprintf(
-		"\n10. 用户订阅的每个 topic 栏目最多输出 %d 条 item；尽量覆盖各订阅 topic，不要只写单一栏目。",
+		briefGenerationTopicQuotaTemplate,
 		maxItemsPerTopic,
 	)
 }
 
 func BuildBriefGenerationPrompt(briefDate string, subscribedTopics []string, candidates []domain.Candidate, maxItemsPerTopic int) string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "简报日期：%s\n", strings.TrimSpace(briefDate))
+	fmt.Fprintf(&builder, briefDateContextTemplate, strings.TrimSpace(briefDate))
 	if len(subscribedTopics) > 0 {
-		builder.WriteString("用户订阅 topic：")
+		builder.WriteString(briefSubscribedTopicsPrefix)
 		builder.WriteString(strings.Join(subscribedTopics, ", "))
 		builder.WriteByte('\n')
 	}
 	if maxItemsPerTopic > 0 {
-		fmt.Fprintf(&builder, "每个订阅 topic 最多输出 %d 条 item。\n", maxItemsPerTopic)
+		fmt.Fprintf(&builder, briefTopicQuotaTemplate, maxItemsPerTopic)
 	}
-	fmt.Fprintf(&builder, "候选条目（%d 条）：\n", len(candidates))
+	fmt.Fprintf(&builder, briefCandidatesHeaderTemplate, len(candidates))
 	for index, candidate := range candidates {
 		publishedAt := ""
 		if !candidate.PublishedAt.IsZero() {
@@ -55,7 +55,7 @@ func BuildBriefGenerationPrompt(briefDate string, subscribedTopics []string, can
 		}
 		fmt.Fprintf(
 			&builder,
-			"%d. title=%q url=%q source=%q topic=%q publishedAt=%s summary=%q\n",
+			briefCandidateContextTemplate,
 			index+1,
 			candidate.Title,
 			candidate.URL,
@@ -65,18 +65,18 @@ func BuildBriefGenerationPrompt(briefDate string, subscribedTopics []string, can
 			candidate.SummarySnippet,
 		)
 	}
-	builder.WriteString("\n栏目中文标题参考：\n")
+	builder.WriteString(briefTopicTitlesHeader)
 	for _, key := range domain.LeafTopicKeys() {
-		fmt.Fprintf(&builder, "- %s: %s\n", key, domain.TopicBreadcrumb(key))
+		fmt.Fprintf(&builder, briefTopicTitleTemplate, key, domain.TopicBreadcrumb(key))
 	}
-	builder.WriteString("\n写作要求：每条 item 的 summary 与 whyItMatters 都要写足篇幅，不要过度压缩。")
+	builder.WriteString(briefWritingInstruction)
 	if maxItemsPerTopic > 0 && len(subscribedTopics) > 0 {
-		builder.WriteString(" 为每个订阅 topic 各写最多 ")
+		builder.WriteString(briefTopicCoveragePrefix)
 		fmt.Fprintf(&builder, "%d", maxItemsPerTopic)
-		builder.WriteString(" 条，确保多栏目都有内容。")
+		builder.WriteString(briefTopicCoverageSuffix)
 	}
 	builder.WriteString("\n")
-	builder.WriteString("\n返回 JSON 示例（文案请用简体中文）：\n")
-	builder.WriteString(`{"headline":"...","topSummary":"...","sections":[{"key":"tech.ai.models","title":"模型发布","items":[{"title":"...","summary":"第一句交代事件。第二句补充关键主体或数据。第三句说明进展或边界。","whyItMatters":"第一句说明直接影响。第二句给出对从业者或行业的启示。","url":"...","source":"openai-blog","topic":"tech.ai.models"}]}]}`)
+	builder.WriteString(briefJSONExampleHeader)
+	builder.WriteString(briefJSONExample)
 	return builder.String()
 }

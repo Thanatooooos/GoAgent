@@ -1,15 +1,11 @@
+import { Eye } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronRight, Eye } from "lucide-react";
 import type { RagTraceRun } from "@/services/ragTraceService";
-import {
-  formatDateTime,
-  formatDuration,
-  statusBadgeVariant,
-  statusLabel
-} from "@/pages/admin/traces/traceUtils";
+import { formatDateTime, formatDuration, statusBadgeVariant, statusLabel } from "@/pages/admin/traces/traceUtils";
 
 interface RunsTableProps {
   runs: RagTraceRun[];
@@ -22,121 +18,49 @@ interface RunsTableProps {
   onNextPage: () => void;
 }
 
-export function RunsTable({
-  runs,
-  loading,
-  current,
-  pages,
-  total,
-  onOpenRun,
-  onPrevPage,
-  onNextPage
-}: RunsTableProps) {
+export function RunsTable({ runs, loading, current, pages, total, onOpenRun, onPrevPage, onNextPage }: RunsTableProps) {
   return (
-    <Card className="trace-list-table-card">
-      <div className="trace-list-table-header">
-        <h2 className="trace-list-table-title">运行列表</h2>
-        <p className="trace-list-table-description">按时间倒序查看运行记录，通过操作按钮进入独立详情页</p>
-      </div>
-      <CardContent className="trace-list-table-content">
-        {loading ? (
-          <div className="trace-list-table-empty">加载中...</div>
-        ) : runs.length === 0 ? (
-          <div className="trace-list-table-empty">暂无链路数据</div>
-        ) : (
-          <div className="trace-list-table-wrap">
-            <Table className="trace-list-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="trace-col-trace">Trace Name</TableHead>
-                  <TableHead className="trace-col-run-id">Trace Id</TableHead>
-                  <TableHead className="trace-col-meta">会话ID / TaskID</TableHead>
-                  <TableHead className="trace-col-user">用户名</TableHead>
-                  <TableHead className="trace-col-duration">耗时</TableHead>
-                  <TableHead className="trace-col-status">状态</TableHead>
-                  <TableHead>执行时间</TableHead>
-                  <TableHead className="trace-col-action">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {runs.map((run) => (
-                  <TableRow key={run.traceId} className="trace-list-table-row">
-                    <TableCell className="trace-col-trace">
-                      <div className="trace-list-run-trace">
-                        <p className="trace-list-run-name line-clamp-1" title={run.traceName || "-"}>
-                          {run.traceName || "-"}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="trace-col-run-id">
-                      <span className="trace-list-run-id" title={run.traceId}>
-                        {run.traceId}
-                      </span>
-                    </TableCell>
-                    <TableCell className="trace-col-meta">
-                      <p className="trace-list-run-meta-line" title={`会话ID: ${run.conversationId || "-"}`}>
-                        {run.conversationId || "-"}
-                      </p>
-                      <p className="trace-list-run-meta-line is-secondary" title={`TaskID: ${run.taskId || "-"}`}>
-                        {run.taskId || "-"}
-                      </p>
-                    </TableCell>
-                    <TableCell className="trace-col-user">
-                      <span
-                        className="trace-list-user-name"
-                        title={run.userName || run.username || run.userId || "-"}
-                      >
-                        {run.userName || run.username || run.userId || "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="trace-col-duration trace-list-duration-cell">
-                      {formatDuration(run.durationMs ?? undefined)}
-                    </TableCell>
-                    <TableCell className="trace-col-status trace-list-status-cell">
-                      <Badge className="trace-list-status-badge" variant={statusBadgeVariant(run.status)}>
-                        {statusLabel(run.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{formatDateTime(run.startTime ?? undefined)}</TableCell>
-                    <TableCell className="trace-col-action trace-list-action-cell">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="trace-list-action-btn"
-                        onClick={() => onOpenRun(run.traceId)}
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        查看链路
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-        <div className="trace-list-table-footer">
-          <span className="trace-list-table-meta">
-            第 {current} / {pages} 页，共 {total.toLocaleString("zh-CN")} 条
-          </span>
-          <div className="trace-list-pagination">
-            <Button
-              className="trace-list-pagination-btn"
-              variant="outline"
-              disabled={current <= 1 || loading}
-              onClick={onPrevPage}
-            >
-              上一页
-            </Button>
-            <Button
-              className="trace-list-pagination-btn"
-              variant="outline"
-              disabled={current >= pages || loading}
-              onClick={onNextPage}
-            >
-              下一页
-            </Button>
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>会话</TableHead>
+              <TableHead>Trace ID</TableHead>
+              <TableHead>模型轮次</TableHead>
+              <TableHead>工具调用</TableHead>
+              <TableHead>耗时</TableHead>
+              <TableHead>状态</TableHead>
+              <TableHead>开始时间</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow><TableCell colSpan={8} className="h-24 text-center text-slate-500">加载中…</TableCell></TableRow>
+            ) : runs.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-24 text-center text-slate-500">暂无 runtime 运行记录</TableCell></TableRow>
+            ) : runs.map((run) => (
+              <TableRow key={run.traceId}>
+                <TableCell className="max-w-40 truncate font-mono text-xs" title={run.conversationId}>{run.conversationId}</TableCell>
+                <TableCell className="max-w-40 truncate font-mono text-xs" title={run.traceId}>{run.traceId}</TableCell>
+                <TableCell>{run.turnCount}</TableCell>
+                <TableCell>{run.toolCallCount}</TableCell>
+                <TableCell>{formatDuration(run.durationMs)}</TableCell>
+                <TableCell><Badge variant={statusBadgeVariant(run.status)}>{statusLabel(run.status)}</Badge></TableCell>
+                <TableCell className="text-xs text-slate-500">{formatDateTime(run.startTime)}</TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="outline" onClick={() => onOpenRun(run.traceId)}><Eye className="mr-1 h-3.5 w-3.5" />详情</Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-slate-500">
+          <span>第 {current} / {Math.max(pages, 1)} 页，共 {total} 条</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={loading || current <= 1} onClick={onPrevPage}>上一页</Button>
+            <Button size="sm" variant="outline" disabled={loading || current >= pages} onClick={onNextPage}>下一页</Button>
           </div>
         </div>
       </CardContent>

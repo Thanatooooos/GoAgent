@@ -15,7 +15,8 @@ import (
 )
 
 type SubscriptionRepository struct {
-	db *gorm.DB
+	db                *gorm.DB
+	SyncScheduledTask func(*gorm.DB, domain.Subscription) error
 }
 
 func NewSubscriptionRepository(db *gorm.DB) *SubscriptionRepository {
@@ -23,6 +24,29 @@ func NewSubscriptionRepository(db *gorm.DB) *SubscriptionRepository {
 }
 
 func (r *SubscriptionRepository) Upsert(ctx context.Context, subscription domain.Subscription) (domain.Subscription, error) {
+	if r.SyncScheduledTask != nil {
+		var saved domain.Subscription
+		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Task mutations use task -> subscription lock order too.
+			if err := tx.Exec(`SELECT t.id FROM t_scheduled_task t JOIN t_daily_brief_task_binding b ON b.task_id=t.id WHERE b.user_id=? FOR UPDATE OF t`, subscription.UserID).Error; err != nil {
+				return err
+			}
+			// Serialize against handoff before checking the binding or writing.
+			if err := tx.Exec(`SELECT user_id FROM t_daily_brief_subscription WHERE user_id=? FOR UPDATE`, subscription.UserID).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`SELECT set_config('app.daily_brief_sync','on',true)`).Error; err != nil {
+				return err
+			}
+			var err error
+			saved, err = NewSubscriptionRepository(tx).Upsert(ctx, subscription)
+			if err != nil {
+				return err
+			}
+			return r.SyncScheduledTask(tx, saved)
+		})
+		return saved, err
+	}
 	model := toSubscriptionModel(subscription)
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
@@ -33,8 +57,6 @@ func (r *SubscriptionRepository) Upsert(ctx context.Context, subscription domain
 				"delivery_time_local",
 				"topics_json",
 				"sources_json",
-				"lock_owner",
-				"lock_until",
 				"update_time",
 			}),
 		}).
@@ -59,6 +81,9 @@ func (r *SubscriptionRepository) GetByUserID(ctx context.Context, userID string)
 
 func (r *SubscriptionRepository) List(ctx context.Context, filter port.SubscriptionListFilter) ([]domain.Subscription, error) {
 	query := r.db.WithContext(ctx).Model(&models.SubscriptionModel{}).Order("update_time desc")
+	if filter.LegacyOnly {
+		query = query.Where("NOT EXISTS (SELECT 1 FROM t_daily_brief_task_binding b WHERE b.user_id = t_daily_brief_subscription.user_id)")
+	}
 	if filter.Enabled != nil {
 		query = query.Where("enabled = ?", boolToFlag(*filter.Enabled))
 	}
@@ -87,6 +112,7 @@ func (r *SubscriptionRepository) TryAcquireLock(ctx context.Context, lease domai
 	result := r.db.WithContext(ctx).
 		Model(&models.SubscriptionModel{}).
 		Where("user_id = ?", lease.UserID).
+		Where("NOT EXISTS (SELECT 1 FROM t_daily_brief_task_binding WHERE user_id = ?)", lease.UserID).
 		Where("(lock_until IS NULL OR lock_until < ?)", now).
 		Updates(map[string]any{
 			"lock_owner":  lease.LockOwner,

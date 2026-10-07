@@ -15,8 +15,8 @@ const (
 	ExecutionModeSerialDependencyRisk = "serial_due_to_dependency_risk"
 
 	defaultSubQuestionConcurrency = 2
-	maxRetrieveSubQuestions         = 4
-	originalSubQuestionRRFWeight    = float32(1.5)
+	maxRetrieveSubQuestions       = 4
+	originalSubQuestionRRFWeight  = float32(1.5)
 )
 
 type SubQuestionOptions struct {

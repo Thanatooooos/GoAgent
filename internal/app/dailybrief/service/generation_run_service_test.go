@@ -83,6 +83,10 @@ func (s *stubGenerationRunRepo) ListRetryEligible(ctx context.Context, filter po
 	return nil, nil
 }
 
+func (s *stubGenerationRunRepo) ListStalledRunning(ctx context.Context, filter port.GenerationRunStalledFilter) ([]domain.GenerationRun, error) {
+	return nil, nil
+}
+
 func (s *stubGenerationRunRepo) CountRetryRunsByUserIDAndBriefDate(ctx context.Context, userID string, briefDate string) (int, error) {
 	return 0, nil
 }

@@ -49,7 +49,8 @@ func (s *stubSubscriptionRepo) ReleaseLock(ctx context.Context, lease domain.Sub
 }
 
 type stubIssueRepo struct {
-	issue domain.Issue
+	issue         domain.Issue
+	updatedIssues []domain.Issue
 }
 
 func (s *stubIssueRepo) Create(ctx context.Context, issue domain.Issue) (domain.Issue, error) {
@@ -57,6 +58,10 @@ func (s *stubIssueRepo) Create(ctx context.Context, issue domain.Issue) (domain.
 }
 
 func (s *stubIssueRepo) Update(ctx context.Context, issue domain.Issue) (domain.Issue, error) {
+	s.updatedIssues = append(s.updatedIssues, issue)
+	if issue.ID == s.issue.ID {
+		s.issue = issue
+	}
 	return issue, nil
 }
 
@@ -78,6 +83,8 @@ func (s *stubIssueRepo) List(ctx context.Context, filter port.IssueListFilter) (
 type stubGenerationRunRepo struct {
 	retryCount      int
 	latestFailedRun domain.GenerationRun
+	stalledRuns     []domain.GenerationRun
+	updatedRuns     []domain.GenerationRun
 }
 
 func (s *stubGenerationRunRepo) Create(ctx context.Context, run domain.GenerationRun) (domain.GenerationRun, error) {
@@ -85,6 +92,7 @@ func (s *stubGenerationRunRepo) Create(ctx context.Context, run domain.Generatio
 }
 
 func (s *stubGenerationRunRepo) Update(ctx context.Context, run domain.GenerationRun) (domain.GenerationRun, error) {
+	s.updatedRuns = append(s.updatedRuns, run)
 	return run, nil
 }
 
@@ -103,11 +111,89 @@ func (s *stubGenerationRunRepo) ListRetryEligible(ctx context.Context, filter po
 	return nil, nil
 }
 
+func (s *stubGenerationRunRepo) ListStalledRunning(ctx context.Context, filter port.GenerationRunStalledFilter) ([]domain.GenerationRun, error) {
+	return s.stalledRuns, nil
+}
+
 func (s *stubGenerationRunRepo) CountRetryRunsByUserIDAndBriefDate(ctx context.Context, userID string, briefDate string) (int, error) {
 	if s.retryCount > 0 {
 		return s.retryCount, nil
 	}
 	return 0, nil
+}
+
+func TestProcessorRecoversStalledRunningRunOnRetryBatch(t *testing.T) {
+	t.Parallel()
+
+	runner := &stubRunner{}
+	now := time.Date(2026, 6, 29, 9, 0, 0, 0, time.UTC)
+	latestFinishedAt := now.Add(-11 * time.Minute)
+	stalledRun := domain.GenerationRun{
+		ID:          "stale-1",
+		UserID:      "user-1",
+		BriefDate:   "2026-06-29",
+		Status:      domain.GenerationRunStatusRunning,
+		TriggerType: domain.GenerationRunTriggerTypeScheduled,
+		StartedAt:   now.Add(-2 * time.Hour),
+	}
+	runRepo := &stubGenerationRunRepo{
+		retryCount: 0,
+		latestFailedRun: domain.GenerationRun{
+			ID:          "stale-1",
+			UserID:      "user-1",
+			BriefDate:   "2026-06-29",
+			Status:      domain.GenerationRunStatusFailed,
+			TriggerType: domain.GenerationRunTriggerTypeScheduled,
+			FinishedAt:  &latestFinishedAt,
+		},
+		stalledRuns: []domain.GenerationRun{stalledRun},
+	}
+	issueRepo := &stubIssueRepo{issue: domain.Issue{
+		ID:        "issue-1",
+		UserID:    "user-1",
+		BriefDate: "2026-06-29",
+		Status:    domain.IssueStatusGenerating,
+	}}
+	subscription := domain.NewSubscription("user-1", "UTC", "16:00", []string{"tech.ai.models"}, []string{"hacker-news"})
+	processor := schedule.NewProcessor(
+		runner,
+		&stubSubscriptionRepo{subscription: subscription},
+		issueRepo,
+		runRepo,
+		schedule.NewRetryPolicy(2, 30),
+		nil,
+		func() time.Time { return now },
+	)
+	processor.StallCutoff = time.Hour
+
+	err := processor.ProcessRetryBatch(context.Background(), now, 20)
+	if err != nil {
+		t.Fatalf("ProcessRetryBatch returned error: %v", err)
+	}
+
+	foundFailed := false
+	for _, updated := range runRepo.updatedRuns {
+		if updated.ID == "stale-1" && updated.Status == domain.GenerationRunStatusFailed && updated.FinishedAt != nil {
+			foundFailed = true
+		}
+	}
+	if !foundFailed {
+		t.Fatalf("expected stalled run to be marked failed, got updates %+v", runRepo.updatedRuns)
+	}
+
+	issueMarkedFailed := false
+	for _, updated := range issueRepo.updatedIssues {
+		if updated.ID == "issue-1" && updated.Status == domain.IssueStatusFailed {
+			issueMarkedFailed = true
+		}
+	}
+	if !issueMarkedFailed {
+		t.Fatalf("expected stalled generating issue to be marked failed, got %+v", issueRepo.updatedIssues)
+	}
+
+	if runner.calls != 1 {
+		t.Fatalf("expected stalled run to be re-run after recovery, got %d runner calls", runner.calls)
+	}
 }
 
 func TestProcessorSkipsReadyIssueForScheduledTrigger(t *testing.T) {

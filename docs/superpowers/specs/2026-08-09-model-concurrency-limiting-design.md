@@ -1,5 +1,7 @@
 # A2：模型并发限流（Governor）设计
 
+> 2026-10-01 适用范围：历史设计保留：并发限流机制仍可参考；文中 ingestion 仅表示当时批量入库场景，旧 ingestion 模块已移除。当前装配以 configs/application.yaml 和 bootstrap 代码为准。
+
 日期：2026-08-09
 状态：已批准
 来源借鉴：WeKnora `internal/models/limiter/`（Governor + ModelConcurrencyLimiter）

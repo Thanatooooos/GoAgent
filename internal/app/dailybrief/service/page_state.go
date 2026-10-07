@@ -16,6 +16,10 @@ const (
 )
 
 func ResolvePageState(subscription domain.Subscription, issue domain.Issue, briefDate string, now time.Time) (string, error) {
+	// Pausing/deleting a migrated task must not hide its published history.
+	if strings.TrimSpace(issue.ID) != "" && issue.Status == domain.IssueStatusReady {
+		return PageStateReady, nil
+	}
 	if !subscription.Enabled || len(subscription.Topics) == 0 || len(subscription.Sources) == 0 {
 		return PageStateEmpty, nil
 	}

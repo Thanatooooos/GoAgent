@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -72,12 +73,44 @@ func (r *IssueRepository) GetByUserIDAndBriefDate(ctx context.Context, userID st
 		Where("brief_date = ?", briefDate).
 		First(&model).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.Issue{}, nil
+		return r.scheduledIssueState(ctx, userID, briefDate, domain.Issue{})
 	}
 	if err != nil {
 		return domain.Issue{}, fmt.Errorf("get daily brief issue by user and brief date: %w", err)
 	}
-	return toIssueDomain(model), nil
+	issue := toIssueDomain(model)
+	if issue.Status == domain.IssueStatusReady {
+		return issue, nil
+	}
+	return r.scheduledIssueState(ctx, userID, briefDate, issue)
+}
+
+// Unpublished runs have no issue artifact. Project their page state at read
+// time, so failed/uncertain runs do not become an unexplained empty page.
+func (r *IssueRepository) scheduledIssueState(ctx context.Context, userID, date string, fallback domain.Issue) (domain.Issue, error) {
+	var run struct {
+		ID, Status  string
+		ScheduledAt time.Time
+	}
+	result := r.db.WithContext(ctx).Raw(`SELECT o.id,o.status,o.scheduled_at FROM t_daily_brief_task_binding b
+		JOIN t_scheduled_task t ON t.id=b.task_id
+		JOIN t_scheduled_task_occurrence o ON o.task_id=t.id AND o.version=t.current_version
+		JOIN t_scheduled_task_version v ON v.task_id=o.task_id AND v.version=o.version
+		WHERE b.user_id=? AND t.deleted_at IS NULL
+		AND (o.scheduled_at AT TIME ZONE (v.schedule_json->>'timezone'))::date::text=?
+		AND o.status IN ('running','retry','ready','failed','uncertain','missed')
+		ORDER BY o.scheduled_at DESC LIMIT 1`, userID, date).Scan(&run)
+	if result.Error != nil {
+		return domain.Issue{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fallback, nil
+	}
+	issue := domain.NewIssue(run.ID, userID, date)
+	if run.Status == "failed" || run.Status == "uncertain" || run.Status == "missed" {
+		issue.Status = domain.IssueStatusFailed
+	}
+	return issue, nil
 }
 
 func (r *IssueRepository) List(ctx context.Context, filter port.IssueListFilter) ([]domain.Issue, error) {

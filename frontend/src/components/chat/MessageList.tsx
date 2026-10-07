@@ -16,6 +16,8 @@ interface MessageListProps {
 export function MessageList({ messages, isLoading, isStreaming, sessionKey }: MessageListProps) {
   const virtuosoRef = React.useRef<VirtuosoHandle | null>(null);
   const scrollerRef = React.useRef<HTMLElement | null>(null);
+  const followLatestRef = React.useRef(true);
+  const scrollerCleanupRef = React.useRef<(() => void) | null>(null);
   const lastSessionRef = React.useRef<string | null>(null);
   const pendingScrollRef = React.useRef(true);
   const settleTimerRef = React.useRef<number | null>(null);
@@ -27,6 +29,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
   );
 
   const scrollToBottom = React.useCallback(() => {
+    if (!followLatestRef.current) return;
     virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
     const scroller = scrollerRef.current;
     if (scroller) {
@@ -35,6 +38,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
   }, []);
 
   const stickToBottom = React.useCallback(() => {
+    if (!followLatestRef.current) return;
     const scroller = scrollerRef.current;
     if (!scroller) return;
     scroller.scrollTop = scroller.scrollHeight;
@@ -44,6 +48,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
     const nextKey = sessionKey ?? "empty";
     if (lastSessionRef.current !== nextKey) {
       lastSessionRef.current = nextKey;
+      followLatestRef.current = true;
       pendingScrollRef.current = true;
       if (settleTimerRef.current) {
         window.clearTimeout(settleTimerRef.current);
@@ -56,14 +61,17 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isStreaming;
     if (!wasStreaming && isStreaming) {
+      followLatestRef.current = true;
       stickToBottom();
       const timer = window.setTimeout(stickToBottom, 120);
       return () => window.clearTimeout(timer);
     }
     if (wasStreaming && !isStreaming) {
+      if (!followLatestRef.current) return;
       scrollToBottom();
-      const timer = window.setTimeout(scrollToBottom, 120);
-      const lateTimer = window.setTimeout(scrollToBottom, 360);
+      const finishScroll = () => { if (followLatestRef.current) scrollToBottom(); };
+      const timer = window.setTimeout(finishScroll, 120);
+      const lateTimer = window.setTimeout(finishScroll, 360);
       return () => {
         window.clearTimeout(timer);
         window.clearTimeout(lateTimer);
@@ -128,6 +136,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
 
   React.useEffect(() => {
     return () => {
+      scrollerCleanupRef.current?.();
       if (heightScrollRafRef.current) {
         window.cancelAnimationFrame(heightScrollRafRef.current);
         heightScrollRafRef.current = null;
@@ -143,7 +152,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
     if (isLoading) {
       return;
     }
-    const shouldStick = isStreaming || pendingScrollRef.current;
+    const shouldStick = (isStreaming && followLatestRef.current) || pendingScrollRef.current;
     if (!shouldStick) return;
     if (heightScrollRafRef.current) {
       return;
@@ -153,7 +162,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
       if (isStreaming) {
         stickToBottom();
       } else {
-        scrollToBottom();
+        if (followLatestRef.current) scrollToBottom();
       }
     });
   }, [isStreaming, isLoading, scrollToBottom, stickToBottom]);
@@ -163,7 +172,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
       ({ className, ...props }, ref) => (
         <div
           ref={ref}
-          className={cn("mx-auto max-w-[800px] space-y-10 px-6 pt-10 pb-2 md:px-8", className)}
+          className={cn("chat-message-list mx-auto w-full max-w-[820px] space-y-10 px-5 pb-6 pt-8 md:px-8", className)}
           {...props}
         />
       )
@@ -173,7 +182,7 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
   }, []);
 
   const Footer = React.useMemo(() => {
-    const Comp = () => <div aria-hidden="true" className="h-8" />;
+    const Comp = () => <div aria-hidden="true" className="chat-message-list-footer h-12" />;
     Comp.displayName = "MessageListFooter";
     return Comp;
   }, []);
@@ -196,13 +205,41 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
         return atBottom ? "auto" : false;
       }}
       scrollerRef={(node) => {
+        scrollerCleanupRef.current?.();
         scrollerRef.current = node as HTMLElement | null;
+        if (!(node instanceof HTMLElement)) return;
+        const handleScroll = () => {
+          const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+          if (atBottom) followLatestRef.current = true;
+        };
+        const pauseFollowing = () => {
+          followLatestRef.current = false;
+          pendingScrollRef.current = false;
+        };
+        const handleKey = (event: KeyboardEvent) => {
+          if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pauseFollowing();
+        };
+        const handleWheel = (event: WheelEvent) => {
+          if (event.deltaY < 0) pauseFollowing();
+        };
+        node.addEventListener("scroll", handleScroll, { passive: true });
+        node.addEventListener("wheel", handleWheel, { passive: true });
+        node.addEventListener("touchstart", pauseFollowing, { passive: true });
+        node.addEventListener("pointerdown", pauseFollowing);
+        node.addEventListener("keydown", handleKey);
+        scrollerCleanupRef.current = () => {
+          node.removeEventListener("scroll", handleScroll);
+          node.removeEventListener("wheel", handleWheel);
+          node.removeEventListener("touchstart", pauseFollowing);
+          node.removeEventListener("pointerdown", pauseFollowing);
+          node.removeEventListener("keydown", handleKey);
+        };
       }}
       totalListHeightChanged={handleTotalListHeightChanged}
       className="h-full"
       components={{ List, Footer }}
       itemContent={(index, message) => (
-        <div className={index === messages.length - 1 ? "animate-fade-up" : ""}>
+        <div>
           <MessageItem message={message} isLast={index === messages.length - 1} />
         </div>
       )}

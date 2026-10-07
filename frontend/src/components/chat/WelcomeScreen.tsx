@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowUpRight, BookOpen, Bot, Brain, Check, Lightbulb, Send, Square } from "lucide-react";
+import { BookOpen, Brain, Check, Lightbulb, Send, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { listSampleQuestions } from "@/services/sampleQuestionService";
@@ -126,7 +126,7 @@ export function WelcomeScreen() {
   const hasContent = value.trim().length > 0;
 
   return (
-    <div className="relative flex min-h-full items-center justify-center overflow-hidden px-4 py-16 sm:px-6">
+    <div className="chat-welcome relative flex min-h-full items-center justify-center overflow-hidden px-4 py-16 sm:px-6">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]"
@@ -144,31 +144,26 @@ export function WelcomeScreen() {
         className="pointer-events-none absolute -bottom-36 left-[-80px] h-80 w-80 rounded-full bg-gradient-radial from-[#FDE68A]/40 via-transparent to-transparent blur-3xl animate-float"
       />
 
-      <div className="relative w-full max-w-[860px]">
+      <div className="relative w-full max-w-[820px]">
         <div
           className="text-center opacity-0 animate-fade-up"
           style={{ animationFillMode: "both" }}
         >
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs font-medium text-[#2563EB] shadow-sm">
-            <Bot className="h-3.5 w-3.5" />
-            RAG 智能问答
-          </span>
-          <h1 className="mt-4 font-display text-4xl leading-tight tracking-tight text-[#111827] sm:text-5xl md:text-6xl">
-            把问题变成
-            <span className="text-gradient">清晰答案</span>
+          <h1 className="chat-welcome-title text-3xl font-semibold tracking-tight text-[#2f2f2f] sm:text-4xl">
+            What can I help with?
           </h1>
-          <p className="mt-4 text-base text-[#4B5563] sm:text-lg">
-            结构化提问、知识检索与深度思考，一次对话给出可执行方案
+          <p className="mt-3 text-sm text-[#6b6b6b] sm:text-base">
+            Ask a question, explore an idea, or work through a problem.
           </p>
         </div>
 
         <div
-          className="mt-10 opacity-0 animate-fade-up"
+          className="mt-8 opacity-0 animate-fade-up"
           style={{ animationDelay: "80ms", animationFillMode: "both" }}
         >
           <div
             className={cn(
-              "relative flex flex-col rounded-3xl border border-white/70 bg-white/80 px-5 pt-4 pb-3 shadow-soft backdrop-blur-xl transition-all duration-200",
+              "chat-welcome-composer relative flex flex-col rounded-3xl border border-white/70 bg-white/80 px-5 pt-4 pb-3 shadow-soft backdrop-blur-xl transition-all duration-200",
               isFocused
                 ? "border-[#BFDBFE] shadow-glow"
                 : "hover:border-[#D4D4D4]"
@@ -267,15 +262,10 @@ export function WelcomeScreen() {
         </div>
 
         <div
-          className="mt-10 opacity-0 animate-fade-up"
+          className="mt-8 opacity-0 animate-fade-up"
           style={{ animationDelay: "160ms", animationFillMode: "both" }}
         >
-          <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
-            <span className="h-px w-8 bg-[#E5E7EB]" />
-            试试这些开场
-            <span className="h-px w-8 bg-[#E5E7EB]" />
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             {promptPresets.map((preset) => {
               const Icon = preset.icon;
               return (
@@ -285,22 +275,15 @@ export function WelcomeScreen() {
                   onClick={() => applyPreset(preset.prompt)}
                   disabled={isStreaming}
                   className={cn(
-                    "group rounded-2xl border border-white/70 bg-white/70 p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#BFDBFE] hover:shadow-md",
+                    "chat-suggestion group rounded-full border border-[#e5e5e5] bg-white px-3.5 py-2 text-left transition-all duration-200 hover:border-[#cfcfcf] hover:bg-[#f8f8f8]",
                     isStreaming && "cursor-not-allowed opacity-60"
                   )}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EFF6FF] text-[#2563EB]">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#f1f1f1] text-[#6b6b6b]">
                       <Icon className="h-4 w-4" />
                     </span>
-                    <div>
-                      <p className="text-sm font-semibold text-[#1F2937]">{preset.title}</p>
-                      <p className="text-xs text-[#6B7280]">{preset.description}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center gap-2 text-xs text-[#94A3B8]">
-                    <span className="min-w-0 flex-1 truncate">推荐问法：{preset.prompt}</span>
-                    <ArrowUpRight className="h-3.5 w-3.5 text-[#CBD5F5] transition-colors group-hover:text-[#3B82F6]" />
+                    <p className="text-sm font-medium text-[#4a4a4a]">{preset.title}</p>
                   </div>
                 </button>
               );

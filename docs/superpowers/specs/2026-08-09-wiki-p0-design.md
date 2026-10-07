@@ -1,5 +1,7 @@
 # Wiki P0：wiki 页面数据模型 + wiki_generator 节点
 
+> 2026-10-01 适用范围：历史设计保留：wiki 页面模型与查询仍可参考；旧 ingestion wiki_generator 节点已随 ingestion 模块移除，当前 chunk 入库不自动生成 wiki。不要按本文件恢复旧 DAG。
+
 日期：2026-08-09
 状态：待审
 来源借鉴：WeKnora `internal/types/wiki_page.go`、`wiki_ingest_*`（W1 数据模型 + W4 防幻觉护栏）

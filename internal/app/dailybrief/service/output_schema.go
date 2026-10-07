@@ -126,34 +126,72 @@ func countBriefItems(artifact domain.BriefArtifact) int {
 	return total
 }
 
+const (
+	fallbackItemSummary      = "该条目暂未生成摘要，可点击原文查看详情。"
+	fallbackItemWhyItMatters = "该动态对关注本领域的读者具有参考价值。"
+)
+
 func AlignBriefArtifactWithCandidates(artifact domain.BriefArtifact, candidates []domain.Candidate) domain.BriefArtifact {
 	byURL := make(map[string]domain.Candidate, len(candidates))
+	byTitle := make(map[string]domain.Candidate, len(candidates))
 	for _, candidate := range candidates {
-		key := normalizeSourceURL(candidate.URL)
-		if key == "" {
-			continue
+		urlKey := normalizeSourceURL(candidate.URL)
+		if urlKey != "" {
+			byURL[urlKey] = candidate
 		}
-		byURL[key] = candidate
+		titleKey := normalizeItemText(candidate.Title)
+		if titleKey != "" {
+			byTitle[titleKey] = candidate
+		}
 	}
 
 	sections := make([]domain.BriefSection, len(artifact.Sections))
-	for index, section := range artifact.Sections {
+	for index := range artifact.Sections {
+		section := artifact.Sections[index]
 		items := make([]domain.BriefItemDraft, len(section.Items))
 		for itemIndex, item := range section.Items {
-			items[itemIndex] = item
 			candidate, ok := byURL[normalizeSourceURL(item.URL)]
 			if !ok {
-				continue
+				candidate, ok = byTitle[normalizeItemText(item.Title)]
 			}
-			items[itemIndex].URL = candidate.URL
-			items[itemIndex].Source = candidate.Source
-			items[itemIndex].Topic = candidate.Topic
+			items[itemIndex] = repairBriefItemDraft(item, candidate, ok)
 		}
 		section.Items = items
+		section.Title = firstNonEmpty(section.Title, topicTitleForSectionKey(section.Key))
 		sections[index] = section
 	}
 	artifact.Sections = sections
 	return artifact
+}
+
+func repairBriefItemDraft(item domain.BriefItemDraft, candidate domain.Candidate, matched bool) domain.BriefItemDraft {
+	if matched {
+		item.URL = candidate.URL
+		item.Source = candidate.Source
+		item.Topic = candidate.Topic
+		item.Title = firstNonEmpty(item.Title, candidate.Title)
+		item.Summary = firstNonEmpty(item.Summary, candidate.SummarySnippet, fallbackItemSummary)
+		item.WhyItMatters = firstNonEmpty(item.WhyItMatters, fallbackItemWhyItMatters)
+		return item
+	}
+	item.Title = firstNonEmpty(item.Title, candidate.Title)
+	item.URL = firstNonEmpty(item.URL, candidate.URL)
+	item.Source = firstNonEmpty(item.Source, candidate.Source)
+	item.Topic = firstNonEmpty(item.Topic, candidate.Topic)
+	item.Summary = firstNonEmpty(item.Summary, fallbackItemSummary)
+	item.WhyItMatters = firstNonEmpty(item.WhyItMatters, fallbackItemWhyItMatters)
+	return item
+}
+
+func normalizeItemText(raw string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(raw)), " "))
+}
+
+func topicTitleForSectionKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	return domain.TopicDisplayName(strings.TrimSpace(key))
 }
 
 func validateBriefItemDraft(item domain.BriefItemDraft) error {
@@ -174,9 +212,6 @@ func validateBriefItemDraft(item domain.BriefItemDraft) error {
 	}
 	if strings.TrimSpace(item.Topic) == "" {
 		return fmt.Errorf("item topic is required")
-	}
-	if !domain.IsSourceKeySupported(item.Source) {
-		return fmt.Errorf("item source %q is not supported", item.Source)
 	}
 	if !domain.IsTopicKeySupported(item.Topic) {
 		return fmt.Errorf("item topic %q is not supported", item.Topic)

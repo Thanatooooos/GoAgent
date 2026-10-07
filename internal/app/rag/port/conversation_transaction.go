@@ -6,6 +6,8 @@ import "context"
 // related messages and summaries inside one storage transaction.
 type ConversationDeleteTransaction func(
 	ctx context.Context,
+	userID string,
+	conversationID string,
 	fn func(
 		ctx context.Context,
 		conversationRepo ConversationRepository,

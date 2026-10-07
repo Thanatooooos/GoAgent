@@ -88,6 +88,40 @@ services:
       retries: 20
     restart: unless-stopped
 
+  docreader:
+    image: ${WEKNORA_DOCREADER_IMAGE:-wechatopenai/weknora-docreader:latest}
+    container_name: goagent-docreader
+    profiles: ["docreader"]
+    ports:
+      - "127.0.0.1:50051:50051"
+    environment:
+      DOCREADER_GRPC_PORT: "50051"
+      DOCREADER_GRPC_MAX_FILE_SIZE_MB: "50"
+      DOCREADER_GRPC_MAX_WORKERS: "4"
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  ocr:
+    build:
+      context: .
+      dockerfile: docker/ocr/Dockerfile
+    container_name: goagent-ocr
+    profiles: ["docreader"]
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      OCR_LANGUAGES: chi_sim+eng
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   redis-data:

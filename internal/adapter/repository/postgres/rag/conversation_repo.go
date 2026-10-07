@@ -99,6 +99,7 @@ func (r *ConversationRepository) ListByUserID(ctx context.Context, userID string
 	var items []models.ConversationModel
 	if err := r.db.WithContext(ctx).
 		Where("user_id = ?", userID).
+		Where("NOT EXISTS (SELECT 1 FROM t_work_conversation w WHERE w.conversation_id = t_conversation.conversation_id AND w.user_id = t_conversation.user_id)").
 		Order("last_time desc").
 		Limit(1000).
 		Find(&items).Error; err != nil {

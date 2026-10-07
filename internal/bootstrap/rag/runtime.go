@@ -13,6 +13,9 @@ import (
 
 	rediscache "local/rag-project/internal/adapter/cache/redis"
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
+	postgresrag "local/rag-project/internal/adapter/repository/postgres/rag"
+	postgresruntime "local/rag-project/internal/adapter/repository/postgres/runtime"
+	runtimeadapter "local/rag-project/internal/adapter/runtime"
 	ragcachemetrics "local/rag-project/internal/app/rag/cachemetrics"
 	raghistory "local/rag-project/internal/app/rag/core/history"
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
@@ -21,48 +24,59 @@ import (
 	"local/rag-project/internal/app/rag/port"
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
+	profileservice "local/rag-project/internal/app/rag/service/profile"
+	conversationruntime "local/rag-project/internal/app/runtime"
+	runtimetrace "local/rag-project/internal/app/runtime/trace"
 	"local/rag-project/internal/framework/config"
-	"local/rag-project/internal/framework/stream"
 	"local/rag-project/internal/framework/log"
+	"local/rag-project/internal/framework/stream"
 	infraai "local/rag-project/internal/infra-ai"
 	aichat "local/rag-project/internal/infra-ai/chat"
 	"local/rag-project/internal/infra-ai/embedding"
-	inframcp "local/rag-project/internal/infra-mcp"
 )
 
 // RuntimeOptions 描述 RAG runtime 的装配选项。
 type RuntimeOptions struct {
-	Config    *config.Config
-	DB        *gorm.DB
-	AIRuntime *infraai.Runtime
-	Searcher  corevector.Searcher
+	Config                    *config.Config
+	DB                        *gorm.DB
+	AIRuntime                 *infraai.Runtime
+	Searcher                  corevector.Searcher
+	DisableProfileObservation bool
 }
 
 // Runtime 聚合最小 RAG 闭环需要的服务。
 type Runtime struct {
-	DB                          *gorm.DB
-	ownsDB                      bool
-	mcpManager                  *inframcp.Manager
-	memoryCache                 *goredis.Client
-	memoryMaintenanceLoopCancel context.CancelFunc
-	memoryMaintenanceLoopWG     sync.WaitGroup
-	memoryMaintenanceRunner     func(context.Context, longtermmemory.MaintenanceInput) (longtermmemory.MaintenanceResult, error)
-	summaryJobWorker            *raghistory.InMemorySummaryJobWorker
-	CacheMetrics                *ragcachemetrics.Service
-	LLMChat                     aichat.LLMService
-	Embedding                   embedding.EmbeddingService
-	Rewrite                     ragrewrite.Service
-	Retrieve                    ragretrieve.Service
-	Conversation                *ragservice.ConversationService
-	Message                     *ragservice.ConversationMessageService
-	Memory                      *longtermmemory.MemoryService
-	PreferenceCandidates        longtermmemory.PreferenceCandidateService
-	Feedback                    *ragservice.MessageFeedbackService
-	Trace                       *ragservice.TraceService
-	Chat                        *ragservice.RagChatService
-	StreamManager               stream.StreamManager
-	streamSweepCancel           context.CancelFunc
-	streamSweepWG               sync.WaitGroup
+	DB                           *gorm.DB
+	ownsDB                       bool
+	memoryCache                  *goredis.Client
+	memoryMaintenanceLoopCancel  context.CancelFunc
+	memoryMaintenanceLoopWG      sync.WaitGroup
+	memoryMaintenanceRunner      func(context.Context, longtermmemory.MaintenanceInput) (longtermmemory.MaintenanceResult, error)
+	profileObservationLoopCancel context.CancelFunc
+	profileObservationLoopWG     sync.WaitGroup
+	profileObservationRunner     func(context.Context) error
+	summaryJobWorker             *raghistory.InMemorySummaryJobWorker
+	CacheMetrics                 *ragcachemetrics.Service
+	LLMChat                      aichat.LLMService
+	Embedding                    embedding.EmbeddingService
+	Rewrite                      ragrewrite.Service
+	Retrieve                     ragretrieve.Service
+	Conversation                 *ragservice.ConversationService
+	Message                      *ragservice.ConversationMessageService
+	Memory                       *longtermmemory.MemoryService
+	PreferenceCandidates         longtermmemory.PreferenceCandidateService
+	Feedback                     *ragservice.MessageFeedbackService
+	Trace                        *runtimetrace.Service
+	ConversationRuntime          conversationruntime.ConversationRuntime
+	TaskRuntime                  conversationruntime.TaskRuntime
+	RuntimeChat                  *conversationruntime.ChatService
+	StreamManager                stream.StreamManager
+	streamSweepCancel            context.CancelFunc
+	streamSweepWG                sync.WaitGroup
+	publicationCancel            context.CancelFunc
+	publicationWG                sync.WaitGroup
+	executionCancel              context.CancelFunc
+	executionWG                  sync.WaitGroup
 }
 
 // NewRuntime 创建 RAG 最小运行时。
@@ -78,36 +92,85 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	conversation := buildConversationServices(buildCtx, repos)
 	memory := buildMemoryServices(buildCtx, repos)
 	retrieve := buildRetrieveServices(buildCtx, repos, memory)
-	chat, err := buildChatService(buildCtx, repos, conversation, memory, retrieve)
+	conversationRuntime, err := buildConversationRuntime(buildCtx, conversation, retrieve, memory, repos)
 	if err != nil {
 		if buildCtx.ownsDB {
 			_ = closeRuntimeDB(buildCtx.db)
 		}
-		return nil, err
+		return nil, fmt.Errorf("build conversation runtime: %w", err)
 	}
+	taskRuntime, ok := conversationRuntime.(conversationruntime.TaskRuntime)
+	if !ok {
+		if buildCtx.ownsDB {
+			_ = closeRuntimeDB(buildCtx.db)
+		}
+		return nil, fmt.Errorf("conversation runtime does not support task runs")
+	}
+	publicationMessages := runtimeadapter.NewConversationMessages(conversation.messageService, postgresrag.NewConversationMessageChunkSink(buildCtx.db, buildCtx.aiRuntime.Embedding))
+	publication := postgresruntime.NewChatPublisher(buildCtx.db, publicationMessages)
+	runtimeChat := conversationruntime.NewChatService(runtimeadapter.NewConversations(conversation.conversationService), publicationMessages, conversationRuntime)
+	runtimeChat.SetPublication(publication)
+	runtimeChat.SetConversationGuard(runtimeadapter.OrdinaryConversationGuard(buildCtx.db))
+	runtimeChat.SetTaskAccessResolver(postgresruntime.NewStore(buildCtx.db).CanAccessChatTask)
+	runtimeChat.SetAfterAssistantPersisted(func(ctx context.Context, message conversationruntime.ConversationMessage) {
+		now := time.Now()
+		_ = repos.conversationProfileStateRepo.Defer(ctx, message.ConversationID, message.UserID, now.Add(30*time.Minute))
+		// A first turn in a newly opened conversation closes the prior session(s)
+		// for observation without making the request path depend on the worker.
+		count, err := repos.messageRepo.CountByConversationIDAndUserIDAndRole(ctx, message.ConversationID, message.UserID, "user")
+		if err != nil || count != 1 {
+			return
+		}
+		conversations, err := repos.conversationRepo.ListByUserID(ctx, message.UserID)
+		if err != nil {
+			return
+		}
+		for _, conversation := range conversations {
+			if conversation.ConversationID != message.ConversationID {
+				_ = repos.conversationProfileStateRepo.Defer(ctx, conversation.ConversationID, message.UserID, now)
+			}
+		}
+	})
+	runtimeChat.SetKnowledgeBaseAccessResolver(runtimeadapter.NewGlobalKnowledgeBaseAccess(buildCtx.db))
+	runtimeTrace := runtimetrace.NewService(postgresruntime.NewStore(buildCtx.db))
 
 	runtime := &Runtime{
-		DB:               buildCtx.db,
-		ownsDB:           buildCtx.ownsDB,
-		mcpManager:       chat.mcpManager,
-		memoryCache:      memory.memoryCacheClient,
-		summaryJobWorker: conversation.summaryJobWorker,
-		CacheMetrics:     memory.memoryCacheMetrics,
-		LLMChat:          buildCtx.aiRuntime.Chat,
-		Embedding:        buildCtx.aiRuntime.Embedding,
-		Rewrite:          retrieve.rewriteService,
-		Retrieve:         retrieve.retrieveService,
-		Conversation:     conversation.conversationService,
-		Message:          conversation.messageService,
-		Memory:           memory.explicitMemoryService,
+		DB:                   buildCtx.db,
+		ownsDB:               buildCtx.ownsDB,
+		memoryCache:          memory.memoryCacheClient,
+		summaryJobWorker:     conversation.summaryJobWorker,
+		CacheMetrics:         memory.memoryCacheMetrics,
+		LLMChat:              buildCtx.aiRuntime.Chat,
+		Embedding:            buildCtx.aiRuntime.Embedding,
+		Rewrite:              retrieve.rewriteService,
+		Retrieve:             retrieve.retrieveService,
+		Conversation:         conversation.conversationService,
+		Message:              conversation.messageService,
+		Memory:               memory.explicitMemoryService,
 		PreferenceCandidates: memory.preferenceCandidateService,
-		Feedback:         conversation.feedbackService,
-		Trace:            retrieve.traceService,
-		Chat:             chat.chatService,
+		Feedback:             conversation.feedbackService,
+		Trace:                runtimeTrace,
+		ConversationRuntime:  conversationRuntime,
+		TaskRuntime:          taskRuntime,
+		RuntimeChat:          runtimeChat,
 	}
 	runtime.StreamManager = buildStreamManager(buildCtx.cfg)
+	runtime.startExecutionRecovery(postgresruntime.NewStore(buildCtx.db))
+	runtime.startPublicationRecovery(publication)
 	startStreamSweep(runtime, buildCtx.cfg)
 	runtime.startMemoryMaintenanceLoop(buildCtx.cfg)
+	profileWorker := profileservice.NewWorker(
+		repos.conversationProfileStateRepo,
+		profileservice.NewService(repos.userMemoryProfileRepo),
+		profileservice.NewObserver(buildCtx.aiRuntime.Chat),
+		repos.conversationRepo,
+		repos.messageRepo,
+		repos.summaryRepo,
+	)
+	runtime.profileObservationRunner = profileWorker.RunDue
+	if !options.DisableProfileObservation {
+		runtime.startProfileObservationLoop()
+	}
 	return runtime, nil
 }
 
@@ -117,8 +180,15 @@ func (r *Runtime) Close() error {
 		return nil
 	}
 	var err error
-	if r.mcpManager != nil {
-		err = errors.Join(err, r.mcpManager.Close())
+	if r.publicationCancel != nil {
+		r.publicationCancel()
+		r.publicationWG.Wait()
+		r.publicationCancel = nil
+	}
+	if r.executionCancel != nil {
+		r.executionCancel()
+		r.executionWG.Wait()
+		r.executionCancel = nil
 	}
 	if r.memoryCache != nil {
 		err = errors.Join(err, r.memoryCache.Close())
@@ -131,6 +201,7 @@ func (r *Runtime) Close() error {
 		err = errors.Join(err, sm.Close())
 	}
 	r.stopMemoryMaintenanceLoop()
+	r.stopProfileObservationLoop()
 	if r.DB == nil || !r.ownsDB {
 		return err
 	}
@@ -147,8 +218,12 @@ var ragRequiredTables = []string{
 	"t_session_chunk",
 	"t_session_chunk_embedding",
 	"t_message_feedback",
-	"t_rag_trace_run",
-	"t_rag_trace_node",
+	"t_runtime_session",
+	"t_runtime_journal",
+	"t_runtime_chat_publication",
+	"t_runtime_chat_execution",
+	"t_user_memory_profile",
+	"t_conversation_profile_state",
 }
 
 // ensureRagSchema 确保 RAG 依赖的表已通过 migration 创建，不再使用 AutoMigrate。
@@ -166,42 +241,6 @@ func closeRuntimeDB(db *gorm.DB) error {
 		return err
 	}
 	return sqlDB.Close()
-}
-
-func buildMCPManager(cfg *config.Config) *inframcp.Manager {
-	if cfg == nil {
-		return nil
-	}
-	servers := make(map[string]inframcp.ServerConfig, len(cfg.Rag.MCP.Servers))
-	for name, serverCfg := range cfg.Rag.MCP.Servers {
-		servers[strings.TrimSpace(name)] = inframcp.ServerConfig{
-			Enabled:          serverCfg.Enabled,
-			Transport:        serverCfg.Transport,
-			Command:          serverCfg.Command,
-			Args:             append([]string(nil), serverCfg.Args...),
-			Env:              cloneMCPEnv(serverCfg.Env),
-			StartupTimeoutMs: serverCfg.StartupTimeoutMs,
-			CallTimeoutMs:    serverCfg.CallTimeoutMs,
-		}
-	}
-
-	serverName := strings.TrimSpace(cfg.Rag.Search.WebSearch.MCP.Server)
-	if serverName == "" {
-		serverName = "tavily"
-	}
-	apiKey := strings.TrimSpace(cfg.Rag.Search.WebSearch.ApiKey)
-	if apiKey != "" {
-		if serverCfg, ok := servers[serverName]; ok {
-			if serverCfg.Env == nil {
-				serverCfg.Env = map[string]string{}
-			}
-			if strings.TrimSpace(serverCfg.Env["TAVILY_API_KEY"]) == "" {
-				serverCfg.Env["TAVILY_API_KEY"] = apiKey
-			}
-			servers[serverName] = serverCfg
-		}
-	}
-	return inframcp.NewManager(servers)
 }
 
 const defaultMemoryFactRankVersion = "v1"
@@ -343,6 +382,45 @@ func (r *Runtime) stopMemoryMaintenanceLoop() {
 	r.memoryMaintenanceLoopCancel()
 	r.memoryMaintenanceLoopWG.Wait()
 	r.memoryMaintenanceLoopCancel = nil
+}
+
+func (r *Runtime) startProfileObservationLoop() {
+	if r == nil || r.profileObservationRunner == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	r.profileObservationLoopCancel = cancel
+	r.profileObservationLoopWG.Add(1)
+	go func() {
+		defer r.profileObservationLoopWG.Done()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		run := func() {
+			runCtx, runCancel := context.WithTimeout(ctx, 45*time.Second)
+			defer runCancel()
+			if err := r.profileObservationRunner(runCtx); err != nil {
+				log.Warnf("rag profile observation failed: %v", err)
+			}
+		}
+		run()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
+}
+
+func (r *Runtime) stopProfileObservationLoop() {
+	if r == nil || r.profileObservationLoopCancel == nil {
+		return
+	}
+	r.profileObservationLoopCancel()
+	r.profileObservationLoopWG.Wait()
+	r.profileObservationLoopCancel = nil
 }
 
 func readMemoryMaintenanceEnabled(cfg *config.Config) bool {

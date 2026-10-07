@@ -67,6 +67,10 @@ func (s *orchestratorRunRepo) ListRetryEligible(ctx context.Context, filter port
 	return nil, nil
 }
 
+func (s *orchestratorRunRepo) ListStalledRunning(ctx context.Context, filter port.GenerationRunStalledFilter) ([]domain.GenerationRun, error) {
+	return nil, nil
+}
+
 func (s *orchestratorRunRepo) CountRetryRunsByUserIDAndBriefDate(ctx context.Context, userID string, briefDate string) (int, error) {
 	if s.run.UserID == userID && s.run.BriefDate == briefDate && s.run.ID != "" {
 		return 1, nil

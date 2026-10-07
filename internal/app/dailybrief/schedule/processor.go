@@ -24,7 +24,10 @@ type Processor struct {
 	retryPolicy       *RetryPolicy
 	metrics           *dailybriefservice.MetricsService
 	now               func() time.Time
+	StallCutoff       time.Duration
 }
+
+const defaultStalledRunCutoff = 30 * time.Minute
 
 func NewProcessor(
 	runner GenerationRunner,
@@ -136,6 +139,10 @@ func (p *Processor) ProcessRetryBatch(ctx context.Context, now time.Time, limit 
 	if p == nil || p.generationRunRepo == nil {
 		return nil
 	}
+	var batchErrors []error
+	if err := p.recoverStalledRuns(ctx, now, limit); err != nil {
+		batchErrors = append(batchErrors, err)
+	}
 	runs, err := p.generationRunRepo.ListRetryEligible(ctx, port.GenerationRunRetryEligibleFilter{
 		FailedBefore: now,
 		Limit:        limit,
@@ -152,5 +159,65 @@ func (p *Processor) ProcessRetryBatch(ctx context.Context, now time.Time, limit 
 			retryErrors = append(retryErrors, err)
 		}
 	}
-	return errors.Join(retryErrors...)
+	return errors.Join(append(batchErrors, retryErrors...)...)
+}
+
+func (p *Processor) stalledRunCutoff() time.Duration {
+	if p == nil || p.StallCutoff <= 0 {
+		return defaultStalledRunCutoff
+	}
+	return p.StallCutoff
+}
+
+func (p *Processor) recoverStalledRuns(ctx context.Context, now time.Time, limit int) error {
+	if p == nil || p.generationRunRepo == nil {
+		return nil
+	}
+	stalled, err := p.generationRunRepo.ListStalledRunning(ctx, port.GenerationRunStalledFilter{
+		StartedBefore: now.Add(-p.stalledRunCutoff()),
+		Limit:         limit,
+	})
+	if err != nil {
+		return err
+	}
+	var recoverErrors []error
+	for _, run := range stalled {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := p.recoverStalledRun(ctx, run, now); err != nil {
+			recoverErrors = append(recoverErrors, err)
+		}
+	}
+	return errors.Join(recoverErrors...)
+}
+
+func (p *Processor) recoverStalledRun(ctx context.Context, run domain.GenerationRun, now time.Time) error {
+	if p.issueRepo != nil {
+		if err := p.markStalledIssueFailed(ctx, run, now); err != nil {
+			return err
+		}
+	}
+	if err := run.MarkFailed(now, "generation stalled"); err != nil {
+		return err
+	}
+	if _, err := p.generationRunRepo.Update(ctx, run); err != nil {
+		return err
+	}
+	return p.ProcessRetry(ctx, run)
+}
+
+func (p *Processor) markStalledIssueFailed(ctx context.Context, run domain.GenerationRun, now time.Time) error {
+	issue, err := p.issueRepo.GetByUserIDAndBriefDate(ctx, run.UserID, run.BriefDate)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(issue.ID) == "" || issue.Status != domain.IssueStatusGenerating {
+		return nil
+	}
+	if markErr := issue.MarkFailed(now); markErr != nil {
+		return markErr
+	}
+	_, err = p.issueRepo.Update(ctx, issue)
+	return err
 }

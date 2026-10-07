@@ -10,11 +10,13 @@ import (
 
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
 	postgresdailybrief "local/rag-project/internal/adapter/repository/postgres/dailybrief"
+	postgresscheduled "local/rag-project/internal/adapter/repository/postgres/scheduledtask"
+	briefdomain "local/rag-project/internal/app/dailybrief/domain"
 	dailybriefschedule "local/rag-project/internal/app/dailybrief/schedule"
 	dailybriefservice "local/rag-project/internal/app/dailybrief/service"
+	conversationruntime "local/rag-project/internal/app/runtime"
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/log"
-	infraai "local/rag-project/internal/infra-ai"
 )
 
 type Runtime struct {
@@ -24,9 +26,9 @@ type Runtime struct {
 	TopicCatalogService         *dailybriefservice.TopicCatalogService
 	SubscriptionSnapshotService *dailybriefservice.SubscriptionSnapshotService
 	ReadService                 *dailybriefservice.ReadService
-	Orchestrator        *dailybriefservice.GenerationOrchestrator
-	ScheduleJob         *dailybriefschedule.Job
-	Metrics             *dailybriefservice.MetricsService
+	Orchestrator                *dailybriefservice.GenerationOrchestrator
+	ScheduleJob                 *dailybriefschedule.Job
+	Metrics                     *dailybriefservice.MetricsService
 
 	ownsDB             bool
 	scheduleLoopCancel context.CancelFunc
@@ -34,9 +36,11 @@ type Runtime struct {
 }
 
 type RuntimeOptions struct {
-	Config    *config.Config
-	DB        *gorm.DB
-	AIRuntime *infraai.Runtime
+	DisableSchedule   bool
+	UseScheduledTasks bool
+	Config            *config.Config
+	DB                *gorm.DB
+	TaskRuntime       conversationruntime.TaskRuntime
 }
 
 func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
@@ -48,6 +52,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	}
 	if cfg == nil && options.DB == nil {
 		return nil, fmt.Errorf("daily brief config or db is required")
+	}
+	if options.UseScheduledTasks && (cfg == nil || cfg.ScheduledTask.RecurringDeadlineSeconds < 1) {
+		return nil, fmt.Errorf("scheduled DailyBrief requires a configured result window")
 	}
 
 	db := options.DB
@@ -67,6 +74,14 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	}
 
 	subscriptionRepo := postgresdailybrief.NewSubscriptionRepository(db)
+	subscriptionRepo.SyncScheduledTask = func(tx *gorm.DB, sub briefdomain.Subscription) error {
+		if options.UseScheduledTasks && sub.Enabled {
+			if _, err := postgresscheduled.NewStore(tx).CutoverDailyBrief(tx.Statement.Context, sub.UserID, time.Now(), cfg.DailyBrief.Generation, time.Duration(cfg.ScheduledTask.RecurringDeadlineSeconds)*time.Second); err != nil {
+				return err
+			}
+		}
+		return postgresscheduled.SyncDailyBriefSubscription(tx, sub)
+	}
 	issueRepo := postgresdailybrief.NewIssueRepository(db)
 	itemRepo := postgresdailybrief.NewItemRepository(db)
 	generationRunRepo := postgresdailybrief.NewGenerationRunRepository(db)
@@ -78,13 +93,12 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	runtime.ReadService = dailybriefservice.NewReadService(subscriptionRepo, issueRepo, itemRepo)
 	metrics := dailybriefservice.NewMetricsService()
 	runtime.Metrics = metrics
-
-	aiRuntime := options.AIRuntime
-	if aiRuntime == nil {
-		aiRuntime = infraai.NewRuntime()
+	if options.UseScheduledTasks {
+		return runtime, nil
 	}
-	if aiRuntime.Chat == nil {
-		log.Warnf("daily brief generation not started: llm service is missing")
+
+	if options.TaskRuntime == nil {
+		log.Warnf("daily brief generation not started: runtime task is not configured")
 		return runtime, nil
 	}
 
@@ -97,7 +111,8 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 	generationCfg := cfg.DailyBrief.Generation
 	sourceCollector := dailybriefservice.NewSourceCollector(sourceRegistry, dailybriefservice.NewHTTPClient(nil))
 	candidatePipeline := dailybriefservice.NewCandidatePipeline(generationCfg)
-	generator := dailybriefservice.NewBriefGenerator(aiRuntime.Chat, generationCfg)
+	generator := dailybriefservice.NewRuntimeBriefGenerator(options.TaskRuntime, generationCfg)
+	log.Infof("daily brief generation uses runtime agentic search")
 	publisher := dailybriefservice.NewPublisher(publishTx)
 	issueService := dailybriefservice.NewIssueService(issueRepo)
 	generationRunService := dailybriefservice.NewGenerationRunService(generationRunRepo)
@@ -141,7 +156,9 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		time.Now,
 	)
 
-	runtime.startScheduleLoop(cfg)
+	if !options.DisableSchedule {
+		runtime.startScheduleLoop(cfg)
+	}
 	return runtime, nil
 }
 

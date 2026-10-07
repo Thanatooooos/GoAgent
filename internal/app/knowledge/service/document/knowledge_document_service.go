@@ -3,9 +3,7 @@ package document
 import (
 	"context"
 	"io"
-	"time"
 
-	ingestiondomain "local/rag-project/internal/app/ingestion/domain"
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
 	knowledgeschedule "local/rag-project/internal/app/knowledge/schedule"
@@ -24,7 +22,6 @@ type UploadKnowledgeDocumentInput struct {
 	ProcessMode     string
 	ChunkStrategy   string
 	ChunkConfig     string
-	PipelineID      string
 	OperatorID      string
 }
 
@@ -43,7 +40,6 @@ type UpdateKnowledgeDocumentInput struct {
 	ProcessMode     string
 	ChunkStrategy   string
 	ChunkConfig     string
-	PipelineID      string
 	SourceLocation  string
 	ScheduleEnabled *bool
 	ScheduleCron    string
@@ -94,9 +90,7 @@ type KnowledgeDocumentChunkLogPageInput struct {
 }
 
 type KnowledgeDocumentChunkLogItem struct {
-	Log            domain.KnowledgeDocumentChunkLog
-	IngestionTask  *ingestiondomain.Task
-	IngestionNodes []ingestiondomain.TaskNode
+	Log domain.KnowledgeDocumentChunkLog
 }
 
 type KnowledgeDocumentChunkLogPageResult struct {
@@ -121,18 +115,18 @@ type KnowledgeDocumentScheduleExecPageResult struct {
 }
 
 type KnowledgeDocumentService struct {
-	baseRepo             port.KnowledgeBaseRepository
-	documentRepo         port.KnowledgeDocumentRepository
-	chunkLogRepo         port.KnowledgeDocumentChunkLogRepository
-	storage              port.FileStorage
-	taskQueue            port.TaskQueue
-	scheduleService      *KnowledgeDocumentScheduleService
-	remoteFetcher        remoteDocumentFetcher
-	deleteTx             KnowledgeDocumentDeleteTransaction
-	ingestionTaskCreator IngestionTaskCreator
-	ingestionTaskReader  IngestionTaskReader
-	reconcileRecorder    IngestionReconcileRecorder
+	baseRepo        port.KnowledgeBaseRepository
+	documentRepo    port.KnowledgeDocumentRepository
+	chunkLogRepo    port.KnowledgeDocumentChunkLogRepository
+	storage         port.FileStorage
+	taskQueue       port.TaskQueue
+	chunkJobs       port.ChunkJobs
+	scheduleService *KnowledgeDocumentScheduleService
+	remoteFetcher   remoteDocumentFetcher
+	deleteTx        KnowledgeDocumentDeleteTransaction
 }
+
+func (s *KnowledgeDocumentService) SetChunkJobs(jobs port.ChunkJobs) { s.chunkJobs = jobs }
 
 type remoteDocumentFetcher interface {
 	FetchAndStore(ctx context.Context, rawURL string, storageKey string, fallbackFileName string) (knowledgeschedule.StoredFileDTO, error)
@@ -180,72 +174,4 @@ func NewKnowledgeDocumentService(
 		remoteFetcher:   remoteFetcher,
 		deleteTx:        documentDeleteTx,
 	}
-}
-
-type CreateKnowledgePipelineTaskInput struct {
-	TaskID          string
-	PipelineID      string
-	SourceType      string
-	SourceLocation  string
-	SourceFileName  string
-	DocumentID      string
-	KnowledgeBaseID string
-	DocumentName    string
-	OperatorID      string
-}
-
-type KnowledgeDocumentIngestionTaskCompletedInput struct {
-	TaskID       string
-	DocumentID   string
-	PipelineID   string
-	ChunkCount   int
-	StartedAt    *time.Time
-	CompletedAt  *time.Time
-	OperatorID   string
-	ErrorMessage string
-}
-
-type IngestionTaskCreator interface {
-	CreateKnowledgePipelineTask(ctx context.Context, input CreateKnowledgePipelineTaskInput) (string, error)
-}
-
-type IngestionTaskReader interface {
-	GetKnowledgePipelineTask(ctx context.Context, taskID string) (ingestiondomain.Task, error)
-	ListKnowledgePipelineTaskNodes(ctx context.Context, taskID string) ([]ingestiondomain.TaskNode, error)
-}
-
-type KnowledgeDocumentIngestionReconcileEvent struct {
-	Source          string
-	TaskID          string
-	DocumentID      string
-	Skipped         bool
-	DocumentUpdated bool
-	ChunkLogUpdated bool
-	ChunkLogCreated bool
-	ErrorMessage    string
-}
-
-type IngestionReconcileRecorder interface {
-	RecordKnowledgeDocumentIngestionReconcile(event KnowledgeDocumentIngestionReconcileEvent)
-}
-
-func (s *KnowledgeDocumentService) SetIngestionTaskCreator(creator IngestionTaskCreator) {
-	if s == nil {
-		return
-	}
-	s.ingestionTaskCreator = creator
-}
-
-func (s *KnowledgeDocumentService) SetIngestionTaskReader(reader IngestionTaskReader) {
-	if s == nil {
-		return
-	}
-	s.ingestionTaskReader = reader
-}
-
-func (s *KnowledgeDocumentService) SetIngestionReconcileRecorder(recorder IngestionReconcileRecorder) {
-	if s == nil {
-		return
-	}
-	s.reconcileRecorder = recorder
 }

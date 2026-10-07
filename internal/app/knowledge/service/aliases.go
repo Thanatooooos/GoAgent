@@ -52,12 +52,6 @@ type (
 	PageKnowledgeDocumentScheduleExecInput      = knowledgedocument.PageKnowledgeDocumentScheduleExecInput
 	KnowledgeDocumentScheduleExecPageResult     = knowledgedocument.KnowledgeDocumentScheduleExecPageResult
 	KnowledgeDocumentDeleteTransaction          = knowledgedocument.KnowledgeDocumentDeleteTransaction
-	CreateKnowledgePipelineTaskInput            = knowledgedocument.CreateKnowledgePipelineTaskInput
-	KnowledgeDocumentIngestionTaskCompletedInput = knowledgedocument.KnowledgeDocumentIngestionTaskCompletedInput
-	IngestionTaskCreator                        = knowledgedocument.IngestionTaskCreator
-	IngestionTaskReader                         = knowledgedocument.IngestionTaskReader
-	KnowledgeDocumentIngestionReconcileEvent    = knowledgedocument.KnowledgeDocumentIngestionReconcileEvent
-	IngestionReconcileRecorder                  = knowledgedocument.IngestionReconcileRecorder
 
 	KnowledgeDocumentScheduleService     = knowledgedocument.KnowledgeDocumentScheduleService
 	KnowledgeDocumentScheduleTransaction = knowledgedocument.KnowledgeDocumentScheduleTransaction

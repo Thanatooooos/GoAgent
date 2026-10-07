@@ -32,7 +32,7 @@ func (s *DocumentProcessService) ensureDocumentRunning(ctx context.Context, docu
 	if document.Status == domain.KnowledgeDocumentStatusRunning {
 		return nil
 	}
-	rows, err := s.documentRepo.UpdateFields(ctx, port.Where(
+	rows, err := s.updateUnownedStatus(ctx, port.Where(
 		port.KnowledgeDocument.ID.Eq(document.ID),
 		port.KnowledgeDocument.Enabled.Eq(true),
 		port.KnowledgeDocument.Deleted.Eq(false),
@@ -40,6 +40,7 @@ func (s *DocumentProcessService) ensureDocumentRunning(ctx context.Context, docu
 			domain.KnowledgeDocumentStatusPending,
 			domain.KnowledgeDocumentStatusFailed,
 			domain.KnowledgeDocumentStatusSuccess,
+			domain.KnowledgeDocumentStatusPartial,
 		),
 	), port.Set(
 		port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentStatusRunning),
@@ -56,7 +57,7 @@ func (s *DocumentProcessService) ensureDocumentRunning(ctx context.Context, docu
 }
 
 func (s *DocumentProcessService) markDocumentSuccess(ctx context.Context, documentID, operatorID string) error {
-	_, err := s.documentRepo.UpdateFields(ctx, port.Where(
+	_, err := s.updateUnownedStatus(ctx, port.Where(
 		port.KnowledgeDocument.ID.Eq(documentID),
 		port.KnowledgeDocument.Status.Eq(domain.KnowledgeDocumentStatusRunning),
 	), port.Set(
@@ -70,8 +71,23 @@ func (s *DocumentProcessService) markDocumentSuccess(ctx context.Context, docume
 	return nil
 }
 
+func (s *DocumentProcessService) markDocumentPartial(ctx context.Context, documentID, operatorID string) error {
+	_, err := s.updateUnownedStatus(ctx, port.Where(
+		port.KnowledgeDocument.ID.Eq(documentID),
+		port.KnowledgeDocument.Status.Eq(domain.KnowledgeDocumentStatusRunning),
+	), port.Set(
+		port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentStatusPartial),
+		port.KnowledgeDocument.UpdatedBy.To(operatorID),
+		port.KnowledgeDocument.UpdatedAt.To(s.now()),
+	))
+	if err != nil {
+		return exception.NewServiceException("failed to mark knowledge document partial", err)
+	}
+	return nil
+}
+
 func (s *DocumentProcessService) markDocumentFailed(ctx context.Context, documentID, operatorID string) error {
-	_, err := s.documentRepo.UpdateFields(ctx, port.Where(
+	_, err := s.updateUnownedStatus(ctx, port.Where(
 		port.KnowledgeDocument.ID.Eq(documentID),
 		port.KnowledgeDocument.Status.Eq(domain.KnowledgeDocumentStatusRunning),
 	), port.Set(
@@ -82,6 +98,15 @@ func (s *DocumentProcessService) markDocumentFailed(ctx context.Context, documen
 	return err
 }
 
+func (s *DocumentProcessService) updateUnownedStatus(ctx context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+	if repo, ok := s.documentRepo.(interface {
+		UpdateUnownedChunkFields(context.Context, port.UpdatePredicates, port.UpdateAssignments) (int64, error)
+	}); ok {
+		return repo.UpdateUnownedChunkFields(ctx, where, set)
+	}
+	return s.documentRepo.UpdateFields(ctx, where, set)
+}
+
 func (s *DocumentProcessService) createRunningChunkLog(ctx context.Context, document domain.KnowledgeDocument) (domain.KnowledgeDocumentChunkLog, error) {
 	id, err := distributedid.NextID()
 	if err != nil {
@@ -89,11 +114,14 @@ func (s *DocumentProcessService) createRunningChunkLog(ctx context.Context, docu
 	}
 
 	startTime := s.now()
-	chunkLog := domain.NewKnowledgeDocumentChunkLog(fmt.Sprintf("%d", id), document.ID)
+	logID := fmt.Sprintf("%d", id)
+	if job, ok := port.CurrentChunkJob(ctx); ok {
+		logID = job.TaskID
+	}
+	chunkLog := domain.NewKnowledgeDocumentChunkLog(logID, document.ID)
 	chunkLog.Status = domain.KnowledgeDocumentChunkLogStatusRunning
 	chunkLog.ProcessMode = document.ProcessMode
 	chunkLog.ChunkStrategy = document.ChunkStrategy
-	chunkLog.PipelineID = document.PipelineID
 	chunkLog.StartTime = &startTime
 	chunkLog.CreatedAt = startTime
 	chunkLog.UpdatedAt = startTime

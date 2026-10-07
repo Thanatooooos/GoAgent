@@ -89,7 +89,14 @@ func (r *GenerationRunRepository) ListRetryEligible(ctx context.Context, filter 
 		Where("status = ?", domain.GenerationRunStatusFailed).
 		Where("finished_at IS NOT NULL").
 		Where("finished_at <= ?", filter.FailedBefore).
-		Order("finished_at asc")
+		Where(`NOT EXISTS (
+			SELECT 1 FROM t_daily_brief_generation_run newer
+			WHERE newer.user_id = t_daily_brief_generation_run.user_id
+			  AND newer.brief_date = t_daily_brief_generation_run.brief_date
+			  AND (newer.started_at > t_daily_brief_generation_run.started_at
+			       OR (newer.started_at = t_daily_brief_generation_run.started_at AND newer.id > t_daily_brief_generation_run.id))
+		)`).
+		Order("finished_at desc")
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
 	}
@@ -97,6 +104,28 @@ func (r *GenerationRunRepository) ListRetryEligible(ctx context.Context, filter 
 	var items []models.GenerationRunModel
 	if err := query.Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("list daily brief retry eligible generation runs: %w", err)
+	}
+	result := make([]domain.GenerationRun, 0, len(items))
+	for _, item := range items {
+		result = append(result, toGenerationRunDomain(item))
+	}
+	return result, nil
+}
+
+func (r *GenerationRunRepository) ListStalledRunning(ctx context.Context, filter port.GenerationRunStalledFilter) ([]domain.GenerationRun, error) {
+	query := r.db.WithContext(ctx).
+		Model(&models.GenerationRunModel{}).
+		Where("status = ?", domain.GenerationRunStatusRunning).
+		Where("finished_at IS NULL").
+		Where("started_at <= ?", filter.StartedBefore).
+		Order("started_at asc")
+	if filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
+	}
+
+	var items []models.GenerationRunModel
+	if err := query.Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("list stalled daily brief generation runs: %w", err)
 	}
 	result := make([]domain.GenerationRun, 0, len(items))
 	for _, item := range items {

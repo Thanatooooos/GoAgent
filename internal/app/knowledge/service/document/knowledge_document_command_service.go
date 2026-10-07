@@ -63,17 +63,11 @@ func (s *KnowledgeDocumentService) Upload(ctx context.Context, input UploadKnowl
 	if err != nil {
 		return domain.KnowledgeDocument{}, err
 	}
-	pipelineID := strings.TrimSpace(input.PipelineID)
-	if err := validateKnowledgeDocumentProcessingConfig(processMode, chunkStrategy, pipelineID, true); err != nil {
+	if err := validateKnowledgeDocumentProcessingConfig(processMode, chunkStrategy); err != nil {
 		return domain.KnowledgeDocument{}, err
 	}
 	input.ProcessMode = processMode
 	input.ChunkStrategy = chunkStrategy
-	if processMode == domain.KnowledgeDocumentProcessModeChunk {
-		input.PipelineID = ""
-	} else {
-		input.PipelineID = pipelineID
-	}
 
 	knowledgeBase, err := s.baseRepo.GetByID(ctx, knowledgeBaseID)
 	if err != nil {
@@ -148,6 +142,30 @@ func (s *KnowledgeDocumentService) StartChunk(ctx context.Context, input StartCh
 	if !document.CanStartProcessing() {
 		return exception.NewClientException("knowledge document cannot start processing", nil)
 	}
+	if s.chunkJobs != nil {
+		if document.IsRemote() {
+			if s.scheduleService == nil {
+				return exception.NewServiceException("knowledge document schedule service is required", nil)
+			}
+			if err := s.scheduleService.SyncSchedule(ctx, &document, true); err != nil {
+				return err
+			}
+		}
+		id, err := distributedid.NextID()
+		if err != nil {
+			return err
+		}
+		task := port.ChunkDocumentTask{TaskID: fmt.Sprintf("%d", id), DocumentID: document.ID, TriggeredBy: operatorID}
+		if _, err := s.chunkJobs.Admit(ctx, task, nil); err != nil {
+			return exception.NewClientException("knowledge document cannot start processing", err)
+		}
+		// Admission is already durable. A failed local wake-up is recovered by
+		// the startup scanner; it must not mark another execution failed.
+		if err := s.taskQueue.SubmitChunkDocument(ctx, task); err != nil {
+			log.Warnf("chunk job accepted; local wake-up failed: taskId=%s err=%v", task.TaskID, err)
+		}
+		return nil
+	}
 
 	rows, err := s.documentRepo.UpdateFields(ctx, port.Where(
 		port.KnowledgeDocument.ID.Eq(document.ID),
@@ -157,6 +175,7 @@ func (s *KnowledgeDocumentService) StartChunk(ctx context.Context, input StartCh
 			domain.KnowledgeDocumentStatusPending,
 			domain.KnowledgeDocumentStatusFailed,
 			domain.KnowledgeDocumentStatusSuccess,
+			domain.KnowledgeDocumentStatusPartial,
 		),
 	), port.Set(
 		port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentStatusRunning),
@@ -220,15 +239,9 @@ func (s *KnowledgeDocumentService) Update(ctx context.Context, input UpdateKnowl
 	if err != nil {
 		return domain.KnowledgeDocument{}, err
 	}
-	nextPipelineID := strings.TrimSpace(document.PipelineID)
-	if strings.TrimSpace(input.PipelineID) != "" {
-		nextPipelineID = strings.TrimSpace(input.PipelineID)
-	}
 	if err := validateKnowledgeDocumentProcessingConfig(
 		nextProcessMode,
 		nextChunkStrategy,
-		nextPipelineID,
-		strings.TrimSpace(input.ProcessMode) != "" || strings.TrimSpace(input.ChunkStrategy) != "" || strings.TrimSpace(input.PipelineID) != "",
 	); err != nil {
 		return domain.KnowledgeDocument{}, err
 	}
@@ -237,13 +250,7 @@ func (s *KnowledgeDocumentService) Update(ctx context.Context, input UpdateKnowl
 		document.Name = name
 	}
 	document.ProcessMode = nextProcessMode
-	if document.ProcessMode == domain.KnowledgeDocumentProcessModeChunk {
-		document.ChunkStrategy = nextChunkStrategy
-		document.PipelineID = ""
-	} else {
-		document.ChunkStrategy = ""
-		document.PipelineID = nextPipelineID
-	}
+	document.ChunkStrategy = nextChunkStrategy
 	if input.ChunkConfig != "" {
 		if !json.Valid([]byte(input.ChunkConfig)) {
 			return domain.KnowledgeDocument{}, exception.NewClientException("chunk config must be valid json", nil)
@@ -349,6 +356,7 @@ func (s *KnowledgeDocumentService) Delete(ctx context.Context, input DeleteKnowl
 				domain.KnowledgeDocumentStatusPending,
 				domain.KnowledgeDocumentStatusFailed,
 				domain.KnowledgeDocumentStatusSuccess,
+				domain.KnowledgeDocumentStatusPartial,
 			),
 		), port.Set(
 			port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentStatusDeleting),
@@ -403,4 +411,16 @@ func (s *KnowledgeDocumentService) Delete(ctx context.Context, input DeleteKnowl
 		}
 	}
 	return nil
+}
+
+func (s *KnowledgeDocumentService) markDocumentFailed(ctx context.Context, documentID, operatorID string) error {
+	_, err := s.documentRepo.UpdateFields(ctx, port.Where(
+		port.KnowledgeDocument.ID.Eq(documentID),
+		port.KnowledgeDocument.Status.Eq(domain.KnowledgeDocumentStatusRunning),
+	), port.Set(
+		port.KnowledgeDocument.Status.To(domain.KnowledgeDocumentStatusFailed),
+		port.KnowledgeDocument.UpdatedBy.To(operatorID),
+		port.KnowledgeDocument.UpdatedAt.To(time.Now()),
+	))
+	return err
 }

@@ -37,6 +37,8 @@ export interface StreamHandlers {
 
 export interface StreamOptions {
   url: string;
+	method?: "GET" | "POST";
+	body?: string;
   headers?: Record<string, string>;
   signal?: AbortSignal;
   retryCount?: number;
@@ -177,7 +179,7 @@ async function streamWithRetry(
   options: StreamOptions,
   handlers: StreamHandlers
 ): Promise<void> {
-  const { url, headers, signal } = options;
+	const { url, method = "GET", body, headers, signal } = options;
   const retryCount = options.retryCount ?? 2;
   const retryDelayMs = options.retryDelayMs ?? 600;
 
@@ -185,11 +187,13 @@ async function streamWithRetry(
   while (attempt <= retryCount) {
     try {
       const response = await fetch(url, {
-        method: "GET",
+		method,
         headers: {
           Accept: "text/event-stream",
+			...(body ? { "Content-Type": "application/json" } : {}),
           ...headers
         },
+		body,
         signal
       });
 

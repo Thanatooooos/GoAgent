@@ -13,19 +13,24 @@ import (
 	"github.com/gin-gonic/gin"
 
 	dailybriefhttp "local/rag-project/internal/adapter/http/dailybrief"
-	ingestionhttp "local/rag-project/internal/adapter/http/ingestion"
 	knowledgehttp "local/rag-project/internal/adapter/http/knowledge"
 	raghttp "local/rag-project/internal/adapter/http/rag"
+	scheduledtaskhttp "local/rag-project/internal/adapter/http/scheduledtask"
 	settingshttp "local/rag-project/internal/adapter/http/settings"
 	userhttp "local/rag-project/internal/adapter/http/user"
+	workhttp "local/rag-project/internal/adapter/http/work"
 	postgresrepo "local/rag-project/internal/adapter/repository/postgres"
-	ingestionservice "local/rag-project/internal/app/ingestion/service"
+	postgresrag "local/rag-project/internal/adapter/repository/postgres/rag"
+	runtimeadapter "local/rag-project/internal/adapter/runtime"
 	corevector "local/rag-project/internal/app/rag/core/vector"
+	conversationruntime "local/rag-project/internal/app/runtime"
+	scheduledservice "local/rag-project/internal/app/scheduledtask/service"
 	dailybriefbootstrap "local/rag-project/internal/bootstrap/dailybrief"
-	ingestionbootstrap "local/rag-project/internal/bootstrap/ingestion"
 	knowledgebootstrap "local/rag-project/internal/bootstrap/knowledge"
 	ragbootstrap "local/rag-project/internal/bootstrap/rag"
+	scheduledtaskbootstrap "local/rag-project/internal/bootstrap/scheduledtask"
 	userbootstrap "local/rag-project/internal/bootstrap/user"
+	workbootstrap "local/rag-project/internal/bootstrap/work"
 	"local/rag-project/internal/framework/config"
 	fwlog "local/rag-project/internal/framework/log"
 	infraai "local/rag-project/internal/infra-ai"
@@ -54,6 +59,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "init db failed: %v\n", err)
 		os.Exit(1)
 	}
+	if expected := os.Getenv("APP_EXPECTED_DATABASE"); expected != "" {
+		var actual string
+		if err := initDB.Raw("SELECT current_database()").Scan(&actual).Error; err != nil || actual != expected {
+			fmt.Fprintf(os.Stderr, "database verification failed: expected %q, actual %q\n", expected, actual)
+			os.Exit(1)
+		}
+	}
 	if err := postgresrepo.RunMigrations(initDB); err != nil {
 		fmt.Fprintf(os.Stderr, "run migrations failed: %v\n", err)
 		os.Exit(1)
@@ -72,30 +84,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	ingestionRuntime, err := ingestionbootstrap.NewRuntime(context.Background(), ingestionbootstrap.RuntimeOptions{
-		Config: cfg,
-		DB:     knowledgeRuntime.DB,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "init ingestion runtime failed: %v\n", err)
-		os.Exit(1)
-	}
-	if knowledgeRuntime.DocumentService != nil && ingestionRuntime.Task != nil {
-		knowledgeRuntime.DocumentService.SetIngestionTaskCreator(knowledgebootstrap.NewIngestionTaskCreator(ingestionRuntime.Task))
-		knowledgeRuntime.DocumentService.SetIngestionTaskReader(knowledgebootstrap.NewIngestionTaskReader(ingestionRuntime.Task))
-	}
-	if knowledgeRuntime.DocumentService != nil && ingestionRuntime.Metrics != nil {
-		knowledgeRuntime.DocumentService.SetIngestionReconcileRecorder(
-			knowledgebootstrap.NewIngestionReconcileRecorder(ingestionRuntime.Metrics),
-		)
-	}
-	if ingestionRuntime.Executor != nil && knowledgeRuntime.DocumentService != nil {
-		ingestionRuntime.Executor.SetTaskObserver(ingestionservice.NewMultiTaskObserver(
-			ingestionRuntime.Executor.Observer(),
-			knowledgebootstrap.NewIngestionTaskObserver(knowledgeRuntime.DocumentService),
-		))
-	}
-
 	var ragSearcher corevector.Searcher
 	if knowledgeRuntime.VectorStore != nil {
 		if searcher, ok := knowledgeRuntime.VectorStore.(corevector.Searcher); ok {
@@ -103,10 +91,11 @@ func main() {
 		}
 	}
 	ragRuntime, err := ragbootstrap.NewRuntime(context.Background(), ragbootstrap.RuntimeOptions{
-		Config:    cfg,
-		DB:        knowledgeRuntime.DB,
-		AIRuntime: aiRuntime,
-		Searcher:  ragSearcher,
+		Config:                    cfg,
+		DB:                        knowledgeRuntime.DB,
+		AIRuntime:                 aiRuntime,
+		Searcher:                  ragSearcher,
+		DisableProfileObservation: os.Getenv("APP_DISABLE_PROFILE_OBSERVATION") == "true",
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "init rag runtime failed: %v\n", err)
@@ -121,13 +110,51 @@ func main() {
 		os.Exit(1)
 	}
 
+	briefMode := os.Getenv("APP_DAILY_BRIEF_SCHEDULER")
+	if briefMode != "" && briefMode != "mixed" && briefMode != "scheduled" {
+		fmt.Fprintln(os.Stderr, "APP_DAILY_BRIEF_SCHEDULER must be mixed or scheduled")
+		os.Exit(1)
+	}
+	if briefMode == "scheduled" {
+		var remaining int64
+		if err := knowledgeRuntime.DB.Raw(`SELECT count(*) FROM t_daily_brief_subscription s WHERE enabled=1 AND NOT EXISTS (SELECT 1 FROM t_daily_brief_task_binding b WHERE b.user_id=s.user_id)`).Scan(&remaining).Error; err != nil || remaining != 0 {
+			fmt.Fprintln(os.Stderr, "cannot stop legacy DailyBrief scheduler: enabled subscriptions remain unmigrated or query failed")
+			os.Exit(1)
+		}
+	}
 	dailyBriefRuntime, err := dailybriefbootstrap.NewRuntime(context.Background(), dailybriefbootstrap.RuntimeOptions{
-		Config:    cfg,
-		DB:        knowledgeRuntime.DB,
-		AIRuntime: aiRuntime,
+		UseScheduledTasks: briefMode == "scheduled",
+		DisableSchedule:   os.Getenv("APP_DISABLE_SCHEDULED_JOBS") == "true" || briefMode == "scheduled" || os.Getenv("APP_DISABLE_LEGACY_DAILY_BRIEF") == "true",
+		Config:            cfg,
+		DB:                knowledgeRuntime.DB,
+		TaskRuntime:       ragRuntime.TaskRuntime,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "init daily brief runtime failed: %v\n", err)
+		os.Exit(1)
+	}
+	scheduledTaskRuntime, err := scheduledtaskbootstrap.NewRuntime(knowledgeRuntime.DB, ragRuntime.TaskRuntime, cfg.ScheduledTask)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "init scheduled task runtime failed: %v\n", err)
+		os.Exit(1)
+	}
+	if os.Getenv("APP_DISABLE_SCHEDULED_JOBS") != "true" {
+		scheduledTaskRuntime.Start()
+	}
+	workRuntime, err := workbootstrap.NewRuntime(knowledgeRuntime.DB)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "init work runtime failed: %v\n", err)
+		os.Exit(1)
+	}
+	baseKernel, ok := ragRuntime.ConversationRuntime.(*conversationruntime.Runtime)
+	workRuntime.ConfigureMaterials(knowledgeRuntime, cfg.AI.Embedding.DefaultModel)
+	workRuntime.StartCleanup()
+	if !ok {
+		fmt.Fprintln(os.Stderr, "work requires the conversation runtime kernel")
+		os.Exit(1)
+	}
+	if err := workRuntime.ConfigureChat(baseKernel, runtimeadapter.NewConversations(ragRuntime.Conversation), runtimeadapter.NewConversationMessages(ragRuntime.Message, postgresrag.NewConversationMessageChunkSink(ragRuntime.DB, ragRuntime.Embedding)), ragRuntime.StreamManager); err != nil {
+		fmt.Fprintf(os.Stderr, "init work chat failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -137,6 +164,7 @@ func main() {
 		loginIDExtractor = umw.DefaultLoginIDExtractorWithDemo
 	}
 	registerCoreMiddleware(r, userRuntime.LoadLoginUser, loginIDExtractor)
+	r.Use(umw.RejectWorkPrivateKnowledge(knowledgeRuntime.DB))
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "pong"})
@@ -144,10 +172,11 @@ func main() {
 
 	registerDebugAIRoutes(r, aiRuntime)
 	registerKnowledgeRoutes(r, cfg, knowledgeRuntime)
-	registerIngestionRoutes(r, cfg, ingestionRuntime)
 	registerUserRoutes(r, cfg, userRuntime)
 	registerRagRoutes(r, cfg, ragRuntime)
 	registerDailyBriefRoutes(r, cfg, dailyBriefRuntime)
+	registerScheduledTaskRoutes(r, cfg, scheduledTaskRuntime, ragRuntime)
+	registerWorkRoutes(r, cfg, workRuntime)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
@@ -178,9 +207,10 @@ func main() {
 
 	// 按逆序关闭各 runtime
 	closeRuntime("daily-brief", dailyBriefRuntime.Close)
+	closeRuntime("work", workRuntime.Close)
+	closeRuntime("scheduled-task", scheduledTaskRuntime.Close)
 	closeRuntime("user", userRuntime.Close)
 	closeRuntime("rag", ragRuntime.Close)
-	closeRuntime("ingestion", ingestionRuntime.Close)
 	closeRuntime("knowledge", knowledgeRuntime.Close)
 
 	fmt.Println("server exited")
@@ -228,19 +258,12 @@ func registerKnowledgeRoutes(r *gin.Engine, cfg *config.Config, runtime *knowled
 	knowledgehttp.RegisterKnowledgeBaseRoutes(admin, runtime.BaseService)
 	knowledgehttp.RegisterKnowledgeDocumentRoutes(admin, runtime.DocumentService)
 	knowledgehttp.RegisterKnowledgeChunkRoutes(admin, runtime.ChunkService)
+	knowledgehttp.RegisterImageEvidenceAdminRoutes(admin, runtime.ImageEvidenceService)
+	protected := resolveContextPath(r, cfg).Group("/")
+	protected.Use(umw.RequireLogin())
+	knowledgehttp.RegisterImageEvidenceReadRoutes(protected, runtime.ImageEvidenceService)
 	knowledgehttp.RegisterWikiPageRoutes(admin, runtime.WikiPageService)
 	settingshttp.RegisterRoutes(admin, cfg)
-}
-
-func registerIngestionRoutes(r *gin.Engine, cfg *config.Config, runtime *ingestionbootstrap.Runtime) {
-	if r == nil || runtime == nil {
-		return
-	}
-	admin := resolveContextPath(r, cfg).Group("/")
-	admin.Use(umw.RequireLogin(), umw.RequireRole("admin"))
-	ingestionhttp.RegisterPipelineRoutes(admin, runtime.Pipeline)
-	ingestionhttp.RegisterTaskRoutes(admin, runtime.Task)
-	ingestionhttp.RegisterMetricsRoutes(admin, runtime.Metrics)
 }
 
 func registerUserRoutes(r *gin.Engine, cfg *config.Config, runtime *userbootstrap.Runtime) {
@@ -256,7 +279,7 @@ func registerRagRoutes(r *gin.Engine, cfg *config.Config, runtime *ragbootstrap.
 	}
 	protected := resolveContextPath(r, cfg).Group("/")
 	protected.Use(umw.RequireLogin())
-	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Memory, runtime.Feedback, runtime.Chat, runtime.PreferenceCandidates, runtime.Trace, runtime.CacheMetrics, runtime.StreamManager)
+	raghttp.RegisterRoutes(protected, runtime.Conversation, runtime.Message, runtime.Memory, runtime.Feedback, runtime.PreferenceCandidates, runtime.Trace, runtime.CacheMetrics, runtime.StreamManager, runtime.RuntimeChat)
 }
 
 func registerDailyBriefRoutes(r *gin.Engine, cfg *config.Config, runtime *dailybriefbootstrap.Runtime) {
@@ -270,4 +293,25 @@ func registerDailyBriefRoutes(r *gin.Engine, cfg *config.Config, runtime *dailyb
 	admin := resolveContextPath(r, cfg).Group("/")
 	admin.Use(umw.RequireLogin(), umw.RequireRole("admin"))
 	dailybriefhttp.RegisterAdminRoutes(admin, runtime.SubscriptionSnapshotService)
+}
+
+func registerScheduledTaskRoutes(r *gin.Engine, cfg *config.Config, runtime *scheduledtaskbootstrap.Runtime, ragRuntime *ragbootstrap.Runtime) {
+	if r == nil || runtime == nil {
+		return
+	}
+	protected := resolveContextPath(r, cfg).Group("/")
+	protected.Use(umw.RequireLogin())
+	scheduledtaskhttp.RegisterRoutes(protected, runtime.Store, scheduledservice.Proposer{Model: ragRuntime.LLMChat})
+}
+
+func registerWorkRoutes(r *gin.Engine, cfg *config.Config, runtime *workbootstrap.Runtime) {
+	if r == nil || runtime == nil {
+		return
+	}
+	workhttp.RegisterRoutes(resolveContextPath(r, cfg), runtime.Service)
+	protected := resolveContextPath(r, cfg).Group("/")
+	protected.Use(umw.RequireLogin())
+	workhttp.RegisterChatRoutes(protected, runtime)
+	workhttp.RegisterProposalRoutes(protected, runtime)
+	workhttp.RegisterMaterialRoutes(protected, runtime)
 }

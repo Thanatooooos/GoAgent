@@ -44,6 +44,21 @@ func (s stubKnowledgeDocumentRepository) GetByID(ctx context.Context, id string)
 	return domain.KnowledgeDocument{}, nil
 }
 
+func TestMarkSuccessIfRunningDefersToImageWorker(t *testing.T) {
+	helper := NewDocumentStatusHelper(stubKnowledgeDocumentRepository{
+		updateFieldsFn: func(_ context.Context, where port.UpdatePredicates, set port.UpdateAssignments) (int64, error) {
+			assertPredicate(t, where, port.KnowledgeDocument.ID.Key, port.OperatorEQ, "doc-1")
+			assertPredicate(t, where, port.KnowledgeDocument.Status.Key, port.OperatorEQ, domain.KnowledgeDocumentStatusRunning)
+			assertPredicate(t, where, port.KnowledgeDocument.ImageCount.Key, port.OperatorEQ, 0)
+			assertAssignment(t, set, port.KnowledgeDocument.Status.Key, domain.KnowledgeDocumentStatusSuccess)
+			return 0, nil
+		},
+	})
+	if err := helper.MarkSuccessIfRunning(context.Background(), "doc-1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (s stubKnowledgeDocumentRepository) CountByKnowledgeBaseID(ctx context.Context, knowledgeBaseID string) (int, error) {
 	return 0, nil
 }
@@ -64,7 +79,7 @@ func TestDocumentStatusHelperTryMarkRunning(t *testing.T) {
 			assertPredicate(t, where, port.KnowledgeDocument.ID.Key, port.OperatorEQ, "doc-1")
 			assertPredicate(t, where, port.KnowledgeDocument.Enabled.Key, port.OperatorEQ, true)
 			assertPredicate(t, where, port.KnowledgeDocument.Deleted.Key, port.OperatorEQ, false)
-			assertInPredicate(t, where, port.KnowledgeDocument.Status.Key, domain.KnowledgeDocumentStatusPending, domain.KnowledgeDocumentStatusFailed, domain.KnowledgeDocumentStatusSuccess)
+			assertInPredicate(t, where, port.KnowledgeDocument.Status.Key, domain.KnowledgeDocumentStatusPending, domain.KnowledgeDocumentStatusFailed, domain.KnowledgeDocumentStatusSuccess, domain.KnowledgeDocumentStatusPartial)
 			assertAssignment(t, set, port.KnowledgeDocument.Status.Key, domain.KnowledgeDocumentStatusRunning)
 			assertAssignment(t, set, port.KnowledgeDocument.UpdatedBy.Key, systemUser)
 			if !hasAssignment(set, port.KnowledgeDocument.UpdatedAt.Key) {

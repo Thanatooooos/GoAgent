@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { Check, FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X, Share2 } from "lucide-react";
+import { Check, FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X, Share2, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import type { KnowledgeBase, KnowledgeDocument, KnowledgeDocumentUploadPayload, KnowledgeDocumentChunkLog, PageResult, ChunkStrategyOption } from "@/services/knowledgeService";
+import type { KnowledgeBase, KnowledgeDocument, KnowledgeDocumentUploadPayload, KnowledgeDocumentChunkLog, PageResult, ChunkStrategyOption, ImageEvidenceItem } from "@/services/knowledgeService";
 import {
   deleteDocument,
   enableDocument,
@@ -28,9 +28,11 @@ import {
   startDocumentChunk,
   uploadDocument,
   getChunkStrategies,
-  getChunkLogsPage
+  getChunkLogsPage,
+	getDocumentImages,
+	retryImageOccurrence,
+	getImageOccurrenceOriginal
 } from "@/services/knowledgeService";
-import { getIngestionPipelines, type IngestionPipeline } from "@/services/ingestionService";
 import { getSystemSettings } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
 
@@ -39,6 +41,7 @@ const PAGE_SIZE = 10;
 const STATUS_OPTIONS = [
   { value: "pending", label: "pending" },
   { value: "running", label: "running" },
+	{ value: "partial", label: "partial" },
   { value: "failed", label: "failed" },
   { value: "success", label: "success" }
 ];
@@ -49,8 +52,7 @@ const SOURCE_OPTIONS = [
 ];
 
 const PROCESS_MODE_OPTIONS = [
-  { value: "chunk", label: "直接分块" },
-  { value: "pipeline", label: "数据通道" }
+  { value: "chunk", label: "直接分块" }
 ];
 
 const NO_CHUNK_VALUE = -1;
@@ -72,10 +74,20 @@ const statusDotClass = (status?: string | null) => {
   if (!status) return "bg-muted-foreground/40";
   const normalized = status.toLowerCase();
   if (normalized === "success") return "bg-emerald-500";
+	if (normalized === "partial") return "bg-orange-500";
   if (normalized === "failed") return "bg-red-500";
   if (normalized === "running") return "bg-amber-500";
   if (normalized === "pending") return "bg-slate-400";
   return "bg-muted-foreground/40";
+};
+
+const imageStatusLabel = (status: string, kind: "ocr" | "caption") => {
+  if (status === "no_text") return "正常完成 · 无文字";
+  if (status === "no_content") return "正常完成 · 无可描述内容";
+  if (status === "success" || status === "described") return "已完成";
+  if (status === "error") return "失败";
+  if (status === "pending") return "待处理";
+  return kind === "ocr" ? "OCR 处理中" : "图片描述处理中";
 };
 
 const formatDate = (value?: string | null) => {
@@ -125,9 +137,7 @@ export function KnowledgeDocumentsPage() {
   const [detailSaving, setDetailSaving] = useState(false);
   const [detailProcessMode, setDetailProcessMode] = useState("chunk");
   const [detailChunkStrategy, setDetailChunkStrategy] = useState("structure_aware");
-  const [detailPipelineId, setDetailPipelineId] = useState("");
   const [detailStrategies, setDetailStrategies] = useState<ChunkStrategyOption[]>([]);
-  const [detailPipelines, setDetailPipelines] = useState<IngestionPipeline[]>([]);
   const [detailConfigValues, setDetailConfigValues] = useState<Record<string, string>>({});
   const [detailNoChunk, setDetailNoChunk] = useState(false);
   const [detailOriginalChunkSize, setDetailOriginalChunkSize] = useState("512");
@@ -137,6 +147,22 @@ export function KnowledgeDocumentsPage() {
   const [logTarget, setLogTarget] = useState<KnowledgeDocument | null>(null);
   const [logData, setLogData] = useState<PageResult<KnowledgeDocumentChunkLog> | null>(null);
   const [logLoading, setLogLoading] = useState(false);
+	const [imageTarget, setImageTarget] = useState<KnowledgeDocument | null>(null);
+	const [imageItems, setImageItems] = useState<ImageEvidenceItem[]>([]);
+	const [imageLoading, setImageLoading] = useState(false);
+	const [imagePreview, setImagePreview] = useState<{ occurrenceId: string; url: string } | null>(null);
+	useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview.url); }, [imagePreview]);
+	const loadImages = async (doc: KnowledgeDocument) => {
+		setImageTarget(doc);
+		setImageLoading(true);
+		try {
+			setImageItems(await getDocumentImages(doc.id));
+		} catch (error) {
+			toast.error(getErrorMessage(error, "图片列表加载失败"));
+		} finally {
+			setImageLoading(false);
+		}
+	};
 
   const documents = pageData?.records || [];
 
@@ -181,10 +207,8 @@ export function KnowledgeDocumentsPage() {
   useEffect(() => {
     if (detailTarget) {
       setDetailName(detailTarget.docName || "");
-      const mode = (detailTarget.processMode || "chunk").toLowerCase();
-      setDetailProcessMode(mode);
+      setDetailProcessMode("chunk");
       setDetailChunkStrategy((detailTarget.chunkStrategy || "structure_aware").toLowerCase());
-      setDetailPipelineId(detailTarget.pipelineId ? String(detailTarget.pipelineId) : "");
       setDetailSourceLocation(detailTarget.sourceLocation || "");
       setDetailScheduleEnabled(Boolean(detailTarget.scheduleEnabled));
       setDetailScheduleCron(detailTarget.scheduleCron || "");
@@ -209,15 +233,12 @@ export function KnowledgeDocumentsPage() {
 
       // 加载策略列表和管道列表
       getChunkStrategies().then(setDetailStrategies).catch(() => {});
-      getIngestionPipelines(1, 100).then(r => setDetailPipelines(r.records || [])).catch(() => {});
     } else {
       setDetailName("");
       setDetailProcessMode("chunk");
       setDetailChunkStrategy("structure_aware");
-      setDetailPipelineId("");
       setDetailConfigValues({});
       setDetailStrategies([]);
-      setDetailPipelines([]);
       setDetailSourceLocation("");
       setDetailScheduleEnabled(false);
       setDetailScheduleCron("");
@@ -299,8 +320,6 @@ export function KnowledgeDocumentsPage() {
           }
           data.chunkConfig = JSON.stringify(configObj);
         }
-      } else {
-        data.pipelineId = detailPipelineId;
       }
       // 添加定时调度相关字段（仅 URL 类型）
       if (detailTarget.sourceType?.toLowerCase() === "url") {
@@ -349,6 +368,7 @@ export function KnowledgeDocumentsPage() {
   };
 
   const formatLogStatus = (status?: string) => {
+	if (status === "partial") return "部分完成";
     if (status === "success") return "成功";
     if (status === "failed") return "失败";
     if (status === "running") return "进行中";
@@ -604,7 +624,8 @@ export function KnowledgeDocumentsPage() {
                     <TableCell>
                       <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                         <span className={cn("h-2 w-2 rounded-full", statusDotClass(doc.status))} />
-                        <span>{doc.status || "-"}</span>
+                        <span>{doc.status === "partial" ? "部分完成" : (doc.status || "-")}</span>
+						{(doc.imageCount ?? 0) > 0 ? <span title="图片处理进度">图片 {doc.imageCompletedCount ?? 0}/{doc.imageCount}，失败 {doc.imageFailedCount ?? 0}</span> : null}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -669,6 +690,9 @@ export function KnowledgeDocumentsPage() {
                         >
                           <FileBarChart className="h-4 w-4" />
                         </Button>
+						<Button size="icon" variant="ghost" onClick={() => loadImages(doc)} title="图片处理详情">
+							<ImageIcon className="h-4 w-4" />
+						</Button>
                         <Button
                           size="icon"
                           variant="ghost"
@@ -709,6 +733,44 @@ export function KnowledgeDocumentsPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(imageTarget)} onOpenChange={(open) => { if (!open) { setImageTarget(null); setImagePreview(null); } }}>
+		<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[720px]">
+			<DialogHeader>
+				<DialogTitle>图片处理详情</DialogTitle>
+				<DialogDescription>{imageTarget?.docName} · OCR 与 AI 图片描述分别处理</DialogDescription>
+			</DialogHeader>
+			{imageLoading ? <div>加载中…</div> : imageItems.length === 0 ? <div className="text-sm text-muted-foreground">没有图片记录</div> : (
+				<div className="space-y-2">
+					{imageItems.map((item) => (
+						<div key={item.occurrenceId} className="rounded border p-3 text-sm">
+							<div className="flex items-center justify-between gap-2">
+								<span>图片 {item.ordinal + 1}</span>
+								<Button size="sm" variant="outline" onClick={async () => {
+									try {
+										const blob = await getImageOccurrenceOriginal(item.occurrenceId);
+										setImagePreview({ occurrenceId: item.occurrenceId, url: URL.createObjectURL(blob) });
+									} catch (error) { toast.error(getErrorMessage(error, "原图加载失败")); }
+								}}>查看原图</Button>
+								{!item.sourceError && (item.ocrStatus === "error" || item.captionStatus === "error") ? (
+									<Button size="sm" variant="outline" onClick={async () => {
+										try {
+															await retryImageOccurrence(item.occurrenceId);
+											if (imageTarget) await loadImages(imageTarget);
+											toast.success("已提交重试");
+										} catch (error) { toast.error(getErrorMessage(error, "重试失败")); }
+									}}>重试失败项</Button>
+								) : null}
+							</div>
+							<div className="mt-1 text-xs text-muted-foreground">OCR：{imageStatusLabel(item.ocrStatus, "ocr")}　图片描述：{imageStatusLabel(item.captionStatus, "caption")}</div>
+							{item.sourceError || item.ocrError || item.captionError ? <div className="mt-1 text-xs text-red-600">{item.sourceError || item.ocrError || item.captionError}</div> : null}
+							{imagePreview?.occurrenceId === item.occurrenceId ? <img src={imagePreview.url} alt={`图片 ${item.ordinal + 1} 原图`} className="mt-2 max-h-[50vh] max-w-full rounded object-contain" /> : null}
+						</div>
+					))}
+				</div>
+			)}
+		</DialogContent>
+	  </Dialog>
 
       <UploadDialog
         open={uploadOpen}
@@ -821,34 +883,6 @@ export function KnowledgeDocumentsPage() {
                     ) : null}
                   </div>
                 </>
-              ) : null}
-
-              <div>
-                <div className="text-sm font-medium mb-2">处理模式</div>
-                <Select value={detailProcessMode} onValueChange={setDetailProcessMode}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="chunk">分块策略</SelectItem>
-                    <SelectItem value="pipeline">数据通道</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="text-sm text-muted-foreground mt-1">
-                  分块策略：直接分块；数据通道：使用Pipeline清洗
-                </div>
-              </div>
-
-              {detailProcessMode === "pipeline" ? (
-                <div>
-                  <div className="text-sm font-medium mb-2">数据通道</div>
-                  <Select value={detailPipelineId} onValueChange={setDetailPipelineId}>
-                    <SelectTrigger><SelectValue placeholder="选择数据通道" /></SelectTrigger>
-                    <SelectContent>
-                      {detailPipelines.map(p => (
-                        <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               ) : null}
 
               {detailProcessMode === "chunk" ? (
@@ -1141,9 +1175,8 @@ const uploadSchema = z
     sourceLocation: z.string().optional(),
     scheduleEnabled: z.boolean().default(false),
     scheduleCron: z.string().optional(),
-    processMode: z.enum(["chunk", "pipeline"]).default("chunk"),
+    processMode: z.literal("chunk").default("chunk"),
     chunkStrategy: z.string().optional(),
-    pipelineId: z.string().optional(),
     chunkSize: z.string().optional(),
     overlapSize: z.string().optional(),
     targetChars: z.string().optional(),
@@ -1204,14 +1237,6 @@ const uploadSchema = z
         requireNumber(values.minChars, "minChars", "块下限");
         requireNumber(values.overlapChars, "overlapChars", "重叠大小");
       }
-    } else if (values.processMode === "pipeline") {
-      if (isBlank(values.pipelineId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["pipelineId"],
-          message: "请选择数据通道"
-        });
-      }
     }
   });
 
@@ -1225,8 +1250,6 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
   const [chunkStrategies, setChunkStrategies] = useState<ChunkStrategyOption[]>([]);
   const [noChunk, setNoChunk] = useState(false);
   const [originalChunkSize, setOriginalChunkSize] = useState("512");
-  const [pipelines, setPipelines] = useState<IngestionPipeline[]>([]);
-  const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [maxFileSize, setMaxFileSize] = useState<number>(50 * 1024 * 1024);
 
   const form = useForm<UploadFormValues>({
@@ -1238,7 +1261,6 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
       scheduleCron: "",
       processMode: "chunk",
       chunkStrategy: "fixed_size",
-      pipelineId: "",
       chunkSize: "512",
       overlapSize: "128",
       targetChars: "1400",
@@ -1255,21 +1277,7 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
   const chunkSize = form.watch("chunkSize");
   const isUrlSource = sourceType === "url";
   const isChunkMode = processMode === "chunk";
-  const isPipelineMode = processMode === "pipeline";
   const isFixedSize = chunkStrategy === "fixed_size";
-
-  const loadPipelines = async () => {
-    setLoadingPipelines(true);
-    try {
-      const result = await getIngestionPipelines(1, 100);
-      setPipelines(result.records || []);
-    } catch (error) {
-      console.error("加载Pipeline失败", error);
-      toast.error("加载Pipeline失败");
-    } finally {
-      setLoadingPipelines(false);
-    }
-  };
 
   useEffect(() => {
     if (open) {
@@ -1281,7 +1289,6 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
         scheduleCron: "",
         processMode: "chunk",
         chunkStrategy: "fixed_size",
-        pipelineId: "",
         chunkSize: "512",
         overlapSize: "128",
         targetChars: "1400",
@@ -1291,7 +1298,6 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
       });
       setNoChunk(false);
       setOriginalChunkSize("512");
-      loadPipelines();
       getChunkStrategies().then(setChunkStrategies).catch(() => {});
       getSystemSettings()
         .then((settings) => setMaxFileSize(settings.upload.maxFileSize))
@@ -1404,7 +1410,6 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
         processMode: values.processMode,
         chunkStrategy: values.processMode === "chunk" ? values.chunkStrategy : undefined,
         chunkConfig: chunkConfig ?? null,
-        pipelineId: values.processMode === "pipeline" ? values.pipelineId : null
       };
       await onSubmit(payload);
     } catch (error) {
@@ -1586,40 +1591,6 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
                   </FormItem>
                 )}
               />
-
-              {isPipelineMode ? (
-                <FormField
-                  control={form.control}
-                  name="pipelineId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground font-normal">选择通道</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange} disabled={loadingPipelines}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={loadingPipelines ? "加载中..." : "请选择"} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {pipelines.length > 0 ? (
-                            pipelines.map((pipeline) => (
-                              <SelectItem key={pipeline.id} value={pipeline.id}>
-                                {pipeline.name}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <div className="py-6 text-center text-sm text-muted-foreground">
-                              暂无数据通道
-                            </div>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>通过ETL处理提升文件数据质量，增强向量搜索效果</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : null}
 
               {isChunkMode ? (
                 <div className="space-y-3">

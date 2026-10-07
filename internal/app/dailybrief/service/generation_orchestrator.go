@@ -120,6 +120,7 @@ func (o *GenerationOrchestrator) Run(ctx context.Context, request GenerationRequ
 
 	generation, err := o.generator.Generate(ctx, port.BriefGenerationInput{
 		UserID:        request.Subscription.UserID,
+		RunID:         run.ID,
 		BriefDate:     request.BriefDate,
 		Topics:        request.Subscription.Topics,
 		Candidates:    selected,

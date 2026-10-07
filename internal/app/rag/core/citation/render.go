@@ -101,6 +101,7 @@ func renderChunkPrefix(registry *Registry, chunk convention.RetrievedChunk) stri
 		DocumentID:      chunk.DocumentID,
 		KnowledgeBaseID: chunk.KnowledgeBaseID,
 		DocumentTitle:   readDocumentTitle(chunk.Metadata),
+		Kind:            readMetadataString(chunk.Metadata, "record_type"),
 	})
 	var b strings.Builder
 	b.WriteString("<chunk id=\"")
@@ -124,7 +125,7 @@ func renderChunkPrefix(registry *Registry, chunk convention.RetrievedChunk) stri
 }
 
 // readDocumentTitle resolves the document title from chunk metadata, preferring
-// document_name (the key written by the ingestion pipeline) and falling back
+// document_name (the key written during document processing) and falling back
 // to document_title for older data.
 func readDocumentTitle(metadata map[string]any) string {
 	if title := readMetadataString(metadata, "document_name"); title != "" {

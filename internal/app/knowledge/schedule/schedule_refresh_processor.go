@@ -256,7 +256,23 @@ func (p *ScheduleRefreshProcessor) Process(ctx context.Context, lease domain.Kno
 	}
 
 	// 14. 标记文档为 running（占用文档）
-	occupied, err := p.documentHelper.TryMarkRunning(ctx, document.ID)
+	fenced := false
+	if processor, ok := p.documentProcessor.(interface{ FencedChunkProcessing() bool }); ok {
+		fenced = processor.FencedChunkProcessing()
+	}
+	var occupied bool
+	if claimer, ok := p.documentRepo.(interface {
+		ClaimRemoteRefresh(context.Context, string) (domain.KnowledgeDocument, bool, error)
+	}); ok && fenced {
+		var claimed domain.KnowledgeDocument
+		claimed, occupied, err = claimer.ClaimRemoteRefresh(ctx, document.ID)
+		if occupied {
+			document = claimed
+			state.document = claimed
+		}
+	} else {
+		occupied, err = p.documentHelper.TryMarkRunning(ctx, document.ID)
+	}
 	if err != nil {
 		p.markFailedIfOwnedOrMarkLeaseLost(ctx, lease, state, err.Error(), "claim document failed")
 		return err
@@ -271,7 +287,7 @@ func (p *ScheduleRefreshProcessor) Process(ctx context.Context, lease domain.Kno
 	// 15. 下载文件并存储到 S3
 	stored, err := p.storeFetchedFile(ctx, document, fetchResult)
 	if err != nil {
-		_ = p.documentHelper.MarkFailedIfRunning(ctx, document.ID)
+		_ = p.markRefreshDocumentFailed(ctx, state.document)
 		p.markFailedIfOwnedOrMarkLeaseLost(ctx, lease, state, err.Error(), "store remote file")
 		return err
 	}
@@ -293,23 +309,27 @@ func (p *ScheduleRefreshProcessor) Process(ctx context.Context, lease domain.Kno
 			return nil
 		}
 		if err := p.documentProcessor.ProcessRefreshedDocument(ctx, refreshedDoc); err != nil {
-			_ = p.documentHelper.MarkFailedIfRunning(ctx, document.ID)
+			_ = p.markRefreshDocumentFailed(ctx, state.document)
 			p.markFailedIfOwnedOrMarkLeaseLost(ctx, lease, state, err.Error(), "process document")
 			return err
 		}
 	}
 
 	// 18. 更新文档元数据（指向新文件）
-	if err := p.documentHelper.ApplyRefreshedFileMetadata(ctx, document.ID, stored); err != nil {
-		_ = p.documentHelper.MarkFailedIfRunning(ctx, document.ID)
-		p.markFailedIfOwnedOrMarkLeaseLost(ctx, lease, state, err.Error(), "switch refreshed file")
-		return err
+	if !fenced {
+		if err := p.documentHelper.ApplyRefreshedFileMetadata(ctx, document.ID, stored); err != nil {
+			_ = p.markRefreshDocumentFailed(ctx, state.document)
+			p.markFailedIfOwnedOrMarkLeaseLost(ctx, lease, state, err.Error(), "switch refreshed file")
+			return err
+		}
 	}
 
 	// 19. 标记文档处理成功
-	if err := p.documentHelper.MarkSuccessIfRunning(ctx, document.ID); err != nil {
-		p.markFailedIfOwnedOrMarkLeaseLost(ctx, lease, state, err.Error(), "mark document success")
-		return err
+	if !fenced {
+		if err := p.documentHelper.MarkSuccessIfRunning(ctx, document.ID); err != nil {
+			p.markFailedIfOwnedOrMarkLeaseLost(ctx, lease, state, err.Error(), "mark document success")
+			return err
+		}
 	}
 	state.phase = scheduleRefreshPhaseFileSwitched
 
@@ -444,12 +464,27 @@ func (p *ScheduleRefreshProcessor) cleanupAfterProcess(ctx context.Context, leas
 
 	// 如果文档状态不一致，回滚为 failed
 	if p.shouldRollbackDocumentState(ctx, state, heartbeat) {
-		_ = p.documentHelper.MarkFailedIfRunning(cleanupCtx, state.document.ID)
+		_ = p.markRefreshDocumentFailed(cleanupCtx, state.document)
 	}
 	// 如果文件已存储但未切换，删除临时文件
 	if state.stored != nil && state.phase < scheduleRefreshPhaseFileSwitched {
+		if repo, ok := p.documentRepo.(interface {
+			CanDiscardRefreshedFile(context.Context, string, string) (bool, error)
+		}); ok {
+			discard, err := repo.CanDiscardRefreshedFile(cleanupCtx, state.document.ID, state.stored.Url)
+			if err != nil || !discard {
+				return
+			}
+		}
 		_ = p.storage.Delete(cleanupCtx, state.stored.Url)
 	}
+}
+
+func (p *ScheduleRefreshProcessor) markRefreshDocumentFailed(ctx context.Context, document domain.KnowledgeDocument) error {
+	if processor, ok := p.documentProcessor.(interface{ FencedChunkProcessing() bool }); ok && processor.FencedChunkProcessing() {
+		return p.documentHelper.MarkFailedRefreshIfRunning(ctx, document)
+	}
+	return p.documentHelper.MarkFailedIfRunning(ctx, document.ID)
 }
 
 // shouldRollbackDocumentState 判断是否需要回滚文档状态

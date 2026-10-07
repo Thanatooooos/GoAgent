@@ -22,7 +22,22 @@ func NewKnowledgeDocumentChunkLogRepository(db *gorm.DB) *KnowledgeDocumentChunk
 
 func (r *KnowledgeDocumentChunkLogRepository) Create(ctx context.Context, log domain.KnowledgeDocumentChunkLog) (domain.KnowledgeDocumentChunkLog, error) {
 	model := toKnowledgeDocumentChunkLogModel(log)
-	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
+	create := func(tx *gorm.DB) error { return tx.Create(&model).Error }
+	var err error
+	if job, owned := port.CurrentChunkJob(ctx); owned {
+		err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := lockChunkDocument(tx, job.DocumentID); err != nil {
+				return err
+			}
+			if err := checkChunkJob(ctx, tx, job); err != nil {
+				return err
+			}
+			return create(tx)
+		})
+	} else {
+		err = create(r.db.WithContext(ctx))
+	}
+	if err != nil {
 		return domain.KnowledgeDocumentChunkLog{}, fmt.Errorf("create knowledge document chunk log: %w", err)
 	}
 	return toKnowledgeDocumentChunkLogDomain(model), nil
@@ -33,7 +48,6 @@ func (r *KnowledgeDocumentChunkLogRepository) Update(ctx context.Context, log do
 		"status":           log.Status,
 		"process_mode":     log.ProcessMode,
 		"chunk_strategy":   log.ChunkStrategy,
-		"pipeline_id":      log.PipelineID,
 		"extract_duration": log.ExtractDuration,
 		"chunk_duration":   log.ChunkDuration,
 		"embed_duration":   log.EmbedDuration,

@@ -10,6 +10,8 @@ import (
 
 	"local/rag-project/internal/app/knowledge/domain"
 	"local/rag-project/internal/app/knowledge/port"
+	"local/rag-project/internal/framework/convention"
+	aichat "local/rag-project/internal/infra-ai/chat"
 )
 
 type processBaseRepositoryStub struct {
@@ -209,6 +211,44 @@ type processEmbeddingStub struct {
 	err error
 }
 
+type processChatStub struct{}
+
+type processChatSpy struct {
+	processChatStub
+	calls int
+}
+
+func (s *processChatSpy) Chat(prompt string) (string, error) {
+	s.calls++
+	return s.processChatStub.Chat(prompt)
+}
+
+func (processChatStub) Chat(prompt string) (string, error) {
+	if strings.Contains(prompt, "Summarize this chunk") {
+		return "chunk summary", nil
+	}
+	if strings.Contains(prompt, "文档") {
+		return "document summary", nil
+	}
+	return "What does this chunk explain?\nWhat is the key takeaway?", nil
+}
+
+func (s processChatStub) ChatWithRequest(request convention.ChatRequest) (string, error) {
+	return s.Chat("")
+}
+
+func (s processChatStub) ChatWithModel(request convention.ChatRequest, modelID string) (string, error) {
+	return s.Chat("")
+}
+
+func (processChatStub) StreamChat(prompt string, callback aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
+	return nil, nil
+}
+
+func (processChatStub) StreamChatWithRequest(request convention.ChatRequest, callback aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
+	return nil, nil
+}
+
 func (s processEmbeddingStub) Embed(text string) ([]float32, error) {
 	return []float32{1}, nil
 }
@@ -256,6 +296,15 @@ func TestDocumentProcessServicePreservesEmbeddingCauseInChunkLog(t *testing.T) {
 	}
 	if !strings.Contains(chunkLogRepo.updated[len(chunkLogRepo.updated)-1].ErrorMessage, "upstream embedding request too large") {
 		t.Fatalf("chunk log error = %q, want embedding cause", chunkLogRepo.updated[len(chunkLogRepo.updated)-1].ErrorMessage)
+	}
+}
+
+func TestCleanDOCXExtractedTextRemovesKnownParserArtifacts(t *testing.T) {
+	input := "法规标题\n[bookmark: _GoBack]\n第一条 正文。\n— - 1 - —\n第二条 正文。\n"
+	got := cleanDOCXExtractedText(input)
+	want := "法规标题\n\n第一条 正文。\n第二条 正文。\n"
+	if got != want {
+		t.Fatalf("cleanDOCXExtractedText() = %q, want %q", got, want)
 	}
 }
 
@@ -310,6 +359,83 @@ func TestDocumentProcessServiceExecuteChunkProcessesDocument(t *testing.T) {
 	}
 	if !chunkLogUpdated(chunkLogRepo.updated, domain.KnowledgeDocumentChunkLogStatusSuccess) {
 		t.Fatal("expected chunk log to be marked success")
+	}
+}
+
+func TestDocumentProcessServiceExecuteChunkAddsEnrichmentVectors(t *testing.T) {
+	documentRepo := &processDocumentRepositoryStub{document: processDocument()}
+	vectorStore := &processVectorStoreStub{}
+	svc := NewDocumentProcessService(DocumentProcessServiceOptions{
+		BaseRepo:     processBaseRepositoryStub{base: domain.KnowledgeBase{ID: "kb-1", EmbeddingModel: "embed-model"}},
+		DocumentRepo: documentRepo,
+		ChunkRepo:    &processChunkRepositoryStub{},
+		ChunkLogRepo: &processChunkLogRepositoryStub{},
+		Storage:      processStorageStub{body: "# title\n\nThis chunk explains the direct document processing flow."},
+		VectorStore:  vectorStore,
+		Embedding:    processEmbeddingStub{},
+		Chat:         processChatStub{},
+	})
+
+	if err := svc.ExecuteChunk(context.Background(), ExecuteChunkInput{DocumentID: "doc-1", TriggeredBy: "u-1"}); err != nil {
+		t.Fatalf("ExecuteChunk() error = %v", err)
+	}
+	var contentVectors, questionVectors int
+	for _, vector := range vectorStore.upserted {
+		if vector.Metadata["record_type"] == "question" {
+			questionVectors++
+			if vector.Metadata["source_chunk_id"] == "" || vector.Metadata["source_content"] == "" {
+				t.Fatalf("question vector missing source metadata: %#v", vector.Metadata)
+			}
+			continue
+		}
+		contentVectors++
+		if vector.Metadata["chunk_summary"] != "chunk summary" {
+			t.Fatalf("chunk summary = %v", vector.Metadata["chunk_summary"])
+		}
+		if vector.Metadata["document_summary"] != "document summary" {
+			t.Fatalf("document summary = %v", vector.Metadata["document_summary"])
+		}
+	}
+	if contentVectors == 0 || questionVectors == 0 {
+		t.Fatalf("expected content and question vectors, got content=%d question=%d", contentVectors, questionVectors)
+	}
+}
+
+func TestDocumentProcessServiceExecuteChunkSkipsEnrichmentWhenDisabled(t *testing.T) {
+	documentRepo := &processDocumentRepositoryStub{document: processDocument()}
+	vectorStore := &processVectorStoreStub{}
+	chat := &processChatSpy{}
+	enrichmentEnabled := false
+	svc := NewDocumentProcessService(DocumentProcessServiceOptions{
+		BaseRepo:          processBaseRepositoryStub{base: domain.KnowledgeBase{ID: "kb-1", EmbeddingModel: "embed-model"}},
+		DocumentRepo:      documentRepo,
+		ChunkRepo:         &processChunkRepositoryStub{},
+		ChunkLogRepo:      &processChunkLogRepositoryStub{},
+		Storage:           processStorageStub{body: "# title\n\nThis chunk explains the direct document processing flow."},
+		VectorStore:       vectorStore,
+		Embedding:         processEmbeddingStub{},
+		Chat:              chat,
+		EnrichmentEnabled: &enrichmentEnabled,
+	})
+
+	if err := svc.ExecuteChunk(context.Background(), ExecuteChunkInput{DocumentID: "doc-1", TriggeredBy: "u-1"}); err != nil {
+		t.Fatalf("ExecuteChunk() error = %v", err)
+	}
+	if chat.calls != 0 {
+		t.Fatalf("chat calls = %d, want 0", chat.calls)
+	}
+	if len(vectorStore.upserted) == 0 {
+		t.Fatal("expected content vectors")
+	}
+	for _, vector := range vectorStore.upserted {
+		if vector.Metadata["record_type"] == "question" {
+			t.Fatalf("unexpected question vector: %#v", vector.Metadata)
+		}
+		for _, key := range []string{"chunk_summary", "document_summary", "keywords"} {
+			if _, ok := vector.Metadata[key]; ok {
+				t.Fatalf("unexpected enrichment metadata %q: %#v", key, vector.Metadata)
+			}
+		}
 	}
 }
 

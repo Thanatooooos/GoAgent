@@ -54,7 +54,7 @@ export function TopicCatalogPicker({ catalog, selectedTopics, onToggleTopic }: T
     .filter(Boolean);
 
   return (
-    <div className="space-y-4">
+    <div className="brief-topic-picker space-y-4">
       <div>
         <p className="text-sm font-semibold text-slate-900">选择你关心的领域</p>
         <p className="mt-1 text-xs text-slate-500">点击大卡片展开细分类别，可多选</p>

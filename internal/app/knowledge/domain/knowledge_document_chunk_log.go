@@ -15,7 +15,6 @@ type KnowledgeDocumentChunkLog struct {
 	Status          string
 	ProcessMode     string
 	ChunkStrategy   string
-	PipelineID      string
 	ExtractDuration int64
 	ChunkDuration   int64
 	EmbedDuration   int64

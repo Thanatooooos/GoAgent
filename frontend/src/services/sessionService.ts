@@ -1,4 +1,5 @@
 import { api } from "@/services/api";
+import type { MessageSource } from "@/types";
 
 export interface ConversationVO {
   conversationId: string;
@@ -11,6 +12,8 @@ export interface ConversationMessageVO {
   conversationId: string;
   role: string;
   content: string;
+  rawContent?: string | null;
+  sources?: MessageSource[];
   thinkingContent?: string | null;
   thinkingDuration?: number | null;
   vote: number | null;

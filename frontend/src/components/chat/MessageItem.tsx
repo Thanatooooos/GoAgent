@@ -1,12 +1,13 @@
 import * as React from "react";
-import { AlertCircle, Brain, CheckCircle2, ChevronDown, Database, History, Wrench, XCircle } from "lucide-react";
+import { Database, FileText, Globe, History } from "lucide-react";
 
 import { ApprovalPendingCard } from "@/components/chat/ApprovalPendingCard";
 import { CitationNumberProvider } from "@/components/chat/citationContext";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
-import { ThinkingIndicator } from "@/components/chat/ThinkingIndicator";
-import { cn } from "@/lib/utils";
+import { draftsFromToolCalls, ScheduledTaskDraftCard } from "@/components/chat/ScheduledTaskDraftCard";
+import { ExecutionTimeline } from "@/components/chat/ExecutionTimeline";
+import { executionPresentation } from "@/stores/chatStateModel";
 import type { Message } from "@/types";
 
 interface MessageItemProps {
@@ -24,26 +25,21 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
     !message.id.startsWith("assistant-") &&
     !message.approvalPending;
   const isThinking = Boolean(message.isThinking);
-  const [thinkingExpanded, setThinkingExpanded] = React.useState(false);
-  const [toolsExpanded, setToolsExpanded] = React.useState(false);
-  const hasThinking = Boolean(message.thinking && message.thinking.trim().length > 0);
-  const hasContent = message.content.trim().length > 0;
+  const { segments, answer } = executionPresentation(message);
+  const hasContent = answer.trim().length > 0;
   const hasApprovalPending = Boolean(message.approvalPending?.required);
-  const isWaiting = message.status === "streaming" && !isThinking && !hasContent;
+  const isWaiting = message.status === "streaming" && !isThinking && !hasContent && segments.length === 0;
   const toolCalls = message.toolCalls ?? [];
+  const taskDrafts = draftsFromToolCalls(toolCalls);
   const memoryEvents = message.memoryEvents ?? [];
   const sessionRecallEvents = message.sessionRecallEvents ?? [];
-  const agentThinks = (message.agentThinks ?? []).filter((item) => item.trim().length > 0);
-  const hasAgentThinks = agentThinks.length > 0;
-  const hasToolCalls = toolCalls.length > 0;
   const hasMemoryEvents = memoryEvents.length > 0;
   const hasSessionRecallEvents = sessionRecallEvents.length > 0;
-  const hasFailedTools = toolCalls.some((tc) => tc.status === "failed");
   const fallbackReason = message.fallbackReason?.trim();
 
   if (isUser) {
     return (
-      <div className="flex">
+      <div className="chat-user-row flex">
         <div className="user-message">
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
@@ -51,70 +47,10 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
     );
   }
 
-  const thinkingDuration = message.thinkingDuration ? `${message.thinkingDuration}秒` : "";
-
   return (
-    <div className="group flex">
-      <div className="min-w-0 flex-1 space-y-4">
-        {isThinking ? (
-          <ThinkingIndicator content={message.thinking} duration={message.thinkingDuration} />
-        ) : null}
-
-        {!isThinking && hasThinking ? (
-          <div className="overflow-hidden rounded-lg border border-[#BFDBFE] bg-[#DBEAFE]">
-            <button
-              type="button"
-              onClick={() => setThinkingExpanded((prev) => !prev)}
-              className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[#BFDBFE]/30"
-            >
-              <div className="flex flex-1 items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#BFDBFE]">
-                  <Brain className="h-4 w-4 text-[#2563EB]" />
-                </div>
-                <span className="text-sm font-medium text-[#2563EB]">深度思考</span>
-                {thinkingDuration ? (
-                  <span className="rounded-full bg-[#BFDBFE] px-2 py-0.5 text-xs text-[#2563EB]">
-                    {thinkingDuration}
-                  </span>
-                ) : null}
-              </div>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 text-[#3B82F6] transition-transform",
-                  thinkingExpanded && "rotate-180"
-                )}
-              />
-            </button>
-            {thinkingExpanded ? (
-              <div className="border-t border-[#BFDBFE] px-4 pb-4">
-                <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[#1E40AF]">
-                  {message.thinking}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {hasAgentThinks ? (
-          <div className="overflow-hidden rounded-lg border border-sky-200 bg-sky-50">
-            <div className="flex items-center gap-2 px-4 py-3">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-100">
-                <Brain className="h-4 w-4 text-sky-700" />
-              </div>
-              <span className="text-sm font-medium text-sky-800">Agent 推理</span>
-              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-700">
-                {agentThinks.length}
-              </span>
-            </div>
-            <div className="border-t border-sky-200 px-4 pb-4">
-              {agentThinks.map((item, idx) => (
-                <p key={`${idx}-${item}`} className="mt-3 text-sm leading-6 text-sky-900">
-                  {item}
-                </p>
-              ))}
-            </div>
-          </div>
-        ) : null}
+    <div className="chat-assistant-row group flex">
+      <div className="chat-assistant-content min-w-0 flex-1 space-y-4">
+        <ExecutionTimeline segments={segments} status={message.status} content={message.content} />
 
         {hasMemoryEvents ? (
           <div className="overflow-hidden rounded-lg border border-emerald-200 bg-emerald-50">
@@ -199,91 +135,12 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
           </div>
         ) : null}
 
-        {hasToolCalls ? (
-          <div className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50">
-            <button
-              type="button"
-              onClick={() => setToolsExpanded((prev) => !prev)}
-              className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-amber-100/50"
-            >
-              <div className="flex flex-1 items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100">
-                  <Wrench className="h-4 w-4 text-amber-700" />
-                </div>
-                <span className="text-sm font-medium text-amber-800">
-                  工具调用 ({toolCalls.length})
-                </span>
-                {hasFailedTools ? (
-                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">
-                    部分失败
-                  </span>
-                ) : null}
-              </div>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 text-amber-600 transition-transform",
-                  toolsExpanded && "rotate-180"
-                )}
-              />
-            </button>
-            {toolsExpanded ? (
-              <div className="border-t border-amber-200 px-4 pb-4">
-                {toolCalls.map((tc, idx) => (
-                  <div
-                    key={idx}
-                    className="mt-3 flex items-start gap-3 rounded-lg border border-amber-100 bg-white px-3 py-2.5"
-                  >
-                    {tc.status === "success" ? (
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-500" />
-                    ) : tc.status === "failed" ? (
-                      <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
-                    ) : (
-                      <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-800">{tc.name}</span>
-                        {typeof tc.round === "number" ? (
-                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
-                            第 {tc.round} 轮
-                          </span>
-                        ) : null}
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 py-0.5 text-xs font-medium",
-                            tc.status === "success"
-                              ? "bg-green-50 text-green-600"
-                              : tc.status === "failed"
-                                ? "bg-red-50 text-red-600"
-                                : "bg-amber-50 text-amber-600"
-                          )}
-                        >
-                          {tc.status}
-                        </span>
-                        {typeof tc.durationMs === "number" && tc.durationMs > 0 ? (
-                          <span className="text-xs text-gray-400">{tc.durationMs}ms</span>
-                        ) : null}
-                      </div>
-                      {tc.arguments && Object.keys(tc.arguments).length > 0 ? (
-                        <p className="mt-1 break-words text-xs text-gray-400">
-                          参数：{JSON.stringify(tc.arguments)}
-                        </p>
-                      ) : null}
-                      {tc.summary ? (
-                        <p className="mt-0.5 line-clamp-3 break-words text-xs text-gray-500">
-                          {tc.summary}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className="space-y-2">
+        <div className={segments.length && hasContent ? "chat-final-answer space-y-2" : "space-y-2"}>
           {hasApprovalPending ? <ApprovalPendingCard approval={message.approvalPending!} /> : null}
+
+          {taskDrafts.map((draft) => (
+            <ScheduledTaskDraftCard key={draft.id} draft={draft} />
+          ))}
 
           {fallbackReason ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
@@ -303,9 +160,32 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
           ) : null}
 
           {hasContent ? (
-            <CitationNumberProvider content={message.content}>
-              <MarkdownRenderer content={message.content} />
-            </CitationNumberProvider>
+            <>
+              {segments.length ? <div className="execution-answer-label">回答</div> : null}
+              <CitationNumberProvider content={message.content}>
+                <MarkdownRenderer content={answer} />
+              </CitationNumberProvider>
+            </>
+          ) : null}
+
+          {message.sources?.length ? (
+            <div className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">
+              <div className="mb-1 font-medium">回答来源</div>
+              <ul className="space-y-1">
+                {message.sources.map((source, index) => (
+                  <li key={`${source.type}-${source.chunkId || source.url || index}`} className="flex items-start gap-1.5">
+                    {source.type === "web" ? <Globe className="mt-0.5 h-3 w-3 shrink-0" /> : <FileText className="mt-0.5 h-3 w-3 shrink-0" />}
+                    {source.type === "web" && /^https?:\/\//i.test(source.url || "") ? (
+                      <a href={source.url} target="_blank" rel="noreferrer" className="break-all text-blue-600 hover:underline dark:text-blue-400">
+                        {source.title || source.url}
+                      </a>
+                    ) : (
+                      <span>{source.title || "来源文档"}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
 
           {message.status === "error" ? (

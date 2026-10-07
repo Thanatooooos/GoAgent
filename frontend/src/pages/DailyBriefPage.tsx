@@ -188,24 +188,24 @@ export function DailyBriefPage() {
   const flattenedItems = normalizeIssueItems(issue);
 
   return (
-    <MainLayout>
-      <div className="flex-1 min-h-0 overflow-y-auto bg-[#F8FAFC]">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-6">
-          <Card className="border-[#E2E8F0] shadow-sm">
-            <CardHeader className="pb-4">
-              <div className="flex flex-wrap items-start justify-between gap-4">
+    <MainLayout variant="brief">
+      <div className="brief-page flex-1 min-h-0 overflow-y-auto">
+        <div className="brief-page-inner mx-auto flex w-full max-w-7xl flex-col">
+          <Card className="brief-overview">
+            <CardHeader className="brief-overview-header">
+              <div className="brief-overview-grid">
                 <div>
-                  <p className="text-xs uppercase tracking-wider text-slate-500">每日简报</p>
-                  <CardTitle className="mt-2 flex items-center gap-2 text-2xl text-slate-900">
-                    <Newspaper className="h-5 w-5 text-blue-600" />
+                  <p className="brief-kicker">每日简报</p>
+                  <CardTitle className="brief-date-title">
+                    <Newspaper className="h-5 w-5" />
                     {formatDateLabel(selectedDate)}
                   </CardTitle>
-                  <p className="mt-2 text-sm text-slate-500">
+                  <p className="brief-generated-at">
                     最近生成：{formatTimeLabel(issueData?.lastGeneratedAt)}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={statusTone(pageState)}>{statusLabel(pageState)}</Badge>
+                <div className="brief-toolbar">
+                  <Badge variant={statusTone(pageState)} className="brief-status">{statusLabel(pageState)}</Badge>
                   <Button type="button" variant="outline" size="sm" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}>
                     <ChevronLeft className="mr-1 h-4 w-4" />
                     上一天
@@ -221,7 +221,7 @@ export function DailyBriefPage() {
                     <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
                       type="date"
-                      className="h-9 w-[150px] rounded-xl pl-9"
+                      className="brief-date-input pl-9"
                       value={selectedDate}
                       onChange={(event) => setSelectedDate(event.target.value)}
                     />
@@ -231,18 +231,18 @@ export function DailyBriefPage() {
             </CardHeader>
           </Card>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,26rem)]">
-            <section className="space-y-4">
+          <div className="brief-layout">
+            <section className="brief-reading-column">
               {issueLoading ? (
-                <Card className="border-[#E2E8F0]">
-                  <CardContent className="py-10 text-center text-slate-500">
+                <Card className="brief-state-card">
+                  <CardContent className="brief-state-content">
                     <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin" />
                     正在加载简报...
                   </CardContent>
                 </Card>
               ) : issueError ? (
-                <Card className="border-red-200">
-                  <CardContent className="py-10 text-center text-red-600">
+                <Card className="brief-state-card brief-state-card-error">
+                  <CardContent className="brief-state-content">
                     <AlertCircle className="mx-auto mb-3 h-5 w-5" />
                     {issueError}
                     <div className="mt-4">
@@ -254,47 +254,47 @@ export function DailyBriefPage() {
                 </Card>
               ) : pageState === "ready" && issue ? (
                 <>
-                  <Card className="border-[#E2E8F0]">
-                    <CardHeader>
-                      <CardTitle className="text-xl text-slate-900">{issue.headline}</CardTitle>
+                  <Card className="brief-summary-card">
+                    <CardHeader className="brief-content-header">
+                      <CardTitle className="brief-headline">{issue.headline}</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <p className="text-[15px] leading-8 text-slate-700">{issue.topSummary}</p>
+                    <CardContent className="brief-content-body">
+                      <p className="brief-lead">{issue.topSummary}</p>
                     </CardContent>
                   </Card>
 
                   {(issueSections.length > 0 ? issueSections : [{ key: "all", title: "要闻", items: flattenedItems }]).map(
                     (section) => (
-                      <Card key={section.key} className="border-[#E2E8F0]">
-                        <CardHeader>
-                          <CardTitle className="text-lg text-slate-900">{section.title}</CardTitle>
+                      <Card key={section.key} className="brief-section-card">
+                        <CardHeader className="brief-section-header">
+                          <CardTitle className="brief-section-title">{section.title}</CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-4">
+                        <CardContent className="brief-section-content">
                           {section.items.length === 0 ? (
                             <p className="text-sm text-slate-500">该栏目暂无内容。</p>
                           ) : (
                             section.items.map((item, index) => (
-                              <article key={`${section.key}-${index}-${item.url}`} className="rounded-xl border border-slate-200 p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <h3 className="text-base font-semibold text-slate-900">{item.title}</h3>
+                              <article key={`${section.key}-${index}-${item.url}`} className="brief-article">
+                                <div className="brief-article-heading">
+                                  <h3 className="brief-article-title">{item.title}</h3>
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline" className="text-xs">
+                                    <Badge variant="outline" className="brief-meta-badge">
                                       {dailyBriefSourceLabel(item.source)}
                                     </Badge>
-                                    <Badge variant="secondary" className="text-xs">
+                                    <Badge variant="secondary" className="brief-meta-badge">
                                       {dailyBriefTopicLabel(item.topic, topicLabels)}
                                     </Badge>
                                   </div>
                                 </div>
-                                <p className="mt-3 text-[15px] leading-7 text-slate-700">{item.summary}</p>
-                                <p className="mt-3 text-[15px] leading-7 text-slate-600">
+                                <p className="brief-article-summary">{item.summary}</p>
+                                <p className="brief-article-why">
                                   <span className="font-semibold text-slate-700">为何重要：</span> {item.whyItMatters}
                                 </p>
                                 <a
                                   href={item.url}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+                                  className="brief-source-link"
                                 >
                                   查看原文
                                   <ExternalLink className="h-3.5 w-3.5" />
@@ -308,17 +308,17 @@ export function DailyBriefPage() {
                   )}
                 </>
               ) : (
-                <Card className="border-[#E2E8F0]">
-                  <CardContent className="py-10 text-center text-slate-600">
+                <Card className="brief-state-card">
+                  <CardContent className="brief-state-content">
                     {pageState === "generating" ? (
                       <>
-                        <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin text-blue-600" />
+                        <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin" />
                         <p className="font-medium text-slate-900">今日简报正在生成</p>
                         <p className="mt-1 text-sm text-slate-500">请稍后再来查看。</p>
                       </>
                     ) : pageState === "failed" ? (
                       <>
-                        <AlertCircle className="mx-auto mb-3 h-5 w-5 text-amber-600" />
+                        <AlertCircle className="mx-auto mb-3 h-5 w-5" />
                         <p className="font-medium text-slate-900">该日期简报生成失败</p>
                         <p className="mt-1 text-sm text-slate-500">系统可能会自动重试。</p>
                       </>
@@ -335,11 +335,11 @@ export function DailyBriefPage() {
             </section>
 
             <aside>
-              <Card className="border-[#E2E8F0]">
-                <CardHeader>
-                  <CardTitle className="text-lg">订阅设置</CardTitle>
+              <Card className="brief-settings-card">
+                <CardHeader className="brief-settings-header">
+                  <CardTitle className="brief-settings-title">订阅设置</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="brief-settings-content">
                   {subscriptionLoading ? (
                     <div className="flex items-center gap-2 text-sm text-slate-500">
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -348,8 +348,8 @@ export function DailyBriefPage() {
                   ) : subscriptionError ? (
                     <div className="text-sm text-red-600">{subscriptionError}</div>
                   ) : subscriptionDraft ? (
-                    <form className="space-y-5" onSubmit={onSaveSubscription}>
-                      <div className="flex items-center gap-3">
+                    <form className="brief-settings-form" onSubmit={onSaveSubscription}>
+                      <div className="brief-toggle-row">
                         <Checkbox
                           id="brief-enabled"
                           checked={subscriptionDraft.enabled}
@@ -360,7 +360,7 @@ export function DailyBriefPage() {
                         <Label htmlFor="brief-enabled">开启每日简报</Label>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="brief-field">
                         <Label htmlFor="brief-timezone">时区</Label>
                         <Input
                           id="brief-timezone"
@@ -373,7 +373,7 @@ export function DailyBriefPage() {
                         />
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="brief-field">
                         <Label htmlFor="brief-delivery-time">推送时间</Label>
                         <Input
                           id="brief-delivery-time"
@@ -394,7 +394,7 @@ export function DailyBriefPage() {
 
                       <Button
                         type="submit"
-                        className="w-full"
+                        className="brief-save-button w-full"
                         disabled={savingSubscription || !subscriptionDraft.timezone || !subscriptionDraft.deliveryTimeLocal}
                       >
                         {savingSubscription ? (

@@ -1,6 +1,10 @@
 package rag
 
-import "time"
+import (
+	"time"
+
+	"local/rag-project/internal/app/rag/domain"
+)
 
 type conversationVO struct {
 	ConversationID string     `json:"conversationId"`
@@ -9,17 +13,18 @@ type conversationVO struct {
 }
 
 type messageVO struct {
-	ID               string     `json:"id"`
-	ConversationID   string     `json:"conversationId"`
-	Role             string     `json:"role"`
-	Content          string     `json:"content"`
-	RawContent       string     `json:"rawContent,omitempty"`
-	ContentSummary   string     `json:"contentSummary,omitempty"`
-	IsSummarized     bool       `json:"isSummarized,omitempty"`
-	ThinkingContent  string     `json:"thinkingContent,omitempty"`
-	ThinkingDuration *int       `json:"thinkingDuration,omitempty"`
-	Vote             *int       `json:"vote"`
-	CreateTime       *time.Time `json:"createTime,omitempty"`
+	ID               string                 `json:"id"`
+	ConversationID   string                 `json:"conversationId"`
+	Role             string                 `json:"role"`
+	Content          string                 `json:"content"`
+	RawContent       string                 `json:"rawContent,omitempty"`
+	ContentSummary   string                 `json:"contentSummary,omitempty"`
+	IsSummarized     bool                   `json:"isSummarized,omitempty"`
+	ThinkingContent  string                 `json:"thinkingContent,omitempty"`
+	ThinkingDuration *int                   `json:"thinkingDuration,omitempty"`
+	Sources          []domain.MessageSource `json:"sources"`
+	Vote             *int                   `json:"vote"`
+	CreateTime       *time.Time             `json:"createTime,omitempty"`
 }
 
 type memoryItemVO struct {

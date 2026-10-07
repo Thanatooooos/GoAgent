@@ -96,11 +96,17 @@ func main() {
 	batchSize := flag.Int("batch", 48, "embedding batch size")
 	chunkStrategy := flag.String("chunk-strategy", "markdown", "chunk strategy for -dir imports: markdown or fixed_size")
 	chunkConfig := flag.String("chunk-config", "", "optional chunk config JSON for -dir imports")
+	chunkConfigFile := flag.String("chunk-config-file", "", "optional path to chunk config JSON for -dir imports")
 	manifestPath := flag.String("manifest", "", "optional markdown manifest output path for -dir imports")
 	dryRun := flag.Bool("dry-run", false, "only print what would be done")
 	ensureIndexes := flag.Bool("ensure-indexes", false, "create GIN trigram indexes on chunk vector content and metadata columns")
 	cleanKB := flag.Bool("clean-kb", false, "delete all documents, chunks and vectors for the specified knowledge base before import")
 	flag.Parse()
+	resolvedChunkConfig, err := resolveChunkConfig(*chunkConfig, *chunkConfigFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resolve chunk config: %v\n", err)
+		os.Exit(1)
+	}
 
 	mode, err := detectLoaderMode(strings.TrimSpace(*inputPath), strings.TrimSpace(*dirPath), *ensureIndexes, *cleanKB)
 	if err != nil {
@@ -191,10 +197,26 @@ func main() {
 	case "passages":
 		runPassageImport(ctx, db, *inputPath, *kbName, *batchSize, passages)
 	case "markdown":
-		runMarkdownImport(ctx, *dirPath, *kbName, *chunkStrategy, strings.TrimSpace(*chunkConfig), *manifestPath, corpusFiles)
+		runMarkdownImport(ctx, *dirPath, *kbName, *chunkStrategy, resolvedChunkConfig, *manifestPath, corpusFiles)
 	default:
 		fmt.Fprintln(os.Stderr, "nothing to do")
 	}
+}
+
+func resolveChunkConfig(inline, path string) (string, error) {
+	inline = strings.TrimSpace(inline)
+	path = strings.TrimSpace(path)
+	if inline != "" && path != "" {
+		return "", errors.New("use either chunk-config or chunk-config-file, not both")
+	}
+	if path == "" {
+		return inline, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func runPassageImport(ctx context.Context, db *gorm.DB, inputPath string, kbName string, batchSize int, passages map[string]string) {

@@ -37,6 +37,8 @@ func (s conversationDeleteTransactionStub) Run(
 func (s conversationDeleteTransactionStub) asFunc() port.ConversationDeleteTransaction {
 	return func(
 		ctx context.Context,
+		userID string,
+		conversationID string,
 		fn func(
 			ctx context.Context,
 			conversationRepo port.ConversationRepository,

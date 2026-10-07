@@ -17,9 +17,12 @@ import (
 	s3storage "local/rag-project/internal/adapter/storage/s3"
 	taskgoroutine "local/rag-project/internal/adapter/taskqueue/goroutine"
 	pgvectorstore "local/rag-project/internal/adapter/vectorstore/pgvector"
+	coreparser "local/rag-project/internal/app/core/parser"
+	"local/rag-project/internal/app/core/vision"
 	"local/rag-project/internal/app/knowledge/port"
 	knowledgeschedule "local/rag-project/internal/app/knowledge/schedule"
 	"local/rag-project/internal/app/knowledge/service"
+	"local/rag-project/internal/app/knowledge/service/imageevidence"
 	wikiservice "local/rag-project/internal/app/knowledge/service/wiki"
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/log"
@@ -27,10 +30,10 @@ import (
 )
 
 type RuntimeOptions struct {
-	Config          *config.Config
-	AIRuntime       *infraai.Runtime
-	Storage         port.FileStorage
-	VectorStore     port.VectorStore
+	Config      *config.Config
+	AIRuntime   *infraai.Runtime
+	Storage     port.FileStorage
+	VectorStore port.VectorStore
 }
 
 type Runtime struct {
@@ -42,6 +45,7 @@ type Runtime struct {
 	ChunkService           *service.KnowledgeChunkService
 	WikiPageService        *wikiservice.WikiPageService
 	DocumentProcessService *service.DocumentProcessService
+	ImageEvidenceService   *imageevidence.Service
 	ScheduleService        *service.KnowledgeDocumentScheduleService
 
 	Storage     port.FileStorage
@@ -52,6 +56,8 @@ type Runtime struct {
 
 	scheduleLoopCancel context.CancelFunc
 	scheduleLoopWG     sync.WaitGroup
+	imageWorkerCancel  context.CancelFunc
+	imageService       *imageevidence.Service
 }
 
 func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
@@ -146,15 +152,42 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		return runtime, nil
 	}
 
+	var ocr coreparser.OCRClient
+	if strings.TrimSpace(cfg.Parser.OCR.URL) != "" {
+		ocr = coreparser.NewHTTPOCRClient(cfg.Parser.OCR.URL, time.Duration(cfg.Parser.OCR.TimeoutMs)*time.Millisecond)
+	}
+	visionKey := strings.TrimSpace(cfg.Parser.Vision.APIKey)
+	if visionKey == "" {
+		visionKey = strings.TrimSpace(cfg.AI.Providers["siliconflow"].ApiKey)
+	}
+	parserSelector := coreparser.NewDefaultSelector(nil)
+	imageService := &imageevidence.Service{
+		DB: db, Storage: storage, OCR: ocr,
+		Vision: vision.NewClient(cfg.Parser.Vision.URL, visionKey,
+			time.Duration(cfg.Parser.Vision.TimeoutMs)*time.Millisecond, cfg.Parser.Vision.MaxTokens),
+		Embedding:      aiRuntime.Embedding,
+		SummaryChat:    aiRuntime.Chat,
+		SummaryEnabled: cfg.Rag.Knowledge.Enrichment.Enabled,
+	}
+	if selected, ok := parserSelector.Select(coreparser.ParserTypeDocReader); ok {
+		imageService.InventoryParser, _ = selected.(*coreparser.DocReaderDocumentParser)
+	}
+	runtime.imageService = imageService
+	runtime.ImageEvidenceService = imageService
 	runtime.DocumentProcessService = service.NewDocumentProcessService(service.DocumentProcessServiceOptions{
-		BaseRepo:     baseRepo,
-		DocumentRepo: documentRepo,
-		ChunkRepo:    chunkRepo,
-		ChunkLogRepo: chunkLogRepo,
-		Storage:      storage,
-		VectorStore:  vectorStore,
-		Transaction:  postgresknowledge.NewDocumentProcessTransaction(db),
-		Embedding:    aiRuntime.Embedding,
+		Jobs:              postgresknowledge.NewChunkJobs(db),
+		BaseRepo:          baseRepo,
+		DocumentRepo:      documentRepo,
+		ChunkRepo:         chunkRepo,
+		ChunkLogRepo:      chunkLogRepo,
+		Storage:           storage,
+		VectorStore:       vectorStore,
+		Transaction:       postgresknowledge.NewDocumentProcessTransaction(db),
+		Embedding:         aiRuntime.Embedding,
+		Chat:              aiRuntime.Chat,
+		EnrichmentEnabled: &cfg.Rag.Knowledge.Enrichment.Enabled,
+		ImageEvidence:     imageService,
+		Parser:            parserSelector,
 	})
 
 	runtime.ScheduleJob = knowledgeschedule.NewKnowledgeDocumentScheduleJobWithOptions(
@@ -173,7 +206,10 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		},
 	)
 
-	runtime.TaskQueue = taskgoroutine.NewTaskQueue(runtime.DocumentProcessService, 5)
+	runtime.TaskQueue = taskgoroutine.NewDurableTaskQueue(runtime.DocumentProcessService, postgresknowledge.NewChunkJobs(db), 5)
+	imageWorkerCtx, imageWorkerCancel := context.WithCancel(context.Background())
+	runtime.imageWorkerCancel = imageWorkerCancel
+	imageService.Run(imageWorkerCtx, 2)
 
 	runtime.DocumentService = service.NewKnowledgeDocumentService(
 		baseRepo,
@@ -187,6 +223,7 @@ func NewRuntime(ctx context.Context, options RuntimeOptions) (*Runtime, error) {
 		remoteFetcher,
 		postgresknowledge.NewKnowledgeDocumentDeleteTransaction(db),
 	)
+	runtime.DocumentService.SetChunkJobs(postgresknowledge.NewChunkJobs(db))
 
 	runtime.startScheduleLoop(cfg)
 
@@ -199,6 +236,12 @@ func (r *Runtime) Close() error {
 	}
 
 	var firstErr error
+	if r.imageWorkerCancel != nil {
+		r.imageWorkerCancel()
+		if r.imageService != nil {
+			r.imageService.Wait()
+		}
+	}
 	if r.scheduleLoopCancel != nil {
 		r.scheduleLoopCancel()
 		r.scheduleLoopWG.Wait()
@@ -254,11 +297,6 @@ func (r *Runtime) startScheduleLoop(cfg *config.Config) {
 			if err := r.ScheduleJob.Scan(runCtx); err != nil {
 				log.Warnf("knowledge schedule scan failed: %v", err)
 			}
-			if r.DocumentService != nil {
-				if err := r.DocumentService.ScanAndReconcileIngestionTasks(runCtx, reconcileScanBatchSize(cfg)); err != nil {
-					log.Warnf("knowledge ingestion reconcile scan failed: %v", err)
-				}
-			}
 			if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 				log.Warnf("knowledge schedule loop iteration timed out after %s", scheduleRunTimeout(cfg))
 			}
@@ -307,11 +345,4 @@ func scheduleRunTimeout(cfg *config.Config) time.Duration {
 		return 30 * time.Second
 	}
 	return time.Duration(cfg.Rag.Knowledge.Schedule.RunTimeoutMs) * time.Millisecond
-}
-
-func reconcileScanBatchSize(cfg *config.Config) int {
-	if cfg == nil || cfg.Rag.Knowledge.Schedule.BatchSize <= 0 {
-		return 100
-	}
-	return cfg.Rag.Knowledge.Schedule.BatchSize
 }

@@ -74,9 +74,9 @@ func (r *ConversationMessageRepository) List(ctx context.Context, filter port.Co
 
 	switch filter.Order {
 	case port.ConversationMessageOrderDesc:
-		query = query.Order("create_time desc")
+		query = query.Order("create_time desc").Order("id desc")
 	default:
-		query = query.Order("create_time asc")
+		query = query.Order("create_time asc").Order("id asc")
 	}
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)

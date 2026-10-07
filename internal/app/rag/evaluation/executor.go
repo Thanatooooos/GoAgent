@@ -12,11 +12,9 @@ import (
 	"local/rag-project/internal/framework/convention"
 )
 
-// evalMinPreRerankCandidates is the minimum number of candidates to feed into
-// the rerank step. When the caller's desired TopK is smaller than this value,
-// the evaluator expands TopK to this value for the pre-rerank pool and sets
-// RerankTopN to the original TopK so the final output size stays the same.
-// Set EVAL_PRERANK_CANDIDATES=0 to disable expansion and use the original TopK.
+// evalMinPreRerankCandidates is the minimum recall and rerank candidate budget.
+// The requested TopK remains the final result count. Set
+// EVAL_PRERANK_CANDIDATES=0 to use TopK for all three stages.
 var evalMinPreRerankCandidates = readEvalPreRerankCandidates()
 
 func readEvalPreRerankCandidates() int {
@@ -62,7 +60,9 @@ func ExecuteSample(ctx context.Context, sample *Sample, cfg ExecuteConfig) error
 		Query:            strings.TrimSpace(sample.Query),
 		KnowledgeBaseIDs: append([]string(nil), sample.KnowledgeBaseIDs...),
 		SearchMode:       searchMode,
-		TopK:             prerankTopK,
+		TopK:             topK,
+		RecallBudget:     prerankTopK,
+		CandidateLimit:   prerankTopK,
 		RerankTopN:       rerankTopN,
 	}
 

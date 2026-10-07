@@ -1,5 +1,7 @@
 # LLM 生成护栏库（llmgen）+ ingestion enricher 示范集成
 
+> 2026-10-01 适用范围：历史设计保留：llmgen 护栏库仍可参考；旧 ingestion enricher 示范集成已经失效，当前文档增强由 DocumentProcessService 的 chunk 处理链路承接。
+
 日期：2026-08-09
 状态：已批准
 来源借鉴：WeKnora `wiki_ingest_*` 系列的 W3/W4/W5 工程护栏（句柄防幻觉、确定性拒绝规则、纯文本后处理兜底）

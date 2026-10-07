@@ -1,5 +1,7 @@
 # AGENT.md
 
+> Current-state note (2026-10-01): historical architecture references below to `internal/app/agent`, `internal/app/rag/tool`, and ingestion pipelines are superseded. Read `docs/project_progress_context.md` and `docs/README.md` first; current runtime capabilities live in `internal/app/runtime/capability`, and document processing uses the knowledge chunk task. Do not restore removed modules from these historical references.
+
 ## 1. Project Overview
 - `goagent` is a Go-first AI application with a React/Vite frontend, centered on knowledge management, ingestion pipelines, RAG chat, and an evolving Agent runtime.
 - Backend stack: Go 1.25, Gin, GORM/PostgreSQL, Viper config, Redis/MinIO integrations, MCP support, and CloudWeGo Eino-based AI orchestration.
@@ -22,12 +24,12 @@
 - `internal/app/rag/tool` is the stable production tool path. `internal/app/agent` is the newer runtime path for capability-based orchestration, planner/handoff flow, and approval/resume support.
 - `knowledge` owns knowledge bases, documents, chunks, and document processing. `ingestion` owns `pipeline -> task -> task_node` execution and reconciliation. `rag` owns chat, retrieve, rewrite, prompt assembly, memory, trace, and evaluation.
 - Frontend code lives in `frontend/src`; chat state, approval recovery, and SSE-driven runtime status are already wired and should be extended through existing stores/services instead of ad hoc state paths.
-- Runtime config is centered in `configs/application.yaml`. Additional project context lives in `docs/project_progress_context.md` and `docs/agent_capability_onboarding.md`.
+- Runtime config is centered in `configs/application.yaml`. Additional project context lives in `docs/project_progress_context.md` and `docs/README.md`.
 
 ## 4. Conventions
 - Follow existing domain boundaries. New behavior should usually extend the owning module rather than introducing parallel abstractions.
 - Treat `internal/app/rag/tool` and `internal/app/agent` as distinct paths with different responsibilities. Preserve the current split unless the task explicitly requires convergence work.
-- For new non-diagnostic agent capabilities, follow `docs/agent_capability_onboarding.md`: typed input/output, full `capability.Spec`, `NormalizeInput(...)`, `Invoke(...)`, registration in the correct assembly group, and contract/integration coverage.
+- For runtime capabilities, inspect `internal/app/runtime/capability` and its registration/tests; the previous agent capability onboarding document and `internal/app/agent` path have been removed.
 - Use existing non-diagnostic capabilities such as `search`, `fetch`, `external_evidence`, `think`, `knowledge_discovery`, `memory_recall`, and `content_summarize` as templates before copying diagnosis-oriented flows.
 - Reuse the existing approval, resume, SSE, trace, and evaluation plumbing instead of creating side channels.
 - Keep tests close to the affected behavior. Prefer extending existing package-level and service-level suites over adding isolated one-off harnesses.

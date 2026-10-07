@@ -3,6 +3,7 @@ import type { User } from "@/types";
 const TOKEN_KEY = "ragent_token";
 const USER_KEY = "ragent_user";
 const THEME_KEY = "ragent_theme";
+const CHAT_KB_IDS_KEY = "ragent_chat_kb_ids";
 
 function safeGet(key: string) {
   try {
@@ -62,5 +63,21 @@ export const storage = {
   },
   setTheme(theme: string) {
     safeSet(THEME_KEY, theme);
+  },
+  getChatKnowledgeBaseIds(): string[] {
+    const raw = safeGet(CHAT_KB_IDS_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((id): id is string => typeof id === "string" && id.length > 0);
+      }
+    } catch {
+      return [];
+    }
+    return [];
+  },
+  setChatKnowledgeBaseIds(ids: string[]) {
+    safeSet(CHAT_KB_IDS_KEY, JSON.stringify(ids.filter(Boolean)));
   }
 };

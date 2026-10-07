@@ -34,6 +34,9 @@ func NewWikiPageChannel(retriever WikiRetriever) SearchChannel {
 func (c *wikiPageChannel) Name() string  { return ChannelWikiPage }
 func (c *wikiPageChannel) Priority() int { return 12 }
 func (c *wikiPageChannel) Enabled(ctx SearchContext) bool {
+	if ctx.DocumentsOnly {
+		return false
+	}
 	if c == nil || c.retriever == nil {
 		return false
 	}
@@ -47,7 +50,7 @@ func (c *wikiPageChannel) Enabled(ctx SearchContext) bool {
 
 func (c *wikiPageChannel) Search(ctx context.Context, searchCtx SearchContext) (SearchChannelResult, error) {
 	startedAt := time.Now()
-	expandedTopK := expandChannelTopK(searchCtx.TopK, defaultChannelTopKMultiplier)
+	expandedTopK := expandChannelTopK(searchCtx.RecallBudget, defaultChannelTopKMultiplier)
 	chunks, err := c.retriever.SearchWiki(ctx, WikiSearchRequest{
 		UserID:           strings.TrimSpace(searchCtx.UserID),
 		Query:            strings.TrimSpace(searchCtx.Query),
@@ -58,7 +61,7 @@ func (c *wikiPageChannel) Search(ctx context.Context, searchCtx SearchContext) (
 		return SearchChannelResult{}, fmt.Errorf("wiki page search: %w", err)
 	}
 	return newChannelResult(c.Name(), chunks, startedAt, map[string]any{
-		"topK":         searchCtx.TopK,
+		"topK":         searchCtx.RecallBudget,
 		"expandedTopK": expandedTopK,
 		"multiplier":   defaultChannelTopKMultiplier,
 		"rrfWeight":    defaultChannelRRFWeight(c.Name()),

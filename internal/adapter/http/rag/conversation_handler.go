@@ -113,6 +113,7 @@ func toMessageVO(item ragservice.ConversationMessageView) messageVO {
 		IsSummarized:     item.IsSummarized,
 		ThinkingContent:  item.ThinkingContent,
 		ThinkingDuration: item.ThinkingDuration,
+		Sources:          item.Sources,
 		Vote:             item.Vote,
 		CreateTime:       timePointer(item.CreateTime),
 	}

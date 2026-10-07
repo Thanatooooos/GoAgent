@@ -31,12 +31,16 @@ import {
   mapPersistedChatMessage,
   mergePendingApprovalMessage,
   normalizeToolCallPayload,
+  appendThinkingSegment,
+  appendAnswerSegment,
+  settleThinkingSegments,
+  upsertToolSegment,
   readActiveSessionId,
   upsertSession,
   writeActiveSessionId,
 } from "@/stores/chatStateModel";
-import { buildQuery } from "@/utils/helpers";
 import { createStreamResponse } from "@/hooks/useStreamResponse";
+import { buildQuery } from "@/utils/helpers";
 import { storage } from "@/utils/storage";
 
 interface ChatState {
@@ -50,6 +54,7 @@ interface ChatState {
   isStreaming: boolean;
   isCreatingNew: boolean;
   deepThinkingEnabled: boolean;
+  knowledgeBaseIds: string[];
   thinkingStartAt: number | null;
   streamTaskId: string | null;
   streamAbort: (() => void) | null;
@@ -62,6 +67,7 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => void;
   setDeepThinkingEnabled: (enabled: boolean) => void;
+  setKnowledgeBaseIds: (ids: string[]) => void;
   sendMessage: (content: string) => Promise<void>;
   cancelGeneration: () => void;
   appendStreamContent: (delta: string) => void;
@@ -104,6 +110,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   isCreatingNew: false,
   deepThinkingEnabled: false,
+  knowledgeBaseIds: storage.getChatKnowledgeBaseIds(),
   thinkingStartAt: null,
   streamTaskId: null,
   streamAbort: null,
@@ -293,6 +300,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setDeepThinkingEnabled: (enabled) => {
     set({ deepThinkingEnabled: enabled });
   },
+  setKnowledgeBaseIds: (ids) => {
+    const normalized = ids.filter((id) => id.trim().length > 0);
+    storage.setChatKnowledgeBaseIds(normalized);
+    set({ knowledgeBaseIds: normalized });
+  },
   sendMessage: async (content) => {
     const trimmed = content.trim();
     if (!trimmed) return;
@@ -356,15 +368,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
       writeActiveSessionId(conversationId);
     }
-    const query = buildQuery({
+    const url = `${API_BASE_URL}/rag/v3/chat`;
+    const body = JSON.stringify({
       question: trimmed,
       conversationId: conversationId || undefined,
-      deepThinking: deepThinkingEnabled ? true : undefined
+      deepThinking: deepThinkingEnabled ? true : undefined,
+      knowledgeBaseId: get().knowledgeBaseIds.length > 0 ? get().knowledgeBaseIds.join(",") : undefined,
+      // The browser's IANA zone lets the server resolve "tomorrow at nine" for
+      // scheduled tasks. Without it those tools stay hidden from the model.
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
     });
-    const url = `${API_BASE_URL}/rag/v3/chat${query}`;
     const token = storage.getToken();
 
+    let receivedEvents = 0;
+    let terminal = false;
+    let latestError: Error | null = null;
+
     const handlers = {
+      onEvent: () => {
+        receivedEvents += 1;
+      },
       onMeta: (payload: { conversationId: string; taskId: string }) => {
         if (get().streamingMessageId !== assistantId) return;
         const nextId = payload.conversationId || get().currentSessionId;
@@ -472,7 +495,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onToolResult: (payload: ToolCallPayload) => {
         if (!payload || typeof payload !== "object") return;
-        get().appendToolCall(payload);
+        get().appendToolCall({ ...payload, status: payload.status || "completed" });
       },
       onFinish: (payload: CompletionPayload) => {
         if (get().streamingMessageId !== assistantId) return;
@@ -508,7 +531,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 ? {
                     ...message,
                     id: String(payload.messageId),
+                    content: payload.content ?? message.content,
+                    sources: payload.sources,
                     status: "done",
+                    executionSegments: settleThinkingSegments(message.executionSegments),
                     isThinking: false,
                     thinkingDuration:
                       message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)
@@ -523,6 +549,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 ? {
                     ...message,
                     status: "done",
+                    content: payload.content ?? message.content,
+                    executionSegments: settleThinkingSegments(message.executionSegments),
                     isThinking: false,
                     thinkingDuration:
                       message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)
@@ -535,6 +563,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       onCancel: (payload: CompletionPayload) => {
         if (get().streamingMessageId !== assistantId) return;
         const explicitlyCancelled = get().cancelRequested;
+        terminal = true;
         logChatDebug("sendMessage:onCancel", {
           payloadMessageId: payload?.messageId,
           payloadTitle: payload?.title,
@@ -554,6 +583,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               id: nextId,
               content: message.content + suffix,
               status: explicitlyCancelled ? "cancelled" : "done",
+              executionSegments: settleThinkingSegments(message.executionSegments, true),
               isThinking: false,
               thinkingDuration:
                 message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)
@@ -569,14 +599,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onDone: () => {
         if (get().streamingMessageId !== assistantId) return;
-        set({
+        terminal = true;
+        set((state) => ({
+          messages: state.messages.map((message) => message.id === state.streamingMessageId && message.status === "streaming"
+            ? { ...message, status: "done", isThinking: false, executionSegments: settleThinkingSegments(message.executionSegments) }
+            : message),
           isStreaming: false,
           thinkingStartAt: null,
           streamTaskId: null,
           streamAbort: null,
           streamingMessageId: null,
           cancelRequested: false
-        });
+        }));
       },
       onTitle: (payload: { title: string }) => {
         if (get().streamingMessageId !== assistantId) return;
@@ -602,6 +636,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ? {
                   ...message,
                   status: "error",
+                  executionSegments: settleThinkingSegments(message.executionSegments, true),
                   isThinking: false,
                   thinkingDuration:
                     message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt)
@@ -613,19 +648,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     };
 
-    const { start, cancel } = createStreamResponse(
-      {
-        url,
-        headers: token ? { Authorization: token } : undefined,
-        retryCount: 1
-      },
-      handlers
-    );
-
-    set({ streamAbort: cancel });
+    const consume = async (options: { url: string; method?: "GET" | "POST"; body?: string }) => {
+      const { start, cancel } = createStreamResponse(
+        {
+          ...options,
+          headers: token ? { Authorization: token } : undefined,
+          retryCount: 0
+        },
+        handlers
+      );
+      set({ streamAbort: cancel });
+      await start();
+    };
 
     try {
-      await start();
+      try {
+        await consume({ url, method: "POST", body });
+      } catch (error) {
+        latestError = error as Error;
+      }
+      for (let attempt = 0; !terminal && !get().cancelRequested && get().streamTaskId && attempt < 2; attempt += 1) {
+        const taskId = get().streamTaskId as string;
+        const resumeUrl = `${API_BASE_URL}/rag/v3/chat/continue${buildQuery({ taskId, offset: receivedEvents })}`;
+        try {
+          await consume({ url: resumeUrl });
+        } catch (error) {
+          latestError = error as Error;
+        }
+      }
+      if (!terminal && !get().cancelRequested && latestError) {
+        handlers.onError?.(latestError);
+      }
     } catch (error) {
       if ((error as Error).name === "AbortError") {
         return;
@@ -664,6 +717,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return {
             ...message,
             content: message.content + delta,
+            executionSegments: appendAnswerSegment(message.executionSegments, delta),
             isThinking: shouldFinalizeThinking ? false : message.isThinking,
             thinkingDuration:
               shouldFinalizeThinking && !message.thinkingDuration
@@ -685,6 +739,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? {
               ...message,
               thinking: `${message.thinking ?? ""}${delta}`,
+              executionSegments: appendThinkingSegment(message.executionSegments, delta),
               isThinking: true
             }
           : message
@@ -704,7 +759,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return {
           ...item,
-          agentThinks: [...current, message]
+          agentThinks: [...current, message],
+          executionSegments: settleThinkingSegments(appendThinkingSegment(settleThinkingSegments(item.executionSegments), message))
         };
       })
     }));
@@ -739,12 +795,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!call) return;
     const normalized = normalizeToolCallPayload(call);
     set((state) => ({
+      thinkingStartAt: null,
       messages: state.messages.map((message) =>
         message.id === state.streamingMessageId &&
         message.status !== "cancelled" &&
         message.status !== "error"
           ? {
               ...message,
+              isThinking: false,
+              thinkingDuration: message.thinkingDuration ?? computeThinkingDuration(state.thinkingStartAt),
               toolCalls: (() => {
                 const current = [...(message.toolCalls ?? [])];
                 const nextCallId = normalized.callId?.trim();
@@ -754,6 +813,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     current[index] = {
                       ...current[index],
                       ...normalized,
+                      name: normalized.name || current[index].name,
                       arguments: normalized.arguments ?? current[index].arguments,
                       data: normalized.data ?? current[index].data
                     };
@@ -761,7 +821,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   }
                 }
                 return [...current, normalized];
-              })()
+              })(),
+              executionSegments: upsertToolSegment(message.executionSegments, normalized)
             }
           : message
       )

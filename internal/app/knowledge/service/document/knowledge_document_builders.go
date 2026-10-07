@@ -76,7 +76,6 @@ func (s *KnowledgeDocumentService) buildUploadedKnowledgeDocument(
 		}
 		document.ChunkConfig = []byte(strings.TrimSpace(input.ChunkConfig))
 	}
-	document.PipelineID = strings.TrimSpace(input.PipelineID)
 	return document, func() { _ = s.storage.Delete(newCleanupContext(ctx), stored.Key) }, nil
 }
 
@@ -125,6 +124,5 @@ func (s *KnowledgeDocumentService) buildRemoteKnowledgeDocument(
 		}
 		document.ChunkConfig = []byte(strings.TrimSpace(input.ChunkConfig))
 	}
-	document.PipelineID = strings.TrimSpace(input.PipelineID)
 	return document, func() { _ = s.storage.Delete(newCleanupContext(ctx), stored.Url) }, nil
 }

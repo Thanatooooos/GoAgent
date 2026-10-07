@@ -31,6 +31,8 @@ type wikiPageVO struct {
 	Status     string     `json:"status"`
 	Summary    string     `json:"summary"`
 	Content    string     `json:"content,omitempty"`
+	InLinks    int        `json:"inLinks"`
+	OutLinks   int        `json:"outLinks"`
 	CreatedBy  string     `json:"createdBy,omitempty"`
 	CreateTime *time.Time `json:"createTime,omitempty"`
 }
@@ -107,6 +109,8 @@ func toWikiPageVO(item domain.WikiPage) wikiPageVO {
 		Status:     item.Status,
 		Summary:    item.Summary,
 		Content:    item.Content,
+		InLinks:    item.InLinks,
+		OutLinks:   item.OutLinks,
 		CreatedBy:  item.CreatedBy,
 		CreateTime: timePointer(item.CreatedAt),
 	}

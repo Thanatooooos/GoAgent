@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"local/rag-project/internal/app/knowledge/port"
 	"local/rag-project/internal/app/knowledge/service"
@@ -27,6 +28,44 @@ type TaskQueue struct {
 	cancel         context.CancelFunc
 	wg             sync.WaitGroup
 	sem            chan struct{}
+	jobs           port.ChunkJobs
+	mu             sync.Mutex
+	closed         bool
+}
+
+func NewDurableTaskQueue(processor chunkDocumentProcessor, jobs port.ChunkJobs, maxConcurrency int) *TaskQueue {
+	q := NewTaskQueue(processor, maxConcurrency)
+	q.jobs = jobs
+	q.wg.Add(1)
+	go func() {
+		defer q.wg.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		scan := func() {
+			if _, err := jobs.RecoverExpired(q.ctx); err != nil {
+				log.Warnf("chunk job lease recovery failed: %v", err)
+				return
+			}
+			tasks, err := jobs.Pending(q.ctx, q.maxConcurrency)
+			if err != nil {
+				log.Warnf("chunk job scan failed: %v", err)
+				return
+			}
+			for _, task := range tasks {
+				_ = q.SubmitChunkDocument(q.ctx, task)
+			}
+		}
+		scan()
+		for {
+			select {
+			case <-q.ctx.Done():
+				return
+			case <-ticker.C:
+				scan()
+			}
+		}
+	}()
+	return q
 }
 
 var _ port.TaskQueue = (*TaskQueue)(nil)
@@ -56,6 +95,32 @@ func (q *TaskQueue) SubmitChunkDocument(ctx context.Context, task port.ChunkDocu
 	}
 	if documentID == "" {
 		return fmt.Errorf("goroutine task queue: chunk document id is required")
+	}
+	if q.jobs != nil {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if q.closed || q.ctx.Err() != nil {
+			return context.Canceled
+		}
+		select {
+		case q.sem <- struct{}{}:
+		default:
+			return nil
+		} // durable pending intent remains available
+		q.wg.Add(1)
+		go func() {
+			defer q.wg.Done()
+			defer func() { <-q.sem }()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.Errorf("chunk job panic recovered: taskId=%s panic=%v", taskID, recovered)
+				}
+			}()
+			if err := q.processor.ExecuteChunk(q.ctx, service.ExecuteChunkInput{TaskID: taskID, DocumentID: documentID, TriggeredBy: task.TriggeredBy}); err != nil {
+				log.Warnf("chunk job failed: taskId=%s err=%v", taskID, err)
+			}
+		}()
+		return nil
 	}
 
 	select {
@@ -91,5 +156,8 @@ func (q *TaskQueue) Shutdown() {
 		return
 	}
 	q.cancel()
+	q.mu.Lock()
+	q.closed = true
+	q.mu.Unlock()
 	q.wg.Wait()
 }

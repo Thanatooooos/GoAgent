@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	rageval "local/rag-project/internal/app/rag/evaluation"
@@ -14,6 +16,17 @@ import (
 type captureRetrieveService struct {
 	requests []ragretrieve.Request
 	result   ragretrieve.Result
+}
+
+type blockingRetrieveService struct{}
+
+func (blockingRetrieveService) Retrieve(ctx context.Context, _ ragretrieve.Request) (ragretrieve.Result, error) {
+	<-ctx.Done()
+	return ragretrieve.Result{}, ctx.Err()
+}
+
+func (blockingRetrieveService) RetrieveByVector(context.Context, []float32, ragretrieve.Request) (ragretrieve.Result, error) {
+	return ragretrieve.Result{}, nil
 }
 
 func (s *captureRetrieveService) Retrieve(_ context.Context, request ragretrieve.Request) (ragretrieve.Result, error) {
@@ -140,5 +153,18 @@ func TestExecuteSamplesForwardsUserID(t *testing.T) {
 	}
 	if len(samples[0].ChannelRetrieved[ragretrieve.ChannelKeyword]) != 1 {
 		t.Fatalf("expected keyword channel retrieved chunk, got %+v", samples[0].ChannelRetrieved)
+	}
+}
+
+func TestExecuteSamplesAppliesPerSampleTimeout(t *testing.T) {
+	runtime := &ragbootstrap.Runtime{Retrieve: blockingRetrieveService{}}
+	samples := []rageval.Sample{{Name: "blocked", Query: "test", KnowledgeBaseIDs: []string{"kb-1"}, TopK: 1}}
+	startedAt := time.Now()
+	err := executeSamples(context.Background(), runtime, samples, executeOptions{perSampleTimeout: 20 * time.Millisecond})
+	if err == nil || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("executeSamples error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("timeout took %s, want less than 1s", elapsed)
 	}
 }

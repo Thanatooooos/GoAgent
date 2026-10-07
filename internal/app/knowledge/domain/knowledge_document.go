@@ -9,14 +9,14 @@ const (
 )
 
 const (
-	KnowledgeDocumentProcessModeChunk    = "chunk"
-	KnowledgeDocumentProcessModePipeline = "pipeline"
+	KnowledgeDocumentProcessModeChunk = "chunk"
 )
 
 const (
 	KnowledgeDocumentStatusPending  = "pending"
 	KnowledgeDocumentStatusRunning  = "running"
 	KnowledgeDocumentStatusSuccess  = "success"
+	KnowledgeDocumentStatusPartial  = "partial"
 	KnowledgeDocumentStatusFailed   = "failed"
 	KnowledgeDocumentStatusDeleting = "deleting"
 )
@@ -27,6 +27,9 @@ type KnowledgeDocument struct {
 	Name                string
 	Enabled             bool
 	ChunkCount          int
+	ImageCount          int
+	ImageCompletedCount int
+	ImageFailedCount    int
 	FileURL             string
 	FileType            string
 	FileSize            int64
@@ -38,7 +41,6 @@ type KnowledgeDocument struct {
 	ScheduleCron        string
 	ChunkStrategy       string
 	ChunkConfig         []byte
-	PipelineID          string
 	Summary             string
 	SummaryStatus       string
 	SummaryErrorMessage string
@@ -91,13 +93,15 @@ func CanKnowledgeDocumentTransition(fromStatus string, toStatus string) bool {
 	case KnowledgeDocumentStatusRunning:
 		return fromStatus == KnowledgeDocumentStatusPending ||
 			fromStatus == KnowledgeDocumentStatusFailed ||
-			fromStatus == KnowledgeDocumentStatusSuccess
-	case KnowledgeDocumentStatusSuccess, KnowledgeDocumentStatusFailed:
+			fromStatus == KnowledgeDocumentStatusSuccess ||
+			fromStatus == KnowledgeDocumentStatusPartial
+	case KnowledgeDocumentStatusSuccess, KnowledgeDocumentStatusPartial, KnowledgeDocumentStatusFailed:
 		return fromStatus == KnowledgeDocumentStatusRunning
 	case KnowledgeDocumentStatusDeleting:
 		return fromStatus == KnowledgeDocumentStatusPending ||
 			fromStatus == KnowledgeDocumentStatusFailed ||
-			fromStatus == KnowledgeDocumentStatusSuccess
+			fromStatus == KnowledgeDocumentStatusSuccess ||
+			fromStatus == KnowledgeDocumentStatusPartial
 	default:
 		return false
 	}

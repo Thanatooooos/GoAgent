@@ -44,3 +44,19 @@ func TestBuildShortIdentifierFallbackQuery(t *testing.T) {
 		t.Fatal("did not expect long query to prefer fallback")
 	}
 }
+
+func TestBuildBM25QueryExpandsNaturalChineseQuestion(t *testing.T) {
+	got := buildBM25Query("保安服务是什么？")
+	want := "保安服务 OR 保安 OR 安服 OR 服务"
+	if got != want {
+		t.Fatalf("buildBM25Query() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildBM25QueryPreservesNonChineseAndBooleanQueries(t *testing.T) {
+	for _, query := range []string{"security service", "保安 AND 服务"} {
+		if got := buildBM25Query(query); got != query {
+			t.Fatalf("buildBM25Query(%q) = %q, want unchanged", query, got)
+		}
+	}
+}

@@ -59,6 +59,9 @@ func renderKBTag(ref ChunkReference) string {
 	if ref.KnowledgeBaseID != "" {
 		attrs += fmt.Sprintf(` kb_id="%s"`, escapeAttr(ref.KnowledgeBaseID))
 	}
+	if ref.Kind == "image" {
+		attrs += ` kind="image"`
+	}
 	return "<kb " + attrs + " />"
 }
 

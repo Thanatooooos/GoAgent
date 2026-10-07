@@ -15,6 +15,7 @@ type ChunkReference struct {
 	DocumentID      string
 	KnowledgeBaseID string
 	DocumentTitle   string
+	Kind            string
 }
 
 // WebReference carries the durable identity and display metadata for a
@@ -180,6 +181,7 @@ func (r *Registry) RegisterChunks(chunks []convention.RetrievedChunk) {
 			DocumentID:      chunk.DocumentID,
 			KnowledgeBaseID: chunk.KnowledgeBaseID,
 			DocumentTitle:   readDocumentTitle(chunk.Metadata),
+			Kind:            readMetadataString(chunk.Metadata, "record_type"),
 		})
 	}
 }

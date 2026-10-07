@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -33,7 +34,7 @@ func TestTikaDocumentParserParse(t *testing.T) {
 	defer server.Close()
 
 	docParser := parser.NewTikaDocumentParser(server.Client(), server.URL)
-	result, err := docParser.Parse([]byte("pdf-bytes"), "application/pdf", map[string]any{
+	result, err := docParser.Parse(context.Background(), []byte("pdf-bytes"), "application/pdf", map[string]any{
 		"file_name": "report.pdf",
 	})
 	if err != nil {
@@ -70,7 +71,7 @@ func TestTikaDocumentParserReturnsStatusError(t *testing.T) {
 	defer server.Close()
 
 	docParser := parser.NewTikaDocumentParser(server.Client(), server.URL)
-	_, err := docParser.Parse([]byte("content"), "application/pdf", nil)
+	_, err := docParser.Parse(context.Background(), []byte("content"), "application/pdf", nil)
 	if err == nil {
 		t.Fatal("expected parse error")
 	}

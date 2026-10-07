@@ -4,7 +4,7 @@ import "time"
 
 type SubscriptionModel struct {
 	UserID            string     `gorm:"column:user_id;type:varchar(20);primaryKey"`
-	Enabled           int16      `gorm:"column:enabled;default:1;index:idx_daily_brief_subscription_enabled"`
+	Enabled           int16      `gorm:"column:enabled;index:idx_daily_brief_subscription_enabled"`
 	Timezone          string     `gorm:"column:timezone;type:varchar(64);not null"`
 	DeliveryTimeLocal string     `gorm:"column:delivery_time_local;type:varchar(8);not null"`
 	TopicsJSON        []string   `gorm:"column:topics_json;type:jsonb;serializer:json;not null"`

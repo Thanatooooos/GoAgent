@@ -58,7 +58,7 @@ func (g *PromptSummaryAnswerGenerator) Answer(_ context.Context, input SummaryAn
 	messages, err := g.promptService.BuildMessages(ragprompt.Context{
 		Question:       strings.TrimSpace(input.Question),
 		SessionContext: strings.TrimSpace(input.Context),
-		AnswerGuidance: "Answer based only on the provided session context. If the context is insufficient, say so clearly. Respond in Chinese.",
+		AnswerGuidance: summaryEquivalenceAnswerGuidance,
 	})
 	if err != nil {
 		return SummaryAnswerOutput{}, err

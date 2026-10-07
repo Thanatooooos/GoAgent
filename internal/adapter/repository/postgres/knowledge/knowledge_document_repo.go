@@ -2,8 +2,11 @@ package knowledge
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/google/uuid"
 
 	"gorm.io/gorm"
 
@@ -49,7 +52,6 @@ func (r *KnowledgeDocumentRepository) Update(ctx context.Context, document domai
 		ScheduleCron:        port.ValueOf(document.ScheduleCron),
 		ChunkStrategy:       port.ValueOf(document.ChunkStrategy),
 		ChunkConfig:         port.ValueOf(document.ChunkConfig),
-		PipelineID:          port.ValueOf(document.PipelineID),
 		Summary:             port.ValueOf(document.Summary),
 		SummaryStatus:       port.ValueOf(document.SummaryStatus),
 		SummaryErrorMessage: port.ValueOf(document.SummaryErrorMessage),
@@ -115,6 +117,87 @@ func (r *KnowledgeDocumentRepository) UpdateFields(ctx context.Context, where po
 func (r *KnowledgeDocumentRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&models.KnowledgeDocumentModel{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("delete knowledge document: %w", err)
+	}
+	return nil
+}
+
+func (r *KnowledgeDocumentRepository) ClearActiveImageRevision(ctx context.Context, id, generation string) error {
+	return r.db.WithContext(ctx).Exec(`UPDATE t_knowledge_document
+		SET active_revision_id = ? WHERE id = ? AND deleted = 0`, generation, id).Error
+}
+
+// LockDocumentForPublication fixes the lock order before replacing text or image vectors.
+func (r *KnowledgeDocumentRepository) LockDocumentForPublication(ctx context.Context, documentID string) error {
+	var lockedID string
+	query := `SELECT id FROM t_knowledge_document WHERE id=? AND deleted=0 AND status<>'deleting'`
+	if _, owned := port.CurrentChunkJob(ctx); !owned {
+		query += " AND current_chunk_job_id IS NULL"
+	}
+	if err := r.db.WithContext(ctx).Raw(query+" FOR UPDATE", documentID).Scan(&lockedID).Error; err != nil {
+		return err
+	}
+	if lockedID == "" {
+		return fmt.Errorf("document is unavailable for publication")
+	}
+	return nil
+}
+
+// PublishStagedImageRevision runs inside the caller's text-vector transaction.
+func (r *KnowledgeDocumentRepository) PublishStagedImageRevision(ctx context.Context, documentID, revisionID string) error {
+	var lockedDocumentID string
+	if err := r.db.WithContext(ctx).Raw(`SELECT id FROM t_knowledge_document WHERE id = ?
+		AND deleted = 0 AND status <> 'deleting' FOR UPDATE`, documentID).Scan(&lockedDocumentID).Error; err != nil {
+		return err
+	}
+	if lockedDocumentID == "" {
+		return fmt.Errorf("document is unavailable for staged publication")
+	}
+	var revision struct {
+		ID             string
+		BaseRevisionID sql.NullString
+	}
+	if err := r.db.WithContext(ctx).Raw(`SELECT id, base_revision_id FROM t_knowledge_document_revision
+		WHERE id = ? AND doc_id = ? AND status = 'building' FOR UPDATE`, revisionID, documentID).Scan(&revision).Error; err != nil {
+		return err
+	}
+	if revision.ID == "" {
+		return fmt.Errorf("staged image revision is unavailable")
+	}
+	var base any
+	if revision.BaseRevisionID.Valid {
+		base = revision.BaseRevisionID.String
+	}
+	updated := r.db.WithContext(ctx).Exec(`UPDATE t_knowledge_document SET
+		active_revision_id = ?,
+		image_count = (SELECT count(*) FROM t_knowledge_image_occurrence WHERE revision_id = ?),
+		image_completed_count = (SELECT count(*) FROM t_knowledge_image_occurrence WHERE revision_id = ? AND active_evidence_id IS NOT NULL),
+		image_failed_count = (SELECT count(*) FROM t_knowledge_image_occurrence WHERE revision_id = ? AND source_error IS NOT NULL),
+		update_time = now()
+		WHERE id = ? AND deleted = 0 AND status <> 'deleting'
+		AND active_revision_id IS NOT DISTINCT FROM ?`, revisionID, revisionID, revisionID, revisionID, documentID, base)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected != 1 {
+		return fmt.Errorf("document revision changed before publication")
+	}
+	if err := r.db.WithContext(ctx).Exec(`UPDATE t_knowledge_document_revision
+		SET status = 'published', published_at = now() WHERE id = ?`, revisionID).Error; err != nil {
+		return err
+	}
+	var occurrenceIDs []string
+	if err := r.db.WithContext(ctx).Raw(`SELECT i.id FROM t_knowledge_image_occurrence i
+		JOIN t_knowledge_image_evidence e ON e.id = i.active_evidence_id
+		WHERE i.revision_id = ? AND COALESCE(e.searchable_text, '') <> ''
+		AND e.vector_published = FALSE`, revisionID).Scan(&occurrenceIDs).Error; err != nil {
+		return err
+	}
+	for _, occurrenceID := range occurrenceIDs {
+		if err := r.db.WithContext(ctx).Exec(`INSERT INTO t_knowledge_image_task
+			(id, doc_id, revision_id, occurrence_id, operation)
+			VALUES (?, ?, ?, ?, 'index')`, uuid.NewString(), documentID, revisionID, occurrenceID).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -216,6 +299,9 @@ func (r *KnowledgeDocumentRepository) List(ctx context.Context, filter port.Know
 }
 
 func (r *KnowledgeDocumentRepository) applyKnowledgeDocumentListFilter(query *gorm.DB, filter port.KnowledgeDocumentListFilter) *gorm.DB {
+	if filter.KnowledgeBaseID == "" {
+		query = query.Where("kb_id IN (SELECT id FROM t_knowledge_base WHERE work_private = ? AND deleted=0)", false)
+	}
 	if filter.KnowledgeBaseID != "" {
 		query = query.Where("kb_id = ?", filter.KnowledgeBaseID)
 	}
@@ -322,9 +408,6 @@ func buildKnowledgeDocumentUpdates(patch port.KnowledgeDocumentPatch) map[string
 	if patch.ChunkConfig.Set {
 		updates["chunk_config"] = patch.ChunkConfig.Value
 	}
-	if patch.PipelineID.Set {
-		updates["pipeline_id"] = patch.PipelineID.Value
-	}
 	if patch.Summary.Set {
 		updates["summary"] = patch.Summary.Value
 	}
@@ -390,6 +473,7 @@ var knowledgeDocumentConditionColumns = map[port.FieldKey]string{
 	port.KnowledgeDocument.Name.Key:                "doc_name",
 	port.KnowledgeDocument.Enabled.Key:             "enabled",
 	port.KnowledgeDocument.ChunkCount.Key:          "chunk_count",
+	port.KnowledgeDocument.ImageCount.Key:          "image_count",
 	port.KnowledgeDocument.FileURL.Key:             "file_url",
 	port.KnowledgeDocument.FileType.Key:            "file_type",
 	port.KnowledgeDocument.FileSize.Key:            "file_size",
@@ -401,7 +485,6 @@ var knowledgeDocumentConditionColumns = map[port.FieldKey]string{
 	port.KnowledgeDocument.ScheduleCron.Key:        "schedule_cron",
 	port.KnowledgeDocument.ChunkStrategy.Key:       "chunk_strategy",
 	port.KnowledgeDocument.ChunkConfig.Key:         "chunk_config",
-	port.KnowledgeDocument.PipelineID.Key:          "pipeline_id",
 	port.KnowledgeDocument.Summary.Key:             "summary",
 	port.KnowledgeDocument.SummaryStatus.Key:       "summary_status",
 	port.KnowledgeDocument.SummaryErrorMessage.Key: "summary_error_message",
@@ -425,7 +508,6 @@ var knowledgeDocumentAssignmentColumns = map[port.FieldKey]string{
 	port.KnowledgeDocument.ScheduleCron.Key:        "schedule_cron",
 	port.KnowledgeDocument.ChunkStrategy.Key:       "chunk_strategy",
 	port.KnowledgeDocument.ChunkConfig.Key:         "chunk_config",
-	port.KnowledgeDocument.PipelineID.Key:          "pipeline_id",
 	port.KnowledgeDocument.Summary.Key:             "summary",
 	port.KnowledgeDocument.SummaryStatus.Key:       "summary_status",
 	port.KnowledgeDocument.SummaryErrorMessage.Key: "summary_error_message",

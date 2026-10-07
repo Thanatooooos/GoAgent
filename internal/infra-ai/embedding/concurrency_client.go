@@ -5,7 +5,7 @@ import (
 	"local/rag-project/internal/infra-ai/model"
 )
 
-// concurrencyEmbeddingClient 只对批量 embedding（ingestion 后台）限流；
+// concurrencyEmbeddingClient 只对批量 embedding（文档后台处理）限流；
 // 单条 Embed（交互查询）直通，永不过闸。
 type concurrencyEmbeddingClient struct {
 	inner        EmbeddingClient

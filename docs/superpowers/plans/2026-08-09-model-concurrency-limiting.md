@@ -1,5 +1,7 @@
 # A2 模型并发限流（Governor）实施计划
 
+> 2026-10-01 适用范围：历史施工计划保留：并发门控仍有对应实现，但旧 ingestion 路径和命令已失效；不要把本计划步骤直接当作当前待办。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 新增进程内 `Governor` 并发门控，只对 ingestion 批量 embedding 限流（`EmbedBatch`），交互聊天 `Embed` 永不过闸，防止批量入库打爆模型 API。

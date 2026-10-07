@@ -68,7 +68,8 @@ func (j *Job) Scan(ctx context.Context) error {
 	now := j.now()
 	enabled := true
 	subscriptions, err := j.subscriptionRepo.List(ctx, port.SubscriptionListFilter{
-		Enabled: &enabled,
+		LegacyOnly: true,
+		Enabled:    &enabled,
 		ListOptions: port.ListOptions{
 			Limit: j.batchSize,
 		},

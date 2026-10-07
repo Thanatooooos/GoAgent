@@ -22,10 +22,13 @@ const (
 )
 
 type Request struct {
+	DocumentsOnly    bool
 	UserID           string
 	Query            string
 	KnowledgeBaseIDs []string
 	TopK             int
+	RecallBudget     int
+	CandidateLimit   int
 	ScoreThreshold   *float32
 	RerankTopN       int
 	SearchMode       string
@@ -75,7 +78,6 @@ func (e *Engine) SetFactMemoryRetriever(retriever FactMemoryRetriever) {
 		return
 	}
 	e.factMemory = retriever
-	e.rebuildChannels()
 }
 
 func (e *Engine) SetWikiRetriever(retriever WikiRetriever) {
@@ -95,9 +97,6 @@ func (e *Engine) rebuildChannels() {
 		NewKeywordChannel(e.searcher),
 		NewMetadataTitleChannel(e.searcher),
 		NewWikiPageChannel(e.wikiRetriever),
-	}
-	if e.factMemory != nil {
-		channels = append(channels, NewFactMemoryChannel(e.factMemory))
 	}
 	e.channels = channels
 }
@@ -140,15 +139,17 @@ func (e *Engine) RetrieveByVector(ctx context.Context, vector []float32, request
 		return Result{}, nil
 	}
 
-	topK := request.TopK
-	if topK <= 0 {
-		topK = DefaultTopK
+	searchCtx := buildSearchContext(request)
+	topK := searchCtx.TopK
+	searchTopK := searchCtx.RecallBudget
+	if searchTopK < searchCtx.CandidateLimit {
+		searchTopK = searchCtx.CandidateLimit
 	}
 
 	hits, err := e.searcher.Search(ctx, corevector.SearchRequest{
 		Vector:           vector,
 		KnowledgeBaseIDs: request.KnowledgeBaseIDs,
-		TopK:             topK,
+		TopK:             searchTopK,
 		ScoreThreshold:   request.ScoreThreshold,
 	})
 	if err != nil {
@@ -156,8 +157,11 @@ func (e *Engine) RetrieveByVector(ctx context.Context, vector []float32, request
 	}
 
 	chunks := toRetrievedChunks(hits)
+	if len(chunks) > searchCtx.CandidateLimit {
+		chunks = chunks[:searchCtx.CandidateLimit]
+	}
 	if e.reranker != nil && len(chunks) > 1 {
-		topN := request.RerankTopN
+		topN := searchCtx.RerankTopN
 		if topN <= 0 || topN > len(chunks) {
 			topN = len(chunks)
 		}
@@ -165,6 +169,9 @@ func (e *Engine) RetrieveByVector(ctx context.Context, vector []float32, request
 		if rerankErr == nil && len(reranked) > 0 {
 			chunks = reranked
 		}
+	}
+	if len(chunks) > topK {
+		chunks = chunks[:topK]
 	}
 
 	return Result{
@@ -246,7 +253,7 @@ func (e *Engine) executeChannels(ctx context.Context, searchCtx SearchContext) (
 
 func (e *Engine) executeProcessors(ctx context.Context, searchCtx SearchContext, channelResults []SearchChannelResult) ([]convention.RetrievedChunk, *PipelineTrace, error) {
 	current := []convention.RetrievedChunk{}
-	trace := &PipelineTrace{}
+	trace := &PipelineTrace{RecallBudget: searchCtx.RecallBudget, CandidateLimit: searchCtx.CandidateLimit, ContextTopK: searchCtx.TopK}
 	processors := e.processors
 	if len(processors) == 0 {
 		processors = []SearchResultPostProcessor{
@@ -269,6 +276,9 @@ func (e *Engine) executeProcessors(ctx context.Context, searchCtx SearchContext,
 			return nil, nil, fmt.Errorf("post processor %s: %w", processor.Name(), err)
 		}
 		current = next
+	}
+	if searchCtx.TopK > 0 && len(current) > searchCtx.TopK {
+		current = current[:searchCtx.TopK]
 	}
 	trace.FinalChunkIDs = chunkIDs(current)
 	return current, trace, nil

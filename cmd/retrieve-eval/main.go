@@ -10,11 +10,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	ragretrieve "local/rag-project/internal/app/rag/core/retrieve"
 	rageval "local/rag-project/internal/app/rag/evaluation"
 	ragbootstrap "local/rag-project/internal/bootstrap/rag"
 	"local/rag-project/internal/framework/config"
+	infraai "local/rag-project/internal/infra-ai"
 )
 
 type sampleFile struct {
@@ -28,10 +30,15 @@ func main() {
 	configDir := flag.String("config-dir", "configs", "config directory used with -execute")
 	jsonOutput := flag.Bool("json", false, "print evaluation summary as JSON")
 	outputPath := flag.String("output", "", "write evaluation summary to a file instead of stdout")
+	executedOutputPath := flag.String("executed-output", "", "write executed samples with retrieved IDs and pipeline traces to a JSON file")
 	rerankModel := flag.String("rerank-model", "", "optional rerank model override, e.g. qwen3-reranker-8b or rerank-noop")
 	vectorTopKMultiplier := flag.Int("vector-topk-multiplier", 0, "optional override for rag.search.channels.vector-global.top-k-multiplier")
 	searchModeOverride := flag.String("search-mode", "", "optional retrieval mode override: semantic, keyword, hybrid, auto")
 	rewrite := flag.Bool("rewrite", false, "run query rewrite before retrieval (uses LLM API when enabled in config)")
+	disableRerank := flag.Bool("disable-rerank", false, "disable the configured reranker when executing retrieval")
+	queryVectorCachePath := flag.String("query-vector-cache", "", "optional JSON cache for original query embeddings used with -execute")
+	perSampleTimeout := flag.Duration("per-sample-timeout", 0, "optional timeout for one retrieval sample, e.g. 30s; zero disables it")
+	traceExecution := flag.Bool("trace-execution", false, "print per-sample retrieval start, completion, and elapsed time")
 	flag.Parse()
 
 	if strings.TrimSpace(*inputPath) == "" {
@@ -61,7 +68,20 @@ func main() {
 			fmt.Fprintf(os.Stderr, "load config failed: %v\n", err)
 			os.Exit(1)
 		}
-		runtime, err := ragbootstrap.NewRuntime(context.Background(), ragbootstrap.RuntimeOptions{})
+		aiRuntime := infraai.NewRuntime()
+		if *disableRerank {
+			aiRuntime.Rerank = nil
+		}
+		var queryVectorCache *queryVectorCache
+		if strings.TrimSpace(*queryVectorCachePath) != "" {
+			queryVectorCache, err = loadQueryVectorCache(strings.TrimSpace(*queryVectorCachePath), config.Get().AI.Embedding.DefaultModel)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "load query vector cache failed: %v\n", err)
+				os.Exit(1)
+			}
+			aiRuntime.Embedding = &cachedEmbeddingService{inner: aiRuntime.Embedding, cache: queryVectorCache}
+		}
+		runtime, err := ragbootstrap.NewRuntime(context.Background(), ragbootstrap.RuntimeOptions{AIRuntime: aiRuntime})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "build rag runtime failed: %v\n", err)
 			os.Exit(1)
@@ -71,9 +91,25 @@ func main() {
 		if err := executeSamples(context.Background(), runtime, samples, executeOptions{
 			searchModeOverride: strings.TrimSpace(*searchModeOverride),
 			useRewrite:         *rewrite,
+			perSampleTimeout:   *perSampleTimeout,
+			traceExecution:     *traceExecution,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "execute retrieval samples failed: %v\n", err)
 			os.Exit(1)
+		}
+		if queryVectorCache != nil {
+			fmt.Fprintf(os.Stderr, "query vector cache: hits=%d misses=%d entries=%d path=%s\n", queryVectorCache.hits, queryVectorCache.misses, queryVectorCache.entryCount(), *queryVectorCachePath)
+		}
+		if strings.TrimSpace(*executedOutputPath) != "" {
+			data, err := json.MarshalIndent(sampleFile{Samples: samples}, "", "  ")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "marshal executed samples failed: %v\n", err)
+				os.Exit(1)
+			}
+			if err := os.WriteFile(strings.TrimSpace(*executedOutputPath), append(data, '\n'), 0o644); err != nil {
+				fmt.Fprintf(os.Stderr, "write executed samples failed: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -92,6 +128,8 @@ func main() {
 type executeOptions struct {
 	searchModeOverride string
 	useRewrite         bool
+	perSampleTimeout   time.Duration
+	traceExecution     bool
 }
 
 func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples []rageval.Sample, opts executeOptions) error {
@@ -121,8 +159,23 @@ func executeSamples(ctx context.Context, runtime *ragbootstrap.Runtime, samples 
 	}
 
 	for i := range samples {
-		if err := rageval.ExecuteSample(ctx, &samples[i], execCfg); err != nil {
-			return err
+		sampleCtx := ctx
+		cancel := func() {}
+		if opts.perSampleTimeout > 0 {
+			sampleCtx, cancel = context.WithTimeout(ctx, opts.perSampleTimeout)
+		}
+		startedAt := time.Now()
+		if opts.traceExecution {
+			fmt.Fprintf(os.Stderr, "retrieve sample=%s started\n", samples[i].Name)
+		}
+		err := rageval.ExecuteSample(sampleCtx, &samples[i], execCfg)
+		elapsed := time.Since(startedAt)
+		cancel()
+		if opts.traceExecution {
+			fmt.Fprintf(os.Stderr, "retrieve sample=%s elapsed=%s err=%v\n", samples[i].Name, elapsed.Round(time.Millisecond), err)
+		}
+		if err != nil {
+			return fmt.Errorf("retrieve sample %q after %s: %w", samples[i].Name, elapsed.Round(time.Millisecond), err)
 		}
 	}
 	return nil

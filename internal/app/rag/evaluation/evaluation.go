@@ -26,43 +26,46 @@ type RetrievedItem struct {
 }
 
 type Sample struct {
-	Name              string                       `json:"name"`
-	Query             string                       `json:"query"`
-	UserID            string                       `json:"userId,omitempty"`
-	Tags              []string                     `json:"tags,omitempty"`
-	Target            Target                       `json:"target"`
-	ExpectedIDs       []string                     `json:"expectedIds"`
-	Retrieved         []RetrievedItem              `json:"retrieved"`
-	ChannelRetrieved  map[string][]RetrievedItem   `json:"channelRetrieved,omitempty"`
-	KnowledgeBaseIDs  []string                     `json:"knowledgeBaseIds,omitempty"`
-	SearchMode        string                       `json:"searchMode,omitempty"`
-	TopK              int                          `json:"topK,omitempty"`
-	ChunkStrategy     string                       `json:"chunkStrategy,omitempty"`
-	ExpectedRelevance map[string]int               `json:"expectedRelevance,omitempty"`
-	RewrittenQuery    string                       `json:"rewrittenQuery,omitempty"`
-	SubQuestions      []string                     `json:"subQuestions,omitempty"`
-	NeedRetrieval     bool                         `json:"needRetrieval,omitempty"`
-	ExecutionMode     string                       `json:"executionMode,omitempty"`
-	PipelineTrace     map[string]any               `json:"pipelineTrace,omitempty"`
+	Name              string                     `json:"name"`
+	Query             string                     `json:"query"`
+	UserID            string                     `json:"userId,omitempty"`
+	Tags              []string                   `json:"tags,omitempty"`
+	Target            Target                     `json:"target"`
+	ExpectedIDs       []string                   `json:"expectedIds"`
+	Retrieved         []RetrievedItem            `json:"retrieved"`
+	ChannelRetrieved  map[string][]RetrievedItem `json:"channelRetrieved,omitempty"`
+	KnowledgeBaseIDs  []string                   `json:"knowledgeBaseIds,omitempty"`
+	SearchMode        string                     `json:"searchMode,omitempty"`
+	TopK              int                        `json:"topK,omitempty"`
+	ChunkStrategy     string                     `json:"chunkStrategy,omitempty"`
+	ExpectedRelevance map[string]int             `json:"expectedRelevance,omitempty"`
+	HardNegativeIDs   []string                   `json:"hardNegativeChildIds,omitempty"`
+	RewrittenQuery    string                     `json:"rewrittenQuery,omitempty"`
+	SubQuestions      []string                   `json:"subQuestions,omitempty"`
+	NeedRetrieval     bool                       `json:"needRetrieval,omitempty"`
+	ExecutionMode     string                     `json:"executionMode,omitempty"`
+	PipelineTrace     map[string]any             `json:"pipelineTrace,omitempty"`
 }
 
 type SampleResult struct {
-	Name              string                `json:"name"`
-	Query             string                `json:"query"`
-	Tags              []string              `json:"tags,omitempty"`
-	Target            Target                `json:"target"`
-	ExpectedIDs       []string              `json:"expectedIds"`
-	RetrievedCount    int                   `json:"retrievedCount"`
-	FirstRelevantRank int                   `json:"firstRelevantRank,omitempty"`
-	ReciprocalRank    float64               `json:"reciprocalRank"`
-	HitAtK            map[int]bool          `json:"hitAtK"`
-	RecallAtK         map[int]float64       `json:"recallAtK"`
-	NDCGAtK           map[int]float64       `json:"ndcgAtK"`
-	Channels          []ChannelSampleResult `json:"channels,omitempty"`
-	RewrittenQuery    string                `json:"rewrittenQuery,omitempty"`
-	SubQuestions      []string              `json:"subQuestions,omitempty"`
-	NeedRetrieval     bool                  `json:"needRetrieval,omitempty"`
-	ExecutionMode     string                `json:"executionMode,omitempty"`
+	Name                            string                `json:"name"`
+	Query                           string                `json:"query"`
+	Tags                            []string              `json:"tags,omitempty"`
+	Target                          Target                `json:"target"`
+	ExpectedIDs                     []string              `json:"expectedIds"`
+	Retrieved                       []RetrievedItem       `json:"retrieved,omitempty"`
+	RetrievedCount                  int                   `json:"retrievedCount"`
+	FirstRelevantRank               int                   `json:"firstRelevantRank,omitempty"`
+	ReciprocalRank                  float64               `json:"reciprocalRank"`
+	HitAtK                          map[int]bool          `json:"hitAtK"`
+	RecallAtK                       map[int]float64       `json:"recallAtK"`
+	NDCGAtK                         map[int]float64       `json:"ndcgAtK"`
+	Channels                        []ChannelSampleResult `json:"channels,omitempty"`
+	RewrittenQuery                  string                `json:"rewrittenQuery,omitempty"`
+	SubQuestions                    []string              `json:"subQuestions,omitempty"`
+	NeedRetrieval                   bool                  `json:"needRetrieval,omitempty"`
+	ExecutionMode                   string                `json:"executionMode,omitempty"`
+	HardNegativeBeforeFirstRelevant []string              `json:"hardNegativeBeforeFirstRelevant,omitempty"`
 }
 
 type AggregateMetrics struct {
@@ -79,11 +82,21 @@ type TagSummary struct {
 }
 
 type Summary struct {
-	Ks       []int                     `json:"ks"`
-	Overall  AggregateMetrics          `json:"overall"`
-	Channels []ChannelAggregateMetrics `json:"channels,omitempty"`
-	ByTag    []TagSummary              `json:"byTag"`
-	Samples  []SampleResult            `json:"samples"`
+	Ks            []int                     `json:"ks"`
+	Overall       AggregateMetrics          `json:"overall"`
+	HardNegatives HardNegativeSummary       `json:"hardNegatives,omitempty"`
+	Channels      []ChannelAggregateMetrics `json:"channels,omitempty"`
+	ByTag         []TagSummary              `json:"byTag"`
+	Samples       []SampleResult            `json:"samples"`
+}
+
+type HardNegativeSummary struct {
+	SampleCount                       int      `json:"sampleCount"`
+	CandidateCount                    int      `json:"candidateCount"`
+	SamplesWithNegativeBeforeRelevant int      `json:"samplesWithNegativeBeforeRelevant"`
+	NegativeBeforeRelevantCount       int      `json:"negativeBeforeRelevantCount"`
+	SampleRate                        float64  `json:"sampleRate"`
+	SampleNames                       []string `json:"sampleNames,omitempty"`
 }
 
 func Evaluate(samples []Sample, ks []int) (Summary, error) {
@@ -108,11 +121,12 @@ func Evaluate(samples []Sample, ks []int) (Summary, error) {
 
 	byTag := buildTagSummaries(results, normalizedKs)
 	return Summary{
-		Ks:       normalizedKs,
-		Overall:  aggregate(results, normalizedKs),
-		Channels: aggregateChannelMetrics(results, normalizedKs),
-		ByTag:    byTag,
-		Samples:  results,
+		Ks:            normalizedKs,
+		Overall:       aggregate(results, normalizedKs),
+		HardNegatives: summarizeHardNegatives(samples, results),
+		Channels:      aggregateChannelMetrics(results, normalizedKs),
+		ByTag:         byTag,
+		Samples:       results,
 	}, nil
 }
 
@@ -185,22 +199,68 @@ func evaluateSample(sample Sample, ks []int) (SampleResult, error) {
 	ndcgAtK := computeNDCG(rankedIDs, relevance, ks)
 
 	return SampleResult{
-		Name:              name,
-		Query:             strings.TrimSpace(sample.Query),
-		Tags:              normalizeTags(sample.Tags),
-		Target:            target,
-		ExpectedIDs:       sortedKeys(expectedSet),
-		RetrievedCount:    len(rankedIDs),
-		FirstRelevantRank: firstRelevantRank,
-		ReciprocalRank:    reciprocalRank,
-		HitAtK:            hitAtK,
-		RecallAtK:         recallAtK,
-		NDCGAtK:           ndcgAtK,
-		RewrittenQuery:    strings.TrimSpace(sample.RewrittenQuery),
-		SubQuestions:      append([]string(nil), sample.SubQuestions...),
-		NeedRetrieval:     sample.NeedRetrieval,
-		ExecutionMode:     strings.TrimSpace(sample.ExecutionMode),
+		Name:                            name,
+		Query:                           strings.TrimSpace(sample.Query),
+		Tags:                            normalizeTags(sample.Tags),
+		Target:                          target,
+		ExpectedIDs:                     sortedKeys(expectedSet),
+		Retrieved:                       append([]RetrievedItem(nil), sample.Retrieved...),
+		RetrievedCount:                  len(rankedIDs),
+		FirstRelevantRank:               firstRelevantRank,
+		ReciprocalRank:                  reciprocalRank,
+		HitAtK:                          hitAtK,
+		RecallAtK:                       recallAtK,
+		NDCGAtK:                         ndcgAtK,
+		RewrittenQuery:                  strings.TrimSpace(sample.RewrittenQuery),
+		SubQuestions:                    append([]string(nil), sample.SubQuestions...),
+		NeedRetrieval:                   sample.NeedRetrieval,
+		ExecutionMode:                   strings.TrimSpace(sample.ExecutionMode),
+		HardNegativeBeforeFirstRelevant: hardNegativesBeforeFirstRelevant(sample, rankedIDs, firstRelevantRank),
 	}, nil
+}
+
+func hardNegativesBeforeFirstRelevant(sample Sample, rankedIDs []string, firstRelevantRank int) []string {
+	if len(sample.HardNegativeIDs) == 0 {
+		return nil
+	}
+	negativeSet := make(map[string]struct{}, len(sample.HardNegativeIDs))
+	for _, id := range sample.HardNegativeIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			negativeSet[id] = struct{}{}
+		}
+	}
+	limit := len(rankedIDs)
+	if firstRelevantRank > 0 {
+		limit = firstRelevantRank - 1
+	}
+	result := make([]string, 0)
+	for _, id := range rankedIDs[:limit] {
+		if _, ok := negativeSet[id]; ok {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
+func summarizeHardNegatives(samples []Sample, results []SampleResult) HardNegativeSummary {
+	summary := HardNegativeSummary{}
+	for index, sample := range samples {
+		if len(sample.HardNegativeIDs) == 0 {
+			continue
+		}
+		summary.SampleCount++
+		summary.CandidateCount += len(sample.HardNegativeIDs)
+		if len(results[index].HardNegativeBeforeFirstRelevant) == 0 {
+			continue
+		}
+		summary.SamplesWithNegativeBeforeRelevant++
+		summary.NegativeBeforeRelevantCount += len(results[index].HardNegativeBeforeFirstRelevant)
+		summary.SampleNames = append(summary.SampleNames, results[index].Name)
+	}
+	if summary.SampleCount > 0 {
+		summary.SampleRate = float64(summary.SamplesWithNegativeBeforeRelevant) / float64(summary.SampleCount)
+	}
+	return summary
 }
 
 func aggregate(results []SampleResult, ks []int) AggregateMetrics {
@@ -413,7 +473,12 @@ func computeNDCG(rankedIDs []string, relevance map[string]int, ks []int) map[int
 		idcg := dcgAtK(idealGrades, k)
 
 		gains := make([]int, min(k, len(rankedIDs)))
+		seen := make(map[string]struct{}, len(gains))
 		for i := 0; i < len(gains); i++ {
+			if _, duplicated := seen[rankedIDs[i]]; duplicated {
+				continue
+			}
+			seen[rankedIDs[i]] = struct{}{}
 			if grade, ok := relevance[rankedIDs[i]]; ok {
 				gains[i] = grade
 			}

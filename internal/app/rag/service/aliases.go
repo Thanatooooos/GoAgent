@@ -7,10 +7,7 @@ import (
 	ragprompt "local/rag-project/internal/app/rag/core/prompt"
 	"local/rag-project/internal/app/rag/port"
 	ragconversation "local/rag-project/internal/app/rag/service/conversation"
-	ragchat "local/rag-project/internal/app/rag/service/chat"
 	ragsessionrecall "local/rag-project/internal/app/rag/service/sessionrecall"
-	ragtrace "local/rag-project/internal/app/rag/service/trace"
-	userport "local/rag-project/internal/app/user/port"
 	aichat "local/rag-project/internal/infra-ai/chat"
 	aiembedding "local/rag-project/internal/infra-ai/embedding"
 )
@@ -45,37 +42,9 @@ type (
 	SessionRecallResult         = ragsessionrecall.SessionRecallResult
 	SessionRecallOptions        = ragsessionrecall.SessionRecallOptions
 	SessionRecallCacheOptions   = ragsessionrecall.SessionRecallCacheOptions
-	LongMessageProcessorOptions   = ragsessionrecall.LongMessageProcessorOptions
+	LongMessageProcessorOptions = ragsessionrecall.LongMessageProcessorOptions
 	LongMessageContentProcessor = ragsessionrecall.LongMessageContentProcessor
-
-	TraceService          = ragtrace.Service
-	PageTraceRunsInput    = ragtrace.PageTraceRunsInput
-	TraceRunPageResult    = ragtrace.TraceRunPageResult
-	TraceDetail           = ragtrace.TraceDetail
-
-	RagChatService                  = ragchat.RagChatService
-	RagChatInput                    = ragchat.RagChatInput
-	RagChatMeta                     = ragchat.RagChatMeta
-	RagChatFinishPayload            = ragchat.RagChatFinishPayload
-	RagChatMemoryStoredPayload      = ragchat.RagChatMemoryStoredPayload
-	RagChatSessionRecallHitPayload  = ragchat.RagChatSessionRecallHitPayload
-	RagChatSessionRecallPayload     = ragchat.RagChatSessionRecallPayload
-	RagChatEventSink                = ragchat.RagChatEventSink
-	RagChatDeps                     = ragchat.RagChatDeps
-	RagChatOptions                  = ragchat.RagChatOptions
-	ChatTracer                      = ragchat.ChatTracer
-	ChatContextBudgetOptions        = ragchat.ChatContextBudgetOptions
-	ChatContextBudgetResult         = ragchat.ChatContextBudgetResult
-	AgentRuntimeService             = ragchat.AgentRuntimeService
-	RagChatApprovalResumeInput      = ragchat.RagChatApprovalResumeInput
-	RagChatApprovalPendingQueryInput = ragchat.RagChatApprovalPendingQueryInput
-	RagChatAgentOutcomePayload      = ragchat.RagChatAgentOutcomePayload
-	RagChatApprovalPendingPayload   = ragchat.RagChatApprovalPendingPayload
-	RagChatAgentServiceErrorPayload = ragchat.RagChatAgentServiceErrorPayload
 )
-
-// NextTaskID re-exports the chat package task-id generator for HTTP layer use.
-var NextTaskID = ragchat.NextTaskID
 
 func NewConversationService(
 	conversationRepo port.ConversationRepository,
@@ -128,23 +97,4 @@ func NewSessionRecallService(
 
 func NewLongMessageContentProcessor(options LongMessageProcessorOptions) *LongMessageContentProcessor {
 	return ragsessionrecall.NewLongMessageContentProcessor(options)
-}
-
-func NewTraceService(
-	traceRunRepo port.RagTraceRunRepository,
-	traceNodeRepo port.RagTraceNodeRepository,
-	userRepo userport.UserRepository,
-) *TraceService {
-	return ragtrace.NewService(traceRunRepo, traceNodeRepo, userRepo)
-}
-
-func NewRagChatServiceWithDeps(deps RagChatDeps, opts RagChatOptions) (*RagChatService, error) {
-	return ragchat.NewRagChatServiceWithDeps(deps, opts)
-}
-
-func NewChatTracer(
-	traceRunRepo port.RagTraceRunRepository,
-	traceNodeRepo port.RagTraceNodeRepository,
-) *ChatTracer {
-	return ragchat.NewChatTracer(traceRunRepo, traceNodeRepo)
 }

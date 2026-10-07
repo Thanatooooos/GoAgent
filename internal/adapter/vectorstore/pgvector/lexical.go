@@ -80,6 +80,56 @@ func buildLexicalQuery(raw string) lexicalQuery {
 	}
 }
 
+// buildBM25Query converts a natural-language Chinese query into ParadeDB's
+// boolean query syntax. ParadeDB otherwise interprets adjacent Chinese terms
+// as an implicit AND, which makes ordinary questions (for example,
+// "保安服务是什么") needlessly return no results. The content index is a
+// Chinese-compatible bigram index, so OR-ing its meaningful bigrams preserves
+// lexical recall while leaving English and explicit boolean queries untouched.
+func buildBM25Query(raw string) string {
+	query := strings.TrimSpace(raw)
+	if query == "" || !containsHan(query) || containsBM25Operator(query) {
+		return query
+	}
+
+	tokens := lexicalTokens(normalizeLexicalQueryText(query))
+	filtered := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if containsQuestionRune(token) {
+			continue
+		}
+		filtered = append(filtered, token)
+	}
+	if len(filtered) == 0 {
+		return query
+	}
+	return strings.Join(filtered, " OR ")
+}
+
+func containsHan(text string) bool {
+	for _, r := range text {
+		if isHanRune(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsBM25Operator(query string) bool {
+	upper := strings.ToUpper(query)
+	return strings.Contains(upper, " AND ") || strings.Contains(upper, " OR ") || strings.Contains(upper, " NOT ")
+}
+
+func containsQuestionRune(text string) bool {
+	for _, r := range text {
+		switch r {
+		case '的', '是', '什', '么', '哪', '如', '何', '怎', '样', '为', '吗', '呢', '请', '问':
+			return true
+		}
+	}
+	return false
+}
+
 func lexicalLexemes(text string) string {
 	return strings.Join(lexicalTokens(normalizeLexicalDocumentText(text)), " ")
 }

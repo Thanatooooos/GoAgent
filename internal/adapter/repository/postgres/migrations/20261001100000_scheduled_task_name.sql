@@ -1,0 +1,1 @@
+ALTER TABLE t_scheduled_task_version ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL DEFAULT '';

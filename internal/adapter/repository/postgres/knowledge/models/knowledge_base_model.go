@@ -7,6 +7,7 @@ import (
 )
 
 type KnowledgeBaseModel struct {
+	WorkPrivate    bool                  `gorm:"column:work_private;not null;default:false"`
 	ID             string                `gorm:"column:id;type:varchar(20);primaryKey"`
 	Name           string                `gorm:"column:name;type:varchar(128);not null"`
 	EmbeddingModel string                `gorm:"column:embedding_model;type:varchar(64);not null"`

@@ -8,7 +8,6 @@ type KnowledgeDocumentChunkLogModel struct {
 	Status          string     `gorm:"column:status;type:varchar(16);not null"`
 	ProcessMode     string     `gorm:"column:process_mode;type:varchar(16)"`
 	ChunkStrategy   string     `gorm:"column:chunk_strategy;type:varchar(16)"`
-	PipelineID      string     `gorm:"column:pipeline_id;type:varchar(20)"`
 	ExtractDuration int64      `gorm:"column:extract_duration"`
 	ChunkDuration   int64      `gorm:"column:chunk_duration"`
 	EmbedDuration   int64      `gorm:"column:embed_duration"`

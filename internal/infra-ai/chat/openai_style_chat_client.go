@@ -275,6 +275,111 @@ func (op *OpenAIStyleChatClient) StreamChat(req convention.ChatRequest, callback
 	return handle, nil
 }
 
+// StreamNative is the synchronous, tool-capable counterpart used by the new
+// runtime adapter. Legacy chat keeps using StreamChat unchanged.
+func (op *OpenAIStyleChatClient) StreamNative(ctx context.Context, req NativeRequest, target model.ModelTarget, callback NativeStreamCallback) error {
+	if callback == nil {
+		return fmt.Errorf(errCallbackNil)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	body := map[string]any{"model": target.Candidate.Model, "stream": true, "messages": nativeMessages(req), "tools": nativeTools(req.Tools)}
+	if req.JSONMode {
+		body["response_format"] = map[string]string{"type": "json_object"}
+	}
+	if req.Thinking || op.provider == "siliconflow" {
+		body["enable_thinking"] = req.Thinking
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	httpReq, err := op.newRequest(ctx, target, data, aihttp.MediaTypeSSE)
+	if err != nil {
+		return err
+	}
+	resp, err := op.effectiveHTTPClient(true).Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := op.respHelper.CheckResponse(resp, op.provider); err != nil {
+		return err
+	}
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && len(line) == 0 {
+			break
+		}
+		event, parseErr := op.parseStreamLine(line, req.Thinking)
+		if parseErr != nil {
+			return parseErr
+		}
+		if event.HasReasoning() {
+			if err := callback.OnThinking(event.Reasoning); err != nil {
+				return err
+			}
+		}
+		if event.HasContent() {
+			if err := callback.OnContent(event.Content); err != nil {
+				return err
+			}
+		}
+		for _, call := range event.ToolCalls {
+			if err := callback.OnToolCall(call); err != nil {
+				return err
+			}
+		}
+		if event.Completed {
+			return callback.OnComplete(event.FinishReason)
+		}
+		if err != nil {
+			break
+		}
+	}
+	if httpReq.Context().Err() != nil {
+		return httpReq.Context().Err()
+	}
+	return fmt.Errorf("%s stream response ended before completion", op.provider)
+}
+
+func nativeMessages(req NativeRequest) []map[string]any {
+	messages := make([]map[string]any, 0, len(req.System)+len(req.Messages))
+	var system []string
+	for _, block := range req.System {
+		if strings.TrimSpace(block) != "" {
+			system = append(system, block)
+		}
+	}
+	if len(system) > 0 {
+		messages = append(messages, map[string]any{"role": "system", "content": strings.Join(system, "\n\n")})
+	}
+	for _, message := range req.Messages {
+		item := map[string]any{"role": message.Role, "content": message.Content}
+		if message.ToolCallID != "" {
+			item["tool_call_id"] = message.ToolCallID
+		}
+		if len(message.ToolCalls) > 0 {
+			calls := make([]map[string]any, 0, len(message.ToolCalls))
+			for _, call := range message.ToolCalls {
+				calls = append(calls, map[string]any{"id": call.ID, "type": "function", "function": map[string]any{"name": call.Name, "arguments": string(call.Arguments)}})
+			}
+			item["tool_calls"] = calls
+		}
+		messages = append(messages, item)
+	}
+	return messages
+}
+func nativeTools(tools []NativeTool) []map[string]any {
+	result := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
+		result = append(result, map[string]any{"type": "function", "function": map[string]any{"name": tool.Name, "description": tool.Description, "parameters": json.RawMessage(tool.Parameters)}})
+	}
+	return result
+}
+
 func (op *OpenAIStyleChatClient) doStream(httpReq *http.Request, callback StreamCallback, req convention.ChatRequest) {
 	defer func() {
 		if recovered := recover(); recovered != nil {

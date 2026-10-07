@@ -18,8 +18,6 @@ type retrieveBundle struct {
 	rewriteService       ragrewrite.Service
 	promptService        *ragprompt.Service
 	retrieveService      *ragretrieve.Engine
-	traceService         *ragservice.TraceService
-	tracer               *ragservice.ChatTracer
 	sessionRecallService ragservice.SessionRecallService
 }
 
@@ -49,16 +47,12 @@ func buildRetrieveServices(
 	wikiLinkRepo := postgresknowledge.NewWikiLinkRepository(buildCtx.db)
 	wikiRetriever := wikiretrieval.NewRetriever(wikiPageRepo, wikiLinkRepo)
 	retrieveService.SetWikiRetriever(wikiRetriever)
-	traceService := ragservice.NewTraceService(repos.traceRunRepo, repos.traceNodeRepo, repos.userRepo)
-	tracer := ragservice.NewChatTracer(repos.traceRunRepo, repos.traceNodeRepo)
 	sessionRecallService := buildSessionRecallService(buildCtx, repos, memory)
 
 	return retrieveBundle{
 		rewriteService:       rewriteService,
 		promptService:        promptService,
 		retrieveService:      retrieveService,
-		traceService:         traceService,
-		tracer:               tracer,
 		sessionRecallService: sessionRecallService,
 	}
 }

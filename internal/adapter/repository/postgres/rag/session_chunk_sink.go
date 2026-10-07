@@ -33,13 +33,26 @@ func (s *ConversationMessageChunkSink) PersistMessageChunks(ctx context.Context,
 	if s == nil || s.db == nil {
 		return fmt.Errorf("gorm db is required")
 	}
-	if len(chunks) == 0 {
-		return nil
+	prepared, err := s.PrepareChunks(ctx, message, chunks)
+	if err != nil {
+		return err
 	}
-	if s.embedding == nil {
-		return fmt.Errorf("embedding service is required")
-	}
+	return PersistPreparedChunks(ctx, s.db, prepared)
+}
 
+// PreparedSessionChunks contains database writes only; embedding runs before locks.
+type PreparedSessionChunks struct {
+	Chunks     []domain.SessionChunk
+	Embeddings []domain.SessionChunkEmbedding
+}
+
+func (s *ConversationMessageChunkSink) PrepareChunks(ctx context.Context, message domain.ConversationMessage, chunks []port.ProcessedConversationMessageChunk) (PreparedSessionChunks, error) {
+	if len(chunks) == 0 {
+		return PreparedSessionChunks{}, nil
+	}
+	if s == nil || s.embedding == nil {
+		return PreparedSessionChunks{}, fmt.Errorf("embedding service is required")
+	}
 	now := s.now()
 	sessionChunks := make([]domain.SessionChunk, 0, len(chunks))
 	sessionEmbeddings := make([]domain.SessionChunkEmbedding, 0, len(chunks))
@@ -50,11 +63,11 @@ func (s *ConversationMessageChunkSink) PersistMessageChunks(ctx context.Context,
 		}
 		chunkID, err := nextSessionChunkID()
 		if err != nil {
-			return err
+			return PreparedSessionChunks{}, err
 		}
 		vector, err := s.embedding.Embed(content)
 		if err != nil {
-			return fmt.Errorf("embed session chunk %d: %w", chunk.ChunkIndex, err)
+			return PreparedSessionChunks{}, fmt.Errorf("embed session chunk %d: %w", chunk.ChunkIndex, err)
 		}
 		sessionChunks = append(sessionChunks, domain.SessionChunk{
 			ID:             chunkID,
@@ -75,15 +88,18 @@ func (s *ConversationMessageChunkSink) PersistMessageChunks(ctx context.Context,
 			UpdateTime: now,
 		})
 	}
-	if len(sessionChunks) == 0 {
+	return PreparedSessionChunks{Chunks: sessionChunks, Embeddings: sessionEmbeddings}, nil
+}
+
+func PersistPreparedChunks(ctx context.Context, db *gorm.DB, prepared PreparedSessionChunks) error {
+	if len(prepared.Chunks) == 0 {
 		return nil
 	}
-
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := NewSessionChunkRepository(tx).CreateBatch(ctx, sessionChunks); err != nil {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := NewSessionChunkRepository(tx).CreateBatch(ctx, prepared.Chunks); err != nil {
 			return err
 		}
-		return NewSessionChunkEmbeddingRepository(tx).UpsertBatch(ctx, sessionEmbeddings)
+		return NewSessionChunkEmbeddingRepository(tx).UpsertBatch(ctx, prepared.Embeddings)
 	})
 }
 

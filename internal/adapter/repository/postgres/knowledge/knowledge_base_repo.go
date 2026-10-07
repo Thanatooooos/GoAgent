@@ -128,6 +128,7 @@ func (r *KnowledgeBaseRepository) List(ctx context.Context, filter port.Knowledg
 }
 
 func (r *KnowledgeBaseRepository) applyKnowledgeBaseListFilter(query *gorm.DB, filter port.KnowledgeBaseListFilter) *gorm.DB {
+	query = query.Where("work_private = ?", false)
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
 		query = query.Where("name ILIKE ?", like)

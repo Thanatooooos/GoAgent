@@ -9,6 +9,7 @@ import (
 
 type BriefGenerationInput struct {
 	UserID        string
+	RunID         string
 	BriefDate     string
 	Topics        []string
 	Candidates    []domain.Candidate
@@ -17,9 +18,9 @@ type BriefGenerationInput struct {
 }
 
 type BriefGenerationResult struct {
-	Output      domain.BriefArtifact
-	TokenUsage  aichat.TokenUsage
-	Model       string
+	Output        domain.BriefArtifact
+	TokenUsage    aichat.TokenUsage
+	Model         string
 	PromptVersion string
 }
 

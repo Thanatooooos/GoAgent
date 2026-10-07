@@ -30,6 +30,11 @@ func TestResolvePageState(t *testing.T) {
 	if state != PageStateReady {
 		t.Fatalf("expected ready, got %q", state)
 	}
+	subscription.Enabled = false
+	state, err = ResolvePageState(subscription, readyIssue, "2026-06-29", now)
+	if err != nil || state != PageStateReady {
+		t.Fatalf("paused subscription hid published history: %s %v", state, err)
+	}
 }
 
 func TestReadServiceGetByDateSetsPageState(t *testing.T) {

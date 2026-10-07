@@ -33,6 +33,15 @@ const graphNodeColor = (node: WikiGraphData["nodes"][number]) => {
   return "#3b82f6";
 };
 
+const graphEdgeColor = (node: WikiGraphData["nodes"][number] | undefined, highlighted: boolean) => {
+  if (highlighted) return "#2563eb";
+  return node ? graphNodeColor(node) : "#94a3b8";
+};
+
+type GraphMode = "focus" | "all";
+
+type GraphPosition = { x: number; y: number };
+
 export function WikiBrowserPage() {
   const { kbId } = useParams();
   const navigate = useNavigate();
@@ -50,6 +59,9 @@ export function WikiBrowserPage() {
   const [error, setError] = useState("");
   const [pageError, setPageError] = useState("");
   const [graphError, setGraphError] = useState("");
+  const [graphMode, setGraphMode] = useState<GraphMode>("focus");
+  const [graphSearch, setGraphSearch] = useState("");
+  const [graphFocusID, setGraphFocusID] = useState<string | null>(null);
 
   useEffect(() => {
     if (!kbId) return;
@@ -138,32 +150,107 @@ export function WikiBrowserPage() {
 
   const handleSwitchToGraph = () => {
     setView("graph");
+    setGraphMode("focus");
     if (!graph && kbId) {
       loadGraph();
     }
   };
 
   const handleGraphNodeClick = (node: WikiGraphData["nodes"][number]) => {
+    setGraphFocusID(node.id);
+    setGraphMode("focus");
+  };
+
+  const handleGraphSearchChange = (value: string) => {
+    setGraphSearch(value);
+    if (!graph || !value.trim()) return;
+    const query = value.trim().toLowerCase();
+    const match = graph.nodes.find((node) =>
+      `${node.title} ${node.slug}`.toLowerCase().includes(query)
+    );
+    if (match) {
+      setGraphFocusID(match.id);
+      setGraphMode("focus");
+    }
+  };
+
+  const handleOpenGraphPage = (node: WikiGraphData["nodes"][number]) => {
     setView("list");
     navigate(`?slug=${encodeURIComponent(node.slug)}`);
   };
 
   const graphLayout = useMemo(() => {
     if (!graph) return null;
-    const sorted = [...graph.nodes].sort((a, b) => (b.outLinks ?? 0) - (a.outLinks ?? 0));
-    const radius = 180;
-    const cx = 250;
-    const cy = 250;
-    const positions = new Map<string, { x: number; y: number }>();
-    sorted.forEach((node, index) => {
-      const angle = (2 * Math.PI * index) / sorted.length - Math.PI / 2;
-      positions.set(node.id, { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+    const sorted = [...graph.nodes].sort((a, b) => {
+      const degreeA = (a.inLinks ?? 0) + (a.outLinks ?? 0);
+      const degreeB = (b.inLinks ?? 0) + (b.outLinks ?? 0);
+      return degreeB - degreeA || (a.title || a.slug).localeCompare(b.title || b.slug);
     });
-    const edges = (graph.edges || []).filter((edge) => positions.has(edge.from) && positions.has(edge.to));
+    const nodesByID = new Map(sorted.map((node) => [node.id, node]));
+    const focusNode =
+      nodesByID.get(graphFocusID || "") ||
+      (selected ? sorted.find((node) => node.slug === selected.slug) : undefined) ||
+      sorted[0];
+    const allEdges = (graph.edges || []).filter((edge) => nodesByID.has(edge.from) && nodesByID.has(edge.to));
+    const relatedEdges = focusNode
+      ? allEdges.filter((edge) => edge.from === focusNode.id || edge.to === focusNode.id)
+      : [];
+    const relatedNodeIDs = new Set<string>();
+    if (focusNode) {
+      relatedNodeIDs.add(focusNode.id);
+      relatedEdges.forEach((edge) => {
+        relatedNodeIDs.add(edge.from);
+        relatedNodeIDs.add(edge.to);
+      });
+    }
+
+    const positions = new Map<string, GraphPosition>();
+    let visibleNodes = sorted;
+    let visibleEdges = allEdges;
+    let hiddenNodeCount = 0;
+    let hiddenRelatedCount = 0;
+
+    if (graphMode === "focus" && focusNode) {
+      const relatedNodes = sorted.filter((node) => relatedNodeIDs.has(node.id) && node.id !== focusNode.id);
+      const maxVisibleRelated = 14;
+      const visibleRelated = relatedNodes.slice(0, maxVisibleRelated);
+      visibleNodes = [focusNode, ...visibleRelated];
+      visibleEdges = relatedEdges.filter(
+        (edge) => visibleNodes.some((node) => node.id === edge.from) && visibleNodes.some((node) => node.id === edge.to)
+      );
+      hiddenNodeCount = sorted.length - visibleNodes.length;
+      hiddenRelatedCount = Math.max(0, relatedNodes.length - visibleRelated.length);
+      positions.set(focusNode.id, { x: 280, y: 220 });
+      const radius = visibleRelated.length > 8 ? 172 : 150;
+      visibleRelated.forEach((node, index) => {
+        const angle = (2 * Math.PI * index) / Math.max(visibleRelated.length, 1) - Math.PI / 2;
+        positions.set(node.id, { x: 280 + radius * Math.cos(angle), y: 220 + radius * Math.sin(angle) });
+      });
+    } else {
+      const radius = 180;
+      sorted.forEach((node, index) => {
+        const angle = (2 * Math.PI * index) / Math.max(sorted.length, 1) - Math.PI / 2;
+        positions.set(node.id, { x: 280 + radius * Math.cos(angle), y: 220 + radius * Math.sin(angle) });
+      });
+    }
+
     const totalIn = sorted.reduce((sum, node) => sum + (node.inLinks ?? 0), 0);
     const totalOut = sorted.reduce((sum, node) => sum + (node.outLinks ?? 0), 0);
-    return { sorted, positions, edges, totalIn, totalOut };
-  }, [graph]);
+    return {
+      sorted,
+      visibleNodes,
+      positions,
+      nodesByID,
+      edges: visibleEdges,
+      focusEdges: relatedEdges,
+      totalIn,
+      totalOut,
+      focusNode,
+      relatedNodeIDs,
+      hiddenNodeCount,
+      hiddenRelatedCount
+    };
+  }, [graph, graphFocusID, graphMode, selected]);
 
   return (
     <div className="admin-page">
@@ -294,7 +381,7 @@ export function WikiBrowserPage() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <CardTitle>链接图谱</CardTitle>
-                <CardDescription>节点按出链数排序分布在圆周，点击节点跳转页面</CardDescription>
+                <CardDescription>默认聚焦当前节点及其直接关系，点击节点可切换焦点</CardDescription>
               </div>
               {graph ? (
                 <div className="flex flex-wrap items-center gap-2">
@@ -307,20 +394,6 @@ export function WikiBrowserPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                入链为主
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                出链为主
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
-                无链接
-              </span>
-            </div>
             {graphLoading ? (
               <div className="py-8 text-center text-muted-foreground">加载中...</div>
             ) : graphError ? (
@@ -328,54 +401,198 @@ export function WikiBrowserPage() {
             ) : graphLayout && graphLayout.sorted.length === 0 ? (
               <div className="py-8 text-center text-muted-foreground">暂无 wiki 页面</div>
             ) : graphLayout ? (
-              <div className="overflow-x-auto">
-                <svg viewBox="0 0 500 500" className="mx-auto h-auto w-full max-w-[560px]">
-                  {graphLayout.edges.map((edge, index) => {
-                    const from = graphLayout.positions.get(edge.from);
-                    const to = graphLayout.positions.get(edge.to);
-                    if (!from || !to) return null;
-                    return (
-                      <line
-                        key={`${edge.from}-${edge.to}-${index}`}
-                        x1={from.x}
-                        y1={from.y}
-                        x2={to.x}
-                        y2={to.y}
-                        stroke="#94a3b8"
-                        strokeOpacity={0.45}
-                        strokeWidth={1}
-                      />
-                    );
-                  })}
-                  {graphLayout.sorted.map((node) => {
-                    const pos = graphLayout.positions.get(node.id);
-                    if (!pos) return null;
-                    const isSelected = selected?.slug === node.slug;
-                    return (
-                      <g
-                        key={node.id}
-                        transform={`translate(${pos.x}, ${pos.y})`}
-                        className="cursor-pointer"
-                        onClick={() => handleGraphNodeClick(node)}
-                      >
-                        <title>{`${node.title}\n入链 ${node.inLinks ?? 0} · 出链 ${node.outLinks ?? 0}`}</title>
-                        <circle
-                          r={12}
-                          fill={graphNodeColor(node)}
-                          stroke={isSelected ? "#2563eb" : "rgba(0,0,0,0.15)"}
-                          strokeWidth={isSelected ? 3 : 1}
-                        />
-                        <text
-                          y={30}
-                          textAnchor="middle"
-                          className="fill-slate-700 text-[11px] dark:fill-slate-200"
-                        >
-                          {truncateText(node.title || node.slug, 8)}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 md:flex-row md:items-center md:justify-between">
+                  <label className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="shrink-0 text-sm font-medium">定位节点</span>
+                    <input
+                      value={graphSearch}
+                      onChange={(event) => handleGraphSearchChange(event.target.value)}
+                      placeholder="搜索标题或 slug"
+                      aria-label="搜索 Wiki 图谱节点"
+                      className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <div className="inline-flex shrink-0 items-center rounded-lg border bg-background p-0.5">
+                    <button
+                      type="button"
+                      aria-pressed={graphMode === "focus"}
+                      onClick={() => setGraphMode("focus")}
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        graphMode === "focus"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      聚焦关系
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={graphMode === "all"}
+                      onClick={() => setGraphMode("all")}
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        graphMode === "all"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      全部关系
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid overflow-hidden rounded-lg border lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="min-w-0 bg-slate-50/70 p-2 dark:bg-slate-950/20 md:p-4">
+                    <div className="mb-2 flex flex-wrap items-center gap-4 px-2 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+                        入链为主
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                        出链为主
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+                        无链接
+                      </span>
+                    </div>
+                    <svg
+                      data-testid="wiki-graph-svg"
+                      viewBox="0 0 560 440"
+                      className="mx-auto h-auto w-full max-w-[760px]"
+                    >
+                      {graphLayout.edges.map((edge, index) => {
+                        const from = graphLayout.positions.get(edge.from);
+                        const to = graphLayout.positions.get(edge.to);
+                        const sourceNode = graphLayout.nodesByID.get(edge.from);
+                        const targetNode = graphLayout.nodesByID.get(edge.to);
+                        const highlighted = graphLayout.focusNode?.id === edge.from || graphLayout.focusNode?.id === edge.to;
+                        if (!from || !to) return null;
+                        return (
+                          <line
+                            key={`${edge.from}-${edge.to}-${index}`}
+                            x1={from.x}
+                            y1={from.y}
+                            x2={to.x}
+                            y2={to.y}
+                            stroke={graphEdgeColor(sourceNode, highlighted)}
+                            strokeOpacity={graphMode === "focus" ? 0.8 : highlighted ? 0.85 : 0.24}
+                            strokeWidth={graphMode === "focus" && highlighted ? 2 : 1.1}
+                          >
+                            <title>{`${sourceNode?.title || edge.from} → ${targetNode?.title || edge.to}`}</title>
+                          </line>
+                        );
+                      })}
+                      {graphLayout.visibleNodes.map((node) => {
+                        const pos = graphLayout.positions.get(node.id);
+                        if (!pos) return null;
+                        const isFocus = graphLayout.focusNode?.id === node.id;
+                        const isRelated = graphLayout.relatedNodeIDs.has(node.id);
+                        const showLabel = graphMode === "focus" || isFocus;
+                        return (
+                          <g
+                            key={node.id}
+                            data-node-id={node.id}
+                            transform={`translate(${pos.x}, ${pos.y})`}
+                            className="cursor-pointer"
+                            onClick={() => handleGraphNodeClick(node)}
+                          >
+                            <title>{`${node.title}\n入链 ${node.inLinks ?? 0} · 出链 ${node.outLinks ?? 0}`}</title>
+                            <circle
+                              r={isFocus ? 20 : graphMode === "all" && !isRelated ? 8 : 13}
+                              fill={graphNodeColor(node)}
+                              fillOpacity={graphMode === "all" && !isRelated ? 0.7 : 1}
+                              stroke={isFocus ? "#1d4ed8" : "rgba(0,0,0,0.15)"}
+                              strokeWidth={isFocus ? 4 : 1}
+                            />
+                            {showLabel ? (
+                              <text
+                                y={isFocus ? 34 : 28}
+                                textAnchor="middle"
+                                className="fill-slate-700 text-[11px] dark:fill-slate-200"
+                              >
+                                {truncateText(node.title || node.slug, isFocus ? 16 : 12)}
+                              </text>
+                            ) : null}
+                          </g>
+                        );
+                      })}
+                    </svg>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-2 text-xs text-muted-foreground">
+                      <span>
+                        {graphMode === "focus"
+                          ? `当前显示 ${graphLayout.visibleNodes.length} 个节点 · ${graphLayout.edges.length} 条直接关系`
+                          : `当前显示全部 ${graphLayout.visibleNodes.length} 个节点 · ${graphLayout.edges.length} 条关系`}
+                      </span>
+                      {graphLayout.hiddenNodeCount > 0 ? (
+                        <span>
+                          已隐藏 {graphLayout.hiddenNodeCount} 个无关节点
+                          {graphLayout.hiddenRelatedCount > 0 ? `，另有 ${graphLayout.hiddenRelatedCount} 条关系未展开` : ""}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <aside data-testid="wiki-graph-details" className="border-t bg-background p-4 lg:border-l lg:border-t-0">
+                    {graphLayout.focusNode ? (
+                      <div className="space-y-4">
+                        <div>
+                          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">当前节点</div>
+                          <h3 className="mt-1 break-words text-base font-semibold">
+                            {graphLayout.focusNode.title || graphLayout.focusNode.slug}
+                          </h3>
+                          <p className="mt-1 break-all text-xs text-muted-foreground">{graphLayout.focusNode.slug}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="rounded-md bg-blue-50 p-2 text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+                            <div className="text-xs opacity-75">入链</div>
+                            <div className="mt-1 text-lg font-semibold">{graphLayout.focusNode.inLinks ?? 0}</div>
+                          </div>
+                          <div className="rounded-md bg-emerald-50 p-2 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                            <div className="text-xs opacity-75">出链</div>
+                            <div className="mt-1 text-lg font-semibold">{graphLayout.focusNode.outLinks ?? 0}</div>
+                          </div>
+                        </div>
+                        <Button className="w-full" onClick={() => handleOpenGraphPage(graphLayout.focusNode!)}>
+                          打开 Wiki 页面
+                        </Button>
+                        <div>
+                          <div className="mb-2 text-sm font-medium">直接关系</div>
+                          {graphLayout.focusEdges.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">暂无直接关系</p>
+                          ) : (
+                            <ul className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                              {graphLayout.focusEdges.map((edge, index) => {
+                                const otherID = edge.from === graphLayout.focusNode?.id ? edge.to : edge.from;
+                                const otherNode = graphLayout.nodesByID.get(otherID);
+                                if (!otherNode) return null;
+                                return (
+                                  <li key={`${edge.from}-${edge.to}-${index}`}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleGraphNodeClick(otherNode)}
+                                      className="w-full rounded-md border px-2.5 py-2 text-left text-xs transition-colors hover:bg-accent"
+                                    >
+                                      <span className="block truncate font-medium">{otherNode.title || otherNode.slug}</span>
+                                      <span className="mt-0.5 block text-muted-foreground">
+                                        {edge.from === graphLayout.focusNode?.id ? "出链" : "入链"}
+                                      </span>
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">暂无可展示节点</p>
+                    )}
+                  </aside>
+                </div>
               </div>
             ) : null}
           </CardContent>

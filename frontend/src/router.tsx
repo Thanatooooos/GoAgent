@@ -2,7 +2,9 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { LoginPage } from "@/pages/LoginPage";
 import { ChatPage } from "@/pages/ChatPage";
+import { WorkPage } from "@/pages/WorkPage";
 import { DailyBriefPage } from "@/pages/DailyBriefPage";
+import { ScheduledTasksPage } from "@/pages/ScheduledTasksPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { AdminLayout } from "@/pages/admin/AdminLayout";
 import { DashboardPage } from "@/pages/admin/dashboard/DashboardPage";
@@ -13,7 +15,6 @@ import { WikiBrowserPage } from "@/pages/admin/knowledge/WikiBrowserPage";
 import { IntentTreePage } from "@/pages/admin/intent-tree/IntentTreePage";
 import { IntentListPage } from "@/pages/admin/intent-tree/IntentListPage";
 import { IntentEditPage } from "@/pages/admin/intent-tree/IntentEditPage";
-import { IngestionPage } from "@/pages/admin/ingestion/IngestionPage";
 import { RagTracePage } from "@/pages/admin/traces/RagTracePage";
 import { RagTraceDetailPage } from "@/pages/admin/traces/RagTraceDetailPage";
 import { SystemSettingsPage } from "@/pages/admin/settings/SystemSettingsPage";
@@ -59,6 +60,8 @@ function HomeRedirect() {
 }
 
 export const router = createBrowserRouter([
+  { path: "/work", element: <RequireAuth><WorkPage /></RequireAuth> },
+  { path: "/work/:topicId", element: <RequireAuth><WorkPage /></RequireAuth> },
   {
     path: "/",
     element: <HomeRedirect />
@@ -92,6 +95,14 @@ export const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <DailyBriefPage />
+      </RequireAuth>
+    )
+  },
+  {
+    path: "/scheduled-tasks",
+    element: (
+      <RequireAuth>
+        <ScheduledTasksPage />
       </RequireAuth>
     )
   },
@@ -138,10 +149,6 @@ export const router = createBrowserRouter([
       {
         path: "intent-list/:id/edit",
         element: <IntentEditPage />
-      },
-      {
-        path: "ingestion",
-        element: <IngestionPage />
       },
       {
         path: "traces",

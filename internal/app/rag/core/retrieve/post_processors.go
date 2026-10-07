@@ -56,8 +56,12 @@ func (p *dedupPostProcessor) Process(_ context.Context, input SearchProcessInput
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].Score > chunks[j].Score
 	})
-	if input.Context.TopK > 0 && len(chunks) > input.Context.TopK {
-		chunks = chunks[:input.Context.TopK]
+	candidateLimit := input.Context.CandidateLimit
+	if candidateLimit <= 0 {
+		candidateLimit = input.Context.TopK
+	}
+	if candidateLimit > 0 && len(chunks) > candidateLimit {
+		chunks = chunks[:candidateLimit]
 	}
 	if input.Trace != nil {
 		input.Trace.PreRerankChunkIDs = chunkIDs(chunks)

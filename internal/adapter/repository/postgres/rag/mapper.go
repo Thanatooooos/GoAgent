@@ -43,6 +43,7 @@ func toConversationMessageModel(item domain.ConversationMessage) models.Conversa
 		IsSummarized:     item.IsSummarized,
 		ThinkingContent:  item.ThinkingContent,
 		ThinkingDuration: item.ThinkingDuration,
+		Sources:          append([]domain.MessageSource{}, item.Sources...),
 		CreateTime:       item.CreateTime,
 		UpdateTime:       item.UpdateTime,
 	}
@@ -60,6 +61,7 @@ func toConversationMessageDomain(item models.ConversationMessageModel) domain.Co
 		IsSummarized:     item.IsSummarized,
 		ThinkingContent:  item.ThinkingContent,
 		ThinkingDuration: item.ThinkingDuration,
+		Sources:          item.Sources,
 		CreateTime:       item.CreateTime,
 		UpdateTime:       item.UpdateTime,
 	}
@@ -228,89 +230,5 @@ func toMessageFeedbackDomain(item models.MessageFeedbackModel) domain.MessageFee
 		Comment:        item.Comment,
 		CreateTime:     item.CreateTime,
 		UpdateTime:     item.UpdateTime,
-	}
-}
-
-func toRagTraceRunModel(item domain.RagTraceRun) models.RagTraceRunModel {
-	return models.RagTraceRunModel{
-		ID:             item.ID,
-		TraceID:        item.TraceID,
-		TraceName:      item.TraceName,
-		EntryMethod:    item.EntryMethod,
-		ConversationID: item.ConversationID,
-		TaskID:         item.TaskID,
-		UserID:         item.UserID,
-		Status:         item.Status,
-		ErrorMessage:   item.ErrorMessage,
-		StartTime:      item.StartTime,
-		EndTime:        item.EndTime,
-		DurationMs:     item.DurationMs,
-		ExtraData:      item.ExtraData,
-		CreateTime:     item.CreateTime,
-		UpdateTime:     item.UpdateTime,
-	}
-}
-
-func toRagTraceRunDomain(item models.RagTraceRunModel) domain.RagTraceRun {
-	return domain.RagTraceRun{
-		ID:             item.ID,
-		TraceID:        item.TraceID,
-		TraceName:      item.TraceName,
-		EntryMethod:    item.EntryMethod,
-		ConversationID: item.ConversationID,
-		TaskID:         item.TaskID,
-		UserID:         item.UserID,
-		Status:         item.Status,
-		ErrorMessage:   item.ErrorMessage,
-		StartTime:      item.StartTime,
-		EndTime:        item.EndTime,
-		DurationMs:     item.DurationMs,
-		ExtraData:      item.ExtraData,
-		CreateTime:     item.CreateTime,
-		UpdateTime:     item.UpdateTime,
-	}
-}
-
-func toRagTraceNodeModel(item domain.RagTraceNode) models.RagTraceNodeModel {
-	return models.RagTraceNodeModel{
-		ID:           item.ID,
-		TraceID:      item.TraceID,
-		NodeID:       item.NodeID,
-		ParentNodeID: item.ParentNodeID,
-		Depth:        item.Depth,
-		NodeType:     item.NodeType,
-		NodeName:     item.NodeName,
-		ClassName:    item.ClassName,
-		MethodName:   item.MethodName,
-		Status:       item.Status,
-		ErrorMessage: item.ErrorMessage,
-		StartTime:    item.StartTime,
-		EndTime:      item.EndTime,
-		DurationMs:   item.DurationMs,
-		ExtraData:    item.ExtraData,
-		CreateTime:   item.CreateTime,
-		UpdateTime:   item.UpdateTime,
-	}
-}
-
-func toRagTraceNodeDomain(item models.RagTraceNodeModel) domain.RagTraceNode {
-	return domain.RagTraceNode{
-		ID:           item.ID,
-		TraceID:      item.TraceID,
-		NodeID:       item.NodeID,
-		ParentNodeID: item.ParentNodeID,
-		Depth:        item.Depth,
-		NodeType:     item.NodeType,
-		NodeName:     item.NodeName,
-		ClassName:    item.ClassName,
-		MethodName:   item.MethodName,
-		Status:       item.Status,
-		ErrorMessage: item.ErrorMessage,
-		StartTime:    item.StartTime,
-		EndTime:      item.EndTime,
-		DurationMs:   item.DurationMs,
-		ExtraData:    item.ExtraData,
-		CreateTime:   item.CreateTime,
-		UpdateTime:   item.UpdateTime,
 	}
 }

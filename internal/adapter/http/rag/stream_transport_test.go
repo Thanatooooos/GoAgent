@@ -32,6 +32,25 @@ func TestPollLoopForwardsEventsAndStopsOnDone(t *testing.T) {
 	}
 }
 
+func TestPollLoopStartsAfterOffset(t *testing.T) {
+	m := stream.NewMemoryStreamManager()
+	_ = m.AppendEvent(context.Background(), "s1", stream.StreamEvent{Name: "meta", Data: []byte(`{"a":1}`)})
+	_ = m.AppendEvent(context.Background(), "s1", stream.StreamEvent{Name: "message", Data: []byte(`{"type":"response","delta":"hi"}`)})
+	_ = m.AppendEvent(context.Background(), "s1", stream.StreamEvent{Name: "done", Data: []byte(`{}`), Done: true})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	collector := newCollectorSink()
+	pollLoop(ctx, collector, m, "s1", 1, 10*time.Millisecond, time.Second)
+
+	if strings.Contains(collector.body, "event: meta") {
+		t.Fatalf("event before offset was replayed: %s", collector.body)
+	}
+	if !strings.Contains(collector.body, "event: message") || !strings.Contains(collector.body, "event: done") {
+		t.Fatalf("events after offset were not forwarded: %s", collector.body)
+	}
+}
+
 func TestPollLoopFiltersStopControlEvent(t *testing.T) {
 	m := stream.NewMemoryStreamManager()
 	_ = m.AppendEvent(context.Background(), "s1", stream.StreamEvent{Name: internalStopEventName, Data: []byte(`{}`), Done: true})

@@ -13,6 +13,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	t.Setenv("SPRING_DATASOURCE_DRIVER_CLASS_NAME", "org.postgresql.Driver")
 	t.Setenv("SPRING_DATASOURCE_URL", "jdbc:postgresql://127.0.0.1:5432/ragent?client_encoding=UTF8")
 	t.Setenv("PARSER_TIKA_URL", "http://localhost:9998/tika")
+	t.Setenv("RAG_KNOWLEDGE_ENRICHMENT_ENABLED", "false")
 	t.Setenv("RAG_KNOWLEDGE_INGESTION_MAX_CONCURRENT", "8")
 	t.Setenv("RAG_AGENT_MAX_ITERATIONS", "3")
 	t.Setenv("RAG_AGENT_PARALLEL_TOOL_CALLS_ENABLED", "true")
@@ -25,6 +26,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	t.Setenv("RAG_SEARCH_WEB_SEARCH_PROVIDER", "tavily-mcp")
 	t.Setenv("RAG_SEARCH_WEB_SEARCH_FALLBACK_PROVIDER", "tavily")
 	t.Setenv("RAG_SEARCH_WEB_SEARCH_MCP_SERVER", "tavily")
+	t.Setenv("RAG_SEARCH_CHANNELS_KEYWORD_RRF_WEIGHT", "0.45")
 
 	dir := writeConfigFixture(t, `server:
   port: 9090
@@ -51,6 +53,9 @@ rag:
       enabled: true
       max-concurrency: 2
   search:
+    channels:
+      keyword:
+        rrf-weight: 0.85
     web-search:
       provider: tavily-mcp
       fallback-provider: tavily
@@ -101,8 +106,8 @@ parser:
 	if cfg.Parser.Tika.URL != "http://localhost:9998/tika" {
 		t.Fatalf("unexpected parser.tika.url: %q", cfg.Parser.Tika.URL)
 	}
-	if cfg.Rag.Knowledge.Ingestion.MaxConcurrent != 8 {
-		t.Fatalf("unexpected rag.knowledge.ingestion.max-concurrent: %d", cfg.Rag.Knowledge.Ingestion.MaxConcurrent)
+	if cfg.Rag.Knowledge.Enrichment.Enabled {
+		t.Fatal("expected RAG_KNOWLEDGE_ENRICHMENT_ENABLED to disable document enrichment")
 	}
 	if cfg.Rag.Agent.MaxIterations != 3 {
 		t.Fatalf("unexpected rag.agent.max-iterations: %d", cfg.Rag.Agent.MaxIterations)
@@ -145,6 +150,9 @@ parser:
 	}
 	if cfg.Rag.Search.WebSearch.MCP.Server != "tavily" {
 		t.Fatalf("unexpected web search MCP server: %q", cfg.Rag.Search.WebSearch.MCP.Server)
+	}
+	if cfg.Rag.Search.Channels.Keyword.RRFWeight != 0.45 {
+		t.Fatalf("unexpected keyword RRF weight: %v", cfg.Rag.Search.Channels.Keyword.RRFWeight)
 	}
 	if _, ok := cfg.Rag.MCP.Servers["tavily"]; !ok {
 		t.Fatalf("expected rag.mcp.servers.tavily to load, got %+v", cfg.Rag.MCP.Servers)

@@ -12,6 +12,7 @@ import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/pris
 
 import { CitationChip } from "@/components/chat/CitationChip";
 import { normalizeAssistantMarkdown } from "@/components/chat/normalizeMarkdown";
+import { WebCitationChip } from "@/components/chat/WebCitationChip";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,9 +21,10 @@ import { useThemeStore } from "@/stores/themeStore";
 interface MarkdownRendererProps {
   content: string;
   openLinksInNewTab?: boolean;
+  knowledgeCitation?: React.ComponentType<any>;
 }
 
-export function MarkdownRenderer({ content, openLinksInNewTab = true }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, openLinksInNewTab = true, knowledgeCitation = CitationChip }: MarkdownRendererProps) {
   const theme = useThemeStore((state) => state.theme);
   const normalizedContent = normalizeAssistantMarkdown(content);
 
@@ -31,7 +33,8 @@ export function MarkdownRenderer({ content, openLinksInNewTab = true }: Markdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
       rehypePlugins={[rehypeRaw]}
       components={{
-        kb: CitationChip,
+        kb: knowledgeCitation,
+        web: WebCitationChip,
         code({ inline, className, children, node, ...props }) {
           const match = /language-(\w+)/.exec(className || "");
           const language = match?.[1] || "text";
@@ -54,14 +57,14 @@ export function MarkdownRenderer({ content, openLinksInNewTab = true }: Markdown
           }
 
           return (
-            <div className="my-3 overflow-hidden rounded-md border border-[#d0d7de] bg-[#f6f8fa] dark:border-[#30363d] dark:bg-[#161b22]">
+            <div className="chat-code-block my-3 overflow-hidden rounded-md border border-[#d0d7de] bg-[#f6f8fa] dark:border-[#30363d] dark:bg-[#161b22]">
               <div className="flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa] px-3 py-1.5 dark:border-[#30363d] dark:bg-[#161b22]">
                 <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[#57606a] dark:text-[#8b949e]">
                   {language}
                 </span>
                 <CopyButton value={value} />
               </div>
-              <div className="overflow-x-auto">
+              <div className="chat-code-scroll overflow-x-auto">
                 <SyntaxHighlighter
                   language={language}
                   style={theme === "dark" ? oneDark : oneLight}
@@ -119,7 +122,7 @@ export function MarkdownRenderer({ content, openLinksInNewTab = true }: Markdown
         },
         table({ children, ...props }) {
           return (
-            <div className="overflow-x-auto">
+            <div className="chat-table-wrap overflow-x-auto">
               <table className="w-full border-collapse border border-[#d0d7de] rounded-md dark:border-[#30363d]" {...props}>
                 {children}
               </table>
@@ -172,7 +175,7 @@ export function MarkdownRenderer({ content, openLinksInNewTab = true }: Markdown
           );
         }
       }}
-      className="prose prose-gray max-w-none dark:prose-invert prose-headings:font-semibold prose-headings:text-[#1A1A1A] dark:prose-headings:text-[#EEEEEE] prose-p:text-[#333333] dark:prose-p:text-[#CCCCCC] prose-p:leading-relaxed prose-li:text-[#333333] dark:prose-li:text-[#CCCCCC] prose-strong:text-[#1A1A1A] dark:prose-strong:text-[#EEEEEE]"
+      className="chat-markdown prose prose-gray max-w-none break-words dark:prose-invert prose-headings:font-semibold prose-headings:text-[#1A1A1A] dark:prose-headings:text-[#EEEEEE] prose-p:text-[#333333] dark:prose-p:text-[#CCCCCC] prose-p:leading-relaxed prose-li:text-[#333333] dark:prose-li:text-[#CCCCCC] prose-strong:text-[#1A1A1A] dark:prose-strong:text-[#EEEEEE]"
     >
       {normalizedContent}
     </ReactMarkdown>

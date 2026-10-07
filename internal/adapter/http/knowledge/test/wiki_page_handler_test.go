@@ -77,7 +77,7 @@ func TestAllKnowledgeRoutesRegisterWithoutConflict(t *testing.T) {
 }
 
 func TestWikiPageHandlerGetBySlug(t *testing.T) {
-	svc := &wikiServiceStub{pages: []domain.WikiPage{{ID: "p1", KnowledgeBaseID: "kb1", Slug: "entity/go", Title: "Go", Content: "content"}}}
+	svc := &wikiServiceStub{pages: []domain.WikiPage{{ID: "p1", KnowledgeBaseID: "kb1", Slug: "entity/go", Title: "Go", Content: "content", InLinks: 2, OutLinks: 3}}}
 	router := newWikiRouter(svc)
 	req := httptest.NewRequest(http.MethodGet, "/api/ragent/knowledge-base/kb1/wiki/pages/entity/go", nil)
 	rec := httptest.NewRecorder()
@@ -88,7 +88,9 @@ func TestWikiPageHandlerGetBySlug(t *testing.T) {
 	var result struct {
 		Code string `json:"code"`
 		Data struct {
-			Slug string `json:"slug"`
+			Slug     string `json:"slug"`
+			InLinks  int    `json:"inLinks"`
+			OutLinks int    `json:"outLinks"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
@@ -96,6 +98,9 @@ func TestWikiPageHandlerGetBySlug(t *testing.T) {
 	}
 	if result.Data.Slug != "entity/go" {
 		t.Fatalf("data = %+v", result.Data)
+	}
+	if result.Data.InLinks != 2 || result.Data.OutLinks != 3 {
+		t.Fatalf("link counts = %+v", result.Data)
 	}
 	if svc.kbID != "kb1" {
 		t.Fatalf("kbID = %q, want kb1", svc.kbID)

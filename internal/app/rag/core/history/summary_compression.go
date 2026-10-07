@@ -104,7 +104,7 @@ func (e summaryCompressionEngine) runConversationSummaryCompression(ctx context.
 	request := convention.ChatRequest{
 		Messages: []convention.ChatMessage{
 			convention.SystemMessage(buildStructuredSummaryPrompt(tier, latestSummary, historyMessages)),
-			convention.UserMessage("现在请直接返回结构化工作记忆 JSON。"),
+			convention.UserMessage(structuredMemorySummaryRequest),
 		},
 		JSONMode: &jsonMode,
 	}
@@ -230,6 +230,15 @@ func ParseStructuredSummaryPromptVariant(raw string) (StructuredSummaryPromptVar
 }
 
 const stateAwareStructuredSummarySystemPrompt = `你正在将一段对话压缩为结构化工作记忆。只返回严格 JSON，不允许输出任何额外内容。
+
+========================
+零、增量更新任务
+========================
+输入会包含“上一次结构化摘要”和“近期消息”。请输出一份新的、完整且可独立使用的摘要；它会整体替换上一次摘要。
+
+- 近期消息是较新的事实来源；若与上一次摘要冲突，以近期消息为准，并删除或改写旧结论。
+- 不要描述“合并过程”、不要保留已失效内容，也不要依赖读者仍能看到上一次摘要。
+- 只保留仍会影响后续对话、决策或执行的信息；近期消息未提及并不自动表示旧事实失效。
 
 ========================
 一、JSON Schema
@@ -448,20 +457,20 @@ func buildStructuredSummaryPromptWithVariant(
 
 	var builder strings.Builder
 	builder.WriteString(prompt)
-	builder.WriteString("\n\u8865\u5145\u89c4\u5219：\u5982\u679c\u67d0\u9879\u7ed3\u8bba\u53ea\u6765\u81ea\u52a9\u624b\u5efa\u8bae\u3001\u793a\u4f8b\u4ee3\u7801\u6216\u901a\u7528\u65b9\u6848\u8bf4\u660e，\u800c\u6ca1\u6709\u88ab\u7528\u6237\u786e\u8ba4\u6216\u5b9e\u9645\u843d\u5730，\u4e0d\u8981\u5199\u6210 established_facts\u3002\n")
+	builder.WriteString(structuredSummaryFactInstruction)
 
 	previousStructured := strings.TrimSpace(latestSummary.StructuredSummaryJSON)
 	if previousStructured != "" {
-		builder.WriteString("\n上一次结构化摘要 JSON：\n")
+		builder.WriteString(previousStructuredSummaryHeader)
 		builder.WriteString(previousStructured)
 		builder.WriteString("\n")
 	} else if previousContent := strings.TrimSpace(latestSummary.Content); previousContent != "" {
-		builder.WriteString("\n上一轮压缩摘要：\n")
+		builder.WriteString(previousSummaryHeader)
 		builder.WriteString(previousContent)
 		builder.WriteString("\n")
 	}
 
-	builder.WriteString("\n最近消息：\n")
+	builder.WriteString(recentSummaryMessagesHeader)
 	for _, msg := range historyMessages {
 		role := normalizeSummaryRoleLabel(msg.Role)
 		if role == "" {

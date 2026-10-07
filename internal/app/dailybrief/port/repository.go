@@ -13,8 +13,9 @@ type ListOptions struct {
 }
 
 type SubscriptionListFilter struct {
-	Enabled  *bool
-	Timezone string
+	LegacyOnly bool
+	Enabled    *bool
+	Timezone   string
 	ListOptions
 }
 
@@ -34,6 +35,13 @@ type ItemListFilter struct {
 type GenerationRunRetryEligibleFilter struct {
 	FailedBefore time.Time
 	Limit        int
+}
+
+// GenerationRunStalledFilter selects runs that were never finished after a
+// started_at cutoff, i.e. runs orphaned by an interrupted process.
+type GenerationRunStalledFilter struct {
+	StartedBefore time.Time
+	Limit         int
 }
 
 type SubscriptionRepository interface {
@@ -65,5 +73,6 @@ type GenerationRunRepository interface {
 	GetByID(ctx context.Context, id string) (domain.GenerationRun, error)
 	GetLatestFailedByUserIDAndBriefDate(ctx context.Context, userID string, briefDate string) (domain.GenerationRun, error)
 	ListRetryEligible(ctx context.Context, filter GenerationRunRetryEligibleFilter) ([]domain.GenerationRun, error)
+	ListStalledRunning(ctx context.Context, filter GenerationRunStalledFilter) ([]domain.GenerationRun, error)
 	CountRetryRunsByUserIDAndBriefDate(ctx context.Context, userID string, briefDate string) (int, error)
 }

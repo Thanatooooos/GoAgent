@@ -4,6 +4,7 @@ import { Brain, Lightbulb, Send, Square } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
+import { KnowledgeBasePicker } from "@/components/chat/KnowledgeBasePicker";
 
 export function ChatInput() {
   const [value, setValue] = React.useState("");
@@ -59,10 +60,10 @@ export function ChatInput() {
   const hasContent = value.trim().length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="chat-composer-wrap space-y-3">
       <div
         className={cn(
-          "relative flex flex-col rounded-2xl border bg-white px-4 pt-3 pb-2 transition-all duration-200",
+          "chat-composer relative flex flex-col rounded-2xl border bg-white px-4 pb-2 pt-3 transition-all duration-200",
           isFocused
             ? "border-[#D4D4D4] shadow-[0_4px_12px_rgba(0,0,0,0.06)]"
             : "border-[#E5E5E5] hover:border-[#D4D4D4]"
@@ -98,14 +99,15 @@ export function ChatInput() {
           />
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[10px] bg-gradient-to-b from-white/0 via-white/40 to-white/90" />
         </div>
-        <div className="relative mt-2 flex items-center">
+        <div className="relative mt-2 flex items-center gap-2">
+          <KnowledgeBasePicker />
           <button
             type="button"
             onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
             disabled={isStreaming}
             aria-pressed={deepThinkingEnabled}
             className={cn(
-              "absolute left-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
+              "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
               deepThinkingEnabled
                 ? "border-[#BFDBFE] bg-[#DBEAFE] text-[#2563EB]"
                 : "border-transparent bg-[#F5F5F5] text-[#999999] hover:bg-[#EEEEEE]",

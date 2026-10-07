@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "description": "Four synthetic questions that require linked evidence from multiple documents. Document IDs measure source coverage; evidence groups are provisional chunk anchors for manual review.",
+    "source": "docs/cross_kb_question_candidates.md"
+  },
+  "samples": [
+    {
+      "name": "relation_auth_permission_audit",
+      "query": "用户已经成功登录，却被拒绝访问另一租户的文档。仅凭登录成功为什么不能放行？应由哪个模块判断资源权限、哪个模块记录拒绝，排查时怎样把三个模块的记录关联起来？",
+      "tags": ["cross_document", "responsibility", "synthetic"],
+      "target": "document",
+      "expectedIds": ["32650497227813121", "32650497563357441", "32650497664020737"],
+      "knowledgeBaseIds": ["kb_demo_01"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "expectedEvidenceGroups": [
+        {"name": "authentication", "chunkIds": ["32650497227813121-0"]},
+        {"name": "authorization", "chunkIds": ["32650497563357441-0", "32650497563357441-1"]},
+        {"name": "audit_trace", "chunkIds": ["32650497664020737-p-0", "32650497664020737-0", "32650497664020737-1"]}
+      ]
+    },
+    {
+      "name": "relation_stream_cancel_trace_sse",
+      "query": "按库中 2026 年 5 月的项目说明，用户点停止生成时，仅让前端停止显示为什么不够？底层模型流和业务任务应怎样结束，前端又通过什么事件感知取消；Trace 与 SSE 各记录哪一侧的信息？",
+      "tags": ["cross_document", "workflow", "synthetic"],
+      "target": "document",
+      "expectedIds": ["19753045042721025", "19753036620558593"],
+      "knowledgeBaseIds": ["19752977497649409"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "expectedEvidenceGroups": [
+        {"name": "cancel_model_stream", "chunkIds": ["19753045076340993", "19753045076799745"]},
+        {"name": "trace_sse_distinction", "chunkIds": ["19753036670955777", "19753036671021313", "19753036671348993"]}
+      ]
+    },
+    {
+      "name": "relation_vehicle_rule_implementation",
+      "query": "按库中 2019 年《报废机动车回收管理办法》和 2020 年《实施细则》，一家企业准备开展报废机动车回收拆解：上位办法对资质提出什么基本要求？实施细则把资质认定交给哪一级部门，并如何划分地方监督职责？",
+      "tags": ["cross_document", "rule_implementation", "synthetic"],
+      "target": "document",
+      "expectedIds": ["37733499670688001", "37733501751062785"],
+      "knowledgeBaseIds": ["37733184477131009"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "expectedEvidenceGroups": [
+        {"name": "qualification_rule", "chunkIds": ["37733499670688001-2"]},
+        {"name": "qualification_authority", "chunkIds": ["37733501751062785-1", "37733501751062785-2"]}
+      ]
+    },
+    {
+      "name": "relation_food_catalog_registration",
+      "query": "按库中 2019 年原料目录管理办法和 2020 年修订的注册备案办法，某保健食品原料要纳入原料目录，除安全性外还要满足哪些与功效和标准化有关的条件？产品使用目录内或目录外原料，分别会走怎样的备案或注册路径？",
+      "tags": ["cross_document", "rule_dependency", "synthetic"],
+      "target": "document",
+      "expectedIds": ["37733452979695873", "37733474521641217"],
+      "knowledgeBaseIds": ["37733184477131009"],
+      "searchMode": "keyword",
+      "topK": 5,
+      "expectedEvidenceGroups": [
+        {"name": "catalog_inclusion", "chunkIds": ["37733452979695873-2"]},
+        {"name": "outside_catalog_registration", "chunkIds": ["37733474521641217-4"]},
+        {"name": "inside_catalog_filing", "chunkIds": ["37733474521641217-27"]}
+      ]
+    }
+  ]
+}

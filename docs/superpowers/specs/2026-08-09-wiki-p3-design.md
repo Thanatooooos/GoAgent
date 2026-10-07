@@ -1,5 +1,7 @@
 # Wiki P3：Agent 编排能力（wiki_write）
 
+> 2026-10-01 适用范围：历史设计保留：旧 internal/app/agent 能力接入链路已移除。本文的 wiki_write Agent 编排方案不能作为当前实现或自动写入权限的依据。
+
 日期：2026-08-09
 状态：待审
 

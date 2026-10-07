@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 func TestMarkdownDocumentParserParse(t *testing.T) {
 	docParser := parser.NewMarkdownDocumentParser()
 
-	result, err := docParser.Parse([]byte("# title\r\n\n- item"), "text/markdown", nil)
+	result, err := docParser.Parse(context.Background(), []byte("# title\r\n\n- item"), "text/markdown", nil)
 	if err != nil {
 		t.Fatalf("parse returned error: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestMarkdownDocumentParserSupportsMimeTypes(t *testing.T) {
 	if !docParser.Supports("text/x-markdown") {
 		t.Fatal("expected text/x-markdown to be supported")
 	}
-	if docParser.Supports("text/plain") {
-		t.Fatal("did not expect text/plain to be supported")
+	if !docParser.Supports("text/plain") {
+		t.Fatal("expected text/plain to be supported")
 	}
 }

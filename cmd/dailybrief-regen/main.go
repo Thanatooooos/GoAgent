@@ -11,6 +11,7 @@ import (
 	"local/rag-project/internal/app/dailybrief/domain"
 	dailybriefservice "local/rag-project/internal/app/dailybrief/service"
 	dailybriefbootstrap "local/rag-project/internal/bootstrap/dailybrief"
+	ragbootstrap "local/rag-project/internal/bootstrap/rag"
 	"local/rag-project/internal/framework/config"
 	fwlog "local/rag-project/internal/framework/log"
 	infraai "local/rag-project/internal/infra-ai"
@@ -33,9 +34,21 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	runtime, err := dailybriefbootstrap.NewRuntime(ctx, dailybriefbootstrap.RuntimeOptions{
+	aiRuntime := infraai.NewRuntime()
+	ragRuntime, err := ragbootstrap.NewRuntime(ctx, ragbootstrap.RuntimeOptions{
 		Config:    config.Get(),
-		AIRuntime: infraai.NewRuntime(),
+		AIRuntime: aiRuntime,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bootstrap rag runtime: %v\n", err)
+		os.Exit(1)
+	}
+	defer ragRuntime.Close()
+
+	runtime, err := dailybriefbootstrap.NewRuntime(ctx, dailybriefbootstrap.RuntimeOptions{
+		Config:      config.Get(),
+		DB:          ragRuntime.DB,
+		TaskRuntime: ragRuntime.TaskRuntime,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bootstrap daily brief: %v\n", err)

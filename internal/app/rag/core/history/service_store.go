@@ -232,10 +232,10 @@ func (s *SummaryServiceAdapter) DecorateIfNeeded(summary *convention.ChatMessage
 	if summary == nil || summary.Content == "" {
 		return summary
 	}
-	if strings.HasPrefix(summary.Content, "对话摘要：") {
+	if strings.HasPrefix(summary.Content, conversationSummaryContextPrefix) {
 		return summary
 	}
-	decorated := convention.SystemMessage("对话摘要：" + summary.Content)
+	decorated := convention.SystemMessage(conversationSummaryContextPrefix + summary.Content)
 	return &decorated
 }
 
@@ -278,11 +278,11 @@ func buildCompressPrompt(maxChars int, previousSummary string, historyMessages [
 	var builder strings.Builder
 	builder.WriteString(prompt)
 	if previousSummary != "" {
-		builder.WriteString("\n\n上一次压缩的摘要为：\n")
+		builder.WriteString(compressionPreviousSummaryHeader)
 		builder.WriteString(previousSummary)
-		builder.WriteString("\n\n请结合之前的摘要，将以下新对话内容合并到摘要中。")
+		builder.WriteString(compressionMergeInstruction)
 	}
-	builder.WriteString("\n\n## 新对话\n")
+	builder.WriteString(compressionNewMessagesHeader)
 
 	for _, msg := range historyMessages {
 		role := msg.Role

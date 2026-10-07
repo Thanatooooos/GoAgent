@@ -3,8 +3,10 @@ import type {
   ApprovalPendingPayload,
   FeedbackValue,
   Message,
+  MessageSource,
   Session,
-  ToolCallPayload
+  ToolCallPayload,
+  ExecutionSegment
 } from "@/types";
 
 const ACTIVE_SESSION_STORAGE_KEY = "chat.activeSessionId";
@@ -13,6 +15,8 @@ export interface PersistedChatMessage {
   id: number | string;
   role: string;
   content: string;
+  rawContent?: string | null;
+  sources?: MessageSource[];
   thinkingContent?: string | null;
   thinkingDuration?: number | null;
   vote: number | null;
@@ -44,12 +48,131 @@ export function normalizeToolCallPayload(
     round: readLooseToolCallField<number>(payload, "round", "Round"),
     sequence: readLooseToolCallField<number>(payload, "sequence", "Sequence"),
     name: (readLooseToolCallField<string>(payload, "name", "Name") || "").trim(),
+    originalName:
+      (readLooseToolCallField<string>(payload, "originalName", "OriginalName") || "").trim() ||
+      undefined,
     status: (readLooseToolCallField<string>(payload, "status", "Status") || "").trim(),
     summary: (readLooseToolCallField<string>(payload, "summary", "Summary") || "").trim() || undefined,
     durationMs: readLooseToolCallField<number>(payload, "durationMs", "DurationMs"),
     arguments: readLooseToolCallField<Record<string, unknown>>(payload, "arguments", "Arguments"),
     data: readLooseToolCallField<Record<string, unknown>>(payload, "data", "Data")
   };
+}
+
+export function appendThinkingSegment(
+  segments: ExecutionSegment[] | undefined,
+  delta: string
+): ExecutionSegment[] {
+  if (!delta) return segments ?? [];
+  const next = [...(segments ?? [])];
+  const last = next[next.length - 1];
+  if (last?.kind === "thinking" && last.status === "working") {
+    next[next.length - 1] = {
+      ...last,
+      content: last.content + delta,
+      status: "working"
+    };
+  } else {
+    next.push({
+      id: `thinking-${Date.now()}-${next.length}`,
+      kind: "thinking",
+      content: delta,
+      status: "working",
+      startedAt: Date.now()
+    });
+  }
+  return next;
+}
+
+export function settleThinkingSegments(segments: ExecutionSegment[] | undefined, stopped = false) {
+  return (segments ?? []).map((segment) =>
+    segment.kind === "thinking" && segment.status === "working"
+      ? { ...segment, status: stopped ? "stopped" as const : "done" as const, durationMs: Date.now() - (segment.startedAt ?? Date.now()) }
+      : segment
+  );
+}
+
+export function appendAnswerSegment(segments: ExecutionSegment[] | undefined, delta: string): ExecutionSegment[] {
+  const next = settleThinkingSegments(segments);
+  const last = next[next.length - 1];
+  if (last?.kind === "text") {
+    next[next.length - 1] = { ...last, content: last.content + delta };
+  } else {
+    next.push({ id: `text-${next.length}`, kind: "text", content: delta });
+  }
+  return next;
+}
+
+export function isToolSettled(status: string) {
+  return ["success", "completed", "failed", "error", "cancelled", "rejected", "interrupted"].includes(status);
+}
+
+export function upsertToolSegment(
+  segments: ExecutionSegment[] | undefined,
+  call: ToolCallPayload
+): ExecutionSegment[] {
+  const next = settleThinkingSegments(segments);
+  const callId = call.callId?.trim();
+  let index = callId
+    ? next.findIndex((segment) => segment.kind === "tool_call" && segment.tool.callId === callId)
+    : -1;
+  // Legacy events without IDs can update the latest unfinished call of the
+  // same name. Concurrent calls with IDs always use their exact identity.
+  if (!callId) {
+    for (let candidate = next.length - 1; candidate >= 0; candidate -= 1) {
+      const segment = next[candidate];
+      if (segment.kind === "tool_call" && !segment.tool.callId && segment.tool.name === call.name && !isToolSettled(segment.tool.status)) {
+        index = candidate;
+        break;
+      }
+    }
+  }
+  if (index >= 0) {
+    const current = next[index];
+    if (current.kind === "tool_call") {
+      call = { ...current.tool, ...call, name: call.name || current.tool.name, arguments: call.arguments ?? current.tool.arguments, data: call.data ?? current.tool.data };
+      next[index] = { ...current, tool: call };
+    }
+  } else {
+    next.push({ id: `tool-${callId || next.length}`, kind: "tool_call", tool: call });
+  }
+  if (isToolSettled(call.status)) {
+    const resultIndex = callId
+      ? next.findIndex((segment) => segment.kind === "tool_result" && segment.tool.callId === callId)
+      : -1;
+    if (resultIndex >= 0) {
+      next[resultIndex] = { ...next[resultIndex], kind: "tool_result", tool: call };
+    } else {
+      next.push({ id: `result-${callId || next.length}`, kind: "tool_result", tool: call });
+    }
+  }
+  return next;
+}
+
+// Render streamed narration in place and the final prose once. A corrected
+// finish body stays authoritative even if a replay duplicated text deltas.
+export function executionPresentation(message: Message) {
+  let segments = message.executionSegments;
+  if (!segments?.length) {
+    segments = [];
+    if (message.thinking?.trim() || message.isThinking) {
+      segments.push({ id: "legacy-thinking", kind: "thinking", content: message.thinking ?? "", status: message.isThinking ? "working" : "done", durationMs: (message.thinkingDuration ?? 0) * 1000 });
+    }
+    for (const [index, content] of (message.agentThinks ?? []).entries()) {
+      segments.push({ id: `legacy-agent-${index}`, kind: "thinking", content, status: "done" });
+    }
+    for (const [index, tool] of (message.toolCalls ?? []).entries()) {
+      segments.push({ id: `legacy-tool-${index}`, kind: "tool_call", tool });
+      if (isToolSettled(tool.status)) segments.push({ id: `legacy-result-${index}`, kind: "tool_result", tool });
+    }
+  }
+  const last = segments[segments.length - 1];
+  const execution = last?.kind === "text" ? segments.slice(0, -1) : segments;
+  const prefix = execution.filter((segment) => segment.kind === "text").map((segment) => segment.content).join("");
+  if (!message.content.startsWith(prefix)) {
+    return { segments: execution.filter((segment) => segment.kind !== "text"), answer: message.content };
+  }
+  return { segments: execution, answer: message.content.slice(prefix.length) };
 }
 
 export function mapVoteToFeedback(vote?: number | null): FeedbackValue {
@@ -103,7 +226,8 @@ export function mapPersistedChatMessage(item: PersistedChatMessage): Message {
   return {
     id: String(item.id),
     role: item.role === "assistant" ? "assistant" : "user",
-    content: item.content,
+    content: item.rawContent?.trim() ? item.rawContent : item.content,
+    sources: item.sources,
     thinking: item.thinkingContent || undefined,
     thinkingDuration: item.thinkingDuration || undefined,
     isDeepThinking: Boolean(item.thinkingContent),
@@ -186,6 +310,7 @@ export function applyPendingApprovalToStreamingMessage(
       ...message,
       status: "awaiting_approval",
       isThinking: false,
+      executionSegments: settleThinkingSegments(message.executionSegments),
       thinkingDuration: message.thinkingDuration ?? computeThinkingDuration(thinkingStartAt),
       approvalPending: approval,
       agentServiceError: undefined
@@ -211,6 +336,7 @@ export function applyAgentServiceErrorToStreamingMessage(
           ...message,
           status: "error",
           isThinking: false,
+          executionSegments: settleThinkingSegments(message.executionSegments, true),
           thinkingDuration: message.thinkingDuration ?? computeThinkingDuration(thinkingStartAt),
           agentServiceError: serviceError
         }

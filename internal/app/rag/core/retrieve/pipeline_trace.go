@@ -4,6 +4,9 @@ import "local/rag-project/internal/framework/convention"
 
 // PipelineTrace captures retrieval post-processing stages for eval/debug.
 type PipelineTrace struct {
+	RecallBudget      int      `json:"recall_budget,omitempty"`
+	CandidateLimit    int      `json:"candidate_limit,omitempty"`
+	ContextTopK       int      `json:"context_top_k,omitempty"`
 	PreRerankChunkIDs []string `json:"pre_rerank_chunk_ids,omitempty"`
 	FinalChunkIDs     []string `json:"final_chunk_ids,omitempty"`
 	RerankApplied     bool     `json:"rerank_applied"`
@@ -30,6 +33,9 @@ func clonePipelineTrace(trace *PipelineTrace) *PipelineTrace {
 		return nil
 	}
 	return &PipelineTrace{
+		RecallBudget:      trace.RecallBudget,
+		CandidateLimit:    trace.CandidateLimit,
+		ContextTopK:       trace.ContextTopK,
 		PreRerankChunkIDs: append([]string(nil), trace.PreRerankChunkIDs...),
 		FinalChunkIDs:     append([]string(nil), trace.FinalChunkIDs...),
 		RerankApplied:     trace.RerankApplied,

@@ -1,9 +1,11 @@
 package rewrite
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"local/rag-project/internal/framework/convention"
 	aichat "local/rag-project/internal/infra-ai/chat"
@@ -149,5 +151,69 @@ func TestParseRewriteResponseIgnoresUnknownFields(t *testing.T) {
 	}
 	if !result.NeedRetrieval {
 		t.Fatal("expected retrieval to remain true")
+	}
+}
+
+// hangingRewriteLLMService implements ContextAwareLLMService. The plain
+// ChatWithRequest returns instantly (the legacy call path), while the
+// context-aware call blocks until the deadline fires. It reproduces a slow
+// rewrite LLM that must be cut short by the rewrite timeout budget.
+type hangingRewriteLLMService struct {
+	plainResponse string
+	ctxCalled     bool
+}
+
+func (m *hangingRewriteLLMService) Chat(string) (string, error) {
+	return m.plainResponse, nil
+}
+
+func (m *hangingRewriteLLMService) ChatWithRequest(convention.ChatRequest) (string, error) {
+	return m.plainResponse, nil
+}
+
+func (m *hangingRewriteLLMService) ChatWithModel(convention.ChatRequest, string) (string, error) {
+	return m.plainResponse, nil
+}
+
+func (m *hangingRewriteLLMService) StreamChat(string, aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
+	return nil, nil
+}
+
+func (m *hangingRewriteLLMService) StreamChatWithRequest(convention.ChatRequest, aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
+	return nil, nil
+}
+
+func (m *hangingRewriteLLMService) ChatWithRequestContext(ctx context.Context, _ convention.ChatRequest) (string, error) {
+	m.ctxCalled = true
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (m *hangingRewriteLLMService) ChatWithModelContext(context.Context, convention.ChatRequest, string) (string, error) {
+	return m.plainResponse, nil
+}
+
+func TestLLMRewriteServiceFallsBackToOriginalQuestionWhenLLMCallHangs(t *testing.T) {
+	previousTimeout := rewriteLLMTimeout
+	rewriteLLMTimeout = 100 * time.Millisecond
+	defer func() { rewriteLLMTimeout = previousTimeout }()
+
+	llm := &hangingRewriteLLMService{
+		plainResponse: `{"rewritten":"超时不应使用的改写结果","sub_questions":["超时不应使用的改写结果"],"need_retrieval":true}`,
+	}
+	service := NewLLMService(llm)
+
+	started := time.Now()
+	result := service.RewriteWithSplit("MySQL的一行数据是怎么存储的")
+	elapsed := time.Since(started)
+
+	if !llm.ctxCalled {
+		t.Fatal("expected the rewrite call to use the context-aware chat path")
+	}
+	if result.RewrittenQuestion != "MySQL的一行数据是怎么存储的" {
+		t.Fatalf("expected fallback to the original question on timeout, got %q", result.RewrittenQuestion)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("expected the rewrite call to stop at the timeout budget, took %v", elapsed)
 	}
 }

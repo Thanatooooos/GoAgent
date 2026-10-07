@@ -85,29 +85,29 @@ func (s *Service) BuildMessages(ctx Context) ([]convention.ChatMessage, error) {
 }
 
 func formatMemoryContext(context string) string {
-	return "## Long-Term Memory\nUse these persistent user- or knowledge-base-specific memories when they are relevant to the current question. If the current user request explicitly conflicts with a recalled preference, follow the current user request.\n" + strings.TrimSpace(context)
+	return memoryContextInstruction + strings.TrimSpace(context)
 }
 
 func formatSessionContext(context string) string {
-	return "## 会话上下文片段\n" + strings.TrimSpace(context)
+	return sessionContextHeader + strings.TrimSpace(context)
 }
 
 func formatKnowledgeContext(context string) string {
-	return "## Knowledge Context\n" + strings.TrimSpace(context)
+	return knowledgeContextHeader + strings.TrimSpace(context)
 }
 
 func formatToolContext(context string) string {
-	return "## Tool Context\n" + strings.TrimSpace(context)
+	return toolContextHeader + strings.TrimSpace(context)
 }
 
 func formatWorkflowPolicy(policy string) string {
-	return "## Workflow Policy\n" + strings.TrimSpace(policy)
+	return workflowPolicyHeader + strings.TrimSpace(policy)
 }
 
 func formatAnswerGuidance(guidance string) string {
-	return "## Answer Guidance\n" + strings.TrimSpace(guidance) + "\n\nOutput formatting: use Markdown; put a blank line before and after headings; write every bullet or numbered item on its own line; use a space after heading markers such as `### `; do not output internal citation tags or empty citation parentheses."
+	return answerGuidanceHeader + strings.TrimSpace(guidance) + answerFormattingInstruction
 }
 
 func formatCitationProtocol(protocol string) string {
-	return "## Citation Protocol\n" + strings.TrimSpace(protocol)
+	return citationProtocolHeader + strings.TrimSpace(protocol)
 }

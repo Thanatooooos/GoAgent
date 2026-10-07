@@ -122,6 +122,10 @@ func (s *jobGenerationRunRepo) ListRetryEligible(ctx context.Context, filter por
 	return nil, nil
 }
 
+func (s *jobGenerationRunRepo) ListStalledRunning(ctx context.Context, filter port.GenerationRunStalledFilter) ([]domain.GenerationRun, error) {
+	return nil, nil
+}
+
 func (s *jobGenerationRunRepo) CountRetryRunsByUserIDAndBriefDate(ctx context.Context, userID string, briefDate string) (int, error) {
 	return 0, nil
 }

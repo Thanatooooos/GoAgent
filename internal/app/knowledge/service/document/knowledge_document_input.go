@@ -40,10 +40,8 @@ func normalizeKnowledgeDocumentProcessMode(value string) (string, error) {
 	switch value {
 	case "", domain.KnowledgeDocumentProcessModeChunk:
 		return domain.KnowledgeDocumentProcessModeChunk, nil
-	case domain.KnowledgeDocumentProcessModePipeline:
-		return domain.KnowledgeDocumentProcessModePipeline, nil
 	default:
-		return "", exception.NewClientException("process mode must be chunk or pipeline", nil)
+		return "", exception.NewClientException("process mode must be chunk", nil)
 	}
 }
 
@@ -83,27 +81,11 @@ func effectiveKnowledgeDocumentChunkStrategy(current string, input string) (stri
 	return normalizeKnowledgeDocumentChunkStrategy(current)
 }
 
-func validateKnowledgeDocumentProcessingConfig(processMode string, chunkStrategy string, pipelineID string, validateModeSpecificFields bool) error {
-	switch processMode {
-	case domain.KnowledgeDocumentProcessModeChunk:
-		if chunkStrategy == "" {
-			chunkStrategy = "fixed_size"
-		}
-		if validateModeSpecificFields && strings.TrimSpace(pipelineID) != "" {
-			return exception.NewClientException("pipeline id is only allowed when process mode is pipeline", nil)
-		}
-		return nil
-	case domain.KnowledgeDocumentProcessModePipeline:
-		if strings.TrimSpace(pipelineID) == "" {
-			return exception.NewClientException("pipeline id is required when process mode is pipeline", nil)
-		}
-		if validateModeSpecificFields && strings.TrimSpace(chunkStrategy) != "" {
-			return exception.NewClientException("chunk strategy is only allowed when process mode is chunk", nil)
-		}
-		return nil
-	default:
-		return exception.NewClientException("process mode must be chunk or pipeline", nil)
+func validateKnowledgeDocumentProcessingConfig(processMode string, chunkStrategy string) error {
+	if processMode != domain.KnowledgeDocumentProcessModeChunk {
+		return exception.NewClientException("process mode must be chunk", nil)
 	}
+	return nil
 }
 
 func buildKnowledgeDocumentStorageKey(collectionName, documentID, fileName string) string {

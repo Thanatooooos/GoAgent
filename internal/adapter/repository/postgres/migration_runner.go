@@ -82,6 +82,7 @@ func applyMigration(db *gorm.DB, filename string) error {
 	if sql == "" {
 		return nil
 	}
+	sql = migrationUpSQL(sql)
 
 	// 在一个事务中执行迁移并记录版本
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -98,6 +99,14 @@ func applyMigration(db *gorm.DB, filename string) error {
 			"INSERT INTO t_migration_version (filename) VALUES (?)", filename,
 		).Error
 	})
+}
+
+func migrationUpSQL(sql string) string {
+	if _, after, ok := strings.Cut(sql, "-- +goose Up"); ok {
+		up, _, _ := strings.Cut(after, "-- +goose Down")
+		return up
+	}
+	return sql
 }
 
 // splitSQLStatements splits SQL text into individual statements by semicolons.

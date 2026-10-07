@@ -96,6 +96,7 @@ type KnowledgeDocumentFieldSet struct {
 	Name                Field[string]
 	Enabled             Field[bool]
 	ChunkCount          Field[int]
+	ImageCount          Field[int]
 	FileURL             Field[string]
 	FileType            Field[string]
 	FileSize            Field[int64]
@@ -107,7 +108,6 @@ type KnowledgeDocumentFieldSet struct {
 	ScheduleCron        Field[string]
 	ChunkStrategy       Field[string]
 	ChunkConfig         Field[[]byte]
-	PipelineID          Field[string]
 	Summary             Field[string]
 	SummaryStatus       Field[string]
 	SummaryErrorMessage Field[string]
@@ -122,6 +122,7 @@ var KnowledgeDocument = KnowledgeDocumentFieldSet{
 	Name:                Field[string]{Key: "knowledge_document.name"},
 	Enabled:             Field[bool]{Key: "knowledge_document.enabled"},
 	ChunkCount:          Field[int]{Key: "knowledge_document.chunk_count"},
+	ImageCount:          Field[int]{Key: "knowledge_document.image_count"},
 	FileURL:             Field[string]{Key: "knowledge_document.file_url"},
 	FileType:            Field[string]{Key: "knowledge_document.file_type"},
 	FileSize:            Field[int64]{Key: "knowledge_document.file_size"},
@@ -133,7 +134,6 @@ var KnowledgeDocument = KnowledgeDocumentFieldSet{
 	ScheduleCron:        Field[string]{Key: "knowledge_document.schedule_cron"},
 	ChunkStrategy:       Field[string]{Key: "knowledge_document.chunk_strategy"},
 	ChunkConfig:         Field[[]byte]{Key: "knowledge_document.chunk_config"},
-	PipelineID:          Field[string]{Key: "knowledge_document.pipeline_id"},
 	Summary:             Field[string]{Key: "knowledge_document.summary"},
 	SummaryStatus:       Field[string]{Key: "knowledge_document.summary_status"},
 	SummaryErrorMessage: Field[string]{Key: "knowledge_document.summary_error_message"},
@@ -195,7 +195,6 @@ type KnowledgeDocumentPatch struct {
 	ScheduleCron        UpdateValue[string]
 	ChunkStrategy       UpdateValue[string]
 	ChunkConfig         UpdateValue[[]byte]
-	PipelineID          UpdateValue[string]
 	Summary             UpdateValue[string]
 	SummaryStatus       UpdateValue[string]
 	SummaryErrorMessage UpdateValue[string]

@@ -12,16 +12,28 @@ const CitationNumberContext = React.createContext<CitationNumberContextValue>({
 
 function buildNumberMap(content: string): Map<string, number> {
   const map = new Map<string, number>();
-  const re = /<kb\b[^>]*\bchunk_id\s*=\s*"([^"]+)"/gi;
+  interface MatchEntry {
+    index: number;
+    key: string;
+  }
+  const entries: MatchEntry[] = [];
+  const kbRe = /<kb\b[^>]*\bchunk_id\s*=\s*"([^"]+)"/gi;
+  const webRe = /<web\b[^>]*\burl\s*=\s*"([^"]+)"/gi;
   let match: RegExpExecArray | null;
+  while ((match = kbRe.exec(content)) !== null) {
+    const key = (match[1] || "").trim();
+    if (key) entries.push({ index: match.index, key });
+  }
+  while ((match = webRe.exec(content)) !== null) {
+    const key = (match[1] || "").trim();
+    if (key) entries.push({ index: match.index, key });
+  }
+  entries.sort((a, b) => a.index - b.index);
   let index = 0;
-  while ((match = re.exec(content)) !== null) {
-    const chunkId = (match[1] || "").trim();
-    if (!chunkId || map.has(chunkId)) {
-      continue;
-    }
+  for (const entry of entries) {
+    if (map.has(entry.key)) continue;
     index += 1;
-    map.set(chunkId, index);
+    map.set(entry.key, index);
   }
   return map;
 }

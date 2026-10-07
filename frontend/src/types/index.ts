@@ -4,6 +4,15 @@ export type FeedbackValue = "like" | "dislike" | null;
 
 export type MessageStatus = "streaming" | "awaiting_approval" | "done" | "cancelled" | "error";
 
+export interface MessageSource {
+  type: "kb" | "web";
+  title?: string;
+  chunkId?: string;
+  knowledgeBaseId?: string;
+  kind?: string;
+  url?: string;
+}
+
 export interface User {
   userId: string;
   username?: string;
@@ -24,6 +33,7 @@ export interface Message {
   id: string;
   role: Role;
   content: string;
+  sources?: MessageSource[];
   thinking?: string;
   thinkingDuration?: number;
   isDeepThinking?: boolean;
@@ -32,6 +42,8 @@ export interface Message {
   feedback?: FeedbackValue;
   status?: MessageStatus;
   toolCalls?: ToolCallPayload[];
+  /** Ordered, ephemeral execution blocks collected from the live SSE stream. */
+  executionSegments?: ExecutionSegment[];
   agentThinks?: string[];
   memoryEvents?: MemoryStoredPayload[];
   sessionRecallEvents?: SessionRecallPayload[];
@@ -56,12 +68,33 @@ export interface ToolCallPayload {
   round?: number;
   sequence?: number;
   name: string;
+  originalName?: string;
   status: string;
   summary?: string;
   durationMs?: number;
   arguments?: Record<string, unknown>;
   data?: Record<string, unknown>;
 }
+
+export type ExecutionSegment =
+  | {
+      id: string;
+      kind: "thinking";
+      content: string;
+      status: "working" | "done" | "stopped";
+      startedAt?: number;
+      durationMs?: number;
+    }
+  | {
+      id: string;
+      kind: "tool_call" | "tool_result";
+      tool: ToolCallPayload;
+    }
+  | {
+      id: string;
+      kind: "text";
+      content: string;
+    };
 
 export interface FallbackPayload {
   reason: string;
@@ -70,6 +103,8 @@ export interface FallbackPayload {
 export interface CompletionPayload {
   messageId?: string | null;
   title?: string | null;
+  content?: string;
+  sources?: MessageSource[];
 }
 
 export interface AgentOutcomePayload {
@@ -159,4 +194,19 @@ export interface ChunkDetail {
   chunkIndex: number;
   docId: string;
   kbId: string;
+}
+
+export interface ImageEvidenceDetail {
+  id: string;
+  docId: string;
+  kbId: string;
+  ordinal: number;
+  page: number;
+  ocrStatus: "pending" | "success" | "no_text" | "error";
+  ocrText: string;
+  captionStatus: "pending" | "described" | "no_content" | "error";
+  captionText: string;
+  captionModel: string;
+  adjacentText: string;
+  originalMime: string;
 }

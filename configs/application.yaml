@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 9090
   servlet:
     context-path: /api/ragent
@@ -45,14 +45,14 @@ rag:
 
   default:
     collection-name: rag_default_store
-    dimension: 1536
+    dimension: 4096
     metric-type: COSINE
     sse-timeout-ms: 300000  # SSE global timeout in milliseconds, default 5 minutes
 
   agent:
     max-iterations: 3
     chat:
-      mode: always
+      mode: off
     parallel-tool-calls:
       enabled: true
       max-concurrency: 3
@@ -85,9 +85,9 @@ rag:
             - elasticsearch
             - elastic
             - es
-        - canonical: 鍚戦噺鏁版嵁搴?
+        - canonical: 閸氭垿鍣洪弫鐗堝祦鎼?
           aliases:
-            - 鍚戦噺搴?
+            - 閸氭垿鍣烘惔?
             - vector db
 
   rate-limit:
@@ -171,10 +171,6 @@ rag:
       lock-seconds: 900
       batch-size: 20
       min-interval-seconds: 60
-    ingestion:
-      max-concurrent: 8
-      max-retries: 2
-      retry-backoff-ms: 1000
 
   mcp:
     servers:
@@ -219,16 +215,13 @@ rag:
         top-k-multiplier: 2
       keyword:
         backend: "bm25"
+        rrf-weight: 0.25
       metadata-title:
         enabled: false
         enabled-fallback-trgm: true
         section-weight: 3.0
         document-name-weight: 1.4
         source-file-name-weight: 1.8
-
-  trace:
-    enabled: true
-    max-error-length: 1000
 
 ai:
   providers:
@@ -331,6 +324,17 @@ ai:
         model: noop
         priority: 100
 parser:
+  vision:
+    url: https://api.siliconflow.cn
+    api-key: "" # inject via PARSER_VISION_API_KEY
+    timeout-ms: 90000
+    max-tokens: 512
+  ocr:
+    url: http://localhost:8082
+    timeout-ms: 35000
+  docreader:
+    address: localhost:50051
+    timeout-ms: 120000
   tika:
     url: http://localhost:9998/tika
     timeout-ms: 30000
@@ -356,7 +360,7 @@ sa-token:
 
 daily-brief:
   schedule:
-    scan-delay-ms: 10000
+    scan-delay-ms: 600000
     run-timeout-ms: 600000
     lock-seconds: 900
     batch-size: 20
@@ -369,6 +373,20 @@ daily-brief:
     max-items-per-topic: 2
     prompt-version: v4
     model: qwen3-32b
+
+scheduled-task:
+  scan-interval-seconds: 15
+  claim-batch-size: 20
+  max-concurrent-runs: 4
+  lease-seconds: 900
+  once-deadline-seconds: 600
+  recurring-deadline-seconds: 1800
+  retry-max-attempts: 3
+  retry-delay-seconds: 60
+  daily-feedback-days: 7
+  weekly-feedback-days: 30
+  monthly-feedback-days: 60
+  failure-threshold: 3
 
 app:
   demo-mode: false

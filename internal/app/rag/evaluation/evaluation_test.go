@@ -41,6 +41,29 @@ func TestEvaluateComputesMetrics(t *testing.T) {
 	}
 }
 
+func TestEvaluateReportsHardNegativeBeforeFirstRelevant(t *testing.T) {
+	summary, err := Evaluate([]Sample{{
+		Name:            "confusion sample",
+		Query:           "find answer",
+		Target:          TargetChunk,
+		ExpectedIDs:     []string{"positive"},
+		HardNegativeIDs: []string{"hard-negative"},
+		Retrieved: []RetrievedItem{
+			{ChunkID: "hard-negative"},
+			{ChunkID: "positive"},
+		},
+	}}, []int{1, 2})
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if got := summary.Samples[0].HardNegativeBeforeFirstRelevant; len(got) != 1 || got[0] != "hard-negative" {
+		t.Fatalf("hard negatives before first relevant = %v, want [hard-negative]", got)
+	}
+	if summary.HardNegatives.SamplesWithNegativeBeforeRelevant != 1 || summary.HardNegatives.SampleRate != 1 {
+		t.Fatalf("hard-negative summary = %+v, want one affected sample", summary.HardNegatives)
+	}
+}
+
 func TestEvaluateUsesDocumentTarget(t *testing.T) {
 	summary, err := Evaluate([]Sample{
 		{
@@ -133,6 +156,40 @@ func TestEvaluateNDCG(t *testing.T) {
 	}
 }
 
+func TestEvaluateNDCGIgnoresDuplicateRetrievedTarget(t *testing.T) {
+	summary, err := Evaluate([]Sample{{
+		Name:              "duplicate-document",
+		Target:            TargetDocument,
+		ExpectedIDs:       []string{"doc-1"},
+		ExpectedRelevance: map[string]int{"doc-1": 3},
+		Retrieved: []RetrievedItem{
+			{ChunkID: "child-1", DocumentID: "doc-1"},
+			{ChunkID: "child-2", DocumentID: "doc-1"},
+		},
+	}}, []int{2})
+	if err != nil {
+		t.Fatalf("Evaluate returned error: %v", err)
+	}
+	if got := summary.Overall.AverageNDCGAtK[2]; got != 1 {
+		t.Fatalf("ndcg@2 = %v, want 1", got)
+	}
+}
+
+func TestEvaluateKeepsRetrievedItemsForInspection(t *testing.T) {
+	summary, err := Evaluate([]Sample{{
+		Name:        "inspectable",
+		Target:      TargetChunk,
+		ExpectedIDs: []string{"child-1"},
+		Retrieved:   []RetrievedItem{{ChunkID: "child-1", DocumentID: "doc-1"}},
+	}}, []int{1})
+	if err != nil {
+		t.Fatalf("Evaluate returned error: %v", err)
+	}
+	if got := summary.Samples[0].Retrieved; len(got) != 1 || got[0].DocumentID != "doc-1" {
+		t.Fatalf("retrieved = %+v, want document id doc-1", got)
+	}
+}
+
 func TestEvaluateNDCGWithGradedRelevance(t *testing.T) {
 	summary, err := Evaluate([]Sample{
 		{
@@ -146,10 +203,10 @@ func TestEvaluateNDCGWithGradedRelevance(t *testing.T) {
 				"good": 1,
 			},
 			Retrieved: []RetrievedItem{
-				{ChunkID: "perf"},   // rank 1, grade 3
-				{ChunkID: "bad"},    // rank 2, grade 0
-				{ChunkID: "good"},   // rank 3, grade 1
-				{ChunkID: "best"},   // rank 4, grade 2
+				{ChunkID: "perf"}, // rank 1, grade 3
+				{ChunkID: "bad"},  // rank 2, grade 0
+				{ChunkID: "good"}, // rank 3, grade 1
+				{ChunkID: "best"}, // rank 4, grade 2
 			},
 		},
 	}, []int{3})

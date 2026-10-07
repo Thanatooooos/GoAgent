@@ -1,13 +1,19 @@
 package rewrite
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"local/rag-project/internal/framework/convention"
 	aichat "local/rag-project/internal/infra-ai/chat"
 )
+
+// rewriteLLMTimeout bounds the rewrite LLM call so a slow model response
+// degrades to the original-question fallback instead of stalling the chat.
+var rewriteLLMTimeout = 10 * time.Second
 
 const (
 	defaultRewriteModel = "default"
@@ -141,7 +147,16 @@ func (s *LLMService) callRewriteLLM(systemPrompt string, question string) (Resul
 			convention.UserMessage(question),
 		},
 	}
-	response, err := s.chatService.ChatWithRequest(request)
+	llmCtx, cancel := context.WithTimeout(context.Background(), rewriteLLMTimeout)
+	defer cancel()
+
+	var response string
+	var err error
+	if ctxAware, ok := s.chatService.(aichat.ContextAwareLLMService); ok {
+		response, err = ctxAware.ChatWithRequestContext(llmCtx, request)
+	} else {
+		response, err = s.chatService.ChatWithRequest(request)
+	}
 	if err != nil {
 		return Result{}, fmt.Errorf("rewrite llm call: %w", err)
 	}
@@ -219,7 +234,7 @@ func buildRewriteHistoryPrompt(baseSystemPrompt string, history []convention.Cha
 	}
 	var builder strings.Builder
 	builder.WriteString(baseSystemPrompt)
-	builder.WriteString("\n\n## 对话历史\n")
+	builder.WriteString(rewriteHistoryHeader)
 	for _, msg := range history {
 		switch msg.Role {
 		case convention.UserRole:
@@ -232,7 +247,7 @@ func buildRewriteHistoryPrompt(baseSystemPrompt string, history []convention.Cha
 		builder.WriteString(strings.TrimSpace(msg.Content))
 		builder.WriteString("\n")
 	}
-	builder.WriteString("\n请根据以上对话历史，对用户的最新问题进行指代消解和改写。")
+	builder.WriteString(rewriteHistoryInstruction)
 	builder.WriteString(historyFollowUpPromptSuffix)
 	return builder.String()
 }

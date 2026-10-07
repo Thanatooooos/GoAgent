@@ -23,11 +23,10 @@ import (
 	"local/rag-project/internal/app/dailybrief/port"
 	dailybriefschedule "local/rag-project/internal/app/dailybrief/schedule"
 	dailybriefservice "local/rag-project/internal/app/dailybrief/service"
+	conversationruntime "local/rag-project/internal/app/runtime"
 	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/contextx"
-	"local/rag-project/internal/framework/convention"
 	"local/rag-project/internal/framework/distributedid"
-	aichat "local/rag-project/internal/infra-ai/chat"
 	"local/rag-project/internal/middleware"
 
 	"gorm.io/gorm"
@@ -77,7 +76,7 @@ func TestDailyBriefPipelineE2E(t *testing.T) {
 	defer cancel()
 
 	clock := &frozenClock{t: time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)}
-	env := newDailyBriefE2EEnv(t, &staticLLMStub{response: e2eArtifactJSON}, clock)
+	env := newDailyBriefE2EEnv(t, &staticTaskRuntimeStub{response: e2eArtifactJSON}, clock)
 
 	userID := mustE2EUserID(t)
 	subscription := domain.NewSubscription(
@@ -173,8 +172,8 @@ func TestDailyBriefRetryE2E(t *testing.T) {
 	defer cancel()
 
 	clock := &frozenClock{t: time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)}
-	llm := &flipLLMStub{artifact: e2eArtifactJSON}
-	env := newDailyBriefE2EEnv(t, llm, clock)
+	taskRuntime := &flipTaskRuntimeStub{artifact: e2eArtifactJSON}
+	env := newDailyBriefE2EEnv(t, taskRuntime, clock)
 
 	userID := mustE2EUserID(t)
 	subscription := domain.NewSubscription(
@@ -236,8 +235,8 @@ func TestDailyBriefRetryE2E(t *testing.T) {
 	if readyModel.PageState != dailybriefservice.PageStateReady {
 		t.Fatalf("expected ready page state after retry, got %q", readyModel.PageState)
 	}
-	if llm.Calls() < 2 {
-		t.Fatalf("expected llm to be called at least twice, got %d", llm.Calls())
+	if taskRuntime.Calls() < 2 {
+		t.Fatalf("expected task runtime to be called at least twice, got %d", taskRuntime.Calls())
 	}
 }
 
@@ -250,7 +249,7 @@ type dailyBriefE2EEnv struct {
 	metrics             *dailybriefservice.MetricsService
 }
 
-func newDailyBriefE2EEnv(t *testing.T, llm aichat.LLMService, clock *frozenClock) *dailyBriefE2EEnv {
+func newDailyBriefE2EEnv(t *testing.T, taskRuntime conversationruntime.TaskRuntime, clock *frozenClock) *dailyBriefE2EEnv {
 	t.Helper()
 
 	db, err := postgresrepo.NewGormDB(config.DataSourceConfig{
@@ -293,7 +292,7 @@ func newDailyBriefE2EEnv(t *testing.T, llm aichat.LLMService, clock *frozenClock
 	metrics := dailybriefservice.NewMetricsService()
 	collector := dailybriefservice.NewSourceCollector(registry, fixtureClient)
 	pipeline := dailybriefservice.NewCandidatePipeline(generationCfg)
-	generator := dailybriefservice.NewBriefGenerator(llm, generationCfg)
+	generator := dailybriefservice.NewRuntimeBriefGenerator(taskRuntime, generationCfg)
 	publisher := dailybriefservice.NewPublisher(publishTx)
 	orchestrator := dailybriefservice.NewGenerationOrchestrator(
 		collector,
@@ -354,66 +353,34 @@ func (c *fixtureHTTPClient) Get(_ context.Context, url string) ([]byte, error) {
 	return body, nil
 }
 
-type staticLLMStub struct {
+type staticTaskRuntimeStub struct {
 	response string
 }
 
-func (s *staticLLMStub) Chat(string) (string, error) {
-	return s.response, nil
+func (s *staticTaskRuntimeStub) RunTask(context.Context, conversationruntime.TaskRequest) (conversationruntime.RunResult, error) {
+	return conversationruntime.RunResult{Status: conversationruntime.StatusCompleted, AssistantContent: s.response}, nil
 }
 
-func (s *staticLLMStub) ChatWithRequest(convention.ChatRequest) (string, error) {
-	return s.response, nil
-}
-
-func (s *staticLLMStub) ChatWithModel(convention.ChatRequest, string) (string, error) {
-	return s.response, nil
-}
-
-func (s *staticLLMStub) StreamChat(string, aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
-	return nil, nil
-}
-
-func (s *staticLLMStub) StreamChatWithRequest(convention.ChatRequest, aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
-	return nil, nil
-}
-
-type flipLLMStub struct {
+type flipTaskRuntimeStub struct {
 	mu       sync.Mutex
 	calls    int
 	artifact string
 }
 
-func (s *flipLLMStub) Calls() int {
+func (s *flipTaskRuntimeStub) Calls() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
 }
 
-func (s *flipLLMStub) Chat(string) (string, error) {
-	return "", fmt.Errorf("not implemented")
-}
-
-func (s *flipLLMStub) ChatWithRequest(convention.ChatRequest) (string, error) {
+func (s *flipTaskRuntimeStub) RunTask(context.Context, conversationruntime.TaskRequest) (conversationruntime.RunResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
 	if s.calls == 1 {
-		return "", fmt.Errorf("simulated generation failure")
+		return conversationruntime.RunResult{}, fmt.Errorf("simulated generation failure")
 	}
-	return s.artifact, nil
-}
-
-func (s *flipLLMStub) ChatWithModel(convention.ChatRequest, string) (string, error) {
-	return s.ChatWithRequest(convention.ChatRequest{})
-}
-
-func (s *flipLLMStub) StreamChat(string, aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
-	return nil, nil
-}
-
-func (s *flipLLMStub) StreamChatWithRequest(convention.ChatRequest, aichat.StreamCallback) (aichat.StreamCancellationHandle, error) {
-	return nil, nil
+	return conversationruntime.RunResult{Status: conversationruntime.StatusCompleted, AssistantContent: s.artifact}, nil
 }
 
 func mustE2EUserID(t *testing.T) string {

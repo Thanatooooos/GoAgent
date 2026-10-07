@@ -1,8 +1,9 @@
 import * as React from "react";
 import { differenceInCalendarDays, isValid } from "date-fns";
 import {
-  BookOpen,
   Bot,
+  BriefcaseBusiness,
+  CalendarClock,
   LogOut,
   MessageSquare,
   MoreHorizontal,
@@ -36,6 +37,7 @@ import { Loading } from "@/components/common/Loading";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
+import { listScheduledUnread, markScheduledConversationRead } from "@/services/scheduledTaskService";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -65,6 +67,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     title: string;
   } | null>(null);
   const [avatarFailed, setAvatarFailed] = React.useState(false);
+  const [unread, setUnread] = React.useState<Record<string, number>>({});
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
@@ -72,6 +75,28 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       fetchSessions().catch(() => null);
     }
   }, [fetchSessions, sessions.length]);
+
+  React.useEffect(() => {
+    const refresh = () => {
+      listScheduledUnread()
+        .then((items) => setUnread(Object.fromEntries(items.map((item) => [item.conversationId, item.unreadCount]))))
+        .catch(() => null);
+      fetchSessions().catch(() => null);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => window.clearInterval(timer);
+  }, [fetchSessions]);
+
+  const openSession = (id: string) => {
+    selectSession(id).catch(() => null);
+    if (unread[id]) {
+      markScheduledConversationRead(id).catch(() => null);
+      setUnread((old) => ({ ...old, [id]: 0 }));
+    }
+    navigate(`/chat/${id}`);
+    onClose();
+  };
 
   const filteredSessions = React.useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -127,6 +152,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const showAvatar = Boolean(avatarUrl) && !avatarFailed;
   const avatarFallback = (user?.username || user?.userId || "用户").slice(0, 1).toUpperCase();
   const onBriefPage = location.pathname.startsWith("/brief");
+  const onTasksPage = location.pathname.startsWith("/scheduled-tasks");
   const sessionTitleFont =
     "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Helvetica Neue\", Arial, sans-serif";
 
@@ -167,7 +193,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       />
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen w-[280px] flex-shrink-0 flex-col bg-[#FAFAFA] p-3 transition-transform lg:static lg:h-screen lg:translate-x-0",
+          "chat-sidebar fixed left-0 top-0 z-40 flex h-screen w-[264px] flex-shrink-0 flex-col bg-[#F8F8F8] p-3 transition-transform lg:static lg:h-screen lg:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -177,7 +203,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <Bot className="h-5 w-5 text-white" />
             </div>
             <div style={{ fontFamily: sessionTitleFont }}>
-              <p className="text-base font-semibold text-[#1A1A1A]">Ragent AI 智能体</p>
+              <p className="text-base font-semibold text-[#1A1A1A]">GOAGENT AI 智能体</p>
               <p className="text-xs text-[#999999]">Powered by AI</p>
             </div>
           </div>
@@ -242,6 +268,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   <span className="block text-xs text-[#94A3B8]">AI 与技术资讯摘要</span>
                 </span>
               </button>
+              <button
+                type="button"
+                className={cn("mt-2 flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
+                  onTasksPage ? "border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]" : "border-white/80 bg-white/80 text-[#334155] hover:bg-white")}
+                onClick={() => { navigate("/scheduled-tasks"); onClose(); }}
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#EEF2FF] text-[#4F46E5]">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
+                <span className="flex-1"><span className="block text-sm font-semibold">定时任务</span>
+                  <span className="block text-xs text-[#94A3B8]">提醒、总结与条件监测</span></span>
+              </button>
+              <button type="button" className="mt-2 flex w-full items-center gap-3 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-left text-[#334155]" onClick={() => { navigate("/work"); onClose(); }}><BriefcaseBusiness className="h-4 w-4" /><span><span className="block text-sm font-semibold">Work 专区</span><span className="block text-xs text-[#94A3B8]">持续推进你的专题</span></span></button>
               {user?.role === "admin" ? (
                 <button
                   type="button"
@@ -315,15 +354,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                           if (renamingId) {
                             cancelRename();
                           }
-                          selectSession(session.id).catch(() => null);
-                          navigate(`/chat/${session.id}`);
-                          onClose();
+                          openSession(session.id);
                         }}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
-                            selectSession(session.id).catch(() => null);
-                            navigate(`/chat/${session.id}`);
-                            onClose();
+                            openSession(session.id);
                           }
                         }}
                       >
@@ -353,6 +388,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             {session.title || "新对话"}
                           </span>
                         )}
+                        {unread[session.id] > 0 && <span className="rounded-full bg-blue-600 px-2 text-xs text-white">{unread[session.id]}</span>}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -440,17 +476,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-48">
-              <DropdownMenuItem asChild>
-                <a
-                  href="https://nageoffer.com/ragent"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center"
-                >
-                  <BookOpen className="mr-2 h-4 w-4" />
-                  官方文档
-                </a>
-              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <a
                   href="https://space.bilibili.com/352177376"

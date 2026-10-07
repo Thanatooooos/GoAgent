@@ -41,6 +41,7 @@ func NewSelector(parsers ...DocumentParser) *Selector {
 
 func NewDefaultSelector(httpClient *http.Client) *Selector {
 	var tikaParser DocumentParser
+	var docReaderParser DocumentParser
 	if cfg := config.Get(); cfg != nil {
 		tikaURL := strings.TrimSpace(cfg.Parser.Tika.URL)
 		if tikaURL != "" {
@@ -55,9 +56,21 @@ func NewDefaultSelector(httpClient *http.Client) *Selector {
 			}
 			tikaParser = NewTikaDocumentParser(client, tikaURL)
 		}
+		if address := strings.TrimSpace(cfg.Parser.DocReader.Address); address != "" {
+			timeout := time.Duration(cfg.Parser.DocReader.TimeoutMs) * time.Millisecond
+			var ocr OCRClient
+			if url := strings.TrimSpace(cfg.Parser.OCR.URL); url != "" {
+				ocr = NewHTTPOCRClient(url, time.Duration(cfg.Parser.OCR.TimeoutMs)*time.Millisecond)
+			}
+			parser, err := NewDocReaderDocumentParser(address, timeout, tikaParser, ocr)
+			if err == nil {
+				docReaderParser = parser
+			}
+		}
 	}
 	return NewSelector(
 		NewMarkdownDocumentParser(),
+		docReaderParser,
 		tikaParser,
 	)
 }
@@ -92,6 +105,14 @@ func (s *Selector) SelectByFileName(fileName string) DocumentParser {
 		if parser, ok := s.Select(ParserTypeMarkdown); ok {
 			return parser
 		}
+	case ".txt", ".text":
+		if parser, ok := s.Select(ParserTypeMarkdown); ok {
+			return parser
+		}
+	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".epub", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp":
+		if parser, ok := s.Select(ParserTypeDocReader); ok {
+			return parser
+		}
 	}
 	return nil
 }
@@ -119,8 +140,5 @@ func (s *Selector) fallback() DocumentParser {
 	if parser, ok := s.Select(ParserTypeTika); ok {
 		return parser
 	}
-	if len(s.parsers) == 0 {
-		return nil
-	}
-	return s.parsers[0]
+	return nil
 }

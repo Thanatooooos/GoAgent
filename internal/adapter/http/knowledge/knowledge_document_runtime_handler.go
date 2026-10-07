@@ -67,48 +67,12 @@ func (h *KnowledgeDocumentHandler) ScheduleExecs(c *gin.Context) {
 
 func toKnowledgeDocumentChunkLogVO(item service.KnowledgeDocumentChunkLogItem) knowledgeDocumentChunkLogVO {
 	logItem := item.Log
-	var ingestionTask *knowledgeDocumentIngestionTaskVO
-	if item.IngestionTask != nil {
-		ingestionTask = &knowledgeDocumentIngestionTaskVO{
-			ID:             item.IngestionTask.ID,
-			PipelineID:     item.IngestionTask.PipelineID,
-			SourceType:     item.IngestionTask.SourceType,
-			SourceLocation: item.IngestionTask.SourceLocation,
-			SourceFileName: item.IngestionTask.SourceFileName,
-			Status:         item.IngestionTask.Status,
-			ChunkCount:     item.IngestionTask.ChunkCount,
-			ErrorMessage:   item.IngestionTask.ErrorMessage,
-			Metadata:       item.IngestionTask.Metadata,
-			StartedAt:      item.IngestionTask.StartedAt,
-			CompletedAt:    item.IngestionTask.CompletedAt,
-			CreateTime:     timePointer(item.IngestionTask.CreatedAt),
-			UpdateTime:     timePointer(item.IngestionTask.UpdatedAt),
-		}
-	}
-	nodes := make([]knowledgeDocumentIngestionNodeVO, 0, len(item.IngestionNodes))
-	for _, node := range item.IngestionNodes {
-		nodes = append(nodes, knowledgeDocumentIngestionNodeVO{
-			ID:           node.ID,
-			TaskID:       node.TaskID,
-			NodeID:       node.NodeID,
-			NodeType:     node.NodeType,
-			NodeOrder:    node.NodeOrder,
-			Status:       node.Status,
-			DurationMs:   node.DurationMs,
-			Message:      node.Message,
-			ErrorMessage: node.ErrorMessage,
-			Output:       node.Output,
-			CreateTime:   timePointer(node.CreatedAt),
-			UpdateTime:   timePointer(node.UpdatedAt),
-		})
-	}
 	return knowledgeDocumentChunkLogVO{
 		ID:              logItem.ID,
 		DocumentID:      logItem.DocumentID,
 		Status:          logItem.Status,
 		ProcessMode:     logItem.ProcessMode,
 		ChunkStrategy:   logItem.ChunkStrategy,
-		PipelineID:      logItem.PipelineID,
 		ExtractDuration: logItem.ExtractDuration,
 		ChunkDuration:   logItem.ChunkDuration,
 		EmbedDuration:   logItem.EmbedDuration,
@@ -119,8 +83,6 @@ func toKnowledgeDocumentChunkLogVO(item service.KnowledgeDocumentChunkLogItem) k
 		StartTime:       logItem.StartTime,
 		EndTime:         logItem.EndTime,
 		CreateTime:      timePointer(logItem.CreatedAt),
-		IngestionTask:   ingestionTask,
-		IngestionNodes:  nodes,
 	}
 }
 

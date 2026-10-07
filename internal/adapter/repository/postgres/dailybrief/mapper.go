@@ -2,6 +2,7 @@ package dailybrief
 
 import (
 	"strings"
+	"time"
 
 	"local/rag-project/internal/adapter/repository/postgres/dailybrief/models"
 	"local/rag-project/internal/app/dailybrief/domain"
@@ -60,6 +61,16 @@ func toIssueModel(item domain.Issue) models.IssueModel {
 }
 
 func toIssueDomain(item models.IssueModel) domain.Issue {
+	generatedAt := item.GeneratedAt
+	if generatedAt != nil {
+		local := timestampWallTime(*generatedAt, time.Local)
+		generatedAt = &local
+	}
+	publishedAt := item.PublishedAt
+	if publishedAt != nil {
+		local := timestampWallTime(*publishedAt, time.Local)
+		publishedAt = &local
+	}
 	return domain.Issue{
 		ID:             item.ID,
 		UserID:         item.UserID,
@@ -70,8 +81,8 @@ func toIssueDomain(item models.IssueModel) domain.Issue {
 		SectionsJSON:   item.SectionsJSON,
 		ItemCount:      item.ItemCount,
 		PublishedRunID: item.PublishedRunID,
-		GeneratedAt:    item.GeneratedAt,
-		PublishedAt:    item.PublishedAt,
+		GeneratedAt:    generatedAt,
+		PublishedAt:    publishedAt,
 		CreatedAt:      item.CreateTime,
 		UpdatedAt:      item.UpdateTime,
 	}
@@ -135,6 +146,11 @@ func toGenerationRunModel(item domain.GenerationRun) models.GenerationRunModel {
 }
 
 func toGenerationRunDomain(item models.GenerationRunModel) domain.GenerationRun {
+	var finishedAt *time.Time
+	if item.FinishedAt != nil {
+		local := timestampWallTime(*item.FinishedAt, time.Local)
+		finishedAt = &local
+	}
 	return domain.GenerationRun{
 		ID:              item.ID,
 		UserID:          item.UserID,
@@ -142,7 +158,7 @@ func toGenerationRunDomain(item models.GenerationRunModel) domain.GenerationRun 
 		TriggerType:     item.TriggerType,
 		Status:          item.Status,
 		StartedAt:       item.StartedAt,
-		FinishedAt:      item.FinishedAt,
+		FinishedAt:      finishedAt,
 		ErrorMessage:    item.ErrorMessage,
 		SourceStatsJSON: item.SourceStatsJSON,
 		Model:           item.Model,
@@ -151,6 +167,12 @@ func toGenerationRunDomain(item models.GenerationRunModel) domain.GenerationRun 
 		CreatedAt:       item.CreateTime,
 		UpdatedAt:       item.UpdateTime,
 	}
+}
+
+// Daily Brief writes TIMESTAMP columns using the server's local wall clock.
+// pgx decodes them as UTC, so restore the wall clock before retry comparisons.
+func timestampWallTime(value time.Time, location *time.Location) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), value.Hour(), value.Minute(), value.Second(), value.Nanosecond(), location)
 }
 
 func boolToFlag(value bool) int16 {

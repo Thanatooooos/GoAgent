@@ -86,7 +86,7 @@ func buildJudgeChatRequest(promptText, rubricText, payload string, cfg JudgeConf
 	return convention.ChatRequest{
 		Messages: []convention.ChatMessage{
 			convention.SystemMessage(buildJudgeSystemPrompt(promptText, rubricText)),
-			convention.UserMessage("Judge payload:\n" + payload),
+			convention.UserMessage(judgePayloadHeader + payload),
 		},
 		Temperature: &cfg.Temperature,
 		MaxTokens:   &cfg.MaxTokens,
@@ -95,7 +95,7 @@ func buildJudgeChatRequest(promptText, rubricText, payload string, cfg JudgeConf
 }
 
 func buildJudgeSystemPrompt(promptText, rubricText string) string {
-	return strings.TrimSpace("You are an offline evaluation judge.\n\nPrompt template:\n" + promptText + "\n\nRubric:\n" + rubricText + "\n\nReturn strict JSON only with keys: passed, score, missed_items, incorrect_claims, reason, details.\n- passed must be boolean\n- score must be a number between 0 and 1\n- details may contain prompt-specific structured data\nDo not wrap the response in prose.")
+	return strings.TrimSpace(judgeSystemInstruction + promptText + judgeRubricHeader + rubricText + judgeResultInstruction)
 }
 
 func normalizeJudgeConfig(cfg JudgeConfig) JudgeConfig {

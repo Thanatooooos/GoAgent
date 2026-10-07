@@ -1,6 +1,7 @@
 package parser
 
 const (
-	ParserTypeMarkdown = "markdown"
-	ParserTypeTika     = "tika"
+	ParserTypeDocReader = "docreader"
+	ParserTypeMarkdown  = "markdown"
+	ParserTypeTika      = "tika"
 )

@@ -10,7 +10,8 @@ import (
 func init() {
 	for _, candidate := range envCandidates() {
 		if _, err := os.Stat(candidate); err == nil {
-			_ = gotenv.OverLoad(candidate)
+			// Explicit process settings (including an isolated test database) win.
+			_ = gotenv.Load(candidate)
 			return
 		}
 	}

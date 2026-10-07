@@ -21,6 +21,9 @@ export interface KnowledgeDocument {
   scheduleCron?: string | null;
   enabled?: boolean | null;
   chunkCount?: number | null;
+  imageCount?: number | null;
+  imageCompletedCount?: number | null;
+  imageFailedCount?: number | null;
   fileUrl?: string | null;
   fileType?: string | null;
   fileSize?: number | null;
@@ -33,6 +36,33 @@ export interface KnowledgeDocument {
   updatedBy?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
+}
+
+export interface ImageEvidenceItem {
+  occurrenceId: string;
+  evidenceId: string;
+  ordinal: number;
+  sourceError: string;
+  ocrStatus: string;
+  captionStatus: string;
+  ocrError: string;
+  captionError: string;
+}
+
+export async function getDocumentImages(docId: string) {
+  return api.get<ImageEvidenceItem[], ImageEvidenceItem[]>(`/knowledge-base/docs/${encodeURIComponent(docId)}/images`);
+}
+
+export async function retryImageEvidence(evidenceId: string) {
+  return api.post<{ queued: number }, { queued: number }>(`/knowledge-base/images/${encodeURIComponent(evidenceId)}/retry`);
+}
+export async function retryImageOccurrence(occurrenceId: string) {
+  return api.post<{ queued: number }, { queued: number }>(`/knowledge-base/image-occurrences/${encodeURIComponent(occurrenceId)}/retry`);
+}
+export async function getImageOccurrenceOriginal(occurrenceId: string) {
+  return api.get<Blob, Blob>(`/knowledge-base/image-occurrences/${encodeURIComponent(occurrenceId)}/original`, {
+    responseType: "blob"
+  });
 }
 
 export interface KnowledgeChunk {

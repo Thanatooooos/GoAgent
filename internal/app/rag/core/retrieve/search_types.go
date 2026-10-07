@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"local/rag-project/internal/framework/config"
 	"local/rag-project/internal/framework/convention"
 )
 
@@ -18,10 +19,13 @@ const (
 )
 
 type SearchContext struct {
+	DocumentsOnly    bool
 	UserID           string
 	Query            string
 	KnowledgeBaseIDs []string
 	TopK             int
+	RecallBudget     int
+	CandidateLimit   int
 	ScoreThreshold   *float32
 	RerankTopN       int
 	SearchMode       string
@@ -92,14 +96,37 @@ func buildSearchContext(request Request) SearchContext {
 	if topK <= 0 {
 		topK = DefaultTopK
 	}
+	recallBudget := request.RecallBudget
+	candidateLimit := request.CandidateLimit
+	if cfg := config.Get(); cfg != nil {
+		if recallBudget <= 0 {
+			recallBudget = cfg.Rag.Retrieve.RecallBudget
+		}
+		if candidateLimit <= 0 {
+			candidateLimit = cfg.Rag.Retrieve.CandidateLimit
+		}
+	}
+	if recallBudget < topK {
+		recallBudget = topK
+	}
+	if candidateLimit < topK {
+		candidateLimit = topK
+	}
+	rerankTopN := request.RerankTopN
+	if rerankTopN <= 0 && candidateLimit > topK {
+		rerankTopN = topK
+	}
 	searchMode := normalizeSearchMode(request.SearchMode)
 	return SearchContext{
+		DocumentsOnly:    request.DocumentsOnly,
 		UserID:           strings.TrimSpace(request.UserID),
 		Query:            strings.TrimSpace(request.Query),
 		KnowledgeBaseIDs: append([]string(nil), request.KnowledgeBaseIDs...),
 		TopK:             topK,
+		RecallBudget:     recallBudget,
+		CandidateLimit:   candidateLimit,
 		ScoreThreshold:   request.ScoreThreshold,
-		RerankTopN:       request.RerankTopN,
+		RerankTopN:       rerankTopN,
 		SearchMode:       searchMode,
 		RouteHints: map[string]any{
 			"userID": strings.TrimSpace(request.UserID),

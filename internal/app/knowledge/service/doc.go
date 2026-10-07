@@ -2,7 +2,7 @@
 //
 // Subpackages:
 //   - base/: knowledge base CRUD
-//   - document/: document lifecycle, schedule, ingestion hooks
+//   - document/: document lifecycle and scheduling
 //   - chunk/: chunk CRUD and vector sync
 //   - process/: local document chunk processing pipeline
 package service

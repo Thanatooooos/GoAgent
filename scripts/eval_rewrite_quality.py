@@ -45,12 +45,14 @@ SYSTEM_PROMPT = """你是一个查询改写助手。将对话中最后一句改�
 3. 保留原文中的技术术语、英文缩写、专有名词。
 4. 只输出改写后的问题文本，不要 JSON，不要解释。"""
 
+USER_PROMPT_TEMPLATE = "对话历史:\n{context}\n\n需要改写的句子: {query}\n\n改写结果:"
+
 def build_user_prompt(dialogue):
     """Build the user prompt from dialogue history."""
     # The last turn is the query to rewrite, previous turns are context
     context = "\n".join(d.strip() for d in dialogue[:-1] if d.strip())
     query = dialogue[-1].strip() if dialogue else ""
-    return f"对话历史:\n{context}\n\n需要改写的句子: {query}\n\n改写结果:"
+    return USER_PROMPT_TEMPLATE.format(context=context, query=query)
 
 def call_rewrite(dialogue):
     """Call LLM to rewrite the last utterance."""

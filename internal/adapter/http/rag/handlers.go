@@ -5,14 +5,19 @@ import (
 
 	ragservice "local/rag-project/internal/app/rag/service"
 	"local/rag-project/internal/app/rag/service/longtermmemory"
+	conversationruntime "local/rag-project/internal/app/runtime"
 	"local/rag-project/internal/framework/stream"
 )
 
-type chatService interface {
-	Chat(ctx context.Context, input ragservice.RagChatInput, sink ragservice.RagChatEventSink) error
-	ResumeAfterApproval(ctx context.Context, input ragservice.RagChatApprovalResumeInput, sink ragservice.RagChatEventSink) error
-	GetPendingApproval(ctx context.Context, input ragservice.RagChatApprovalPendingQueryInput) (*ragservice.RagChatApprovalPendingPayload, error)
-	CancelTask(taskID string) bool
+type runtimeChatService interface {
+	Admit(context.Context, conversationruntime.ChatInput) (conversationruntime.ChatInput, error)
+	AuthorizeTask(context.Context, string, string) (bool, error)
+	Chat(context.Context, conversationruntime.ChatInput, conversationruntime.EventSink) (conversationruntime.ChatResult, error)
+	CancelTask(string) bool
+}
+
+type runtimeReplayService interface {
+	Replay(context.Context, string, string, conversationruntime.EventSink) (bool, error)
 }
 
 // Handler 负责承接最小 RAG 闭环的 HTTP 请求。
@@ -21,10 +26,14 @@ type Handler struct {
 	messageService             *ragservice.ConversationMessageService
 	memoryService              *longtermmemory.MemoryService
 	feedbackService            *ragservice.MessageFeedbackService
-	chatService                chatService
+	runtimeChat                runtimeChatService
+	runtimeReplay              runtimeReplayService
 	preferenceCandidateService longtermmemory.PreferenceCandidateService
 	streamManager              stream.StreamManager
 }
+
+func (h *Handler) SetRuntimeChat(service runtimeChatService)     { h.runtimeChat = service }
+func (h *Handler) SetRuntimeReplay(service runtimeReplayService) { h.runtimeReplay = service }
 
 // NewHandler 创建 RAG HTTP 处理器。
 func NewHandler(
@@ -32,7 +41,6 @@ func NewHandler(
 	messageService *ragservice.ConversationMessageService,
 	memoryService *longtermmemory.MemoryService,
 	feedbackService *ragservice.MessageFeedbackService,
-	chatService chatService,
 	preferenceCandidateService longtermmemory.PreferenceCandidateService,
 	streamManager stream.StreamManager,
 ) *Handler {
@@ -44,7 +52,6 @@ func NewHandler(
 		messageService:             messageService,
 		memoryService:              memoryService,
 		feedbackService:            feedbackService,
-		chatService:                chatService,
 		preferenceCandidateService: preferenceCandidateService,
 		streamManager:              streamManager,
 	}
