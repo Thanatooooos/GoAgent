@@ -72,3 +72,16 @@ tmp
 .gotelemetry
 
 .worktrees/
+
+.cache
+
+node_modules/
+
+# Generated frontend build metadata and config output
+*.tsbuildinfo
+/frontend/vite.config.js
+/frontend/vite.config.d.ts
+
+# Python bytecode
+__pycache__/
+*.py[cod]
